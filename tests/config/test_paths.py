@@ -190,8 +190,9 @@ def test_the_final_symlink_exemption_holds_for_memory_and_for_no_other_path(
 
 
 def test_a_paths_value_outside_the_grammar_is_refused_and_never_quoted(tmp_path: Path) -> None:
-    # P10. A multi-line value loads today and `render_report` would print it raw. Mutation
-    # (oracle): drop the `PATH_VALUE` check from `validate_paths` -> this reddens.
+    # A repository-authored value is never printed raw. A multi-line value loads today and
+    # `render_report` would print it raw. Mutation (oracle): drop the `PATH_VALUE` check from
+    # `validate_paths` -> this reddens.
     text = (
         '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
         '[paths]\nspecs = """docs/\n\n=== NOTICE ===\nspecs"""\n'
@@ -222,7 +223,7 @@ REFUSED = (
 
 
 def test_the_grammar_admits_exactly_what_the_component_rule_accepts() -> None:
-    # B1, and the shape of it: `PATH_VALUE` and `fsops.checked_components` are the two readers
+    # The shape of the defect: `PATH_VALUE` and `fsops.checked_components` are the two readers
     # of a `[paths]` value, and they have to answer the same question. They did not. The charset
     # form admitted an empty component, a trailing slash and a leading `./`, every one of which
     # `checked_components` refuses — so a value could clear the grammar, clear `contained()`
@@ -270,7 +271,7 @@ def test_contained_refuses_every_spelling_the_write_would_refuse(tmp_path: Path)
 def test_a_paths_value_naming_gits_control_directory_is_refused_and_never_quoted(
     tmp_path: Path,
 ) -> None:
-    # B2. `.git` was reserved by nothing: the grammar admits a leading dot, and `contained()`
+    # `.git` was reserved by nothing: the grammar admits a leading dot, and `contained()`
     # refused an absolute path, `..` and a symlink but not a control directory. The `agents-md`
     # artifact is a `MANAGED_REGION`, so it is exempt from the engine's "exists and Keelline did
     # not write it" guard and takes the `region_update` path — and `fsops._mode_of` carries the
@@ -296,7 +297,7 @@ def test_a_paths_value_naming_gits_control_directory_is_refused_and_never_quoted
 def test_contained_refuses_gits_control_directory_at_any_depth_and_in_any_case(
     tmp_path: Path, value: str
 ) -> None:
-    # `contained()` is the function every configured path and every lane-supplied path goes
+    # `contained()` is the function every configured path and every area-supplied path goes
     # through above the first write, so the rule has to hold here and not only in the grammar
     # loop: `ledger`, `memory` and `docs` all call it with strings `validate_paths` never sees.
     # The case arm is not decoration — the default filesystem on macOS is case-insensitive, so
@@ -347,9 +348,9 @@ def test_a_name_that_merely_resembles_keellines_directory_is_admitted(tmp_path: 
 
 
 def test_every_file_keelline_keeps_in_its_own_directory_is_under_the_reserved_name() -> None:
-    # `config` spells `.keelline` because it imports no area; the lanes that keep files there
+    # `config` spells `.keelline` because it imports no area; the areas that keep files there
     # spell their own paths. This holds each of them under the reserved name, so a rename on
-    # either side reddens here instead of leaving a lane's state unprotected.
+    # either side reddens here instead of leaving an area's state unprotected.
     from keelline.attach.api import LEDGER
     from keelline.memory.store import LOCAL_STORE
     from keelline.project.uninstall import ASSESSMENT, LEDGER_DIRS

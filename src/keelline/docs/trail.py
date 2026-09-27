@@ -3,7 +3,7 @@
 The roadmap's prose owns phase status; this listing makes the corpus navigable: every spec and
 plan, grouped by theme, annotated with its delivery state. Delivered is the default; anything
 else is declared in `trail.toml` beside the roadmap — that file is the one part a human
-maintains, and it is the forward track in machine-readable form (Premise 9). A document
+maintains, and it is the forward track in machine-readable form. A document
 appearing for the first time has to declare its state, `delivered` included: a design is
 written before the thing is built, so the first listing of one would otherwise assert that
 unimplemented work has shipped.
@@ -133,8 +133,8 @@ def read_trail(path: Path) -> Trail:
         # Through `config.loader.toml_position`: `tomllib`'s message embeds the source for
         # several of its faults — a duplicate table is reported with the table's name in it —
         # and a TOML key is arbitrary quoted text. `trail.toml` is one of the twelve files
-        # `keelline init` ships, so after this branch every repository `init` touches has one
-        # that this function parses, which is what makes the leak newly reachable here.
+        # `keelline init` ships, so every repository `init` touches has one that this function
+        # parses, which is what makes the leak reachable here.
         raise Failure(f"{path} is not valid TOML {toml_position(exc)}") from None
     themes: list[tuple[str, ThemePattern]] = []
     # `[[theme]]` is an array of tables, so `theme` is a list — but the whole file is

@@ -49,10 +49,10 @@ reddens = [
   "tests/config/test_machine.py::test_xdg_config_home_is_ignored_when_the_caller_is_not_interactive",
 ]
 
-# Half a file behind a gate is not a gate. `load` resolved the machine file with the
-# `isatty` sniff while `overlay_root` and `_trust_file` — the two anchors §9.1 and §9.4
-# rest on — always resolved it with `interactive=False`, so one command read `[personal]`
-# out of one file and `[overlay] root` out of another.
+# Half a file behind a gate is not a gate. `load` resolved the machine file with the `isatty` sniff
+# while `overlay_root` and `_trust_file` — the two anchors store resolution and the trust record
+# rest on — always resolved it with `interactive=False`, so one command read `[personal]` out of one
+# file and `[overlay] root` out of another.
 [[mutation]]
 name = "one command reads its machine configuration from two different files again"
 file = "src/keelline/config/loader.py"
@@ -101,7 +101,7 @@ reddens = [
 
 # The mirror of the entry above, and the direction the gate did not run in. Creation was gated
 # and revocation was not, so an approved link outlived the record that authorised it: one
-# `git pull` lapses the record, every channel this lane controls shuts, and the one it does not
+# `git pull` lapses the record, every channel `memory` controls shuts, and the one it does not
 # control kept pointing at the new bytes.
 [[mutation]]
 name = "the harness link outlives the trust record that authorised it again"
@@ -416,9 +416,9 @@ reddens = [
   "tests/guards/test_bgcleanup.py::test_the_incident_command_denies_without_the_space_before_the_ampersand",
 ]
 
-# D7's cap on the same judge. Above it the command is not read at all, because tokenizing is
-# quadratic in token length and every Bash call pays it; removing the cap makes the over-cap
-# half of the test judge a 64 KiB command and refuse it.
+# The named size cap on the same judge. Above it the command is not read at all, because tokenizing
+# is quadratic in token length and every Bash call pays it; removing the cap makes the over-cap half
+# of the test judge a 64 KiB command and refuse it.
 [[mutation]]
 name = "the background judge reads a command past its size cap again"
 file = "src/keelline/guards/bgcleanup.py"
@@ -440,8 +440,9 @@ reddens = [
   "tests/guards/test_bgcleanup.py::test_a_sleep_inside_a_command_substitution_is_not_a_leading_sleep",
 ]
 
-# The one CLOSED handler. Under OPEN an exception inside the judge is swallowed and the
-# call proceeds — "could not judge" read as "permitted", which is exactly what D11 forbids.
+# The one CLOSED handler. Under OPEN an exception inside the judge is swallowed and the call
+# proceeds — "could not judge" read as "permitted", which is exactly what the fail-closed policy
+# forbids.
 [[mutation]]
 name = "the background guard fails open again"
 file = "src/keelline/guards/hooks.py"
@@ -462,8 +463,8 @@ reddens = [
   "tests/guards/test_hooks.py::test_a_leaking_background_call_is_denied_through_the_real_dispatcher",
 ]
 
-# §3: a value that reaches a subprocess is untrusted. Without the check a range shaped like an
-# option is handed to `git log`, where `--output=FILE` writes wherever the caller pointed it.
+# A value that reaches a subprocess is untrusted. Without the check a range shaped like an option is
+# handed to `git log`, where `--output=FILE` writes wherever the caller pointed it.
 [[mutation]]
 name = "a range shaped like an option reaches git"
 file = "src/keelline/guards/commit.py"
@@ -473,10 +474,10 @@ reddens = [
   "tests/guards/test_commit.py::test_a_range_shaped_like_an_option_is_refused_before_git_sees_it",
 ]
 
-# The name rule (Premise 12): a product phrase as the WHOLE name. Measured, not predicted:
-# `search` instead of `fullmatch` reddens exactly one negative, the `Helped-by:` line naming a
-# person after a single-word product. The plan predicted a second; that one survives either
-# way, because `_PRODUCTS` carries no bare vendor word, only whole product phrases.
+# The name rule: a product phrase as the WHOLE name. Measured, not predicted: `search` instead of
+# `fullmatch` reddens exactly one negative, the `Helped-by:` line naming a person after a
+# single-word product. A second was predicted; that one survives either way, because `_PRODUCTS`
+# carries no bare vendor word, only whole product phrases.
 [[mutation]]
 name = "a person whose name contains a product word is a bot again"
 file = "src/keelline/guards/commit.py"
@@ -484,8 +485,8 @@ before = '    return _PRODUCTS.fullmatch(name.strip()) is not None'
 after = '    return _PRODUCTS.search(name.strip()) is not None'
 reddens = ["tests/guards/test_commit.py::test_negative_samples_are_untouched"]
 
-# The paragraph rule (Premise 12): only the final paragraph is judged, so a strip can never
-# amputate a body sentence.
+# The paragraph rule: only the final paragraph is judged, so a strip can never amputate a body
+# sentence.
 [[mutation]]
 name = "the whole message is judged again, body included"
 file = "src/keelline/guards/commit.py"
@@ -745,14 +746,14 @@ reddens = [
   "tests/guards/test_githooks.py::test_the_hook_leaves_nothing_for_the_range_check_to_find",
 ]
 
-# The other half of the same walk, and the one that protects Premise 12: the walk starts only
-# when the LAST paragraph is attribution to the last line. Without that test it steps over a
-# body paragraph into whatever attribution sits above it, and `strip` rewrites the body around
-# it -- the failure the paragraph rule exists to prevent. Its target carries a fixture written
-# for it: once a trailer value had to end at its address, the test's original body sentence
-# stopped being an attribution and this mutation SURVIVED, green everywhere. The assertion was
-# redesigned rather than the entry reworded, and the shape that discriminates is an
-# attribution-only paragraph standing above a body one.
+# The other half of the same walk, and the one that protects the paragraph rule: the walk starts
+# only when the LAST paragraph is attribution to the last line. Without that test it steps over a
+# body paragraph into whatever attribution sits above it, and `strip` rewrites the body around it --
+# the failure the paragraph rule exists to prevent. Its target carries a fixture written for it:
+# once a trailer value had to end at its address, the test's original body sentence stopped being an
+# attribution and this mutation SURVIVED, green everywhere. The assertion was redesigned rather than
+# the entry reworded, and the shape that discriminates is an attribution-only paragraph standing
+# above a body one.
 [[mutation]]
 name = "the attribution walk starts above a body paragraph"
 file = "src/keelline/guards/commit.py"
@@ -877,9 +878,9 @@ reddens = [
 ]
 
 # ---------------------------------------------------------------------------------------------
-# Wave B of the guards review. The first six are defects review measured on the shipped modules;
-# the last four are the area's fail-closed refusals, which were described in comments and in
-# tests but declared nowhere — the word `Refusal` did not occur in this file at all.
+# The guards review. The first six are defects review measured on the shipped modules; the last four
+# are the area's fail-closed refusals, which were described in comments and in tests but declared
+# nowhere — the word `Refusal` did not occur in this file at all.
 
 # A footer had no bounded tail, so ANY line beginning with the words was one whatever followed:
 # `Generated with Claude Code and then reviewed by a human.` was an offence, and `commit strip`
@@ -1006,10 +1007,10 @@ reddens = [
   "tests/guards/test_commands.py::test_test_audit_entrypoints_refuses_when_the_scanner_stops_discriminating",
 ]
 
-# §5.8's gate stores its denylist as digests so the file that hides a name does not publish it,
-# which means the match is a windowed hash comparison rather than a substring test — an
-# invisible mechanism whose failure mode is silence. Empty the per-width digest set and every
-# scan comes back clean: the whole-lane walk goes green over a tree that could name anything.
+# The neutrality gate stores its denylist as digests so the file that hides a name does not publish
+# it, which means the match is a windowed hash comparison rather than a substring test — an
+# invisible mechanism whose failure mode is silence. Empty the per-width digest set and every scan
+# comes back clean: the whole-tree walk goes green over a tree that could name anything.
 [[mutation]]
 name = "the hashed neutrality denylist stops matching a planted token"
 file = "tests/test_neutral.py"
@@ -1102,6 +1103,261 @@ before = '        re.compile(r"(?<![\w/])(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-
 after = '        re.compile(r"(?<![\w/])(?=[0-9a-f]*\d)[0-9a-f]{8,10}(?![\w/])"),'
 reddens = [
   "tests/test_neutral.py::test_the_gate_discriminates",
+]
+
+# The public-anchor gate: no tracked file outside the plans cites the private design by section
+# number or decision id, because a reader here cannot open what either points at. Its failure
+# mode is the neutrality gate's — silence — so each arm, the whole-text reading, the loop and the
+# walk's reach are declared.
+[[mutation]]
+name = "the public-anchor gate stops seeing a design section number"
+file = "tests/test_public_anchors.py"
+before = '    ("design section", re.compile(r"§\s*\d+(?:\.\d+)*")),'
+after = '    ("design section", re.compile(r"§\s*\d+(?:\.\d+)*(?!)")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# Most of the ids were written bare, a one-letter prefix and a number at the head of a clause,
+# and only the bracketed arm would be left to catch them. Narrowed to the two-letter prefixes,
+# the gate goes on refusing a bracketed id and lets the commoner spelling back in.
+[[mutation]]
+name = "the public-anchor gate sees only the two-letter decision ids"
+file = "tests/test_public_anchors.py"
+before = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b(?!\s+control)"),'
+after = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b"),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# No other arm reaches a two-letter prefix written bare — the one-letter arm needs a word
+# boundary before its letter and the bracketed arm needs brackets — so each prefix is spelled in
+# the arm or not refused at all. `RD` stands for the four: drop it and that spelling is back.
+[[mutation]]
+name = "the public-anchor gate forgets the RD prefix"
+file = "tests/test_public_anchors.py"
+before = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b(?!\s+control)"),'
+after = '        re.compile(r"\b(?:DC|DP|OD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b(?!\s+control)"),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# And the other direction: "C0 control" and "C1 control" are the Unicode names of the classes
+# `tomlout` and the probes escape, so an arm widened to every `C<digit>`, or one that forgets the carve-out
+# before "control", refuses a correct sentence — which is how a gate earns an exemption and then
+# loses its point.
+[[mutation]]
+name = "the public-anchor gate refuses the C0 control class"
+file = "tests/test_public_anchors.py"
+before = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b(?!\s+control)"),'
+after = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC\d\b"),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+[[mutation]]
+name = "the public-anchor gate refuses the C1 control class"
+file = "tests/test_public_anchors.py"
+before = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b(?!\s+control)"),'
+after = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b"),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# A bracketed list whose members are none of them decision ids is caught by the list's tail
+# alone; without it only the single-id brackets and the ids the decision arm spells survive.
+[[mutation]]
+name = "the public-anchor gate stops reading a bracketed list"
+file = "tests/test_public_anchors.py"
+before = '    ("bracketed id", re.compile(r"\([A-Z]{1,2}\d{1,2}(?:,\s*[A-Z]{1,2}\d{1,2})*\)")),'
+after = '    ("bracketed id", re.compile(r"\([A-Z]{1,2}\d{1,2}\)")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# The plan headings in either case and across a re-wrap: three shipped modules named the plans'
+# list of constraints in lower case and one split its two words over two lines, and the
+# case-sensitive, single-space arm that preceded this one saw none of them.
+[[mutation]]
+name = "the public-anchor gate reads the plan headings case-sensitively again"
+file = "tests/test_public_anchors.py"
+before = '    ("plan section", re.compile(r"\bPremise\s+\d+|(?i:\bglobal\s+constraint)")),'
+after = '    ("plan section", re.compile(r"\bPremise \d+|G[l]obal Constraint")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# The plans' word for a unit of work, in every file and either case: nearly three hundred lines
+# said it before this arm, and a reader here could not tell which area any of them meant.
+[[mutation]]
+name = "the public-anchor gate stops seeing the plans' unit of work"
+file = "tests/test_public_anchors.py"
+before = '    ("plan unit", re.compile(r"(?i:(?<![^\W\d_])l[a]nes?(?![^\W\d_]))")),'
+after = '    ("plan unit", re.compile(r"(?i:(?<![^\W\d_])l[a]nes?(?![^\W\d_]))(?!)")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# A letter, not a word character, is the boundary: `\b` counts `_` as part of a word, so a
+# test named for "every downstream" unit of work, snake_case, walked past an arm written with it.
+[[mutation]]
+name = "the public-anchor gate lets a snake_case name carry the plans' unit of work"
+file = "tests/test_public_anchors.py"
+before = '    ("plan unit", re.compile(r"(?i:(?<![^\W\d_])l[a]nes?(?![^\W\d_]))")),'
+after = '    ("plan unit", re.compile(r"(?i:\bl[a]nes?\b)")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# The code-only arms, a spelling at a time: every planted line carries one, so none covers for
+# another. Gone quiet, the plan bookkeeping this change took out of the code comes back unremarked.
+[[mutation]]
+name = "the public-anchor gate stops seeing the unit a plan shipped in"
+file = "tests/test_public_anchors.py"
+before = '            r"(?i:(?<![^\W\d_])w[a]ve(?![^\W\d_]))|\bTask\s+\d+|(?i:\bfix\s+round)|(?i:\bround\s+\d+)"'
+after = '            r"\bTask\s+\d+|(?i:\bfix\s+round)|(?i:\bround\s+\d+)"'
+reddens = [
+  "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
+]
+
+[[mutation]]
+name = "the public-anchor gate stops seeing a numbered item or finding"
+file = "tests/test_public_anchors.py"
+before = '            r"|(?i:\bitem\s+\d+)|(?i:\bfinding\s+\d+)"'
+after = '            r""'
+reddens = [
+  "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
+]
+
+# A spike's or a review's `S<n>` — and not the public source list's bracketed `[S12]`, which the
+# arm must go on leaving alone.
+[[mutation]]
+name = "the public-anchor gate stops seeing a spike id"
+file = "tests/test_public_anchors.py"
+before = '    ("spike id", re.compile(r"(?<!\[)\bS\d{1,2}\b(?!\])")),'
+after = '    ("spike id", re.compile(r"(?<!\[)\bS\d{1,2}\b(?!\])(?!)")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
+]
+
+[[mutation]]
+name = "the public-anchor gate refuses a bracketed public source"
+file = "tests/test_public_anchors.py"
+before = '    ("spike id", re.compile(r"(?<!\[)\bS\d{1,2}\b(?!\])")),'
+after = '    ("spike id", re.compile(r"\bS\d{1,2}\b")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
+]
+
+# The whole-text reading. A comment's `#` left in place splits a wrapped phrase in two; the
+# overlap rule gone reports a bracketed decision id twice; a line number computed from nothing points at line 1.
+[[mutation]]
+name = "the public-anchor gate lets a comment leader split a phrase"
+file = "tests/test_public_anchors.py"
+before = '    text = COMMENT_LEADER.sub(lambda m: m.group(1) + " " * len(m.group(2)), text)'
+after = '    text = text'
+reddens = [
+  "tests/test_public_anchors.py::test_the_scan_reports_what_it_read_by_path_and_line",
+]
+
+[[mutation]]
+name = "the public-anchor gate reports one span once per arm"
+file = "tests/test_public_anchors.py"
+before = '        if start < covered:'
+after = '        if False:'
+reddens = [
+  "tests/test_public_anchors.py::test_a_citation_reports_its_whole_text_once_on_its_own_line",
+]
+
+[[mutation]]
+name = "the public-anchor gate reports every hit on the first line"
+file = "tests/test_public_anchors.py"
+before = '        found.append((text.count("\n", 0, start) + 1, name, " ".join(matched.split())))'
+after = '        found.append((1, name, " ".join(matched.split())))'
+reddens = [
+  "tests/test_public_anchors.py::test_a_citation_reports_its_whole_text_once_on_its_own_line",
+]
+
+# Where the code-only arms apply, all three ways: nowhere and they read nothing; everywhere and
+# a document talking about a task in its own sense is refused; a fixture read as code and the
+# smoke project's own plans are held to bookkeeping rules they are data for.
+[[mutation]]
+name = "the public-anchor walk never applies the code-only arms"
+file = "tests/test_public_anchors.py"
+before = '    return CITATIONS if is_document(relative) else CITATIONS + CODE_ONLY'
+after = '    return CITATIONS'
+reddens = [
+  "tests/test_public_anchors.py::test_the_arms_follow_where_a_file_lives",
+]
+
+[[mutation]]
+name = "the public-anchor walk applies the code-only arms to every file"
+file = "tests/test_public_anchors.py"
+before = '    return CITATIONS if is_document(relative) else CITATIONS + CODE_ONLY'
+after = '    return CITATIONS + CODE_ONLY'
+reddens = [
+  "tests/test_public_anchors.py::test_the_arms_follow_where_a_file_lives",
+]
+
+[[mutation]]
+name = "the public-anchor walk reads a fixture as code"
+file = "tests/test_public_anchors.py"
+before = '    return relative.endswith(DOCUMENT_SUFFIX) or relative.startswith(FIXTURES + "/")'
+after = '    return relative.endswith(DOCUMENT_SUFFIX)'
+reddens = [
+  "tests/test_public_anchors.py::test_the_arms_follow_where_a_file_lives",
+]
+
+# The walk's reach is every tracked file minus a named exemption, so the two ways to break it are
+# the exemption widened — here over the package, where almost every citation lived — and the
+# exemption lost, which reads the guard's own planted examples and is red for ever.
+[[mutation]]
+name = "the public-anchor walk's exemption swallows the package"
+file = "tests/test_public_anchors.py"
+before = 'EXEMPT = ("docs/plans", "tests/test_public_anchors.py")'
+after = 'EXEMPT = ("docs/plans", "tests/test_public_anchors.py", "src")'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_walk_reads_every_tracked_file_but_the_exemptions",
+]
+
+[[mutation]]
+name = "the public-anchor walk reads its own planted examples"
+file = "tests/test_public_anchors.py"
+before = 'EXEMPT = ("docs/plans", "tests/test_public_anchors.py")'
+after = 'EXEMPT = ("docs/plans",)'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_walk_reads_every_tracked_file_but_the_exemptions",
+]
+
+# The loop the gate runs. Read nothing, or read and keep nothing, and the gate is green over any
+# tree while every arm test still passes — which is what the arm tests alone could not show.
+[[mutation]]
+name = "the public-anchor scan reads nothing"
+file = "tests/test_public_anchors.py"
+before = '        text = path.read_text(encoding="utf-8")'
+after = '        text = ""'
+reddens = [
+  "tests/test_public_anchors.py::test_the_scan_reports_what_it_read_by_path_and_line",
+]
+
+[[mutation]]
+name = "the public-anchor scan keeps nothing it read"
+file = "tests/test_public_anchors.py"
+before = '        hits.extend('
+after = '        [].extend('
+reddens = [
+  "tests/test_public_anchors.py::test_the_scan_reports_what_it_read_by_path_and_line",
+]
+
+# The sdist fallback walk leaves bytecode out at any depth: one pytest run leaves a `__pycache__`
+# beside every module, and the public-anchor gate reads every file it is given.
+[[mutation]]
+name = "the fallback walk reads bytecode below the root"
+file = "tests/test_neutral.py"
+before = '        and "__pycache__" not in parts'
+after = '        and True'
+reddens = [
+  "tests/test_neutral.py::test_the_fallback_walk_skips_bytecode_at_any_depth",
 ]
 
 # A repository-controlled prefix reaches a regular expression only after its shape is checked.
@@ -1794,7 +2050,7 @@ reddens = [
   "tests/docs/test_trail.py::test_a_trail_file_that_is_not_utf8_is_a_failure_not_an_internal_error",
 ]
 
-# The same defect in the memory lane's own reader: `UnicodeDecodeError` is not an `OSError`, so
+# The same defect in `memory`'s own reader: `UnicodeDecodeError` is not an `OSError`, so
 # a latin-1 byte in a note escaped the walk instead of being quarantined onto `unreadable`.
 [[mutation]]
 name = "a non-UTF-8 note escapes the walk instead of being quarantined"
@@ -2016,7 +2272,7 @@ reddens = [
   "tests/guards/test_bgcleanup.py::test_an_ampersand_redirect_is_not_part_of_the_masked_command",
 ]
 
-# The wrapper is the whole of D11's fail-closed guarantee: Claude Code reads every exit that is
+# The wrapper is the whole of the hooks' fail-closed guarantee: Claude Code reads every exit that is
 # not 2 as a non-blocking error, so a `closed` entry that stops refusing is a guard that permits.
 [[mutation]]
 name = "the wrapper stops refusing under a closed policy"
@@ -2037,10 +2293,10 @@ before = '[ $# -ge 1 ] || refuse "KL_ARGV no policy argument"'
 after = 'policy=open'
 reddens = ["tests/hooks/test_wrapper.py::test_no_policy_argument_refuses_with_a_token"]
 
-# C1: the launcher is chosen by the wrapper's own path and never by a variable in its
-# environment. A committed `.claude/settings.json` `env` block reaches a hook process --
-# `config/machine.py` gates two other variables on exactly that -- and this one would pick the
-# Python program that runs before any Keelline guard does.
+# The launcher is chosen by the wrapper's own path and never by a variable in its environment. A
+# committed `.claude/settings.json` `env` block reaches a hook process -- `config/machine.py` gates
+# two other variables on exactly that -- and this one would pick the Python program that runs before
+# any Keelline guard does.
 [[mutation]]
 name = "the wrapper takes its launcher from the environment again"
 file = "hooks/run-hook.sh"
@@ -2053,7 +2309,7 @@ reddens = [
 
 # The other half of the same line. A derived launcher that is not there must still refuse with a
 # token: without the check the file reaches Python as a missing script and exits 2 by CPython
-# accident, which is the unattributed exit D11 exists to make impossible.
+# accident, which is the unattributed exit the wrapper exists to make impossible.
 [[mutation]]
 name = "the wrapper stops noticing that its launcher is missing"
 file = "hooks/run-hook.sh"
@@ -2063,10 +2319,10 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_a_missing_launcher_refuses_although_the_environment_names_one",
 ]
 
-# C2, first half. This ordering no longer decides what is *executed* -- `_wrapper` takes
-# `own_root` and nothing else -- so what it pins now is which wrapper `files` reads its mode
-# from. A plugin's own and one a repository committed are different files with different
-# meanings, and the row would otherwise report on the wrong one.
+# Which plugin root `doctor` trusts, first half. This ordering no longer decides what is *executed*
+# -- `_wrapper` takes `own_root` and nothing else -- so what it pins now is which wrapper `files`
+# reads its mode from. A plugin's own and one a repository committed are different files with
+# different meanings, and the row would otherwise report on the wrong one.
 [[mutation]]
 name = "doctor reads a named plugin root's files in preference to its own"
 file = "src/keelline/doctor/checks.py"
@@ -2076,11 +2332,12 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_named_plugin_root_never_outranks_the_one_this_keelline_is_part_of",
 ]
 
-# C2, and the entry that matters: `doctor` runs a subprocess out of this answer. With
-# `_own_root()` returning `None` -- which a `uv tool install` wheel gives, and which `cli-path`'s
-# own remedy and the README tell people to install -- a project that commits `hooks/run-hook.sh`
-# mode 100755 plus an `env` block naming its tree got that script RUN, and the report then read
-# `wrapper: ok`. Code execution and a false clean bill of health from a read-only command.
+# Which plugin root `doctor` trusts, and the entry that matters: `doctor` runs a subprocess out of
+# this answer. With `_own_root()` returning `None` -- which a `uv tool install` wheel gives, and
+# which `cli-path`'s own remedy and the README tell people to install -- a project that commits
+# `hooks/run-hook.sh` mode 100755 plus an `env` block naming its tree got that script RUN, and the
+# report then read `wrapper: ok`. Code execution and a false clean bill of health from a read-only
+# command.
 [[mutation]]
 name = "doctor executes the plugin root the environment named"
 file = "src/keelline/doctor/checks.py"
@@ -2102,13 +2359,13 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_plugin_root_the_environment_named_is_read_and_never_executed",
 ]
 
-# C1. The headline hardening closed WHICH FILE the wrapper hands Python and left WHICH PYTHON
-# one line below it: the probe asks a candidate only to exit 0 for a trivial `-c`, so a
-# repository-planted `evil-python` ran `<plugin>/scripts/keelline hook PreToolUse` on every
-# PreToolUse, before any Keelline guard. `config/machine.py`'s ruling -- "gating one of a pair of
-# equivalent inputs is not a partial defence, it is a redirect with a longer name" -- is
-# followed by putting that module's own gate on it: an interactive terminal, which a hook's
-# stdin (the harness's payload, on a pipe) never is.
+# The same rule, one line down. The headline hardening closed WHICH FILE the wrapper hands Python
+# and left WHICH PYTHON one line below it: the probe asks a candidate only to exit 0 for a trivial
+# `-c`, so a repository-planted `evil-python` ran `<plugin>/scripts/keelline hook PreToolUse` on
+# every PreToolUse, before any Keelline guard. `config/machine.py`'s ruling -- "gating one of a pair
+# of equivalent inputs is not a partial defence, it is a redirect with a longer name" -- is followed
+# by putting that module's own gate on it: an interactive terminal, which a hook's stdin (the
+# harness's payload, on a pipe) never is.
 [[mutation]]
 name = "the wrapper lets the environment choose its interpreter off a terminal"
 file = "hooks/run-hook.sh"
@@ -2118,14 +2375,14 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_an_interpreter_the_environment_names_is_ignored_off_a_terminal",
 ]
 
-# C1's other chooser, and the one the tty gate moved rather than closed: with
-# `KEELLINE_PYTHON_CANDIDATES` gated, the hook path always uses the built-in list, whose last
-# entry is a `PATH` lookup -- and `PATH` reaches this process from the same committed `env`
-# block. Dropping the entry is not available (it is the S8 row 2 fall-through, and a pyenv, nix
-# or asdf machine has nothing at the four absolute paths), so what a clone can actually stage is
-# refused instead: an interpreter inside its own tree. Measured with the entry disabled -- a
-# shipped `python3` plus a `PATH` entry naming the tree ran
-# `<plugin>/scripts/keelline hook PreToolUse`.
+# The interpreter's other chooser, and the one the tty gate moved rather than closed: with
+# `KEELLINE_PYTHON_CANDIDATES` gated, the hook path always uses the built-in list, whose last entry
+# is a `PATH` lookup -- and `PATH` reaches this process from the same committed `env` block.
+# Dropping the entry is not available (it is the fall-through for an interpreter that is only on
+# `PATH`, and a pyenv, nix or asdf machine has nothing at the four absolute paths), so what a clone
+# can actually stage is refused instead: an interpreter inside its own tree. Measured with the entry
+# disabled -- a shipped `python3` plus a `PATH` entry naming the tree ran `<plugin>/scripts/keelline
+# hook PreToolUse`.
 [[mutation]]
 name = "the wrapper runs an interpreter the project itself ships"
 file = "hooks/run-hook.sh"
@@ -2187,8 +2444,8 @@ reddens = [
 ]
 
 # `-f` tests existence, not readability. Measured with `chmod 000`: CPython printed its own
-# "Permission denied" and exited 2 with no KL_ token, passed through by `case "$rc" in 0|2)` --
-# the unattributed exit 2 D11 exists to make impossible, and a state `doctor`'s wrapper row
+# "Permission denied" and exited 2 with no KL_ token, passed through by `case "$rc" in 0|2)` -- the
+# unattributed exit 2 the wrapper exists to make impossible, and a state `doctor`'s wrapper row
 # called green because it keys on finding a token.
 [[mutation]]
 name = "the wrapper stops noticing that its launcher cannot be read"
@@ -2230,8 +2487,9 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_an_interpreter_in_the_git_root_is_refused_although_the_environment_names_another_root",
 ]
 
-# The marker key and the session id are both payload-controlled. Used verbatim, `../../escape`
-# is a write -- and a `remove_within` loop -- outside the one directory D14 permits.
+# The marker key and the session id are both payload-controlled. Used verbatim, `../../escape` is a
+# write -- and a `remove_within` loop -- outside the one directory the enumerated-writes rule
+# permits.
 [[mutation]]
 name = "the sink stops hashing a payload-controlled path segment"
 file = "src/keelline/hooks/sink.py"
@@ -2241,9 +2499,9 @@ reddens = [
   "tests/hooks/test_sink.py::test_a_marker_lands_at_two_hashed_segments_and_nowhere_else",
 ]
 
-# Codex exports `PLUGIN_DATA` where Claude Code exports `CLAUDE_PLUGIN_DATA` (S1). With the
-# fallback gone the sink is a `NullSink` on Codex, so every `once_key` handler silently degrades
-# back to "every invocation" -- the defect the sink exists to remove, on one harness only.
+# Codex exports `PLUGIN_DATA` where Claude Code exports `CLAUDE_PLUGIN_DATA`. With the fallback gone
+# the sink is a `NullSink` on Codex, so every `once_key` handler silently degrades back to "every
+# invocation" -- the defect the sink exists to remove, on one harness only.
 [[mutation]]
 name = "the sink stops recognising Codex's name for the data directory"
 file = "src/keelline/hooks/sink.py"
@@ -2327,9 +2585,9 @@ reddens = [
   "tests/test_runner.py::test_a_command_that_hangs_is_not_reported_as_one_that_is_missing",
 ]
 
-# The one invariant in this wave whose failure ships a permission to every machine that ever
-# creates an overlay from the template. The author may never grant one (§3, first row); only the
-# machine owner may, on their own instance.
+# The one invariant here whose failure ships a permission to every machine that ever creates an
+# overlay from the template. The plugin author may never grant one; only the machine owner may, on
+# their own instance.
 [[mutation]]
 name = "the overlay template starts granting a permission"
 file = "src/keelline/templates/overlay/common/claude/permissions.json"
@@ -2340,9 +2598,9 @@ reddens = [
   "tests/overlay/test_template.py::test_the_template_ships_permissions_that_are_neither_granted_nor_pretended",
 ]
 
-# §6.1 permits creating a repository on an account only after explicit confirmation, and in this
-# harness the caller is non-interactive: naming the source IS the confirmation. A default turns
-# an omitted flag into a private repository created on somebody's GitHub account.
+# Creating a repository on an account is permitted only after explicit confirmation, and in this
+# harness the caller is non-interactive: naming the source IS the confirmation. A default turns an
+# omitted flag into a private repository created on somebody's GitHub account.
 [[mutation]]
 name = "overlay create picks the GitHub source when nobody asked for it"
 file = "src/keelline/overlay/commands.py"
@@ -2350,20 +2608,21 @@ before = "create.set_defaults(func=run_overlay_create, source=None)"
 after = 'create.set_defaults(func=run_overlay_create, source="template")'
 reddens = ["tests/overlay/test_create.py::test_the_cli_never_picks_the_github_source_for_you"]
 
-# DP3's first rule, and the one whose failure hands the choice of overlay to whoever wrote the
-# command line -- which in this harness is a model that has read the repository. The machine
-# file is unselectable by a repository by construction; `--store`'s own parent is not.
+# The overlay root comes from the machine file, and this is the rule whose failure hands the choice
+# of overlay to whoever wrote the command line -- which in this harness is a model that has read the
+# repository. The machine file is unselectable by a repository by construction; `--store`'s own
+# parent is not.
 [[mutation]]
 name = "attach takes the overlay root from its argument instead of the machine file"
 file = "src/keelline/attach/binding.py"
-# Widened past `read_binding`'s own line, fix round 1: Task 3's `binding_for` gained the same
-# `overlay = overlay_root(machine)` line, so the old one-line `before` stopped being unique in
-# this file — the oracle refuses rather than mutating an ambiguous match, so this went uncaught
-# until a broader sweep than the entry's own filter string surfaced it.
+# Widened past `read_binding`'s own line: `binding_for` has the same `overlay =
+# overlay_root(machine)` line, so a one-line `before` is not unique in this file — the oracle
+# refuses rather than mutating an ambiguous match, so a non-unique `before` goes uncaught until a
+# sweep broader than the entry's own filter string surfaces it.
 #
-# Re-pointed again in wave 4: `read_binding` now takes an optional `config` and loads only when
-# the caller holds none, so the first of the two lines is spelled differently. The mutation is
-# unchanged -- the second line is the guard -- and the first is here only for uniqueness.
+# `read_binding` takes an optional `config` and loads only when the caller holds none, which is how
+# the first of the two lines is spelled. The mutation is the second line -- the guard -- and the
+# first is here only for uniqueness.
 before = '''    config = load(root, machine=machine) if config is None else config
     overlay = overlay_root(machine)'''
 after = '''    config = load(root, machine=machine) if config is None else config
@@ -2372,9 +2631,9 @@ reddens = [
   "tests/attach/test_binding.py::test_the_overlay_root_comes_from_the_machine_file_and_not_from_the_argument",
 ]
 
-# §12's hostile-clone row: the clone chooses `project.name`, it does not choose which remote the
-# overlay recorded under that name. Stop comparing and every clone declaring a real project's
-# name reads as bound.
+# The hostile clone: the clone chooses `project.name`, it does not choose which remote the overlay
+# recorded under that name. Stop comparing and every clone declaring a real project's name reads as
+# bound.
 [[mutation]]
 name = "attach stops comparing the recorded remote"
 file = "src/keelline/attach/binding.py"
@@ -2382,8 +2641,8 @@ before = '    if recorded != origin:'
 after = '    if False:'
 reddens = ["tests/attach/test_binding.py::test_a_different_remote_is_a_mismatch_and_never_a_bind"]
 
-# §3's last row, in one line: committed settings widen permissions -> never merged. The mutation
-# is toward a plausible implementation rather than an obviously broken one, which is the
+# The trust rule in one line: committed settings that widen permissions are never merged. The
+# mutation is toward a plausible implementation rather than an obviously broken one, which is the
 # difference between an oracle and a smoke test.
 [[mutation]]
 name = "the permission diff starts reading the committed settings file"
@@ -2392,11 +2651,11 @@ before = '    sources = (overlay_common, overlay_project)'
 after = '    sources = (overlay_common, overlay_project, root / ".claude" / "settings.json")'
 reddens = ["tests/attach/test_binding.py::test_a_committed_settings_file_can_never_contribute_a_rule"]
 
-# The Global Constraints ask for this entry by name: "a refusal something downstream reads as
-# permission". With it gone, a repository that says "setup requires `keelline attach --store
-# <path it names>`" gets a compliant agent to grant it tool permissions and no human sees the
-# diff. Declared on the predicate rather than on the branch in `write.py`, because the predicate
-# is where the rule is defined once and `check` reports the same one.
+# A refusal something downstream reads as permission is a defect this oracle must name outright, and
+# this is its entry. With it gone, a repository that says "setup requires `keelline attach --store
+# <path it names>`" gets a compliant agent to grant it tool permissions and no human sees the diff.
+# Declared on the predicate rather than on the branch in `write.py`, because the predicate is where
+# the rule is defined once and `check` reports the same one.
 [[mutation]]
 name = "attach widens a permission without a confirmation"
 file = "src/keelline/attach/permissions.py"
@@ -2412,13 +2671,13 @@ reddens = [
 # table outright, so a hand-written key in it was gone after any run and a rootless `[overlay]`
 # vanished whole -- silently, and again on the next run.
 #
-# The same spread is what carries a recorded root through a run that was not given one, which is
-# DP3's anchor surviving a second `setup`: without it, a rewrite that only sets the personal
-# languages drops whatever `setup --overlay` recorded and every later `attach` reads "not
-# recorded" about a machine that was already set up. That property had an entry of its own, on
-# the explicit read-back this module used to do beside the spread; it SURVIVED, because the
-# spread already held the property and the read-back was dead code shaped like a guard. The
-# read-back is gone and the property is declared here, where the code that keeps it is.
+# The same spread is what carries a recorded root through a run that was not given one, which is the
+# machine file's overlay anchor surviving a second `setup`: without it, a rewrite that only sets the
+# personal languages drops whatever `setup --overlay` recorded and every later `attach` reads "not
+# recorded" about a machine that was already set up. That property had an entry of its own, on the
+# explicit read-back this module used to do beside the spread; it SURVIVED, because the spread
+# already held the property and the read-back was dead code shaped like a guard. The read-back is
+# gone and the property is declared here, where the code that keeps it is.
 [[mutation]]
 name = "write_machine replaces the overlay table instead of merging over it"
 file = "src/keelline/setup/machine.py"
@@ -2453,9 +2712,9 @@ before = 'created = create(owner, name, source="template", root=planned.root.par
 after = 'created = create(owner, name, source="template", root=Path.cwd(), runner=runner)'
 reddens = ["tests/setup/test_setup.py::test_overlay_create_asks_github_and_records_the_new_root"]
 
-# Fix round 1, item 1: the preset's own `reply_language = ""` default must never win over a
-# value already recorded — by an earlier `setup` run or by the owner's own hand — or a second
-# `setup --preset recommended` resets what "the user's to set" (skills/setup/SKILL.md) means.
+# The preset's own `reply_language = ""` default must never win over a value already recorded — by
+# an earlier `setup` run or by the owner's own hand — or a second `setup --preset recommended`
+# resets what "the user's to set" (skills/setup/SKILL.md) means.
 [[mutation]]
 name = "setup resets a personal value the owner already set"
 file = "src/keelline/setup/run.py"
@@ -2465,11 +2724,11 @@ reddens = [
   "tests/setup/test_setup.py::test_a_second_run_does_not_reset_a_personal_value_the_owner_set",
 ]
 
-# §3's trust table in one line: the plugin author may never ship an allow rule, and this is the
-# one place `setup` writes machine-scope permissions at all. A typo that writes the preset's
-# deny rules under `permissions.allow` instead of `permissions.deny` is the exact failure mode
-# the deny-only invariant exists to catch — and it is the more plausible bug than a rule
-# deliberately added, which is why the mutation is a fat-fingered key rather than a deletion.
+# The author-side trust rule in one line: the plugin author may never ship an allow rule, and this
+# is the one place `setup` writes machine-scope permissions at all. A typo that writes the preset's
+# deny rules under `permissions.allow` instead of `permissions.deny` is the exact failure mode the
+# deny-only invariant exists to catch — and it is the more plausible bug than a rule deliberately
+# added, which is why the mutation is a fat-fingered key rather than a deletion.
 [[mutation]]
 name = "setup's settings merge writes the deny rules under allow instead"
 file = "src/keelline/setup/run.py"
@@ -2477,29 +2736,28 @@ before = 'permissions["deny"] = existing_deny + [r for r in deny_rules if r not 
 after = 'permissions["allow"] = existing_deny + [r for r in deny_rules if r not in existing_deny]'
 reddens = ["tests/setup/test_setup.py::test_setup_writes_the_machine_file_and_the_deny_rules"]
 
-# §6.1's own gate, restated in code: `overlay create` runs `gh repo create ... --private` on
-# GitHub, and a default that reaches it is the one default this command may not have. Without
-# this guard, every ordinary run with no `--overlay` flag at all would still reach the overlay
-# branch, which is "taken without being asked" by definition. The `after` is the plausible shape
-# of that bug — defaulting the answer to a directory — rather than a deletion that would crash on
-# a missing name: a mutation that reddens with an `AttributeError` proves nothing about the rule.
+# The creation gate, restated in code: `overlay create` runs `gh repo create ... --private` on
+# GitHub, and a default that reaches it is the one default this command may not have. Without this
+# guard, every ordinary run with no `--overlay` flag at all would still reach the overlay branch,
+# which is "taken without being asked" by definition. The `after` is the plausible shape of that bug
+# — defaulting the answer to a directory — rather than a deletion that would crash on a missing
+# name: a mutation that reddens with an `AttributeError` proves nothing about the rule.
 [[mutation]]
 name = "setup touches the overlay even when the caller named no answer"
 file = "src/keelline/setup/run.py"
 before = """    if overlay is None:
-        # Nothing was asked for, so nothing is touched. §6.1's gate is that `--overlay` is the
-        # only way to reach the overlay at all, and `--yes` does not imply one: a default here
+        # Nothing was asked for, so nothing is touched. The creation gate is that `--overlay` is
+        # the only way to reach the overlay at all, and `--yes` does not imply one: a default here
         # would turn an omitted flag into a repository created on somebody's account.
         return None"""
 after = """    if overlay is None:
         overlay = str(home)"""
 reddens = ["tests/setup/test_setup.py::test_the_overlay_offer_is_never_taken_without_being_asked"]
 
-# The coordinator's ruling on the named risk this wave's first report raised: `--yes` on
-# `--overlay <path>` would be theatre in a harness where the command line is written by a
-# model, so it is not gated there — but creating a repository on GitHub is the one
-# irreversible, outward-facing act `setup` performs, and §6.1 asks for explicit confirmation
-# before it. This is the one place `yes` is a real control rather than a restatement.
+# `--yes` on `--overlay <path>` would be theatre in a harness where the command line is written by a
+# model, so it is not gated there — but creating a repository on GitHub is the one irreversible,
+# outward-facing act `setup` performs, and that act waits for explicit confirmation. This is the one
+# place `yes` is a real control rather than a restatement.
 [[mutation]]
 name = "setup creates an overlay on GitHub without --yes"
 file = "src/keelline/setup/run.py"
@@ -2538,11 +2796,10 @@ reddens = [
   "tests/setup/test_setup.py::test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay",
 ]
 
-# What the coordinator's ruling calls the wave's actual control over the named risk: a path
-# outside the repository that already carries a real overlay layout is not something a hostile
-# clone can create, but a path *inside* it is exactly the shape of tree a clone can ship — so
-# this is the one check that removes the actual exploitable case, and losing it is the whole
-# residual risk the ruling records.
+# The actual control over a named overlay path: a path outside the repository that already
+# carries a real overlay layout is not something a hostile clone can create, but a path *inside*
+# it is exactly the shape of tree a clone can ship — so this is the one check that removes the
+# actual exploitable case, and losing it is the whole residual risk.
 [[mutation]]
 name = "setup stops refusing an overlay root inside the project"
 file = "src/keelline/setup/run.py"
@@ -2692,10 +2949,10 @@ reddens = [
   "tests/setup/test_setup.py::test_a_bare_shaped_directory_in_a_sibling_checkout_is_never_the_trust_anchor",
 ]
 
-# §12's row, and the reason `doctor` has a provenance list at all: "a hook entry adds the
-# Keelline marker to a hostile command → doctor lists every entry with provenance". An entry
-# that claims the marker and is in no attach ledger is a repository saying it is Keelline, and
-# without this comparison every such entry reads as one `attach` installed.
+# The hostile clone, and the reason `doctor` has a provenance list at all: a hook entry that adds
+# the Keelline marker to a hostile command is answered by listing every entry with its provenance.
+# An entry that claims the marker and is in no attach ledger is a repository saying it is Keelline,
+# and without this comparison every such entry reads as one `attach` installed.
 [[mutation]]
 name = "doctor stops telling a claimed marker from one the attach ledger records"
 file = "src/keelline/doctor/checks.py"
@@ -2722,10 +2979,10 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_settings_file_that_cannot_be_read_is_reported_rather_than_skipped",
 ]
 
-# §5.3, "reasons, never payloads". The sink's record carries `context` and `decision`, both
-# filled from a handler's own return value, and printing the record whole is the one place a
-# repository's bytes could reach a terminal — and the model reading it — unwrapped. The
-# allowlist is the guard; without it the check prints everything the record holds.
+# Reasons, never payloads. The sink's record carries `context` and `decision`, both filled from a
+# handler's own return value, and printing the record whole is the one place a repository's bytes
+# could reach a terminal — and the model reading it — unwrapped. The allowlist is the guard; without
+# it the check prints everything the record holds.
 [[mutation]]
 name = "doctor quotes a diagnostics log whose provenance it cannot establish"
 file = "src/keelline/doctor/checks.py"
@@ -2748,11 +3005,11 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_log_larger_than_the_sink_would_ever_write_is_read_to_a_bound",
 ]
 
-# I4: three load-bearing guards of the `attach` lane that had no entry. The first is the wave's
-# `--machine` gate -- a flag is a third member of the equivalence class `config/machine.py`
-# gates `KEELLINE_CONFIG` and `XDG_CONFIG_HOME` on, and this is the command that turns the
-# machine file into capability: the overlay root comes from it, and from the overlay come allow
-# rules, hook entries and Codex standing rules.
+# Three load-bearing guards of `attach` that had no entry. The first is the `--machine`
+# gate -- a flag is a third member of the equivalence class `config/machine.py` gates
+# `KEELLINE_CONFIG` and `XDG_CONFIG_HOME` on, and this is the command that turns the machine file
+# into capability: the overlay root comes from it, and from the overlay come allow rules, hook
+# entries and Codex standing rules.
 [[mutation]]
 name = "attach honours --machine from a session nobody is sitting in front of"
 file = "src/keelline/attach/commands.py"
@@ -2817,7 +3074,7 @@ reddens = [
 ]
 
 # `memory.groups` is repository-authored and reaches no guard of its own (`config/paths.py`
-# names this lane as the one that has to call the containment itself). The entry decides a
+# leaves the containment to the module that consumes the field). The entry decides a
 # directory created inside the OVERLAY -- the one tree `attach` trusts -- so `fsops` refusing it
 # has to reach the caller as a refusal and not as silence.
 #
@@ -2881,9 +3138,9 @@ reddens = [
   "tests/test_snapshot.py::test_the_narrowed_git_walk_still_catches_a_write_to_each_stable_path",
 ]
 
-# And the other stable path outside the tuple: a hook dropped into `.git/hooks/` is the other
-# defect this guard exists to catch (§6.3's write-through-a-hook concern), on the branch that
-# walks a directory rather than probing named files.
+# And the other stable path outside the tuple: a hook dropped into `.git/hooks/` is the other defect
+# this guard exists to catch (a write that lands through a hook), on the branch that walks a
+# directory rather than probing named files.
 [[mutation]]
 name = "the stable-.git allowlist stops watching .git/hooks"
 file = "tests/snapshot.py"
@@ -2895,7 +3152,7 @@ reddens = [
   "tests/test_snapshot.py::test_the_narrowed_git_walk_still_catches_a_write_to_each_stable_path",
 ]
 
-# --- wave 3 install path: the review's eight attach/doctor findings ----------------------
+# --- install path: the review's eight attach/doctor findings -----------------------------
 #
 # `attach` owes four refusals before its first write, and the fourth was not where the other
 # three are: it lived in `_record_binding`, which runs after the ignore region, the Codex rule
@@ -2944,8 +3201,8 @@ reddens = [
   "tests/attach/test_detach.py::test_a_ledger_claiming_the_permissions_key_never_drops_the_owners_deny_rules",
 ]
 
-# §6.3's settings-file fallback is state that persists, on the one channel `memory/worktree`
-# calls "the one hop that leaves this lane's gate". A gate evaluated once at creation over such
+# The worktree's settings-file fallback is state that persists, on the one channel `memory/worktree`
+# calls the one hop that leaves `memory`'s gate. A gate evaluated once at creation over such
 # state is not a gate: the key outlived the trust record that allowed it, while the ledger that
 # `detach` reads was reset to `[]` around it.
 [[mutation]]
@@ -3014,13 +3271,13 @@ reddens = [
   "tests/memory/test_worktree.py::test_a_withdrawal_leaves_a_symlink_at_a_group_name_that_points_somewhere_else",
 ]
 
-# §12's own row, and the shape one existing checkout already had: a **real directory** at
-# `~/.claude/projects/<slug>/memory`. The harness's native reader finds it, reads nothing out of
-# it and reports no fault, so the installation looks attached and behaves like nothing. The row
-# was declared load-bearing and had a test, and nothing made the test prove it. The mutation
-# asks the path a question a real directory answers "no" to, which is the narrowest way to stop
-# the discriminator discriminating: every other shape this row reads reaches the same arm it did
-# before, so the one test that reddens is the one named for this state.
+# A named failure mode, and the shape one existing checkout already had: a **real directory** at
+# `~/.claude/projects/<slug>/memory`. The harness's native reader finds it, reads nothing out of it
+# and reports no fault, so the installation looks attached and behaves like nothing. The row was
+# declared load-bearing and had a test, and nothing made the test prove it. The mutation asks the
+# path a question a real directory answers "no" to, which is the narrowest way to stop the
+# discriminator discriminating: every other shape this row reads reaches the same arm it did before,
+# so the one test that reddens is the one named for this state.
 [[mutation]]
 name = "doctor stops telling a real directory from a link at the harness memory path"
 file = "src/keelline/doctor/checks.py"
@@ -3030,12 +3287,13 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_memory_path_that_is_a_real_directory_is_red_rather_than_ok",
 ]
 
-# DP4 in one line: `owned_ids` answers a `dict[str, str]`, so N entries sharing one id yield one
-# key and the same id under two events keeps only the last -- which deflates the claimed count
-# and inflates `foreign` by exactly the difference. `_entry_commands` walks positionally for that
-# reason, and the walk had a test and no entry. The mutation makes the walk key by id instead of
-# counting entries, which is precisely the defect DP4 names: the second entry vanishes, so the
-# count is wrong AND the grant comparison never sees the command hung on the borrowed id.
+# Positional counting in one line: `owned_ids` answers a `dict[str, str]`, so N entries sharing one
+# id yield one key and the same id under two events keeps only the last -- which deflates the
+# claimed count and inflates `foreign` by exactly the difference. `_entry_commands` walks
+# positionally for that reason, and the walk had a test and no entry. The mutation makes the walk
+# key by id instead of counting entries, which is precisely the defect positional counting exists to
+# prevent: the second entry vanishes, so the count is wrong AND the grant comparison never sees the
+# command hung on the borrowed id.
 [[mutation]]
 name = "doctor counts hook entries by marker id rather than by position"
 file = "src/keelline/doctor/checks.py"
@@ -3051,9 +3309,9 @@ reddens = [
   "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
 ]
 
-# The harness memory path is the one channel §6.3 uses to reach the model, and this row is the
-# only thing that reports on it. The shape was computed into `detail` and then discarded for the
-# status, and the link's target was never compared — so "the harness memory path is a link to
+# The harness memory path is the one channel attached memory uses to reach the model, and this row
+# is the only thing that reports on it. The shape was computed into `detail` and then discarded for
+# the status, and the link's target was never compared — so "the harness memory path is a link to
 # the store" was printed, in green, for a dangling link and for a link to anybody's directory.
 [[mutation]]
 name = "doctor stops asking what the harness memory path points at"
@@ -3125,11 +3383,12 @@ reddens = [
   "tests/attach/test_commands.py::test_nothing_the_ledger_holds_reaches_detachs_line_or_its_json",
 ]
 
-# Finding 5's defect, one field over. `.keelline/local/attach.json` is a path a clone can commit,
-# so a repository that commits a marked hook entry *and* a ledger recording that entry's id got
-# `hook-entries` to answer "all accounted for" — a committable file silencing the one check whose
-# entire purpose is that nobody's entries go unlisted. An id is credible only if the entry it
-# names is one the OVERLAY currently grants, and the overlay is trusted by construction (DP3).
+# The committable-ledger defect of the `detach` entry further up, one field over.
+# `.keelline/local/attach.json` is a path a clone can commit, so a repository that commits a marked
+# hook entry *and* a ledger recording that entry's id got `hook-entries` to answer "all accounted
+# for" — a committable file silencing the one check whose entire purpose is that nobody's entries go
+# unlisted. An id is credible only if the entry it names is one the OVERLAY currently grants, and
+# the overlay is trusted by construction: its root comes from the machine file.
 [[mutation]]
 name = "the attach ledger vouches for a hook entry on its own"
 file = "src/keelline/doctor/checks.py"
@@ -3161,12 +3420,13 @@ reddens = [
   "tests/doctor/test_checks.py::test_an_overlay_that_cannot_be_asked_vouches_for_nothing_and_says_so",
 ]
 
-# S8, and the anchor half of it. `git` is a program this file CHOOSES, resolved through the same
-# `PATH` a committed `.claude/settings.json` `env` block sets -- so on the Codex hot path, where
-# `CLAUDE_PROJECT_DIR` is unset and `git` is the only anchor, a clone that ships a `git` had that
-# binary EXECUTED on every hook invocation, before any guard of ours, and its stdout became the
-# root. Gating `KEELLINE_PYTHON_CANDIDATES` and containing the interpreter while the anchor was
-# itself environment-chosen is "a redirect with a longer name" for the third time in one file.
+# The anchor half of the interpreter containment. `git` is a program this file CHOOSES, resolved
+# through the same `PATH` a committed `.claude/settings.json` `env` block sets -- so on the Codex
+# hot path, where `CLAUDE_PROJECT_DIR` is unset and `git` is the only anchor, a clone that ships a
+# `git` had that binary EXECUTED on every hook invocation, before any guard of ours, and its stdout
+# became the root. Gating `KEELLINE_PYTHON_CANDIDATES` and containing the interpreter while the
+# anchor was itself environment-chosen is "a redirect with a longer name" for the third time in one
+# file.
 [[mutation]]
 name = "the wrapper resolves git through PATH again"
 file = "hooks/run-hook.sh"
@@ -3189,13 +3449,13 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_no_git_at_any_absolute_path_is_a_token_rather_than_a_silent_run[open-0]",
 ]
 
-# The other half of S8: the containment was measured against `CLAUDE_PROJECT_DIR` alone, which
-# reaches this process from the very `env` block it exists to defeat. Measured on the shipped
+# The other half of the interpreter containment: it was measured against `CLAUDE_PROJECT_DIR` alone,
+# which reaches this process from the very `env` block it exists to defeat. Measured on the shipped
 # wrapper: `PATH=<clone>` with `CLAUDE_PROJECT_DIR=<outside the clone>` made the clone's own
-# `python3` "outside the project root" and it ran the launcher. Git's answer enters the
-# containment as the checkout list, so this asks the wrapper to stop asking `git` where the
-# other checkouts are and keep only the root it is standing in -- which a run from a linked
-# worktree can tell apart, and a run in the main checkout cannot.
+# `python3` "outside the project root" and it ran the launcher. Git's answer enters the containment
+# as the checkout list, so this asks the wrapper to stop asking `git` where the other checkouts are
+# and keep only the root it is standing in -- which a run from a linked worktree can tell apart, and
+# a run in the main checkout cannot.
 #
 # This entry used to name the separate `under_root "$dir" "$git_project"` arm in `in_project`,
 # and it SURVIVED: the checkout list contains the git root, so the arm was a duplicate and no
@@ -3294,10 +3554,9 @@ reddens = [
 [[mutation]]
 name = "detach asks git where the checkouts are after it has already withdrawn"
 file = "src/keelline/attach/write.py"
-# Re-pointed in wave 4: DC4 put the manifest's answer between the anchor loop and the region
-# read, so the block this moves is two lines longer. What it proves is unchanged -- `git` is
-# asked before the first withdrawal, and a `git` that cannot run must not strand a half-detached
-# repository.
+# The block this moves runs from the anchor loop through the manifest's answer to the region read.
+# What it proves: `git` is asked before the first withdrawal, and a `git` that cannot run must not
+# strand a half-detached repository.
 before = '''    checkouts = _checkouts(root)
     for tree in checkouts:
         harness_anchor(tree, home)
@@ -3314,11 +3573,11 @@ reddens = [
 
 # --- setup and overlay: the structural refusal above the first write (PR 12 review) ---
 
-# Fix round 1, item 2, which had a test named for it and no mutation: `claude plugin install
-# superpowers@obra` on a fresh machine always failed, because a plugin cannot be installed from a
-# marketplace that was never registered. The order is the fix, and the test asserted membership —
-# `… in runner.calls` — so the swapped loops made every call it looked for and stayed green. This
-# entry expresses the *move*, not a deletion: both calls still happen, in the wrong order.
+# A defect that had a test named for it and no mutation: `claude plugin install superpowers@obra` on
+# a fresh machine always failed, because a plugin cannot be installed from a marketplace that was
+# never registered. The order is the fix, and the test asserted membership — `… in runner.calls` —
+# so the swapped loops made every call it looked for and stayed green. This entry expresses the
+# *move*, not a deletion: both calls still happen, in the wrong order.
 [[mutation]]
 name = "a plugin is installed before its marketplace is registered"
 file = "src/keelline/setup/run.py"
@@ -3381,7 +3640,7 @@ before = """        destination, account = target_root(home, owner, name)
 after = "        destination, account = target_root(home, owner, name)"
 reddens = ["tests/setup/test_setup.py::test_a_created_overlay_is_refused_before_the_repository_exists"]
 
-# `CONTRIBUTING`'s containment rule has two stages, and this lane had only the second: the
+# `CONTRIBUTING`'s containment rule has two stages, and `setup` had only the second: the
 # `O_NOFOLLOW` walk refused a symlinked `~/.claude` with `UnsafePath`, which `cli.run` renders as
 # `internal error`, after the machine file was already written. `config.paths.contained` is the
 # user-facing half. The mutation leaves the walk, so the run still refuses — with no link named,
@@ -3426,10 +3685,9 @@ reddens = [
   "tests/overlay/test_upgrade.py::test_the_cli_exits_two_rather_than_zero_on_a_directory_that_is_not_an_overlay",
 ]
 
-# The global constraints make `gh` optional and a missing binary "a reported finding, never a
-# traceback" — and never a misattributed one. Without this arm the command launches two more
-# subprocesses, can sleep ten seconds, and blames the owner's GitHub authentication for a binary
-# that was never on PATH.
+# `gh` is an optional binary, and a missing one is a reported finding, never a traceback — and never
+# a misattributed one. Without this arm the command launches two more subprocesses, can sleep ten
+# seconds, and blames the owner's GitHub authentication for a binary that was never on PATH.
 [[mutation]]
 name = "overlay create --template asks GitHub about a `gh` that could not run"
 file = "src/keelline/overlay/create.py"
@@ -3552,9 +3810,9 @@ reddens = [
   "tests/setup/test_setup.py::test_setup_writes_the_machine_file_and_the_deny_rules",
 ]
 
-# The cheap half of §6.4's promise that the overlay never holds a credential. The assertion was
-# `".env" in text`, and the word appears in the file's own explanatory comment -- so commenting out
-# every pattern left it green with nothing ignored at all. This is that mutation.
+# The cheap half of the promise that the overlay never holds a credential. The assertion was `".env"
+# in text`, and the word appears in the file's own explanatory comment -- so commenting out every
+# pattern left it green with nothing ignored at all. This is that mutation.
 [[mutation]]
 name = "the overlay template stops ignoring env files"
 file = "src/keelline/templates/overlay/.gitignore"
@@ -3598,10 +3856,10 @@ reddens = [
   "tests/overlay/test_template.py::test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_token",
 ]
 
-# Finding 23: the same argument the `rev:` entry above makes, one file over and with a token
-# attached. A major tag is a name its owner can move, so `@v4` resolving to different code
-# tomorrow is somebody else choosing what runs against a repository holding the owner's rules and
-# notes. D16 names a full-length commit sha as the only immutable reference Actions has.
+# The same argument the `rev:` entry above makes, one file over and with a token attached. A major
+# tag is a name its owner can move, so `@v4` resolving to different code tomorrow is somebody else
+# choosing what runs against a repository holding the owner's rules and notes. A full-length commit
+# sha is the only immutable reference Actions has (principle 9).
 [[mutation]]
 name = "the overlay's secret scan follows a moveable action tag"
 file = "src/keelline/templates/overlay/.github/workflows/scan.yml"
@@ -3611,9 +3869,10 @@ reddens = [
   "tests/overlay/test_template.py::test_the_scan_workflow_pins_every_action_at_an_immutable_revision",
 ]
 
-# §3's other half for the template: a hook shipped by the author executes on every machine that
-# creates an instance. The assertion examined only files carrying a `hooks` key, so a hook under a
-# bare top-level event key -- the shape `.codex/hooks.json` uses -- was not examined at all.
+# The author-side trust rule's other half for the template: a hook shipped by the author executes on
+# every machine that creates an instance. The assertion examined only files carrying a `hooks` key,
+# so a hook under a bare top-level event key -- the shape `.codex/hooks.json` uses -- was not
+# examined at all.
 [[mutation]]
 name = "the overlay template ships a hook under a bare event key"
 file = "src/keelline/templates/overlay/common/claude/hooks.json"
@@ -3677,9 +3936,9 @@ reddens = [
   "tests/hooks/test_hooks_json.py::test_every_entry_is_filed_under_the_event_its_command_dispatches",
 ]
 
-# --- wave 3 install path: the cross-area import boundary ---------------------------------
+# --- install path: the cross-area import boundary ----------------------------------------
 #
-# CONTRIBUTING makes `api.py` the only cross-area import surface, and until this lane nothing
+# CONTRIBUTING makes `api.py` the only cross-area import surface, and before this guard nothing
 # asserted it: `memory/commands.py` reached into `hooks.dispatch` and `doctor/checks.py` into
 # `hooks.sink`, and both merged green. The guard now walks every module under `src/keelline/`.
 # This mutation puts a violation back — `doctor` reading the setup area's private `machine`
@@ -3781,15 +4040,15 @@ reddens = [
   "tests/test_areas.py::test_the_boundary_rule_resolves_a_relative_import_before_judging_it",
 ]
 
-# Three claims this branch made true were held true by reading, and one had already drifted back:
-# the template README said "fifteen files" while a rendered overlay has sixteen — the scaffold
-# engine writes `.keelline/manifest.json`, which is in neither of that README's tables and is the
-# file `overlay upgrade` keys on. The denominator is `OVERLAY_FILES` plus that path, so a lane
-# that adds a sixteenth template file now reddens the document instead of outliving it. Wave F
-# was that lane — `.github/dependabot.yml` is the sixteenth shipped file and the seventeenth
-# rendered one — and the count below moved with it. This entry is an inline count too, so it has
-# to move as well; the unfiltered oracle is what says so, because a run filtered to the lane's
-# own entries cannot see one an earlier lane declared and this change invalidated.
+# Three claims were held true by reading, and one had already drifted back: the template README said
+# "fifteen files" while a rendered overlay has sixteen — the scaffold engine writes
+# `.keelline/manifest.json`, which is in neither of that README's tables and is the file `overlay
+# upgrade` keys on. The denominator is `OVERLAY_FILES` plus that path, so a change that adds a
+# template file now reddens the document instead of outliving it. `.github/dependabot.yml` is the
+# sixteenth shipped file and the seventeenth rendered one, and the count below moved with it. This
+# entry is an inline count too, so it has to move as well; the unfiltered oracle is what says so,
+# because a run filtered to one change's own entries cannot see an entry declared earlier that the
+# change invalidated.
 [[mutation]]
 name = "the overlay README stops counting the manifest"
 file = "src/keelline/templates/overlay/README.md"
@@ -3859,9 +4118,9 @@ reddens = ["tests/hooks/test_sink.py::test_a_relative_data_root_is_no_sink_at_al
 [[mutation]]
 name = "detach stops reading the ignore region before its first withdrawal"
 file = "src/keelline/attach/write.py"
-# Re-pointed in wave 4: the read is now conditional on what the manifest records (DC4). The
-# mutation still takes the read away entirely, which is what leaves a region that cannot be
-# withdrawn to be discovered after everything else is gone.
+# The read is conditional on what the manifest records. The mutation takes the read away entirely,
+# which is what leaves a region that cannot be withdrawn to be discovered after everything else is
+# gone.
 before = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)"
 after = "    ignore_remainder = None"
 reddens = [
@@ -3934,10 +4193,10 @@ before = '    for name, table in sorted(tables.items(), key=lambda item: item[0]
 after = "    for name, table in tables.items():"
 reddens = ["tests/test_tomlout.py::test_the_root_table_is_hoisted_when_it_is_not_given_first"]
 
-# DC1: the oracle proves HEAD in a detached worktree. All three entries are on the run itself,
-# so a regression to in-place mutation — or a scratch `src` that does not precede the editable
-# install on sys.path, or a dirty-tree sweep that forgets the named tests — is a finding rather
-# than a quiet wrong answer.
+# The oracle proves HEAD in a detached worktree. All three entries are on the run itself, so a
+# regression to in-place mutation — or a scratch `src` that does not precede the editable install on
+# sys.path, or a dirty-tree sweep that forgets the named tests — is a finding rather than a quiet
+# wrong answer.
 [[mutation]]
 name = "the oracle collects pytest from the working tree again"
 file = "scripts/mutation_oracle.py"
@@ -4004,7 +4263,8 @@ reddens = [
   "tests/overlay/test_template.py::test_the_capability_files_are_spelled_once_and_are_shipped_files",
 ]
 
-# Premise 2: an empty result used to spend a once-per-context delivery.
+# A once-per-context handler is marked on delivery, not on any run: an empty result used to spend
+# its one delivery.
 [[mutation]]
 name = "the dispatcher marks a once-per-context handler on any run again"
 file = "src/keelline/hooks/dispatch.py"
@@ -4014,10 +4274,10 @@ reddens = [
   "tests/guards/test_hooks.py::test_an_unrelated_call_does_not_consume_the_one_delivery",
 ]
 
-# Fix round 1, item 1: the delivery is banked BELOW the two validations that can discard the
-# result. Marking it above them spent a once-per-context handler's single delivery on a result
-# that then raised into the per-handler `except`. The mutation re-adds the early mark rather
-# than moving the late one, so one substituted line restores the whole defect.
+# The delivery is banked BELOW the two validations that can discard the result. Marking it above
+# them spent a once-per-context handler's single delivery on a result that then raised into the
+# per-handler `except`. The mutation re-adds the early mark rather than moving the late one, so one
+# substituted line restores the whole defect.
 [[mutation]]
 name = "a once-per-context delivery is banked before the result is validated"
 file = "src/keelline/hooks/dispatch.py"
@@ -4029,9 +4289,9 @@ reddens = [
   "tests/hooks/test_dispatch.py::test_a_once_per_context_handler_whose_result_is_rejected_keeps_its_one_delivery",
 ]
 
-# DC3: the registry is the only place a check's name is spelled. A stray literal equal to a
-# registry key is exactly the state the refactor removed — a name a row could come to disagree
-# with — so the mutation re-introduces one rather than deleting a guard.
+# The registry is the only place a check's name is spelled. A stray literal equal to a registry key
+# is exactly the state the refactor removed — a name a row could come to disagree with — so the
+# mutation re-introduces one rather than deleting a guard.
 [[mutation]]
 name = "a doctor check spells its own name again"
 file = "src/keelline/doctor/checks.py"
@@ -4041,8 +4301,8 @@ reddens = [
   "tests/doctor/test_checks.py::test_every_registry_name_is_spelled_exactly_once_in_the_module",
 ]
 
-# R5: `.keelline/local/attach.json` is a file a clone can commit, so the row asks the overlay —
-# the trusted side — whether a binding stands behind it.
+# `.keelline/local/attach.json` is a file a clone can commit, so the row asks the overlay — the
+# trusted side — whether a binding stands behind it.
 [[mutation]]
 name = "a committed ledger counts as an attach again"
 file = "src/keelline/doctor/checks.py"
@@ -4052,9 +4312,9 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_ledger_with_no_binding_in_the_overlay_is_a_warning_and_never_an_attach",
 ]
 
-# DC4: one sentence per shared flag, held to every parser by a walk over the real parser rather
-# than by a convention. The mutation drifts `common_flags`' own `--machine` sentence, which is
-# what every `--machine` but `setup`'s inherits.
+# One sentence per shared flag, held to every parser by a walk over the real parser rather than by a
+# convention. The mutation drifts `common_flags`' own `--machine` sentence, which is what every
+# `--machine` but `setup`'s inherits.
 [[mutation]]
 name = "a shared flag's help drifts from the one sentence"
 file = "src/keelline/command.py"
@@ -4064,9 +4324,9 @@ reddens = [
   "tests/test_command.py::test_every_shared_flag_carries_the_one_help_string_or_a_named_exception",
 ]
 
-# R3: `--settings` names the settings file itself, for the per-file stow layout no `--home` can
-# express. Ignoring it and writing under `home` is the defect the flag exists to remove, and it
-# is a silent one: the command exits 0 into a file no reader reads.
+# `--settings` names the settings file itself, for the per-file stow layout no `--home` can express.
+# Ignoring it and writing under `home` is the defect the flag exists to remove, and it is a silent
+# one: the command exits 0 into a file no reader reads.
 [[mutation]]
 name = "setup ignores --settings and writes under home"
 file = "src/keelline/setup/run.py"
@@ -4076,11 +4336,11 @@ reddens = [
   "tests/setup/test_setup.py::test_a_per_file_settings_link_is_written_through_settings_and_not_under_home",
 ]
 
-# D4: the walkthrough runs the launcher, so what it asserts about `pre-commit` is what a real
-# `PATH` lookup ran and not what a stub recorded. `overlay init` installs the overlay's
-# commit-time secret scan, and a verb that is not `install` installs nothing while every exit
-# code stays 0 -- the quiet half of the failure, which is why the assertion is on the logged
-# command rather than on the command's success.
+# The walkthrough runs the launcher, so what it asserts about `pre-commit` is what a real `PATH`
+# lookup ran and not what a stub recorded. `overlay init` installs the overlay's commit-time secret
+# scan, and a verb that is not `install` installs nothing while every exit code stays 0 -- the quiet
+# half of the failure, which is why the assertion is on the logged command rather than on the
+# command's success.
 [[mutation]]
 name = "the overlay's secret scan is asked for its version instead of installed"
 file = "src/keelline/overlay/create.py"
@@ -4090,11 +4350,10 @@ reddens = [
   "tests/test_install_path.py::test_setup_then_overlay_then_attach_then_a_session_sees_memory",
 ]
 
-# Fix round 1, item 1. `read_binding` refuses for two different reasons and `origin_remote`
-# raises for a third, and all three used to collapse into one `None` that the `attached` row
-# read as "attached". These two entries prove the three are told apart: the first turns the
-# repository's own doing into a skip nobody acts on, the second turns a missing overlay into an
-# accusation against the repository.
+# `read_binding` refuses for two different reasons and `origin_remote` raises for a third, and all
+# three used to collapse into one `None` that the `attached` row read as "attached". These two
+# entries prove the three are told apart: the first turns the repository's own doing into a skip
+# nobody acts on, the second turns a missing overlay into an accusation against the repository.
 [[mutation]]
 name = "a ledger naming a store the overlay does not permit is excused as our own input"
 file = "src/keelline/doctor/checks.py"
@@ -4115,9 +4374,9 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_attached",
 ]
 
-# Fix round 1, item 2. `UnsafePath` is not the only `OSError` a settings write can raise, and
-# the two that are not it reached `cli.run`'s final handler as `internal error`. The mutation
-# re-narrows the arm to the class that was already caught, which is the defect exactly.
+# `UnsafePath` is not the only `OSError` a settings write can raise, and the two that are not it
+# reached `cli.run`'s final handler as `internal error`. The mutation re-narrows the arm to the
+# class that was already caught, which is the defect exactly.
 [[mutation]]
 name = "a settings write's other OSErrors escape as an internal error again"
 file = "src/keelline/setup/run.py"
@@ -4130,9 +4389,8 @@ reddens = [
   "tests/setup/test_setup.py::test_a_settings_path_inside_a_symlinked_directory_is_a_refusal_and_not_an_internal_error",
 ]
 
-# Fix round 1, item 3. `--home` and `--machine` expand a leading `~` and `--settings` did not,
-# while the README row this flag ships advertises one. An agent harness passes argv as a list,
-# so nothing else expands it.
+# `--home` and `--machine` expand a leading `~` and `--settings` did not, while the README row this
+# flag ships advertises one. An agent harness passes argv as a list, so nothing else expands it.
 [[mutation]]
 name = "setup stops expanding a leading ~ in --settings"
 file = "src/keelline/setup/commands.py"
@@ -4142,8 +4400,8 @@ reddens = [
   "tests/setup/test_commands.py::test_a_tilde_in_settings_is_expanded_the_way_home_and_machine_already_are",
 ]
 
-# Fix round 1, item 4. The `## Shared flags` tables are the constants, held row by row. The
-# mutation is in the document rather than in the source, because the document is what drifted.
+# The `## Shared flags` tables are the constants, held row by row. The mutation is in the document
+# rather than in the source, because the document is what drifted.
 [[mutation]]
 name = "a shared flag's sentence is spelled a second time in docs/cli.md"
 file = "docs/cli.md"
@@ -4153,7 +4411,7 @@ reddens = [
   "tests/test_documents.py::test_the_shared_flag_tables_are_the_constants_and_not_a_second_spelling",
 ]
 
-# N1: a link created by path follows a parent that became a symlink after the check.
+# A link created by path follows a parent that became a symlink after the check.
 [[mutation]]
 name = "a link is created by path, outside the walk"
 file = "src/keelline/fsops.py"
@@ -4181,10 +4439,10 @@ reddens = [
   "tests/memory/test_worktree.py::test_the_worktree_module_writes_links_only_through_fsops",
 ]
 
-# Fix round 1, item 1. The anchor is found and never created, and a refusal is the whole of
-# what that decision buys. Without the check the create direction raised a bare
-# `FileNotFoundError` the hook rendered as "0 links made", and the withdraw direction answered
-# `False` and exited 0 — an anchor that is not there reading as success.
+# The anchor is found and never created, and a refusal is the whole of what that decision buys.
+# Without the check the create direction raised a bare `FileNotFoundError` the hook rendered as "0
+# links made", and the withdraw direction answered `False` and exited 0 — an anchor that is not
+# there reading as success.
 [[mutation]]
 name = "a home that is not there stops being a refusal"
 file = "src/keelline/memory/worktree.py"
@@ -4195,8 +4453,7 @@ reddens = [
   "tests/memory/test_worktree.py::test_a_withdrawal_against_a_home_that_is_not_there_refuses_rather_than_reporting_nothing",
 ]
 
-# Fix round 1, item 1, the withdrawal call site on its own: the check exists and `detach_main`
-# stops asking for it.
+# The withdrawal call site on its own: the check exists and `detach_main` stops asking for it.
 [[mutation]]
 name = "the withdrawal takes the anchor without asking whether it is there"
 file = "src/keelline/memory/worktree.py"
@@ -4206,8 +4463,8 @@ reddens = [
   "tests/memory/test_worktree.py::test_a_withdrawal_against_a_home_that_is_not_there_refuses_rather_than_reporting_nothing",
 ]
 
-# Fix round 1, item 2. The source pin used to read three dot-methods and nothing else, so the
-# path-based write N1 is about — spelled `os.symlink` — walked straight through it.
+# The source pin used to read three dot-methods and nothing else, so the path-based link creation it
+# exists to forbid — spelled `os.symlink` — walked straight through it.
 [[mutation]]
 name = "the link tree creates a link by path without a dot-method"
 file = "src/keelline/memory/worktree.py"
@@ -4217,8 +4474,8 @@ reddens = [
   "tests/memory/test_worktree.py::test_the_worktree_module_writes_links_only_through_fsops",
 ]
 
-# Fix round 1, item 5. `link`'s docstring says the base is created by the first link that goes
-# into it and not before; this is the line that used to create it whatever happened.
+# `link`'s docstring says the base is created by the first link that goes into it and not before;
+# this is the line that used to create it whatever happened.
 [[mutation]]
 name = "the worktree tree's base directory is created again whether or not anything links"
 file = "src/keelline/memory/worktree.py"
@@ -4228,9 +4485,9 @@ reddens = [
   "tests/memory/test_worktree.py::test_a_tree_with_nothing_to_link_leaves_no_base_directory_behind",
 ]
 
-# D5. `tar` preserves the mode and a downstream packager unpacks it: a wrapper at 0644 exits
-# 126 for every hook entry, which Claude Code reports as a permission error rather than as a
-# broken install. Nothing in `tests/` can see this — only the built artifact can.
+# The built artifact's modes. `tar` preserves the mode and a downstream packager unpacks it: a
+# wrapper at 0644 exits 126 for every hook entry, which Claude Code reports as a permission error
+# rather than as a broken install. Nothing in `tests/` can see this — only the built artifact can.
 [[mutation]]
 name = "the sdist check stops reading the wrapper's mode"
 file = "scripts/check_artifacts.py"
@@ -4240,9 +4497,9 @@ reddens = [
   "tests/scripts/test_check_artifacts.py::test_a_wrapper_that_lost_its_executable_bit_in_the_sdist_is_named",
 ]
 
-# Fix round 2, item 1. `rendered` with the directory omitted used to be reinterpreted as a
-# dist path: the length check was part of the arm's condition, so a bare `rendered` fell
-# through and was globbed as a directory name.
+# `rendered` with the directory omitted used to be reinterpreted as a dist path: the length check
+# was part of the arm's condition, so a bare `rendered` fell through and was globbed as a directory
+# name.
 [[mutation]]
 name = "a rendered with no directory is globbed as a dist path again"
 file = "scripts/check_artifacts.py"
@@ -4252,9 +4509,9 @@ reddens = [
   "tests/scripts/test_check_artifacts.py::test_rendered_without_a_directory_is_the_usage_message_and_not_a_dist_walk",
 ]
 
-# DC9, run 3. The merge-base and the base's tip are the same commit only until the base
-# advances; after that, archiving the tip puts commits that are not "before this change" into
-# the before side and the verdict silently answers a different question.
+# `attribute`'s run 3. The merge-base and the base's tip are the same commit only until the base
+# advances; after that, archiving the tip puts commits that are not "before this change" into the
+# before side and the verdict silently answers a different question.
 [[mutation]]
 name = "attribute compares against the base's tip instead of the merge-base"
 file = "src/keelline/guards/attribute.py"
@@ -4264,9 +4521,9 @@ reddens = [
   "tests/guards/test_attribute.py::test_the_three_runs_land_in_the_working_tree_head_and_the_merge_base",
 ]
 
-# DC9. A run that never executed has no exit code to score: the seam answers TIMED_OUT and
-# NOT_FOUND, and both are non-zero, so scoring them reads as "fails on both" — the one wrong
-# answer a tool whose output goes into a ledger entry must not give.
+# A run that never executed has no exit code to score: the seam answers TIMED_OUT and NOT_FOUND, and
+# both are non-zero, so scoring them reads as "fails on both" — the one wrong answer a tool whose
+# output goes into a ledger entry must not give.
 [[mutation]]
 name = "attribute scores a run that never executed"
 file = "src/keelline/guards/attribute.py"
@@ -4274,8 +4531,8 @@ before = "    if done.code in (TIMED_OUT, NOT_FOUND):"
 after = "    if False:"
 reddens = ["tests/guards/test_attribute.py::test_a_run_that_did_not_execute_is_a_failure_never_a_verdict"]
 
-# DC9, the verdict table. The two arms that differ only in the merge-base's code are the pair
-# a reader acts on: one says "your change", the other says "not your change".
+# `attribute`'s verdict table. The two arms that differ only in the merge-base's code are the pair a
+# reader acts on: one says "your change", the other says "not your change".
 [[mutation]]
 name = "attribute swaps the this-change and pre-existing verdicts"
 file = "src/keelline/guards/attribute.py"
@@ -4283,9 +4540,9 @@ before = "    if head != 0 and base != 0:\n        return VERDICTS[0]\n    if he
 after = "    if head != 0 and base != 0:\n        return VERDICTS[1]\n    if head != 0 and base == 0:\n        return VERDICTS[0]"
 reddens = ["tests/guards/test_attribute.py::test_each_verdict_follows_from_its_exit_codes"]
 
-# §3: a repository- or argument-derived value shaped like an option must be refused above the
-# first subprocess. `--base` reaches `git merge-base` as a positional argument, and git reads a
-# leading `-` as an option (`--upload-pack=` among them).
+# A repository- or argument-derived value shaped like an option must be refused above the first
+# subprocess. `--base` reaches `git merge-base` as a positional argument, and git reads a leading
+# `-` as an option (`--upload-pack=` among them).
 [[mutation]]
 name = "attribute hands a -shaped --base straight to git"
 file = "src/keelline/guards/attribute.py"
@@ -4295,9 +4552,9 @@ reddens = [
   "tests/guards/test_commands.py::test_test_attribute_refuses_a_base_shaped_like_an_option",
 ]
 
-# DC9, `_extract`. `git archive` honours the archived tree's own `.gitattributes`, which is
-# versioned: without this comparison runs 2 and 3 execute against trees missing files the
-# working tree has, and the verdict answers a question nobody asked.
+# `_extract`. `git archive` honours the archived tree's own `.gitattributes`, which is versioned:
+# without this comparison runs 2 and 3 execute against trees missing files the working tree has, and
+# the verdict answers a question nobody asked.
 [[mutation]]
 name = "attribute lets an export rule shrink the tree it compares"
 file = "src/keelline/guards/attribute.py"
@@ -4307,11 +4564,11 @@ reddens = [
   "tests/guards/test_attribute.py::test_an_archive_an_export_rule_shrank_is_a_failure_and_not_a_smaller_tree",
 ]
 
-# Fix round 1, item 1. The listing and the extraction are compared as SETS OF PATHS, and the
-# listing has to be read the pedantic way or the guard fires on a healthy tree and blames a
-# `.gitattributes` rule that is not there. Two lines, two mutations, because the two halves
-# fail differently: `split()` breaks `sub dir/a b.txt` into three phantoms, and without `-z`
-# `ls-tree` quotes a name carrying a quote or a non-ASCII byte.
+# The listing and the extraction are compared as SETS OF PATHS, and the listing has to be read the
+# pedantic way or the guard fires on a healthy tree and blames a `.gitattributes` rule that is not
+# there. Two lines, two mutations, because the two halves fail differently: `split()` breaks `sub
+# dir/a b.txt` into three phantoms, and without `-z` `ls-tree` quotes a name carrying a quote or a
+# non-ASCII byte.
 [[mutation]]
 name = "attribute reads the tracked listing without -z, so git quotes the awkward names"
 file = "src/keelline/guards/attribute.py"
@@ -4332,11 +4589,11 @@ reddens = [
   "tests/guards/test_attribute.py::test_a_spaced_path_a_quoted_one_and_a_dangling_symlink_are_not_missing_files",
 ]
 
-# Fix round 1, item 1, the second source, and fix round 2, item 1, the third. Presence is asked
-# of each expected name rather than inferred from a walk: `exists()` answers for a submodule
-# gitlink, which `git archive` materialises as an empty DIRECTORY, and `is_symlink()` for a
-# tracked dangling link. Dropping either clause restores one of the two false positives, and
-# each has its own fixture, so the two mutations redden different tests.
+# The second and third sources of a false missing file. Presence is asked of each expected name
+# rather than inferred from a walk: `exists()` answers for a submodule gitlink, which `git archive`
+# materialises as an empty DIRECTORY, and `is_symlink()` for a tracked dangling link. Dropping
+# either clause restores one of the two false positives, and each has its own fixture, so the two
+# mutations redden different tests.
 [[mutation]]
 name = "attribute asks is_file, so a submodule gitlink reads as a missing file"
 file = "src/keelline/guards/attribute.py"
@@ -4355,9 +4612,9 @@ reddens = [
   "tests/guards/test_attribute.py::test_a_spaced_path_a_quoted_one_and_a_dangling_symlink_are_not_missing_files",
 ]
 
-# Fix round 1, item 2. Every external program is optional at runtime and a missing binary is a
-# reported finding, never a traceback: `gitenv.git_run` answers `(-1, "")` and `runner` answers
-# `Completed(NOT_FOUND, ...)`. This was the one launch in the module with nothing around it.
+# Every external program is optional at runtime and a missing binary is a reported finding, never a
+# traceback: `gitenv.git_run` answers `(-1, "")` and `runner` answers `Completed(NOT_FOUND, ...)`.
+# This was the one launch in the module with nothing around it.
 [[mutation]]
 name = "attribute lets a missing tar escape as a traceback"
 file = "src/keelline/guards/attribute.py"
@@ -4472,9 +4729,9 @@ reddens = [
   "tests/test_neutral.py::test_the_gate_reads_the_whole_tree",
 ]
 
-# Wave F, Task 16. The tag is the seventh version source, and the one a release is actually
-# created from. Accept any tag and the gate that exists to say "one version everywhere"
-# stops saying it about the only claim a user ever sees.
+# The tag is the seventh version source, and the one a release is actually created from. Accept any
+# tag and the gate that exists to say "one version everywhere" stops saying it about the only claim
+# a user ever sees.
 [[mutation]]
 name = "release check accepts a tag naming another version"
 file = "src/keelline/release/versions.py"
@@ -4504,9 +4761,9 @@ reddens = [
   "tests/release/test_notes.py::test_a_version_that_is_not_the_projects_is_refused_before_anything_runs",
 ]
 
-# Wave F, Task 17. `drift` walks the tree and the record and compares them. Compare the record
-# to itself and every answer is "no drift" — the shape the `files` check skipped for years
-# rather than ship, because a check that compares a file against itself is worse than none.
+# `drift` walks the tree and the record and compares them. Compare the record to itself and every
+# answer is "no drift" — the shape the `files` check skipped for years rather than ship, because a
+# check that compares a file against itself is worse than none.
 [[mutation]]
 name = "the release record is compared against itself"
 file = "src/keelline/release/hashes.py"
@@ -4526,9 +4783,9 @@ reddens = [
   "tests/doctor/test_checks.py::test_installed_files_that_match_the_release_record_are_green_and_a_changed_one_is_red",
 ]
 
-# Wave F, Task 18. The template's pins are full-length shas and a sha rots in silence; the
-# Dependabot file is the only thing that moves them. Point it at another ecosystem and it
-# watches nothing while still looking like a configuration.
+# The template's pins are full-length shas and a sha rots in silence; the Dependabot file is the
+# only thing that moves them. Point it at another ecosystem and it watches nothing while still
+# looking like a configuration.
 [[mutation]]
 name = "the template's dependabot configuration stops naming the actions ecosystem"
 file = "src/keelline/templates/overlay/.github/dependabot.yml"
@@ -4536,7 +4793,7 @@ before = "  - package-ecosystem: github-actions"
 after = "  - package-ecosystem: npm"
 reddens = ["tests/overlay/test_template.py::test_the_template_ships_a_dependabot_configuration_for_its_pinned_actions"]
 
-# DC6's gate, and the whole reason the command has one. Remove it and the documented dry run
+# The `--yes` gate, and the whole reason the command has one. Remove it and the documented dry run
 # creates a public repository on the owner's account and pushes a tree to it.
 [[mutation]]
 name = "publish-template pushes without --yes"
@@ -4548,8 +4805,8 @@ reddens = [
   "tests/overlay/test_publish.py::test_without_yes_no_repository_is_created_or_marked",
 ]
 
-# D1 makes the template the PUBLIC half: a private template is one no other account can
-# generate from, and `overlay create --template` fails against it for everyone but the owner.
+# The template is the PUBLIC half: a private template is one no other account can generate from, and
+# `overlay create --template` fails against it for everyone but the owner.
 [[mutation]]
 name = "publish-template creates the template repository private"
 file = "src/keelline/overlay/publish.py"
@@ -4557,8 +4814,7 @@ before = '            runner, ["repo", "create", slug, "--public", "--descriptio
 after = '            runner, ["repo", "create", slug, "--private", "--description", DESCRIPTION], cwd'
 reddens = ["tests/overlay/test_publish.py::test_a_missing_repository_is_created_public_and_marked_as_a_template"]
 
-# Wave F, fix round 1. The five guards the wave shipped without an entry, and one the reviewer
-# found asserting nothing.
+# Five guards that shipped without an entry, and one a review found asserting nothing.
 
 # `doctor files`' own arm for a record that is present and is not a record. `_guarded` reds
 # every non-`OSError` exception, so letting `UnreadableRecord` escape still produces a red row
@@ -4603,9 +4859,9 @@ before = "    if len(found) != len(HASHED_FILES):"
 after = "    if False:"
 reddens = ["tests/release/test_hashes.py::test_a_tree_missing_a_shipped_file_cannot_be_recorded_at_all"]
 
-# DC6: an existing repository under the given name that is not public is refused, not flipped.
-# A template is generated from by other accounts only when it is public, and a repository
-# somebody made private is not this command's to change a flag on.
+# An existing repository under the given name that is not public is refused, not flipped. A template
+# is generated from by other accounts only when it is public, and a repository somebody made private
+# is not this command's to change a flag on.
 [[mutation]]
 name = "publish-template marks a private repository as a template instead of refusing"
 file = "src/keelline/overlay/publish.py"
@@ -4652,10 +4908,10 @@ reddens = [
 ]
 
 # ---------------------------------------------------------------------------------------------
-# The final whole-branch review's fix wave. Eight guards, each one an assertion this wave added
-# or changed, and each entry's `after` chosen so the test reddens on the sentence or the value
-# only the correct behaviour produces — never on a `NameError` from a deleted name or on a
-# status a surviving arm also produces.
+# Eight guards from a whole-branch review, each one an assertion that review added or changed, and
+# each entry's `after` chosen so the test reddens on the sentence or the value only the correct
+# behaviour produces — never on a `NameError` from a deleted name or on a status a surviving arm
+# also produces.
 
 # `setup`'s docstring promises every structural question is asked "while nothing is on disk".
 # With `--settings` it was not: `_check_settings_path` ran only for the `None` case, so the
@@ -4833,14 +5089,13 @@ reddens = [
 # yielding items. Shorten the list to one and the storefront may advertise anything the other
 # names cover.
 #
-# Re-pointed in wave 4, when `init` and the project templates shipped and left that sentence
-# holding exactly the four items the test's floor requires. The entry quotes two lines of prose
-# verbatim, so it is the kind that drifts whenever the sentence is reworded: the check that
-# caught it is reading every entry's `before` back out of its file and counting. Re-pointed
-# again when the profile adapters rewrote the sentence to eight items that each leave it in the
-# change that ships them, and again as `upgrade` and then `uninstall` shipped and left it, and
-# again as `assess` shipped, and again as the state machine shipped; the mutation cuts it back
-# to one.
+# Re-pointed when `init` and the project templates shipped and left that sentence holding exactly
+# the four items the test's floor requires. The entry quotes two lines of prose verbatim, so it is
+# the kind that drifts whenever the sentence is reworded: the check that caught it is reading every
+# entry's `before` back out of its file and counting. Re-pointed again when the profile adapters
+# rewrote the sentence to eight items that each leave it in the change that ships them, and again as
+# `upgrade` and then `uninstall` shipped and left it, and again as `assess` shipped, and again as
+# the state machine shipped; the mutation cuts it back to one.
 [[mutation]]
 name = "the README's not-yet sentence stops naming what has not shipped"
 file = "README.md"
@@ -4850,9 +5105,9 @@ reddens = [
   "tests/test_manifests.py::test_the_readme_still_declares_what_has_not_shipped",
 ]
 
-# §3 of the final review: `environment: pypi` is a human gate only if the environment has
-# protection rules, and GitHub auto-creates an environment a job names and the repository lacks
-# with none on it. `environment-gate` is the check; these three are what make it one.
+# `environment: pypi` is a human gate only if the environment has protection rules, and GitHub
+# auto-creates an environment a job names and the repository lacks with none on it.
+# `environment-gate` is the check; these three are what make it one.
 [[mutation]]
 name = "the release gate stops failing an environment with zero protection rules"
 file = ".github/workflows/release.yml"
@@ -4887,8 +5142,8 @@ reddens = [
   "tests/test_fixtures.py::test_every_job_behind_the_pypi_environment_waits_for_the_environment_gate",
 ]
 
-# §4.1 of the PR-14 review, the group that most qualifies a green smoke run. Six entries, and
-# they are six different ways a row can report on something it never looked at.
+# The group that most qualifies a green smoke run. Six entries, and they are six different ways a
+# row can report on something it never looked at.
 #
 # The first is the headline: the row that proves the `PreToolUse` guard denies could not tell a
 # genuine deny from any launcher fault at all. `hooks/run-hook.sh` maps a launcher `rc=1` under
@@ -4990,7 +5245,7 @@ reddens = [
   "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_holds_against_the_checkout",
 ]
 
-# §4.2 of the PR-14 review: the rows and floors that report on quantities they never looked at.
+# The rows and floors that report on quantities they never looked at.
 #
 # Three of the five smoke-fixture gate rows asserted `exit 0`, which is also what a torn-out
 # gate produces — the author closed exactly this for `plan check` and for none of the others.
@@ -5091,11 +5346,11 @@ reddens = [
   "tests/test_snapshot.py::test_the_ordinary_walk_holds_a_files_bytes_and_not_only_its_name",
 ]
 
-# Three of the D5 artifact gate's four claims were unheld, each removable with the module's
-# five tests still passing. The executable case compared `check_sdist`'s output against a list
-# recomputed from the same tuple the fixture builds the archive from; `_sdist`'s `without=`
-# parameter was passed by nothing; and `main`'s `dist` arm — the one CI runs — was reached by
-# no test at all, so both CI steps would have reported success while printing findings.
+# Three of the built-artifact gate's four claims were unheld, each removable with the module's five
+# tests still passing. The executable case compared `check_sdist`'s output against a list recomputed
+# from the same tuple the fixture builds the archive from; `_sdist`'s `without=` parameter was
+# passed by nothing; and `main`'s `dist` arm — the one CI runs — was reached by no test at all, so
+# both CI steps would have reported success while printing findings.
 [[mutation]]
 name = "the sdist executable claim covers no file"
 file = "scripts/check_artifacts.py"
@@ -5137,12 +5392,12 @@ reddens = [
   "tests/test_neutral.py::test_a_token_hit_names_the_offset_of_its_first_window",
 ]
 
-# Taken from the test seat's companion file beyond §4.2's list: three assertions that were
-# never made in the direction that can fail, each one line.
+# Three more assertions that were never made in the direction that can fail, each one line.
 #
-# Every use of the skills tool-name lint is a NEGATIVE assertion, so a pattern matching the
-# empty set satisfies all of them. Measured: `tests/skills/` 83 passed with the pattern
-# replaced by one that matches nothing, and Premise 14 checked against no skill at all.
+# Every use of the skills tool-name lint is a NEGATIVE assertion, so a pattern matching the empty
+# set satisfies all of them. Measured: `tests/skills/` 83 passed with the pattern replaced by one
+# that matches nothing, and the rule that a skill names the capability rather than the product
+# checked against no skill at all.
 [[mutation]]
 name = "the skill tool-name lint stops matching a tool name"
 file = "tests/skills/test_skills.py"
@@ -5175,10 +5430,9 @@ before = 'SURFACE_EXEMPT = frozenset({("cli.py", "keelline.hooks.policy")})'
 after = 'SURFACE_EXEMPT = frozenset({("cli.py", "keelline.hooks.policy"), ("memory/commands.py", "keelline.hooks.dispatch")})'
 reddens = ["tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module"]
 
-# §4.6 item 6/7. The README's `--json` paragraph named four commands where five emit the key,
-# so a reader scripting against it would have read a `memory refs` findings list as "this
-# command does not report findings". The mutation is in the document, because the document is
-# what drifted.
+# The README's `--json` paragraph named four commands where five emit the key, so a reader scripting
+# against it would have read a `memory refs` findings list as "this command does not report
+# findings". The mutation is in the document, because the document is what drifted.
 [[mutation]]
 name = "the README's --json paragraph drops a command that really emits `findings`"
 file = "README.md"
@@ -5188,9 +5442,9 @@ reddens = [
   "tests/test_documents.py::test_the_readme_names_every_command_whose_json_carries_findings",
 ]
 
-# §4.6 item 10. The configuration block showed six of the nine sections the loader accepts,
-# while the loader *refuses* an unknown one — so the block read as a closed grammar three
-# sections narrower than the real thing.
+# The configuration block showed six of the nine sections the loader accepts, while the loader
+# *refuses* an unknown one — so the block read as a closed grammar three sections narrower than the
+# real thing.
 [[mutation]]
 name = "docs/cli.md's configuration block loses a section the loader accepts"
 file = "docs/cli.md"
@@ -5203,7 +5457,7 @@ reddens = [
   "tests/test_documents.py::test_the_configuration_block_shows_every_section_the_loader_accepts",
 ]
 
-# §4.6 item 9. The sentence announced four rules and then enumerated five, in one breath.
+# The sentence announced four rules and then enumerated five, in one breath.
 [[mutation]]
 name = "docs/cli.md counts `plan check`'s rules wrong again"
 file = "docs/cli.md"
@@ -5213,8 +5467,8 @@ reddens = [
   "tests/test_documents.py::test_the_plan_rule_count_is_the_number_of_rules_plan_check_emits",
 ]
 
-# §4.6 item 13. The one block a contributor copies before pushing left out the mutation oracle
-# and the coverage floor, both of which fail the pull request CI runs.
+# The one block a contributor copies before pushing left out the mutation oracle and the coverage
+# floor, both of which fail the pull request CI runs.
 [[mutation]]
 name = "CONTRIBUTING's short version drops the mutation oracle again"
 file = "CONTRIBUTING.md"
@@ -5271,10 +5525,10 @@ reddens = [
   "tests/test_launcher.py::test_a_named_but_empty_old_interpreter_is_a_failure_not_a_search",
 ]
 
-# §4.5 item 1. `scripts/check_artifacts.py` imported `keelline.overlay.layout` for the very
-# constant `overlay/api.py` said had been trimmed *because* nothing outside the area imported
-# it. The boundary walk stopped at `src/`, so the false docstring and the violation merged
-# green together. This is that import put back, against the widened walk.
+# `scripts/check_artifacts.py` imported `keelline.overlay.layout` for the very constant
+# `overlay/api.py` said had been trimmed *because* nothing outside the area imported it. The
+# boundary walk stopped at `src/`, so the false docstring and the violation merged green together.
+# This is that import put back, against the widened walk.
 [[mutation]]
 name = "a script reaches past an area's api.py again"
 file = "scripts/check_artifacts.py"
@@ -5296,9 +5550,9 @@ reddens = [
   "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
 ]
 
-# §4.5 item 12. The `doctor` check table in `docs/cli.md` is a seventeenth spelling of the check
-# names that `tests/doctor/test_checks.py` cannot see, in the branch that built this binding
-# for two other tables.
+# The `doctor` check table in `docs/cli.md` is a seventeenth spelling of the check names that
+# `tests/doctor/test_checks.py` cannot see, in the branch that built this binding for two other
+# tables.
 [[mutation]]
 name = "docs/cli.md's doctor table is a second spelling of CHECKS"
 file = "docs/cli.md"
@@ -5308,10 +5562,10 @@ reddens = [
   "tests/test_documents.py::test_the_doctor_table_is_the_registry_and_not_a_second_spelling",
 ]
 
-# §4.5 item 11. A false sentence — that the test tree could not be imported across, and that
-# CONTRIBUTING forbade it — was the stated cause of 26 copies of one helper, six already
-# drifted. In a tree whose discipline is that a comment is evidence, a false comment that
-# authorises a practice is the finding.
+# A false sentence — that the test tree could not be imported across, and that CONTRIBUTING forbade
+# it — was the stated cause of 26 copies of one helper, six already drifted. In a tree whose
+# discipline is that a comment is evidence, a false comment that authorises a practice is the
+# finding.
 [[mutation]]
 name = "a test module claims again that the test tree cannot share a helper"
 file = "tests/setup/test_setup.py"
@@ -5321,9 +5575,9 @@ reddens = [
   "tests/test_documents.py::test_no_module_claims_the_test_tree_cannot_share_a_helper",
 ]
 
-# §4.4. `overlay publish-template --yes` returned "nothing to push", exit 0, whenever `git`
-# was absent, hung or blocked: the `git` half of the module had no `_gh`-style guard, and an
-# empty `git status` stdout read as "already current".
+# `overlay publish-template --yes` returned "nothing to push", exit 0, whenever `git` was absent,
+# hung or blocked: the `git` half of the module had no `_gh`-style guard, and an empty `git status`
+# stdout read as "already current".
 [[mutation]]
 name = "the git half of publish-template stops guarding the two sentinels"
 file = "src/keelline/overlay/publish.py"
@@ -5350,9 +5604,9 @@ reddens = [
   "tests/overlay/test_publish.py::test_a_git_status_that_fails_is_never_read_as_an_unchanged_template",
 ]
 
-# §4.4. Every non-zero `gh repo view` read as "the repository does not exist", so an
-# unauthenticated `gh` made the dry run offer to create a repository that exists and is
-# private — the case `_not_public` exists to refuse.
+# Every non-zero `gh repo view` read as "the repository does not exist", so an unauthenticated `gh`
+# made the dry run offer to create a repository that exists and is private — the case `_not_public`
+# exists to refuse.
 [[mutation]]
 name = "any gh failure is read as a repository that is not there"
 file = "src/keelline/overlay/publish.py"
@@ -5362,8 +5616,8 @@ reddens = [
   "tests/overlay/test_publish.py::test_a_gh_that_cannot_answer_is_never_read_as_a_repository_that_is_absent",
 ]
 
-# §4.4. `release check --tag` derived the drift message with `tag.split("v", 1)[-1]`, so
-# `--tag 1.2.3` reported `tag 1.2.3 names 1.2.3` — two identical strings asserted to disagree.
+# `release check --tag` derived the drift message with `tag.split("v", 1)[-1]`, so `--tag 1.2.3`
+# reported `tag 1.2.3 names 1.2.3` — two identical strings asserted to disagree.
 [[mutation]]
 name = "the tag drift message invents a version by splitting on the letter v"
 file = "src/keelline/release/versions.py"
@@ -5380,9 +5634,9 @@ reddens = [
   "tests/release/test_versions.py::test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version",
 ]
 
-# §4.4. A `hooks/hashes.json` carrying non-UTF-8 bytes raised `UnicodeDecodeError` past every
-# caller and surfaced as `keelline: internal error`, exit 2 — through `doctor`, with the
-# remedy "report this, with the command you ran".
+# A `hooks/hashes.json` carrying non-UTF-8 bytes raised `UnicodeDecodeError` past every caller and
+# surfaced as `keelline: internal error`, exit 2 — through `doctor`, with the remedy "report this,
+# with the command you ran".
 [[mutation]]
 name = "a record that is not UTF-8 escapes UnreadableRecord again"
 file = "src/keelline/release/hashes.py"
@@ -5451,10 +5705,10 @@ reddens = [
   "tests/test_fixtures.py::test_a_base_input_that_disagrees_with_the_pull_requests_own_base_is_refused",
 ]
 
-# §4.4. The clean run is gated on `Outcome.passed` with a long paragraph about why an exit code
-# alone cannot tell a green assertion from an absent one; the mutated run was then judged by
-# `mutated.code` alone, with `mutated.executed` computed and discarded. A mutation that breaks
-# the import exits 2 from a collection error, which is not zero, which read as `caught`.
+# The clean run is gated on `Outcome.passed` with a long paragraph about why an exit code alone
+# cannot tell a green assertion from an absent one; the mutated run was then judged by
+# `mutated.code` alone, with `mutated.executed` computed and discarded. A mutation that breaks the
+# import exits 2 from a collection error, which is not zero, which read as `caught`.
 [[mutation]]
 name = "the mutated run is judged on its exit code alone again"
 file = "scripts/mutation_oracle.py"
@@ -5464,9 +5718,9 @@ reddens = [
   "tests/scripts/test_mutation_oracle.py::test_a_mutation_that_breaks_collection_is_a_finding_and_not_a_catch",
 ]
 
-# §4.4. An interrupted run left a `git worktree` registration that `git worktree prune` will
-# not take, because prune only drops entries whose directory is gone and the `mkdtemp` tree is
-# still standing. One was live in the development repository at review time, 6.5 MB.
+# An interrupted run left a `git worktree` registration that `git worktree prune` will not take,
+# because prune only drops entries whose directory is gone and the `mkdtemp` tree is still standing.
+# One was live in the development repository at review time, 6.5 MB.
 #
 # The mutation is the `rmtree` and not the `worktree remove` beside it, and the unfiltered run
 # is what said so: with the directory gone, the `prune` at the end of the sweep collects the
@@ -5484,10 +5738,10 @@ reddens = [
   "tests/scripts/test_mutation_oracle.py::test_a_leaked_scratch_checkout_is_swept_where_git_worktree_prune_will_not_take_it",
 ]
 
-# §4.6 item 12. `RELEASING.md` step 5 said to replace "the **Nothing is released yet.**
-# paragraph" with text that carries its own two code blocks — so the literal reading left the
-# untagged install commands standing beneath the tagged ones, plus a "From the first release
-# on" promise the release had just falsified. The extent is markers now.
+# `RELEASING.md` step 5 said to replace "the **Nothing is released yet.** paragraph" with text that
+# carries its own two code blocks — so the literal reading left the untagged install commands
+# standing beneath the tagged ones, plus a "From the first release on" promise the release had just
+# falsified. The extent is markers now.
 [[mutation]]
 name = "the README's release-install region loses the marker the release step names"
 file = "README.md"
@@ -5510,7 +5764,7 @@ reddens = [
   "tests/scripts/test_mutation_oracle.py::test_the_loader_aims_every_deletion_this_module_drives_at_its_own_scratch",
 ]
 
-# --- The wave-3 refactor pass: the one fixture `git` -----------------------------------------
+# --- The one fixture `git` -------------------------------------------------------------------
 # Twenty-three test modules each carried a copy of this helper, protected by five different
 # subsets of the same precaution. The collapse moves the precaution to one place, which is only
 # worth doing if that one place is proven load-bearing: restoring the inheriting environment is
@@ -5551,7 +5805,7 @@ reddens = [
   "tests/test_gitfixture.py::test_no_test_module_runs_a_git_of_its_own",
 ]
 
-# --- The wave-3 refactor pass: one sentence per `--check` ------------------------------------
+# --- One sentence per `--check` --------------------------------------------------------------
 # `--check` was registered five times with five sentences in the tree that built `command.py`'s
 # machinery for `--root`, `--machine`, `--store`, `--dry-run` and `--home`. The mutation is the
 # drift itself, restored: one parser spelling its own sentence again.
@@ -5582,7 +5836,7 @@ reddens = [
 # The exception is held by `tests/test_command.py`'s `EXCEPTIONS` table, which the entry above
 # already proves load-bearing.
 
-# --- The wave-3 refactor pass: release returns its findings like every other area ------------
+# --- Release returns its findings like every other area --------------------------------------
 # This was the one area reporting a finding by raising `Failure`, and the cost was in `--json`:
 # the frame turns a `Failure` into `{"error": "failed", ...}` and drops `Result.data`, so the
 # machine-readable object changed shape on exactly the condition a consumer runs the command to
@@ -5605,7 +5859,7 @@ reddens = [
   "tests/release/test_hashes.py::test_the_check_json_object_has_the_same_shape_whether_or_not_there_is_drift",
 ]
 
-# --- The wave-3 refactor pass: four doctor rows that named the wrong cause --------------------
+# --- Four doctor rows that named the wrong cause ----------------------------------------------
 # These are the sentences a person reads when something is wrong, so a row that names the wrong
 # cause sends them to fix the wrong thing. Each mutation restores exactly the sentence that was
 # there.
@@ -5675,10 +5929,10 @@ reddens = [
 
 # --- One oracle at a time --------------------------------------------------------------------
 # `sweep_stale_scratch` has always assumed a single writer and said so in its own docstring, and
-# nothing enforced it. During the wave-3 refactor pass's review a filtered run started beside an
-# unfiltered one removed its scratch checkout, and every mutation after that point reported
-# FINDING — 138 of them, all false, on a clean tree. `O_EXCL` is the whole mechanism: the create either wins or
-# raises, with no window between the test and the write.
+# nothing enforced it. Once, a filtered run started beside an unfiltered one removed its scratch
+# checkout, and every mutation after that point reported FINDING — 138 of them, all false, on a
+# clean tree. `O_EXCL` is the whole mechanism: the create either wins or raises, with no window
+# between the test and the write.
 [[mutation]]
 name = "a second oracle takes the lock instead of refusing"
 file = "scripts/mutation_oracle.py"
@@ -5763,8 +6017,8 @@ reddens = [
   "tests/release/test_pins.py::test_is_released_judges_semver_tags_and_never_the_alias",
 ]
 
-# One helper, two readers: the section list and, since round 2, the unknown-key lists inside a
-# known table. Dropping the filter reddens both, which is the point of their sharing it.
+# One helper, two readers: the section list and the unknown-key lists inside a known table. Dropping
+# the filter reddens both, which is the point of their sharing it.
 [[mutation]]
 name = "an unknown name is no longer bounded before it prints"
 file = "src/keelline/config/loader.py"
@@ -5789,10 +6043,10 @@ reddens = [
   "tests/attach/test_hooks.py::test_real_directories_are_counted_and_a_group_name_never_reaches_the_context",
 ]
 
-# `[ci] ref` is repository-authored and §7.1 makes it the commit of a released Keelline. Which
-# commits those are is the release area's own rule (`is_released`, semver tags only), and the
-# row's verdict is what a reader acts on: a ref no released tag names is a project pinned to a
-# gate nobody shipped, reported green.
+# `[ci] ref` is repository-authored and must be the commit of a released Keelline. Which commits
+# those are is the release area's own rule (`is_released`, semver tags only), and the row's verdict
+# is what a reader acts on: a ref no released tag names is a project pinned to a gate nobody
+# shipped, reported green.
 [[mutation]]
 name = "a ci-ref that is no released commit is reported as a released commit"
 file = "src/keelline/doctor/checks.py"
@@ -5802,12 +6056,11 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_released_commit_is_ok_and_an_unreleased_one_is_red",
 ]
 
-# DC2's own argument for giving the overlay's declared floor a row rather than folding it into
-# `versions`: a `local-only` project on a machine that records an overlay must not go red for a
-# requirement it has no relationship with. `red` is what gates the exit code, so the level
-# here is a verdict something downstream reads -- an unconditional red makes `doctor` exit 1
-# in a repository that never opens the overlay. `memory.mode` is the gate, and it is compared
-# and never printed.
+# Why the overlay's declared floor has a row of its own rather than a place in `versions`: a
+# `local-only` project on a machine that records an overlay must not go red for a requirement it has
+# no relationship with. `red` is what gates the exit code, so the level here is a verdict something
+# downstream reads -- an unconditional red makes `doctor` exit 1 in a repository that never opens
+# the overlay. `memory.mode` is the gate, and it is compared and never printed.
 [[mutation]]
 name = "an unrelated overlay's declared floor reddens a project that never reads it"
 file = "src/keelline/doctor/checks.py"
@@ -5856,11 +6109,10 @@ reddens = [
   "tests/project/test_detect.py::test_a_name_outside_the_grammar_is_refused_without_being_quoted",
 ]
 
-# DC3's whole point, and the review finding B1 behind it: both passes are planned before
-# either is applied, so a refusal anywhere — a committed `AGENTS.md` whose `harness` region
-# has an end marker and no beginning is the ordinary way one arrives — leaves nothing written
-# and no manifest. The dry run is the same branch, which is what makes `--dry-run` honest
-# rather than a second code path that happens to agree.
+# Both passes are planned before either is applied, and that is the whole point: a refusal anywhere
+# — a committed `AGENTS.md` whose `harness` region has an end marker and no beginning is the
+# ordinary way one arrives — leaves nothing written and no manifest. The dry run is the same branch,
+# which is what makes `--dry-run` honest rather than a second code path that happens to agree.
 [[mutation]]
 name = "init applies the write-once pass before it has looked at either plan's refusals"
 file = "src/keelline/project/init.py"
@@ -5886,16 +6138,16 @@ reddens = [
   "tests/project/test_init.py::test_an_initialised_repository_is_refused_and_offered_upgrade",
 ]
 
-# P10, and the third leak of this family this branch closes. `tomllib` builds its message as
-# `f"{msg} (at line N, column M)"` and `msg` embeds the source for at least five of its own
-# faults — a duplicate table, a duplicate inline-table key, a redefined namespace, an invalid
-# character, an overwritten value. A TOML key is arbitrary quoted text, so interpolating the
-# exception whole put unbounded repository bytes into a `ConfigError` and, through
-# `project.init._existing`, into a refusal the `init` skill is instructed to relay to a model
-# and stop on. Only the position prints, and the fallback reports an absent suffix rather than
-# the message — a fallback to `str(exc)` is the one change that would reopen this silently.
-# Wave A closed the sibling leak in the same loader function (the unknown-section list, bounded
-# to `SECTION_NAME`); this completes it, and one extractor serves all three call sites.
+# Repository bytes never print unbounded, and this is the third leak of that family closed in this
+# loader. `tomllib` builds its message as `f"{msg} (at line N, column M)"` and `msg` embeds the
+# source for at least five of its own faults — a duplicate table, a duplicate inline-table key, a
+# redefined namespace, an invalid character, an overwritten value. A TOML key is arbitrary quoted
+# text, so interpolating the exception whole put unbounded repository bytes into a `ConfigError`
+# and, through `project.init._existing`, into a refusal the `init` skill is instructed to relay to a
+# model and stop on. Only the position prints, and the fallback reports an absent suffix rather than
+# the message — a fallback to `str(exc)` is the one change that would reopen this silently. The
+# sibling leak in the same loader function, the unknown-section list, is bounded to `SECTION_NAME`;
+# this completes it, and one extractor serves all three call sites.
 [[mutation]]
 name = "a tomllib message is quoted back whole, so a hostile key reaches a refusal"
 file = "src/keelline/config/loader.py"
@@ -5922,16 +6174,16 @@ reddens = [
   "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
 ]
 
-# DC4, and it is an ownership rule rather than a last-writer one. `init` records the
-# `keelline:ignore` region as a footprint artifact with the body `attach` writes; a `detach`
-# that dropped it would take a line out of a committed file this command never wrote, and
-# `upgrade` would read the footprint as hand-edited on a repository nobody edited.
-# The count-not-name half of the same refusal, and the highest-value class the plan names:
-# `memory.groups` is one of the four fields `config/paths.py` says no grammar bounds, and
-# `skills/attach/SKILL.md` has the model relay this message to the user, so a group name here is
-# instruction-shaped text a clone chose arriving attributed to Keelline. The length of the list
-# prints; the list does not. Wave B's entry on `attach/hooks.py` is the same mutation on the same
-# constant's other caller.
+# An ownership rule rather than a last-writer one. `init` records the `keelline:ignore` region as a
+# footprint artifact with the body `attach` writes; a `detach` that dropped it would take a line out
+# of a committed file this command never wrote, and `upgrade` would read the footprint as
+# hand-edited on a repository nobody edited.
+#
+# The count-not-name half of the same refusal, and the highest-value class of leak: `memory.groups`
+# is one of the four fields `config/paths.py` says no grammar bounds, and `skills/attach/SKILL.md`
+# has the model relay this message to the user, so a group name here is instruction-shaped text a
+# clone chose arriving attributed to Keelline. The length of the list prints; the list does not. The
+# entry on `attach/hooks.py` is the same mutation on the same constant's other caller.
 [[mutation]]
 name = "the never-moved refusal names the memory groups instead of counting them"
 file = "src/keelline/attach/write.py"
@@ -6010,11 +6262,11 @@ reddens = [
   "tests/attach/test_commands.py::test_check_counts_the_groups_that_never_moved_and_exits_one",
 ]
 
-# P10, the fourth site of the family this branch has now closed three times. The file is the
+# The fourth site of the same family: repository bytes quoted back unbounded. The file is the
 # overlay's `projects/<name>/project.toml`, whose bytes are the machine owner's and may print —
-# except that the value Keelline writes into it is this repository's `origin`, and a remote URL
-# may not print wherever it came from. `tomllib`'s message embeds the source for several of its
-# faults, so the whole exception is unbounded bytes in a `Failure` the attach skill relays.
+# except that the value Keelline writes into it is this repository's `origin`, and a remote URL may
+# not print wherever it came from. `tomllib`'s message embeds the source for several of its faults,
+# so the whole exception is unbounded bytes in a `Failure` the attach skill relays.
 [[mutation]]
 name = "the binding record's parse failure is quoted back whole"
 file = "src/keelline/attach/binding.py"
@@ -6234,13 +6486,13 @@ reddens = [
   "tests/project/test_fixture.py::test_the_smoke_fixture_is_a_project_init_has_nothing_left_to_create_in",
 ]
 
-# B1. Two readers of one value. `PATH_VALUE` says what a `[paths]` value may look like and
+# Two readers of one value. `PATH_VALUE` says what a `[paths]` value may look like and
 # `fsops.checked_components` says what a path *is*; for four review rounds they disagreed about
-# `docs//x.md`, `docs/x/` and `./docs`, so `plan()` reported no refusal for a value `apply()`
-# could not write — and `apply()` raised part-way through the pass, with earlier artifacts on
-# disk and its `finally` having already persisted the manifest. The anchor's provenance: both
-# rules are read off the clone's own spelling of its own `keelline.toml`, and neither consults
-# anything the clone can move, so a repository cannot choose which of the two answers it gets.
+# `docs//x.md`, `docs/x/` and `./docs`, so `plan()` reported no refusal for a value `apply()` could
+# not write — and `apply()` raised part-way through the pass, with earlier artifacts on disk and its
+# `finally` having already persisted the manifest. The anchor's provenance: both rules are read off
+# the clone's own spelling of its own `keelline.toml`, and neither consults anything the clone can
+# move, so a repository cannot choose which of the two answers it gets.
 # Measured: with the charset form restored, `docs//roadmap-history.md`, `docs/architecture/`
 # and `./docs` all match the grammar again.
 [[mutation]]
@@ -6252,11 +6504,11 @@ reddens = [
   "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
 ]
 
-# The other half of B1, and the one the half-write actually turned on: `contained()` is what
-# `plan()` asks, so a spelling the walk will refuse has to be refused *here*, above the first
-# write. `Path(relative).parts` drops an empty component, a trailing slash and a leading `./`,
-# which is why `plan` said yes. Restoring that spelling restores the disagreement, with the
-# grammar left tightened — the two guards must not be able to cover for each other.
+# The other half of the two readers, and the one the half-write actually turned on: `contained()` is
+# what `plan()` asks, so a spelling the walk will refuse has to be refused *here*, above the first
+# write. `Path(relative).parts` drops an empty component, a trailing slash and a leading `./`, which
+# is why `plan` said yes. Restoring that spelling restores the disagreement, with the grammar left
+# tightened — the two guards must not be able to cover for each other.
 [[mutation]]
 name = "contained normalises the value away, so plan stops agreeing with apply"
 file = "src/keelline/config/paths.py"
@@ -6267,15 +6519,15 @@ reddens = [
   "tests/scaffold/test_containment.py::test_a_target_that_survives_plan_is_one_apply_can_write",
 ]
 
-# B2. A containment ruling and its anchor's provenance. Nothing reserved git's control
-# directory: `PATH_VALUE` admits a leading dot, and `contained()` and this walk each refused an
-# absolute path, `..` and a symlink — a control directory is none of those. So a clone could aim
-# a `MANAGED_REGION` artifact at `.git/hooks/pre-commit`, which the engine's "exists and
-# Keelline did not write it" guard exempts, and `_mode_of` then carried the developer's 0755
-# onto the replacement. The anchor is the project root the CLI resolved and `.git` is git's own
-# name inside it, so the clone — which authors the path string and nothing else — cannot move
-# the directory being reserved. Measured: with the check dropped here, `write_within` creates
-# `.git/keelline-roadmap.md` and rewrites an existing executable `pre-commit` in place at 0755.
+# A containment ruling and its anchor's provenance. Nothing reserved git's control directory:
+# `PATH_VALUE` admits a leading dot, and `contained()` and this walk each refused an absolute path,
+# `..` and a symlink — a control directory is none of those. So a clone could aim a `MANAGED_REGION`
+# artifact at `.git/hooks/pre-commit`, which the engine's "exists and Keelline did not write it"
+# guard exempts, and `_mode_of` then carried the developer's 0755 onto the replacement. The anchor
+# is the project root the CLI resolved and `.git` is git's own name inside it, so the clone — which
+# authors the path string and nothing else — cannot move the directory being reserved. Measured:
+# with the check dropped here, `write_within` creates `.git/keelline-roadmap.md` and rewrites an
+# existing executable `pre-commit` in place at 0755.
 [[mutation]]
 name = "the walk writes inside git's control directory again"
 file = "src/keelline/fsops.py"
@@ -6419,10 +6671,9 @@ before = "            return None, NOT_ASKED"
 after = "            return None, NO_REF"
 reddens = ["tests/project/test_init.py::test_an_unreachable_remote_is_answered_with_a_command_that_can_act"]
 
-# N5 of the wave-4 re-review. `contained()` took on the write's component rule, and
-# `contained_roots` catches its refusal and moves on — so `code_roots = ["src/"]` was silently
-# dropped from every count the field feeds. The fold is what keeps a read-only walk from
-# inheriting a rule that exists for writes.
+# `contained()` took on the write's component rule, and `contained_roots` catches its refusal and
+# moves on — so `code_roots = ["src/"]` was silently dropped from every count the field feeds. The
+# fold is what keeps a read-only walk from inheriting a rule that exists for writes.
 [[mutation]]
 name = "a code root spelled with a slash is dropped again"
 file = "src/keelline/guards/roots.py"
@@ -6562,7 +6813,7 @@ reddens = [
   "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
 ]
 
-# The one list four lanes report as a count, and the one fault none of those lanes can fix for
+# The one list four places report as a count, and the one fault none of those areas can fix for
 # itself. `_build` coerced it with `tuple(value)`, so a repeated entry was walked twice and
 # counted twice -- in `attach`'s refusal, in `--check`'s `real_directories` and in the session
 # line -- about one directory whose remedy was already done.
@@ -6590,11 +6841,11 @@ reddens = [
   "tests/attach/test_binding.py::test_a_group_that_is_not_a_subdirectory_is_refused_by_a_sentence_that_is_true",
 ]
 
-# DC7: spelled once. This branch added `REPOSITORY_URL` and `overlay-requires`' remedy a few rows
-# below reads it, while `cli-path`'s still carried the address written out -- two places to change
-# when the repository moves, in the command whose whole job is finding the two halves of something
-# that has stopped agreeing. The test reads the function's source, because an identical literal
-# satisfies an assertion about the remedy's text.
+# Spelled once. `overlay-requires`' remedy a few rows below reads `REPOSITORY_URL`, while
+# `cli-path`'s carried the address written out -- two places to change when the repository moves, in
+# the command whose whole job is finding the two halves of something that has stopped agreeing. The
+# test reads the function's source, because an identical literal satisfies an assertion about the
+# remedy's text.
 [[mutation]]
 name = "the cli-path remedy spells the repository URL again"
 file = "src/keelline/doctor/checks.py"
@@ -6638,8 +6889,9 @@ reddens = [
 # `Sync.ahead` is `None` when the count is UNKNOWN -- a branch with no upstream has every commit
 # unpushed -- and the two lines were appended by two independent `if`s with `ahead=sync.ahead or 0`
 # under the second. So a session heard "nothing backs it up" and "0 unpushed commit(s)" in one
-# breath, with the number on the sentence that was false. Parked twice as "the plan specified that
-# condition exactly"; the plan is not the authority on whether a sentence is true.
+# breath, with the number on the sentence that was false. Left twice on the grounds that the
+# condition was specified exactly; a specification is not the authority on whether a sentence is
+# true.
 [[mutation]]
 name = "a session with no upstream is told it has 0 unpushed commits"
 file = "src/keelline/attach/hooks.py"
@@ -6671,9 +6923,9 @@ reddens = [
   "tests/attach/test_hooks.py::test_a_context_that_has_already_been_asked_does_not_re_pay_the_sync",
 ]
 
-# §5.3's floor for this area, spelled in this module: an open handler never costs a session, and
-# the blanket backstop is what makes that true of a failure no `except` here foresaw. Every other
-# case in this module reaches a path with an explicit `except` of its own, so the backstop survived
+# The floor for this area, spelled in this module: an open handler never costs a session, and the
+# blanket backstop is what makes that true of a failure no `except` here foresaw. Every other case
+# in this module reaches a path with an explicit `except` of its own, so the backstop survived
 # deletion green until the case beside this entry existed. It is also what keeps this module's
 # safety off `Policy.OPEN` being kept for it -- the two guards are independent, and the entry below
 # is the other one.
@@ -6690,9 +6942,9 @@ reddens = [
 
 # The mirror of "the background guard fails open again", over the one handler that must not fail
 # closed. `Policy.CLOSED` turns a failed overlay lookup into a deny on the one channel a refusal
-# travels -- the state D11 reserves for a guard that could not judge -- out of a handler that reads
-# two git remotes and a manifest and protects nothing. Asserted through the real dispatcher, not by
-# reading the constant back off the handler it was passed to.
+# travels -- the state the closed policy reserves for a guard that could not judge -- out of a
+# handler that reads two git remotes and a manifest and protects nothing. Asserted through the real
+# dispatcher, not by reading the constant back off the handler it was passed to.
 [[mutation]]
 name = "the overlay-status handler refuses a session when it fails"
 file = "src/keelline/attach/hooks.py"
@@ -6772,7 +7024,7 @@ reddens = [
 
 # The one call this area makes that leaves the machine, and the five-minute cap it inherited.
 # `NETWORK_TIMEOUT_SECONDS` is written for `gh repo create --clone` and the clone behind it; the
-# `ci-ref` row reads one tag listing, on a command §5.2 gives one line of output and `docs/cli.md`
+# `ci-ref` row reads one tag listing, on a command that prints one line of output and `docs/cli.md`
 # calls a diagnostic. `keelline init` recording a `[ci] ref` is what made the block reachable at
 # all. Two entries, because the choice and the honouring of it are in different modules: without the
 # second, a caller's bound is accepted and ignored.
@@ -6794,13 +7046,13 @@ reddens = [
   "tests/test_runner.py::test_a_caller_that_asks_for_a_narrower_bound_gets_it",
 ]
 
-# The `_enum` class, at the four sites wave 4 left. Each refusal below is reached by a value a
-# clone writes into `keelline.toml` — `[keelline] preset` or `[keelline] profile` — and each ran
-# `{name!r}` into a message the skills relay to a terminal and a model. The first of each pair
-# runs exactly for a value that failed its rule, so it could carry ESC and line breaks; the
-# second is reached only by a name that passed, and could still carry an instruction spelled in
-# letters. The anchor is Keelline's own vocabulary: the key, the rule in words, and the listing
-# this build ships. Each mutation puts the value back into its message.
+# The `_enum` class, at four more sites. Each refusal below is reached by a value a clone writes
+# into `keelline.toml` — `[keelline] preset` or `[keelline] profile` — and each ran `{name!r}` into
+# a message the skills relay to a terminal and a model. The first of each pair runs exactly for a
+# value that failed its rule, so it could carry ESC and line breaks; the second is reached only by a
+# name that passed, and could still carry an instruction spelled in letters. The anchor is
+# Keelline's own vocabulary: the key, the rule in words, and the listing this build ships. Each
+# mutation puts the value back into its message.
 [[mutation]]
 name = "a preset name outside the rule is quoted back again"
 file = "src/keelline/presets/__init__.py"
@@ -6838,8 +7090,8 @@ reddens = [
   "tests/scaffold/test_engine.py::test_a_profile_the_listing_lacks_is_refused_and_never_quoted",
 ]
 
-# The review of this change, finding 1: the `key` half was pinned only by a direct call, so reverting the
-# call site left `setup --preset` telling a person to edit a `keelline.toml` it never read.
+# The `key` half was pinned only by a direct call, so reverting the call site left `setup --preset`
+# telling a person to edit a `keelline.toml` it never read.
 [[mutation]]
 name = "setup's preset refusal names the configuration key again"
 file = "src/keelline/setup/run.py"
@@ -6849,10 +7101,10 @@ reddens = [
   "tests/setup/test_setup.py::test_a_mistyped_preset_names_the_flag_and_never_quotes_it",
 ]
 
-# Finding 2: membership was the filesystem's answer, and macOS folds case, so `"RECOMMENDED"`
-# loaded on a Mac and was refused on Linux. The case-folding test reddens only on a
-# case-insensitive filesystem, and the CI oracle runs on Linux, so the proof is the case that
-# empties the listing: `recommended.toml` stays on disk, and only the listing refuses it.
+# Membership was the filesystem's answer, and macOS folds case, so `"RECOMMENDED"` loaded on a Mac
+# and was refused on Linux. The case-folding test reddens only on a case-insensitive filesystem, and
+# the CI oracle runs on Linux, so the proof is the case that empties the listing: `recommended.toml`
+# stays on disk, and only the listing refuses it.
 [[mutation]]
 name = "preset membership is asked of the filesystem again"
 file = "src/keelline/presets/__init__.py"
@@ -6862,7 +7114,7 @@ reddens = [
   "tests/scaffold/test_containment.py::test_preset_membership_is_the_listings_answer_and_not_the_filesystems",
 ]
 
-# Finding 3: one ASCII grammar for the name, which is what the sentence printed with it says.
+# One ASCII grammar for the name, which is what the sentence printed with it says.
 [[mutation]]
 name = "the preset rule admits any Unicode letter again"
 file = "src/keelline/presets/__init__.py"
@@ -7869,7 +8121,7 @@ reddens = ["tests/project/test_uninstall.py::test_a_dry_run_writes_nothing_and_s
 
 # Only the planning seam (`footprint.Passes`) imports the engine's planner or the ignore guard, so
 # every footprint command, the next one included, plans with both guards bound. The engine's
-# `owners` stays optional for the overlay lane; the import is the bypass, and this is its check.
+# `owners` stays optional for `keelline.overlay`; the import is the bypass, and this is its check.
 [[mutation]]
 name = "a footprint command imports the planner past the seam"
 file = "src/keelline/project/init.py"

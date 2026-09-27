@@ -1,6 +1,6 @@
 """The two smoke scripts, run here against the checkout as the plugin root.
 
-CI runs them against the INSTALLED copy (DC8); this proves the scripts' own logic — that a
+CI runs them against the INSTALLED copy; this proves the scripts' own logic — that a
 mismatch is reported and a match is not — so a green CI row means the plugin, not the script.
 """
 
@@ -62,7 +62,8 @@ sys.exit(1)
 def test_every_hook_entry_answers_its_sample_event_through_the_checkout(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # S8's matrix lives in tests/hooks/test_wrapper.py; this is the positive row per entry:
+    # The wrapper's fail-closed matrix lives in tests/hooks/test_wrapper.py; this is the
+    # positive row per entry:
     # every `hooks.json` command, fed the event it is filed under, exits as the policy says.
     # The closed `PreToolUse` entry is fed a leaking background command and must exit 2 with
     # a reason; every open entry exits 0.
@@ -262,12 +263,13 @@ def test_hooks_json_gaining_an_entry_is_reported_rather_than_quietly_run(
 def test_the_exfiltration_scenario_holds_against_the_checkout(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # S10 (§14): a hostile clone with in-repo memory at `startup: -1`, a `project.name`
-    # naming another project, and a committed settings `env` block naming a machine
-    # configuration inside the clone and a PATH into the clone. Asserted separately: nothing
-    # untrusted reaches the session-start output, the hook ignored the clone's
-    # KEELLINE_CONFIG, the planted interpreter never ran, and `attach` refuses. The MCP arm
-    # is not run: `mcp` is not in wave 3, and the script says so in its own output.
+    # The clone-to-exfiltration scenario: a hostile clone with in-repo memory at `startup: -1`,
+    # a `project.name` naming another project, and a committed settings `env` block naming a
+    # machine configuration inside the clone and a PATH into the clone. Asserted separately:
+    # nothing untrusted reaches the session-start output, the hook ignored the clone's
+    # KEELLINE_CONFIG, the planted interpreter never ran, and `attach` refuses. The MCP arm is
+    # not run: Keelline ships no MCP server yet (the README lists the memory MCP server under
+    # "Not yet"), and the script says so in its own output.
     #
     # The count as well as the exit code, because six of the eight rows assert an ABSENCE and a
     # report holding one row satisfies `failures == 0` identically. Measured: with

@@ -207,9 +207,9 @@ def test_a_note_that_will_not_parse_is_reported_not_dropped(tmp_path: Path) -> N
 def test_audience_violations_are_empty_for_a_store_with_no_cross_project_group(
     tmp_path: Path,
 ) -> None:
-    # The rule is §11's: a note in the cross-project group must not link into a project-scoped
-    # one. Only an overlay store has such a group, and the overlay fixture is the `attach`
-    # lane's — the arm measured here is the one every in-repo store takes.
+    # The audience rule: a note in the cross-project group must not link into a project-scoped
+    # one. Only an overlay store has such a group, and the overlay fixture is
+    # `attach`'s — the arm measured here is the one every in-repo store takes.
     root, config = project(tmp_path)
     note(root, "developer", "a", "see [[b]]\n")
     store = resolve(root, config, machine=root.parent / "m.toml")
@@ -228,7 +228,7 @@ def flags(root: Path) -> list[str]:
 def test_the_command_says_the_store_resolves_and_names_a_stale_reference_on_one_line(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # C5: one line per command, and the label carries what this lane computed. The target is
+    # One line per command, and the label carries what this command computed. The target is
     # repository-authored and belongs in `--json` only.
     root, _config = project(tmp_path)
     note(root, "developer", "a", "see `src/widget/boot.py`\n")
@@ -244,7 +244,7 @@ def test_the_command_says_the_store_resolves_and_names_a_stale_reference_on_one_
 def test_a_group_the_resolver_could_not_provide_refuses_rather_than_reporting_a_clean_walk(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Premise 8 keeps the source's "the walk went blind" exit: a walk over a subset that reports
+    # This keeps the source's "the walk went blind" exit: a walk over a subset that reports
     # nothing stale is worse than no guard, so this is a refusal (2), never findings (1).
     # Mutation: return a `Result` instead of raising — the exit code reddens.
     root, _config = project(tmp_path)
@@ -319,7 +319,7 @@ def test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], beside: bool
 ) -> None:
     # `memory.groups` is repository-written and the loader bounds no grammar on it, by design:
-    # each lane contains a group against its own anchor. Beside groups that resolve, the refusal
+    # each consumer contains a group against its own anchor. Beside groups that resolve, the refusal
     # is `_unavailable`'s; as the only group, the store resolves nothing and the refusal is
     # `_no_store`'s, carrying the resolver's own joined reason. Both printed the name raw, and
     # `trust.wrap` escapes no byte for a terminal. Mutation: name the group unquoted in

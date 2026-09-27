@@ -153,8 +153,8 @@ def test_a_missing_version_key_reads_as_none(tmp_path: Path) -> None:
 def test_the_cli_command_exits_one_on_version_drift(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # CI runs the success path on every build, so exit 1 — C6's only user-facing surface —
-    # is reached by nothing else.
+    # CI runs the success path on every build, so exit 1 — the version check's only
+    # user-facing surface — is reached by nothing else.
     root = repo(
         tmp_path, pyproject="0.1.0", init="0.2.0", claude="0.1.0", codex="0.1.0", changelog="0.1.0"
     )
@@ -444,9 +444,9 @@ def test_the_cli_command_exits_one_on_a_malformed_source(
 def _at(tmp_path: Path, version: str) -> Path:
     """The module's `_repo` with every source at one version.
 
-    The plan named a `_repository(tmp_path, version=…)` fixture this module has never had;
-    `_repo` is the one that exists and it takes a keyword per source, so the two tests below
-    say the version once through here rather than five times each.
+    There is no `_repository(tmp_path, version=…)` fixture in this module; `_repo` is the one
+    that exists and it takes a keyword per source, so the two tests below say the version once
+    through here rather than five times each.
     """
     return _repo(
         tmp_path,
@@ -508,7 +508,7 @@ def test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version
 
 
 def test_a_tag_with_pending_fragments_is_refused(tmp_path: Path) -> None:
-    # Without `--tag`, pending fragments let CHANGELOG.md lag, because a lane's fragment is
+    # Without `--tag`, pending fragments let CHANGELOG.md lag, because a change's fragment is
     # written before the release assembles it. AT a tag there is nothing left to assemble:
     # a fragment still pending means the changelog the users read is not the one the tag
     # claims. Mutation (declared): skip the fragment check under `tag` -> reddens.
@@ -538,8 +538,9 @@ def test_the_cli_refuses_notes_under_a_version_that_is_not_the_projects(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Exit 2, the refusal code, and no towncrier anywhere: the comparison is above the runner,
-    # so this walks the registered command end to end without shelling out — which the global
-    # constraints forbid a test to do. The write path stays a unit test over the stub.
+    # so this walks the registered command end to end without shelling out, which no test does —
+    # CONTRIBUTING.md's Tests section routes such calls through a stub runner, and the write
+    # path stays a unit test over the stub in `tests/release/test_notes.py`.
     root = _at(tmp_path, "1.2.3")
     argv = ["release", "notes", "--version", "1.3.0", "--root", str(root)]
     assert run(argv, parser=build_parser([register])) == 2
@@ -562,9 +563,9 @@ def test_a_project_with_its_own_hooks_directory_is_not_told_about_a_release_reco
 def test_a_tree_that_ships_every_recorded_file_is_told_when_the_record_is_missing(
     tmp_path: Path,
 ) -> None:
-    # The other direction, and the one DC5 is for: a tree that carries the three files the
-    # harness executes is a tree that owes a record of them. Without this the guard above could
-    # be narrowed to `if False` and nothing would notice.
+    # The other direction, and the one the record exists for: a tree that carries the three
+    # files the harness executes is a tree that owes a record of them. Without this the guard
+    # above could be narrowed to `if False` and nothing would notice.
     from keelline.release.hashes import HASHED_FILES, RECORD
 
     root = _repo(tmp_path)
@@ -575,7 +576,7 @@ def test_a_tree_that_ships_every_recorded_file_is_told_when_the_record_is_missin
 
 
 def test_collect_still_reads_the_package_version_beside_the_repository_constants() -> None:
-    # `keelline.REPOSITORY_SLUG` and `keelline.REPOSITORY_URL` (Task 4) sit in
+    # `keelline.REPOSITORY_SLUG` and `keelline.REPOSITORY_URL` sit in
     # `src/keelline/__init__.py` beside `__version__`; `_INIT`'s regex is anchored on
     # `__version__` alone, so the two new lines must not change what this reads.
     from keelline import __version__

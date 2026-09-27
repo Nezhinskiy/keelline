@@ -1,4 +1,5 @@
-"""DC9: one failing command, run three times, and a verdict the three exit codes determine.
+"""`test attribute`: one failing command, run three times, and a verdict the three exit codes
+determine.
 
 This module never writes the working tree and never moves the checkout between commits: HEAD
 and the merge-base are extracted with `git archive` into a scratch directory. Run 1 does
@@ -158,8 +159,8 @@ def test_an_archive_an_export_rule_shrank_is_a_failure_and_not_a_smaller_tree(
 def test_a_spaced_path_a_quoted_one_and_a_dangling_symlink_are_not_missing_files(
     tmp_path: Path,
 ) -> None:
-    # Fix round 1, item 1. The export-rule guard fired on ordinary repositories and blamed a
-    # `.gitattributes` rule that was not there. Three independent sources, one fixture:
+    # The export-rule guard once fired on ordinary repositories and blamed a `.gitattributes`
+    # rule that was not there. Three independent sources, one fixture:
     #
     #   * `set(listing.split())` broke `sub dir/a b.txt` into `sub`, `dir/a` and `b.txt` —
     #     three phantom entries, none of them on disk;
@@ -194,11 +195,11 @@ def test_a_spaced_path_a_quoted_one_and_a_dangling_symlink_are_not_missing_files
 def test_a_tar_that_cannot_be_launched_is_a_finding_and_not_a_traceback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Fix round 1, item 2. Every external program is optional at runtime and a missing binary
-    # is a reported finding: `gitenv.git_run` answers `(-1, "")` and `runner` answers
-    # `Completed(NOT_FOUND, ...)`. The `tar` call was the one launch in this module with
-    # nothing around it, so a machine without `tar` got `FileNotFoundError` out of a library
-    # function, which only `cli.py`'s mapping caught — as an internal error, exit 2.
+    # Every external program is optional at runtime and a missing binary is a reported finding:
+    # `gitenv.git_run` answers `(-1, "")` and `runner` answers `Completed(NOT_FOUND, ...)`. The
+    # `tar` call was the one launch in this module with nothing around it, so a machine without
+    # `tar` got `FileNotFoundError` out of a library function, which only `cli.py`'s mapping
+    # caught — as an internal error, exit 2.
     #
     # A PATH holding `git` and nothing else, rather than an empty one: an empty PATH breaks
     # the merge-base first and the test would pass for the wrong reason, never reaching `tar`.
@@ -220,11 +221,11 @@ def test_a_tar_that_cannot_be_launched_is_a_finding_and_not_a_traceback(
 def test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Fix round 1, item 6. `git_run` answers `(-1, "")` when the binary could not be launched,
-    # and `-1` is a sentinel and not an exit status — rendered as one, the message read
-    # "`git merge-base HEAD origin/main` exited -1; is origin/main fetched?", which sends a
-    # reader to fetch a ref when the answer is that there is no git on this machine. The
-    # assertion is on the cause, not on the exception type.
+    # `git_run` answers `(-1, "")` when the binary could not be launched, and `-1` is a
+    # sentinel and not an exit status — rendered as one, the message read "`git merge-base
+    # HEAD origin/main` exited -1; is origin/main fetched?", which sends a reader to fetch a ref
+    # when the answer is that there is no git on this machine. The assertion is on the cause,
+    # not on the exception type.
     root = _repo(tmp_path)
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
     with pytest.raises(Failure, match="git could not be run"):
@@ -233,10 +234,10 @@ def test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code(
 
 @needs_git
 def test_a_submodule_gitlink_is_present_and_not_a_missing_file(tmp_path: Path) -> None:
-    # Fix round 2, item 1. `git archive` materialises a gitlink as an EMPTY DIRECTORY, which is
-    # neither a file nor a symlink — so the previous walk-and-subtract answered "missing 1
-    # tracked file(s)" and blamed a `.gitattributes` rule on every submodule-bearing
-    # repository. Measured before the fix: `expected - found == {'mod'}`.
+    # `git archive` materialises a gitlink as an EMPTY DIRECTORY, which is neither a file nor a
+    # symlink — so the previous walk-and-subtract answered "missing 1 tracked file(s)" and
+    # blamed a `.gitattributes` rule on every submodule-bearing repository. Measured before the
+    # fix: `expected - found == {'mod'}`.
     #
     # The gitlink is written with `update-index --cacheinfo` rather than `git submodule add`:
     # the tree entry is the same `160000 commit <sha>` either way, and this form needs no

@@ -85,7 +85,7 @@ def test_detach_leaves_a_rule_the_ledger_does_not_claim(tmp_path: Path) -> None:
 def test_detach_leaves_a_hook_entry_that_was_never_marked(tmp_path: Path) -> None:
     # The same rule for the other half of the file. `scaffold.apply_entries` splits a group
     # rather than replacing it, so a developer's own entry beside Keelline's survives — and
-    # this is the lane whose mistake would delete it.
+    # this is the command whose mistake would delete it.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], hooks=True)
     (root / ".claude").mkdir(exist_ok=True)
@@ -183,7 +183,7 @@ def test_detach_leaves_the_binding_record_in_place(tmp_path: Path) -> None:
 
 
 def test_detach_removes_a_rule_file_the_overlay_has_since_deleted(tmp_path: Path) -> None:
-    # §6.3 asks for "idempotent and reversible by `detach`", and the ledger is the only record
+    # `attach` stays idempotent and reversible by `detach`, and the ledger is the only record
     # of what was placed. A rule file deleted from the overlay between two attaches is not
     # written by the second one and so drops out of a ledger built from that run alone — while
     # the copy the first attach made is still in `.codex/rules/`, where Codex reads it as a
@@ -394,10 +394,10 @@ def test_detach_removes_the_directories_the_attach_created(tmp_path: Path) -> No
         ".codex",
         ".claude",
     }
-    # `paths.memory` is the documented exception and is named here so a lane that changes it has
-    # to change this line: `worktree.detach_main` withdraws the links and not the directory that
-    # held them, because that directory is repository-configured and may be one the project
-    # keeps for its own reasons.
+    # `paths.memory` is the documented exception and is named here so a change to it has to change
+    # this line: `worktree.detach_main` withdraws the links and not the directory that held them,
+    # because that directory is repository-configured and may be one the project keeps for its own
+    # reasons.
     memory = PurePosixPath(DEFAULT_MEMORY)
     assert _directories(root) - before == {str(memory), str(memory.parent)}
 
@@ -551,7 +551,7 @@ def test_a_whitespace_only_gitignore_survives_the_round_trip(tmp_path: Path) -> 
 
 
 def test_a_region_init_recorded_survives_a_detach(tmp_path: Path) -> None:
-    """DC4: ownership decides, not last writer.
+    """A region `init`'s footprint records is `init`'s: ownership decides, not last writer.
 
     `keelline init` records the `keelline:ignore` region as a footprint artifact with exactly
     the body `attach` writes — one spelling, imported rather than respelled, so neither command

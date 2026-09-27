@@ -1,4 +1,4 @@
-"""The import surface: everything a consumer lane may import from this area.
+"""The import surface: everything a consumer may import from this area.
 
 A module and not the package's `__init__`, for the same measured reason `keelline.memory.api`
 gives: `keelline.hooks.registry` imports `keelline.guards.hooks`, which imports the package
@@ -14,15 +14,15 @@ and one gate:
   `setup` can hold and cannot declare.
 - `attach`, `doctor` and `setup`'s own tests ask where an overlay's hooks really live rather
   than assume `.git/hooks` (`hooks_dir`, `HOOK_MARKER`) — an overlay with `core.hooksPath` set,
-  or one that is a worktree or a submodule, keeps them somewhere else, and both lanes had the
+  or one that is a worktree or a submodule, keeps them somewhere else, and both areas had the
   same wrong spelling hardcoded.
 - `ledger.scan`, `memory.refs` and `assess`'s probes all ask which roots a configuration's paths
   may reach (`contained_roots`), and two spellings of that would be two answers.
 - `assess` runs the `commit` gate (`commit_gate`), `(root, config, base) -> list[Finding]`;
   `commit check` reads the same range through the same `check_range`.
 
-A lane that needs something absent from this list grows it deliberately, in a commit that says
-which lane and why.
+An area that needs something absent from this list grows it deliberately, in a commit that says
+which area and why.
 
 **What is not here.** The commit rules (`offending_lines`, `check_range`, `strip_message` and
 their records), the hygiene and audit surface, the scanner a guard is built on, the failure

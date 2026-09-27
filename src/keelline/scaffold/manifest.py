@@ -1,11 +1,11 @@
-"""The machine ledger every scaffolded artifact is recorded in (§7.1).
+"""The machine ledger every scaffolded artifact is recorded in.
 
 The manifest is committed, so `upgrade` and `uninstall` work for a collaborator who never ran
 `init`. It is also the only reason `skip_modified` can exist: without a recorded hash there is
 no way to tell a file the tool wrote from a file a person wrote, and every refresh would be
-either a clobber or a no-op. It carries a `format` so a later migration can key on it (§7.3),
-and it is written atomically, because it is the one file whose corruption bricks both
-`upgrade` and `uninstall`.
+either a clobber or a no-op. It carries a `format` so a later migration can key on it, and it
+is written atomically, because it is the one file whose corruption bricks both `upgrade` and
+`uninstall`.
 
 Its own path is repository-controlled too. `.keelline` is an ordinary directory entry that a
 repository may commit as a symlink, and a clone materialises one, so both ends of the ledger
@@ -67,7 +67,7 @@ class Record:
     names a file the wheel ships and `read` can open — `project/roadmap.md`. `computed/<id>` says
     there is no shipped file at all and the bytes were built by the area: `project.templates`
     spells it `COMPUTED` and uses it for the rendered `keelline.toml`, the empty bug index and the
-    ignore block. Nothing reads the field yet; `upgrade` is the lane that will, and the choice is
+    ignore block. Nothing reads the field yet; `upgrade` is the command that will, and the choice is
     recorded here rather than left for it to rediscover, because the manifests it will read are
     being committed now. A reader tells "built" from "shipped" without asking the wheel, and no
     record claims a file that is not there — which is what three of them did until `7f5a007`.

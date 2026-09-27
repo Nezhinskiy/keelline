@@ -1,21 +1,21 @@
-"""The `setup` command (§5.2): configure this machine from a preset, once.
+"""The `setup` command: configure this machine from a preset, once.
 
 One command and not a group with subcommands, the same shape `attach`/`detach` take: `setup`
-does one of two things depending on which flags are given (Task 14 adds the second, the
-per-repository git hook), and neither is a subcommand of the other because a subcommand would
-still need `--root` to make sense of `--git-hooks` while the machine-level flags stay siblings
-of it rather than children.
+does one of two things depending on which flags are given (the second is the per-repository
+git hook `--git-hooks` installs), and neither is a subcommand of the other because a
+subcommand would still need `--root` to make sense of `--git-hooks` while the machine-level
+flags stay siblings of it rather than children.
 
-`--home` and `--machine` are not test affordances bolted on afterwards: the Global Constraints
-forbid a test from touching the developer's real `~/.claude` or `~/.config/keelline/`, and a
+`--home` and `--machine` are not test affordances bolted on afterwards: `CONTRIBUTING.md`
+forbids a test from touching the developer's real `~/.claude` or `~/.config/keelline/`, and a
 command whose only mode writes to the real ones could not be tested at all. Both default to the
 real paths, exactly as `--root` defaults to the current directory elsewhere in this CLI.
 
 `--machine` is **not** gated behind an interactive shell here, unlike `attach`/`detach`'s. That
-gate is about a flag that decides which overlay a *read* trusts (DP3); `setup` is the command
-that *writes* the machine file in the first place, so gating its own `--machine` would refuse
-the very thing this command exists to do, on every non-interactive run — including the CLI
-exit check this plan's own brief runs. Scoped to `attach`/`detach` on purpose, and left there.
+gate is about a flag that decides which overlay a *read* trusts; `setup` is the command that
+*writes* the machine file in the first place, so gating its own `--machine` would refuse the
+very thing this command exists to do, on every non-interactive run — including every scripted
+check of the CLI's exit codes. Scoped to `attach`/`detach` on purpose, and left there.
 """
 
 from __future__ import annotations
@@ -34,12 +34,11 @@ from keelline.runner import subprocess_runner
 # is: a test that wants to keep this command away from a real `claude`/`codex` binary has to
 # monkeypatch a name it can see, and `keelline.setup.commands.subprocess_runner` is one hop
 # rather than two — `run_setup` calling straight into `keelline.runner`'s own attribute
-# left the patch depending on an import this module does not own the shape of (Fix round 1,
-# item 5). The runner was the `overlay` area's when that was written; DC2 made it a leaf, and
-# this sentence follows it. `commands.py` is never imported by the hook registry (only
+# left the patch depending on an import this module does not own the shape of. The runner was
+# the `overlay` area's when that was written; it has since become the leaf module `runner.py`,
+# and this sentence follows it. `commands.py` is never imported by the hook registry (only
 # `hooks.py` files are, per `tests/test_areas.py`), so a module-scope import here does not
-# reach the clean-interpreter `discover()` this project's Global Constraints hold
-# `hooks.py` to.
+# reach the clean-interpreter `discover()` that `tests/test_areas.py` holds `hooks.py` to.
 
 _BOTH_MODES = (
     "--git-hooks installs a hook into one repository; --preset writes machine-level files. "

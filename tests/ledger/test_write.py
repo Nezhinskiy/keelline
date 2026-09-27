@@ -530,7 +530,7 @@ def test_a_severity_outside_the_vocabulary_is_rejected_before_anything_is_alloca
     tmp_path: Path,
 ) -> None:
     # `argparse` rejects it at the command line; the library says so too, because `file_entry`
-    # is on the import surface and a lane calling it directly gets no `choices=`.
+    # is on the import surface and a consumer calling it directly gets no `choices=`.
     root, config = project(tmp_path)
     with pytest.raises(LedgerError, match="--severity must be one of"):
         file_entry(root, config, title="t", severity="huge", area="a", fetch=False)

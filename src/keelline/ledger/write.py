@@ -30,8 +30,9 @@ from keelline.ledger.scan import citation_roots, scannable
 if TYPE_CHECKING:
     from keelline.config.schema import Config
 
-# Bound on the pre-allocation `git fetch`: an offline machine or a stalled remote must not
-# hang `new`, and a skipped fetch is reported rather than silent. Not a config key (D7).
+# Bound on the pre-allocation `git fetch`: an offline machine or a stalled remote must not hang
+# `new`, and a skipped fetch is reported rather than silent. A named cap
+# (CONTRIBUTING.md#named-caps), and no shipped file changes with it.
 FETCH_TIMEOUT_SECONDS = 10
 
 # The three optional fields are interpolated whole, `key: value` included, because an absent

@@ -1,4 +1,4 @@
-"""Keyed entries inside a settings file a person and several tools share (§7.2).
+"""Keyed entries inside a settings file a person and several tools share.
 
 Keying on a marker inside the command string rather than on position is what lets `upgrade`
 replace what Keelline installed while a foreign entry beside it — another plugin's, or the
@@ -10,10 +10,10 @@ its matcher and its position. And what the manifest stamps is `owned(document)` 
 entries alone — never the whole file, so a user adding a `permissions` block beside the hooks
 does not freeze Keelline's own entries forever.
 
-The second rule is why an *unmarked* entry arriving from a lane is a refusal and not a thing
+The second rule is why an *unmarked* entry arriving from a caller is a refusal and not a thing
 to install: unmarked, it is by definition one of the foreign entries those two rules exist to
 leave alone, so nothing downstream can tell Keelline's own wiring from somebody else's ever
-again. `unmarked()` is that check, and `mark()` is what a lane is supposed to have called.
+again. `unmarked()` is that check, and `mark()` is what a caller is supposed to have called.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def mark(command: str, entry_id: str) -> str:
 
 
 def unmarked(wanted: dict[str, list[dict[str, Any]]]) -> list[str]:
-    """Every command in a lane's `entries` that carries no `# keelline:<id>` marker.
+    """Every command in a caller's `entries` that carries no `# keelline:<id>` marker.
 
     The marker is not decoration: it is the key this whole module is built on. `owned()`
     renders the marked entries alone, and the engine stamps that rendering — so entries with
@@ -54,7 +54,7 @@ def unmarked(wanted: dict[str, list[dict[str, Any]]]) -> list[str]:
 
     Reported as a list rather than a bool so the refusal can name the offending command. The
     shape is checked on the way past for the same reason the marker is: `apply_entries` writes
-    `wanted` into the user's file verbatim, and nothing between a lane and that write looks at
+    `wanted` into the user's file verbatim, and nothing between a caller and that write looks at
     it — `_entries_of` validates the *document*, never the mapping coming in. An entry that is
     not an object, or whose command is not a string, cannot be keyed either, and `marker_id`
     raises on a non-string rather than answering about one.

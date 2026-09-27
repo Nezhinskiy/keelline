@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 
-# One run per branch, and the newest is the one that counts. A lane that pushes three commits
+# One run per branch, and the newest is the one that counts. A branch that pushes three commits
 # to an open pull request in five minutes queues three full matrices, and nobody reads the
 # first two answers — measured on this repository: `wp/fsops` alone ran six times. Never on
 # `main`: that run is the record that the branch everyone pulls is green, and the next push
@@ -89,7 +89,7 @@ jobs:
       - name: Build
         run: uv build
       - name: The artifacts carry what an installed Keelline needs
-        # D5: every earlier test resolves the template tree to the checkout; only an artifact
+        # Every earlier test resolves the template tree to the checkout; only an artifact
         # can say whether the build backend shipped it.
         run: uv run python scripts/check_artifacts.py dist
       - name: An installed wheel renders the overlay template
@@ -187,6 +187,6 @@ jobs:
           claude plugin validate .claude-plugin/marketplace.json --strict
           claude plugin validate .codex-plugin/plugin.json
       - name: The platform's own tag tool agrees with the manifests
-        # D12: `claude plugin tag --dry-run` checks the manifest side of "one version"; the
+        # `claude plugin tag --dry-run` checks the manifest side of "one version"; the
         # six-source gate above checks the rest. A dry run creates nothing.
         run: claude plugin tag --dry-run .

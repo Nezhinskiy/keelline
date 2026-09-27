@@ -78,7 +78,7 @@ def test_every_handler_declares_a_known_event() -> None:
 
 
 def test_the_background_guard_is_the_closed_pre_tool_use_handler() -> None:
-    # D11: a guard for an action with a high cost of error fails closed. This is the only
+    # A guard for an action with a high cost of error fails closed. This is the only
     # CLOSED handler in the plugin, and the policy is the whole difference between "could not
     # judge" and "permitted".
     handler = guard()
@@ -87,7 +87,7 @@ def test_the_background_guard_is_the_closed_pre_tool_use_handler() -> None:
 
 
 def test_no_config_is_silence_for_every_handler(tmp_path: Path) -> None:
-    # §12: "No keelline.toml → Plugin hooks silent." The guard included, by design.
+    # With no keelline.toml, no hook handler says anything. The guard included, by design.
     for handler in register():
         result = handler.run(bash_event(tmp_path, "sleep 300 &"), None)
         assert result.decision is None and result.context is None
@@ -160,9 +160,9 @@ def test_discovery_imports_no_guards_module_but_hooks(tmp_path: Path) -> None:
     assert "keelline.guards.hooks" in imported
     assert "keelline.guards.bgcleanup" not in imported
     assert "keelline.guards.bashscan" not in imported
-    # Task 8's two modules, named explicitly: `hygiene` imports `bashscan`, `roots` and
-    # `gitenv` at module scope, so a module-level import of it in `hooks.py` would be caught
-    # by the line above too — but only by accident of what it happens to import.
+    # The test-hygiene notice's two modules, named explicitly: `hygiene` imports `bashscan`,
+    # `roots` and `gitenv` at module scope, so a module-level import of it in `hooks.py` would
+    # be caught by the line above too — but only by accident of what it happens to import.
     assert "keelline.guards.hygiene" not in imported
     assert "keelline.guards.roots" not in imported
     assert "keelline.config" not in imported
@@ -258,8 +258,9 @@ def test_the_hygiene_notice_is_an_open_post_tool_use_handler_with_a_once_key() -
 def test_a_red_pytest_over_a_dirty_tree_is_noticed(
     tmp_path: Path, extra: dict[str, object]
 ) -> None:
-    # Both payload shapes through the handler, not only through `red_exit`: Premise 1 is about
-    # which field the harness actually sends, so the parametrisation has to reach `event.raw`.
+    # Both payload shapes through the handler, not only through `red_exit`: which field says a
+    # run was red depends on what the harness actually sends, so the parametrisation has to
+    # reach `event.raw`.
     # Reddened by mutating `_test_hygiene`'s last line to `return HookResult()`; measured.
     root = dirty_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")

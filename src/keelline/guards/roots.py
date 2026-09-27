@@ -1,5 +1,5 @@
 """`ledger.code_roots`, contained. `config.paths` guards `[paths]` and names this field as one
-the consuming lane must check itself; two commands here consume it."""
+the consuming module must check itself; two commands here consume it."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ def contained_roots(root: Path, config: Config) -> list[Path]:
     """`ledger.code_roots` that pass `contained()` and exist as directories, in config order.
 
     `config.paths` says the four path-shaped fields it does not guard and names
-    `ledger.code_roots` first; this is the call it asks the consuming lane to make.
+    `ledger.code_roots` first; this is the call it asks the consuming module to make.
 
     NO DIRECTORY IS RETURNED TWICE, and no directory under another returned one is returned
     beside it. Every consumer of this list walks each entry with `rglob` and adds up what it

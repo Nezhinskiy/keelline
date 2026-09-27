@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the built artifacts carry what an installed Keelline needs (D5).
+"""Check the built artifacts carry what an installed Keelline needs.
 
     uv run python scripts/check_artifacts.py dist            # the one wheel and one sdist
     uv run python scripts/check_artifacts.py rendered DIR    # what `overlay create --local` left

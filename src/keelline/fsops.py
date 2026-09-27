@@ -25,9 +25,9 @@ absolute `relative` restarted the walk at `/` — `openat` ignores its `dir_fd` 
 path. On Linux, where `/etc` and `/var` are real directories, that completed and yielded a
 descriptor outside the root; macOS refused it only incidentally, because those two happen to
 be symlinks there. No caller reached it — `scaffold.engine` calls `contained()` first — but
-the seam is the point: five later lanes are queued behind "every lane that puts a file into a
-repository calls it instead of writing files of its own", and the name of this function is
-what they will read as the guarantee. It is the guarantee now.
+the seam is the point: every area that puts a file into a repository calls it instead of writing
+files of its own, and the name of this function is what those callers read as the guarantee. It
+is the guarantee now.
 
 `contained()` in `config.paths` is still the right first call for a *configured* string: it
 answers about the project root, reports a `Refusal` a user can act on, and catches a committed
@@ -161,8 +161,8 @@ def checked_components(relative: str) -> tuple[str, ...]:
       the filesystem root;
     * `..`, which walks out one component at a time; and `.`, and an empty segment (`a//b`, a
       trailing slash), which are merely odd rather than dangerous — refused because this
-      function's answer is what five later lanes will read as "contained", and a surface that
-      quietly rewrites its argument is a surface whose guarantee has to be restated per caller;
+      function's answer is what every caller reads as "contained", and a surface that quietly
+      rewrites its argument is a surface whose guarantee has to be restated per caller;
     * and git's control directory, at any depth and in any case — see `CONTROL_DIRECTORY`.
       Staying inside the root is not the whole of containment for a repository-scoped tool:
       `.git/hooks/pre-commit` is inside every root Keelline is ever handed, and a clone that
@@ -170,7 +170,7 @@ def checked_components(relative: str) -> tuple[str, ...]:
       in place, because `_mode_of` carries an existing file's 0755 onto the replacement. This
       is the last line before the write, under `contained()` rather than instead of it, and it
       covers the callers that never had a configured string to check — `attach`, `overlay` and
-      `hooks-core` all pass paths that `contained()` never sees.
+      `hooks` all pass paths that `contained()` never sees.
     """
     if relative.startswith("/"):
         raise UnsafePath(f"{relative!r} is absolute; a path here must stay inside the root")
@@ -320,10 +320,10 @@ def mkdirs_within(root: Path, target: str) -> None:
     symlink anywhere along the path refuses with nothing created.
 
     Public, and here rather than in `scaffold.engine` where it was written, because it is the
-    subtle half of the surface rule the scaffold plan states: "every later lane that puts a
-    file into a repository calls it instead of writing files of its own". `attach`, `setup`,
-    `overlay` and `hooks-core` all write files that are not `Template`s; a private helper
-    leaves each of them to re-derive this, and the failure mode of getting it wrong is silent.
+    subtle half of the surface rule that every area putting a file into a repository calls it
+    instead of writing files of its own. `attach`, `setup`, `overlay` and `hooks` all write
+    files that are not `Template`s; a private helper leaves each of them to re-derive this, and
+    the failure mode of getting it wrong is silent.
     """
     # `checked_components` and not `PurePosixPath(target).parts`, so the whole target is
     # refused by
@@ -360,12 +360,13 @@ def rmdir_within(root: Path, target: str) -> None:
     on macOS and EISDIR on Linux, so a caller that reached for it got an `OSError` it was most
     likely already swallowing, and a tree that quietly never shrank.
 
-    Public, and here rather than private to its caller, for the reason `mkdirs_within` gives
-    one function above: "a private helper leaves each of them to re-derive this, and the
-    failure mode of getting it wrong is silent". `hooks-core` asked for it — the dispatcher's
-    marker tree is keyed by session and must be pruned, which is the one removal loop D14
-    permits — and it is the whole of the difference from `remove_within`, so a later hardening
-    of that walk reaches this too instead of leaving a copy behind.
+    Public, and here rather than private to its caller, for the reason `mkdirs_within` gives one
+    function above: "a private helper leaves each of them to re-derive this, and the failure mode of
+    getting it wrong is silent". The hook sink asked for it — its marker tree is keyed by session
+    and must be pruned, one of the two removals driven by a directory listing that the
+    enumerated-writes rule (CONTRIBUTING.md#enumerated-writes) permits — and it is the whole of the
+    difference from `remove_within`, so a later hardening of that walk reaches this too instead of
+    leaving a copy behind.
     """
     with open_within(root, target) as (dir_fd, name), contextlib.suppress(FileNotFoundError):
         os.rmdir(name, dir_fd=dir_fd)

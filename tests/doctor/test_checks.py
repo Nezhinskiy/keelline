@@ -1,7 +1,7 @@
-"""What `doctor` answers about an installation, and what it refuses to guess (§8.4).
+"""What `doctor` answers about an installation, and what it refuses to guess.
 
 One of the sixteen checks cannot be answered by this build and says so rather than guessing:
-`codex-trust`, a platform question §10 lists as unmeasured, and a check that
+`codex-trust`, a platform question no measurement has answered yet, and a check that
 returned green because it could not look would be strictly worse than one that admits it.
 `ci-ref` used to be counted beside it; `init` writes `[ci] ref`, so its skip reports a state of
 the repository and not a limit of this build.
@@ -224,7 +224,7 @@ def _attached(tmp_path: Path) -> Path:
     """A project bound to an overlay: the record, the ledger, the settings and the link tree.
 
     Built by hand rather than by running `attach`, so that what `doctor` reads is stated here
-    in one place and a change to either lane shows up as a disagreement rather than as two
+    in one place and a change to either command shows up as a disagreement rather than as two
     green suites. `tests/test_install_path.py` is where the two are run against each other.
     """
     overlay = _overlay(tmp_path)
@@ -274,8 +274,9 @@ def _attached(tmp_path: Path) -> Path:
 def test_a_repository_without_a_configuration_reports_one_line_and_skips_the_rest(
     tmp_path: Path,
 ) -> None:
-    # §12: "No keelline.toml → plugin hooks silent; doctor reports 'not initialised'." Sixteen
-    # red checks for a repository that never heard of Keelline is noise, not a diagnosis.
+    # A repository with no keelline.toml gets one red `not-initialised` row from doctor and a skip
+    # for every other check. Sixteen red checks for a repository that never heard of Keelline is
+    # noise, not a diagnosis.
     checks = _checks(tmp_path, tmp_path)
     assert _by_name(checks, "not-initialised").status == "red"
     assert {c.status for c in checks if c.name != "not-initialised"} == {"skip"}
@@ -332,8 +333,8 @@ def test_every_check_survives_having_nothing_to_look_at(tmp_path: Path) -> None:
 
 
 def test_a_foreign_hook_entry_is_listed_by_position_and_never_by_name(tmp_path: Path) -> None:
-    # §12: "A hook entry adds the Keelline marker to a hostile command → doctor lists every
-    # entry with provenance." An entry that claims the marker and is in no ledger is reported as
+    # A hostile command can carry the Keelline marker, so doctor lists every hook entry with
+    # its provenance. An entry that claims the marker and is in no ledger is reported as
     # claiming it, which is a stronger statement than "foreign" and the one a reader needs.
     #
     # **By position, never by the id.** The id is a substring of a command a repository wrote,
@@ -393,8 +394,8 @@ def test_a_settings_file_that_cannot_be_read_is_reported_rather_than_skipped(
 
 
 def test_two_entries_sharing_one_marker_id_are_counted_as_two(tmp_path: Path) -> None:
-    # DP4 states the miscount in as many words: `owned_ids` answers a `dict[str, str]`, so N
-    # entries under one id yield one key and the same id under two events keeps only the last.
+    # The miscount, in as many words: `owned_ids` answers a `dict[str, str]`, so N entries
+    # under one id yield one key and the same id under two events keeps only the last.
     # Counting keys deflates the Keelline count and inflates `foreign` by the difference.
     root = _attached(tmp_path)
     settings = root / LOCAL_SETTINGS
@@ -473,7 +474,8 @@ def test_the_wrapper_is_executed_rather_than_only_read(
     #
     # The fault is a missing launcher rather than a failed interpreter probe, because
     # `KEELLINE_PYTHON_CANDIDATES` is now honoured only from an interactive terminal and this
-    # probe is handed `/dev/null` — which is the point of C1 and not a detail of this row.
+    # probe is handed `/dev/null` — which keeps a repository's `env` block from choosing the
+    # interpreter the wrapper runs, and is not a detail of this row.
     monkeypatch.setattr(
         checks, "_own_root", lambda: _shipped_wrapper_root(tmp_path, with_launcher=False)
     )
@@ -494,9 +496,9 @@ def test_a_wrapper_that_runs_is_reported_green(tmp_path: Path) -> None:
 
 
 def test_an_unmeasured_platform_question_reports_skip_and_names_why(tmp_path: Path) -> None:
-    # §10 lists the Codex hook-trust hash under "unmeasured by these spikes", and §5.3 asks for
-    # red while any hook is untrusted. A check that returned green because it could not look
-    # would be strictly worse than one that admits it cannot.
+    # No spike has measured the hash Codex keys hook trust on, and red is owed while any
+    # Keelline hook is untrusted. A check that returned green because it could not look would
+    # be strictly worse than one that admits it cannot.
     check = _by_name(
         _checks(tmp_path, _initialised(tmp_path)),
         "codex-trust",
@@ -508,10 +510,10 @@ def test_an_unmeasured_platform_question_reports_skip_and_names_why(tmp_path: Pa
 def test_the_other_check_this_build_cannot_answer_skips_for_its_own_reason(
     tmp_path: Path,
 ) -> None:
-    # `ci-ref` wants `[ci] ref`, which `init` writes, and `init` is a later wave. Not invented
+    # `ci-ref` wants `[ci] ref`, which `init` writes and this fixture does not. Not invented
     # here: a check that compared a file against itself is worse than one that says it cannot
-    # look. `files` used to be the second of these and is not any more — Task 17 gave it the
-    # record to compare against, and the case below is what holds it.
+    # look. `files` used to be the second of these and is not any more — the release record in
+    # `hooks/hashes.json` gives it something to compare against, and the case below holds it.
     checks = _checks(tmp_path, _initialised(tmp_path))
     assert _by_name(checks, "ci-ref").status == "skip"
 
@@ -528,8 +530,8 @@ def _planted_plugin(base: Path, *, executable: bool = True) -> Path:
     The wrapper alone was enough while `files` measured only a mode. It is not enough now that
     the row compares the installed copies against the record: `write_record` refuses a tree
     missing any shipped file, so a fixture that planted one of three could not be recorded at
-    all. `HASHED_FILES` is the list, read from the release lane rather than spelled here, so a
-    lane that ships a fourth executable file plants it in every case below without editing one.
+    all. `HASHED_FILES` is the list, read from `keelline.release` rather than spelled here, so a
+    change that ships a fourth executable file plants it in every case below without editing one.
     """
     plugin = base / "plugin"
     bodies = {WRAPPER_BODY[0]: WRAPPER_BODY[1]}
@@ -543,9 +545,10 @@ def _planted_plugin(base: Path, *, executable: bool = True) -> Path:
 def test_a_wrapper_that_lost_its_executable_bit_is_red_although_no_hashes_exist(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # §5.9 and Task 1: the hash half of `files` cannot run in this build and the executable-bit
-    # half needs nothing but the file, so it runs regardless. A wrapper without `+x` exits 126,
-    # which Claude Code reads as a non-blocking error — permission.
+    # With no release record beside the wrapper the hash half of `files` has nothing to compare
+    # against, and the executable-bit half needs nothing but the file, so it runs regardless. A
+    # wrapper without `+x` exits 126, which Claude Code reads as a non-blocking error —
+    # permission.
     #
     # `_own_root` is stood down because the suite runs from a checkout, which *is* a plugin
     # root with a healthy wrapper in it, and that root now outranks the named variable. Reached
@@ -590,7 +593,7 @@ def test_a_named_plugin_root_never_outranks_the_one_this_keelline_is_part_of(
 def test_a_plugin_root_the_environment_named_is_read_and_never_executed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # C2. `_own_root()` answers `None` for a wheel — which is what `uv tool install` gives, and
+    # `_own_root()` answers `None` for a wheel — which is what `uv tool install` gives, and
     # what `cli-path`'s own remedy and the README tell people to install — so a project that
     # commits `hooks/run-hook.sh` mode 100755 in its own tree plus an `env` block naming that
     # tree got the script RUN by `keelline doctor`, which then reported
@@ -637,10 +640,10 @@ def _planted_log(tmp_path: Path, records: list[dict[str, object]]) -> Path:
 def test_a_diagnostics_log_the_environment_named_is_counted_and_never_quoted(
     tmp_path: Path,
 ) -> None:
-    # C3. The log is `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl`, and that variable is
-    # reachable from a committed `.claude/settings.json` `env` block — so `event`, `handler`
-    # and `error` are Keelline's own vocabulary only for a log Keelline wrote, which this
-    # process never establishes. Measured on the shipped code: a committed log whose `handler`
+    # The log is `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl`, and that variable is
+    # reachable from a committed `.claude/settings.json` `env` block — so `event`, `handler` and
+    # `error` are Keelline's own vocabulary only for a log Keelline wrote, which this process
+    # never establishes. Measured on the shipped code: a committed log whose `handler`
     # was an instruction-shaped string and whose `error` was 5,000 characters produced a
     # 5,114-character `warn` detail carrying both verbatim, and `skills/doctor/SKILL.md` tells
     # the model to relay that detail verbatim.
@@ -662,7 +665,7 @@ def test_a_diagnostics_log_the_environment_named_is_counted_and_never_quoted(
     assert handler not in check.detail
     assert "E" * 100 not in check.detail
     # Non-vacuous: the row still answers the question it exists for — how many failures, and
-    # where to read them — and it is a count, which is this lane's own answer.
+    # where to read them — and it is a count, which is `doctor`'s own answer.
     assert "1 hook failure(s) recorded" in check.detail
     assert "${CLAUDE_PLUGIN_DATA}" in check.remedy
     # The path is not quoted either: `${CLAUDE_PLUGIN_DATA}` expands to a value a repository
@@ -798,7 +801,7 @@ def test_a_hook_sink_log_this_process_cannot_read_is_a_warning_and_never_a_red_r
 
 def test_a_data_root_with_no_log_is_not_a_finding(tmp_path: Path) -> None:
     # The vacuity guard for both cases above: a check that warned whenever a data root was set
-    # would pass them. `sessions` is a count of directories, which is this lane's own answer.
+    # would pass them. `sessions` is a count of directories, which is `doctor`'s own answer.
     data = tmp_path / "data"
     (data / DIRECTORY / MARKERS / "abc").mkdir(parents=True)
     check = _by_name(
@@ -844,9 +847,9 @@ def _note(body: str, *, name: str, startup: int) -> str:
 
 
 def test_a_bundle_that_does_not_fit_its_slots_is_reported(tmp_path: Path) -> None:
-    # §9.5: "doctor reports a bundle whose notes do not fit its slots, which is the condition
-    # that needs a human — raising N edits a shipped file." Four standing notes of a whole slot
-    # each, against the three `standing-rules` entries `hooks/hooks.json` declares.
+    # A bundle whose notes do not fit its slots is the condition that needs a human — raising N
+    # edits a shipped file — so doctor reports it. Four standing notes of a whole slot each,
+    # against the three `standing-rules` entries `hooks/hooks.json` declares.
     #
     # In the overlay, not in a local-only store: `trust.may_inject` gates a store that lives in
     # the repository, so an untrusted local store renders every bundle empty and this assertion
@@ -902,7 +905,7 @@ def test_a_bundle_whose_largest_part_is_at_the_platform_cap_is_a_warning(tmp_pat
 def test_an_overlay_recording_another_remote_is_red_and_never_merely_attached(
     tmp_path: Path,
 ) -> None:
-    # §6.3's mismatch, seen from `doctor` rather than from `attach`: the ledger says this
+    # The binding mismatch `attach` refuses, seen from `doctor` instead: the ledger says this
     # checkout is attached and the overlay's own project record names a different remote, so
     # the notes on the other side of that binding are another repository's. The arm existed and
     # no case reached it — an installation in this state read as ordinarily attached.
@@ -941,7 +944,7 @@ def test_an_overlay_project_with_no_ledger_is_a_warning_naming_the_file(tmp_path
 
 
 def test_a_memory_path_that_is_a_real_directory_is_red_rather_than_ok(tmp_path: Path) -> None:
-    # §12 names this row specifically — "the shape one existing checkout already has" — because
+    # The shape an existing checkout can already have, and the one this row exists for, because
     # it looks attached and behaves like nothing. `~/.claude/projects/<slug>/memory` is where
     # the harness's own native reader looks, and a real directory there reads as an empty store
     # while the notes sit untouched in the overlay.
@@ -964,7 +967,7 @@ def _harness(tmp_path: Path, root: Path) -> Path:
 
 def test_a_harness_link_pointing_at_the_store_is_green(tmp_path: Path) -> None:
     # The vacuity guard for the test above, and for the three below it. The same fixture, with
-    # the shape §6.3 asks for: a symlink whose target really is the store this checkout
+    # the shape `attach` leaves: a symlink whose target really is the store this checkout
     # resolves, which in overlay mode is the link tree at `paths.memory`.
     #
     # This assertion used to be the *only* one on this row's green path, and the check never
@@ -983,9 +986,9 @@ def test_a_harness_link_pointing_at_the_store_is_green(tmp_path: Path) -> None:
 
 def test_a_harness_link_pointing_at_an_unrelated_directory_is_never_green(tmp_path: Path) -> None:
     # The state the row used to print "the harness memory path is a link to the store" for, in
-    # green, while the harness's native reader was reading somebody else's notes. This is the
-    # one channel §6.3 uses to reach the model, so a false sentence about where that memory
-    # comes from is the most expensive thing this check could say.
+    # green, while the harness's native reader was reading somebody else's notes. This link is
+    # the one channel attached notes take to reach the model, so a false sentence about where
+    # that memory comes from is the most expensive thing this check could say.
     #
     # Mutation: `mutations.toml`'s "doctor stops asking what the harness memory path points at".
     root = _attached(tmp_path)
@@ -1002,8 +1005,8 @@ def test_a_harness_link_pointing_at_an_unrelated_directory_is_never_green(tmp_pa
 
 def test_a_dangling_harness_link_is_never_green(tmp_path: Path) -> None:
     # The same defect's quieter half: the harness reads nothing through a link to a directory
-    # that is not there, which is §12's "looks attached and behaves like nothing" one shape
-    # over from the real directory the row above it already reddens.
+    # that is not there, which looks attached and behaves like nothing one shape over from the
+    # real directory the row above it already reddens.
     root = _attached(tmp_path)
     _harness(tmp_path, root).symlink_to(tmp_path / "never-existed")
     check = _by_name(
@@ -1037,7 +1040,7 @@ def test_an_absent_harness_path_is_green_only_while_the_trust_record_asks_for_th
 
 
 def test_the_overlays_secret_scan_is_reported_when_it_is_not_installed(tmp_path: Path) -> None:
-    # §6.4: the overlay holds the machine owner's own notes, so its commit-time secret scan is
+    # The overlay holds the machine owner's own notes, so its commit-time secret scan is
     # the one that matters. `overlay init` installs it on the machine that created the overlay
     # and never on a second one that cloned it.
     root = _attached(tmp_path)
@@ -1053,7 +1056,7 @@ def test_the_overlays_secret_scan_is_reported_when_it_is_not_installed(tmp_path:
 def test_the_overlays_hook_is_found_where_git_says_it_is_and_not_under_dot_git(
     tmp_path: Path,
 ) -> None:
-    # I2. `core.hooksPath` is an ordinary global dotfiles setting, and a worktree or submodule
+    # `core.hooksPath` is an ordinary global dotfiles setting, and a worktree or submodule
     # overlay keeps `.git` as a *file*. Against either, a hardcoded `.git/hooks/pre-commit`
     # warns permanently with a remedy that cannot clear it — the reader runs `pre-commit
     # install`, it succeeds, and the row stays yellow. `docs/cli.md` states the rule this
@@ -1088,7 +1091,7 @@ def test_an_overlay_git_cannot_answer_about_is_a_warning_and_never_a_red_row(
 
 
 def test_a_budget_the_project_tried_to_raise_is_named(tmp_path: Path) -> None:
-    # D7: "a project may lower a budget below the preset and never raise it". A value above the
+    # A project may lower a budget below the preset and never raise it. A value above the
     # preset is ignored rather than refused, so without this check nothing ever says that the
     # number in the file is not the number in force.
     root = _initialised(tmp_path)
@@ -1117,7 +1120,7 @@ def _bin(tmp_path: Path, *, with_cli: bool) -> str:
 
 
 def test_the_cli_resolving_by_name_is_green_and_never_prints_where(tmp_path: Path) -> None:
-    # §5.1/S2: Codex substitutes no plugin root in skill content, so every `keelline …` a skill
+    # Codex substitutes no plugin root in skill content, so every `keelline …` a skill
     # names has to resolve by name there. This row had no test of either arm, and it read
     # `os.environ["PATH"]` rather than the `env` it was handed — so its answer was a fact about
     # the developer's shell, and a body hardcoded to `WARN` passed the whole suite.
@@ -1161,9 +1164,9 @@ def test_a_cli_that_does_not_resolve_is_a_warning_that_names_the_install_command
     )
     assert check.status == "warn"
     assert "uv tool install" in check.remedy
-    # The address is `keelline.REPOSITORY_URL` and not a second spelling of it. This branch
-    # added that constant "spelled once (DC7)" and `overlay-requires`' remedy a few rows below
-    # reads it, while this one still carried the URL written out -- two places to change when
+    # The address is `keelline.REPOSITORY_URL` and not a second spelling of it. That constant
+    # exists so the URL is spelled once, and `overlay-requires`' remedy a few rows below reads
+    # it, while this one still carried the URL written out -- two places to change when
     # the repository moves, in the command whose job is finding the halves of something that
     # has stopped agreeing. Asserted against the source and not only against the text, because
     # an identical literal satisfies the text.
@@ -1176,9 +1179,9 @@ def test_a_cli_that_does_not_resolve_is_a_warning_that_names_the_install_command
 def test_an_environment_with_no_path_at_all_resolves_nothing(tmp_path: Path) -> None:
     # The hole the two cases above could not see, because `_env` always supplies a `PATH`:
     # `context.env.get("PATH")` answers `None` for an environment that carries none, and
-    # `shutil.which(path=None)` then reads `os.environ` -- so the one check this lane made a
-    # function of its context went back to the process environment for exactly the input where
-    # that matters most. A hook's environment is composed, not inherited.
+    # `shutil.which(path=None)` then reads `os.environ` -- so the one check built as a function of
+    # its context went back to the process environment for exactly the input where that matters
+    # most. A hook's environment is composed, not inherited.
     #
     # Mutation: `context.env.get("PATH", "")` -> `context.env.get("PATH")` -> reddens here on any
     # machine with `keelline` installed, and nowhere else in the suite.
@@ -1192,10 +1195,11 @@ def test_an_environment_with_no_path_at_all_resolves_nothing(tmp_path: Path) -> 
 
 
 def test_a_budget_the_project_lowered_is_reported_green_and_named(tmp_path: Path) -> None:
-    # The other side of the clamp, and the arm no case reached: lowering is the one direction D7
-    # allows, so it is `ok` — but it is still a number that is not the preset's, and a reader of
-    # this report is entitled to know which. The `every budget is the preset's` arm below is
-    # what keeps this one from passing for a fixture that configured nothing.
+    # The other side of the clamp, and the arm no case reached: lowering is the one direction a
+    # project may move a budget, so it is `ok` — but it is still a number that is not the
+    # preset's, and a reader of this report is entitled to know which. The `every budget is the
+    # preset's` arm below is what keeps this one from passing for a fixture that configured
+    # nothing.
     root = _initialised(tmp_path)
     (root / CONFIG_FILE).write_text(
         LOCAL_ONLY.format(version=keelline.__version__) + "\n[budgets]\nstatus_lines = 1\n",
@@ -1210,7 +1214,7 @@ def test_a_budget_the_project_lowered_is_reported_green_and_named(tmp_path: Path
 
 
 def test_a_note_store_holding_something_that_is_not_a_note_is_reported(tmp_path: Path) -> None:
-    # §8.4's `store-debris`. The count is Keelline's own; the file names are not, so they are
+    # `store-debris`. The count is Keelline's own; the file names are not, so they are
     # counted rather than printed and the remedy names the command that lists them.
     root = _initialised(tmp_path)
     store = root / ".keelline" / "local" / "memory" / "developer"
@@ -1428,7 +1432,7 @@ def test_a_committed_ledger_cannot_vouch_for_a_committed_hook_entry(tmp_path: Pa
     #
     # The ledger alone may never turn an entry green: an id is credible only if the entry it
     # names is one the overlay currently grants, and the overlay is trusted by construction
-    # (DP3) because its root comes from the machine configuration.
+    # because its root comes from the machine configuration.
     #
     # Mutation: `mutations.toml`'s "the attach ledger vouches for a hook entry on its own".
     root = _attached(tmp_path)
@@ -1582,9 +1586,9 @@ def test_the_wrapper_probe_never_inherits_this_process_stdin(
 
 
 def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
-    # D2 (DC3): a check used to build `Check("files", ...)` on every one of its return paths,
-    # up to seven times, and the registry spelled the name an eighth time. A row that
-    # disagreed with its key was one typo away and nothing would have said so. Now a check
+    # A check used to build `Check("files", ...)` on every one of its return paths, up to seven
+    # times, and the registry spelled the name an eighth time. A row that disagreed with its
+    # key was one typo away and nothing would have said so. Now a check
     # returns a `Row` and `_guarded` stamps the registry's name, so each name is a string
     # literal exactly once in this module: in `CHECKS`.
     #
@@ -1608,8 +1612,8 @@ def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
 
 def test_every_row_run_checks_returns_carries_its_registry_key(tmp_path: Path) -> None:
     # The two-line form of the same property, over the output rather than the source: the
-    # rows come back in registry order with registry names. No mutation of its own — with
-    # DC3 in place a row cannot be misnamed; this is the guard that outlives the refactor.
+    # rows come back in registry order with registry names. No mutation of its own — while
+    # `_guarded` stamps the name a row cannot be misnamed; this is the guard that outlives that.
     root = _initialised(tmp_path)
     rows = _checks(tmp_path, root)
     assert [row.name for row in rows] == [name for name, _ in module_checks()]
@@ -1618,9 +1622,9 @@ def test_every_row_run_checks_returns_carries_its_registry_key(tmp_path: Path) -
 def test_a_ledger_with_no_binding_in_the_overlay_is_a_warning_and_never_an_attach(
     tmp_path: Path,
 ) -> None:
-    # R5: `.keelline/local/attach.json` is a path a clone can commit, and `_attached` took its
-    # existence as "this checkout was attached". The overlay is the trusted side (DP3), so the
-    # row now asks it: a ledger with no `projects/<name>/project.toml` behind it is a warning
+    # `.keelline/local/attach.json` is a path a clone can commit, and `_attached` took its
+    # existence as "this checkout was attached". The overlay is the trusted side, so the row
+    # now asks it: a ledger with no `projects/<name>/project.toml` behind it is a warning
     # that names the file, and the remedy says what to do in each of the two cases.
     #
     # Mutation (declared): `if state == UNBOUND:` -> `if False:` -> the row falls
@@ -1638,12 +1642,12 @@ def test_a_ledger_with_no_binding_in_the_overlay_is_a_warning_and_never_an_attac
 
 
 def test_a_ledger_naming_a_store_the_overlay_does_not_permit_is_a_warning(tmp_path: Path) -> None:
-    # Fix round 1, item 1. `_attached` asked the overlay only for its *state*, and
-    # `read_binding` answers with a `Refusal` — not a state — when the store the ledger names is
-    # not this project's share of the recorded overlay. That refusal used to collapse into the
-    # same `None` as "no overlay recorded", the row skipped both new arms, and a repository that
-    # committed `.keelline/local/attach.json` with any store it liked was reported `attached:
-    # ok` to a model. This is the likeliest hostile shape of the three: an attacker cannot know
+    # `_attached` asked the overlay only for its *state*, and `read_binding` answers with a
+    # `Refusal` — not a state — when the store the ledger names is not this project's share of
+    # the recorded overlay. That refusal used to collapse into the same `None` as "no overlay
+    # recorded", the row skipped both new arms, and a repository that committed
+    # `.keelline/local/attach.json` with any store it liked was reported `attached: ok` to a
+    # model. This is the likeliest hostile shape of the three: an attacker cannot know
     # the victim's overlay root, so the store they commit is one the overlay does not permit.
     #
     # `warn` and not `skip`: this is a fact about the repository, and `skip` never reaches the
@@ -1677,10 +1681,11 @@ def _no_overlay_machine(tmp_path: Path) -> Path:
 def test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_attached(
     tmp_path: Path,
 ) -> None:
-    # The universal case on a machine where `setup` has never run, and the second half of item
-    # 1: `read_binding` refuses for this too, and the row used to print "attached" over it. It
-    # is a fact about *our own inputs*, so it is a `skip` that says what could not be asked —
-    # never a warning that accuses the repository, and never the word "attached".
+    # The universal case on a machine where `setup` has never run, and the other refusal beside the
+    # one the test above covers: `read_binding` refuses for this too, and the row used to print
+    # "attached" over it. It is a fact about *our own inputs*, so it is a `skip` that says what
+    # could not be asked — never a warning that accuses the repository, and never the word
+    # "attached".
     #
     # Mutation (declared): `if context.overlay is None: return NO_OVERLAY` -> `if False:` ->
     # the reason becomes `UNRESOLVED` (the refusal is indistinguishable once the arm is gone)
@@ -1807,7 +1812,7 @@ def test_a_record_key_this_build_does_not_ship_is_counted_and_never_quoted(
 def test_installed_files_that_match_the_release_record_are_green_and_a_changed_one_is_red(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # K6 (§8.4, §5.9): `files` skipped for want of a record. With `hooks/hashes.json` beside
+    # `files` used to skip for want of a record. With `hooks/hashes.json` beside
     # the wrapper, the installed copies are compared to what the release recorded: a match
     # is green, a changed wrapper is red with the reinstall remedy, and an older build with
     # no record still skips. Mutation (declared): compare the record to itself -> the red
@@ -1839,7 +1844,7 @@ def test_installed_files_that_match_the_release_record_are_green_and_a_changed_o
     assert files_row().status == RED
 
     # **The tree is put back first**, and the restore is asserted before the record is broken.
-    # Fix round 1, item 2: without it this arm measured nothing. The row was already red from
+    # Without it this arm measured nothing. The row was already red from
     # the two edits above, and an uncaught `UnreadableRecord` becomes a red row anyway through
     # `_guarded`, which reds every non-`OSError` exception — so `status == RED` held with
     # `_files`' `except UnreadableRecord:` arm deleted outright, and that arm is the entire
@@ -1855,7 +1860,7 @@ def test_installed_files_that_match_the_release_record_are_green_and_a_changed_o
     assert "present and unreadable" in unreadable.detail
 
 
-# --- The wave-3 refactor pass: four rows that named the wrong cause ---------------------------
+# --- Four rows that named the wrong cause -----------------------------------------------------
 
 
 def test_a_shipped_file_the_record_does_not_name_is_not_called_a_mismatch(
@@ -1994,9 +1999,9 @@ def test_overlay_requires_is_red_when_a_bound_project_needs_a_newer_keelline(
 def test_a_local_only_project_is_warned_and_never_reddened_by_an_unrelated_floor(
     tmp_path: Path,
 ) -> None:
-    # DC2's own sentence, which is why this requirement has a row of its own rather than being
-    # folded into `versions`: "a `local-only` project on a machine that records an overlay must
-    # not go red for a requirement it has no relationship with". The finding is the same finding
+    # The reason this requirement has a row of its own rather than being folded into
+    # `versions`: a `local-only` project on a machine that records an overlay must not go red
+    # for a requirement it has no relationship with. The finding is the same finding
     # and says the same thing; only the level moves, because red gates the exit code. Asserted
     # as the level AND the whole text, so this case cannot pass for the red case's reason or
     # vice versa.
@@ -2063,7 +2068,7 @@ def test_overlay_requires_warns_on_a_form_it_cannot_read(tmp_path: Path) -> None
 
 
 def test_a_local_only_project_is_not_judged_by_an_unrelated_overlays_floor(tmp_path: Path) -> None:
-    # DC2's reason for a row of its own: the verdict is the machine's, so the `versions` row
+    # The reason for a row of its own: the verdict is the machine's, so the `versions` row
     # stays about the project and never goes red for this.
     #
     # And the consequence the decision is actually about, asserted over the whole report rather

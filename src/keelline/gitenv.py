@@ -40,16 +40,16 @@ from pathlib import Path
 # Everything else is dropped, `GIT_DIR` and `GIT_WORK_TREE` above all.
 GIT_ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "SYSTEMROOT")
 
-# Wall-clock bound on one `git` call: a cap, not read from `config.budgets` or
-# `config.native_caps`, so no shipped file needs to change with it. It is the bound for a local,
-# argument-free, read-only query against the environment below (`rev-parse`, `remote get-url`,
-# `--version`), which neither touches the network nor grows with the repository: it guards
-# against a `git` binary that hangs outright, and is generous for that without leaving a hook
-# blocked for long. A caller whose query is not that shape passes its own wider bound instead
-# and says why beside it — `keelline.ledger.write.FETCH_TIMEOUT_SECONDS` for one that reaches
-# the network, `QUERY_TIMEOUT_SECONDS` below for one that is merely slow, since a `log --all`
-# over a long history is not a five-second `rev-parse`. Tune this number for the hang, not for a
-# remote and not for a long history.
+# Wall-clock bound on one `git` call: a named cap (CONTRIBUTING.md#named-caps), and no shipped file
+# changes with it. It is the bound for a local, argument-free, read-only query against the
+# environment below (`rev-parse`, `remote get-url`, `--version`), which neither touches the network
+# nor grows with the repository: it guards against a `git` binary that hangs outright, and is
+# generous for that without leaving a hook blocked for long. A caller whose query is not that shape
+# passes its own wider bound instead and says why beside it —
+# `keelline.ledger.write.FETCH_TIMEOUT_SECONDS` for one that reaches the network,
+# `QUERY_TIMEOUT_SECONDS` below for one that is merely slow, since a `log --all` over a long history
+# is not a five-second `rev-parse`. Tune this number for the hang, not for a remote and not for a
+# long history.
 GIT_TIMEOUT_SECONDS = 5
 # The wider bound on one local query that grows with the repository — a `log --all`, a `grep`
 # over a long history, a listing of every tracked file — which neither reaches the network nor

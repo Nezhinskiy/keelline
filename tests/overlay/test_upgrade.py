@@ -28,9 +28,9 @@ def _restamp(root: Path, artifact_id: str) -> None:
 
 
 def test_an_untouched_skeleton_file_is_refreshed(tmp_path: Path) -> None:
-    # §6.1: "refreshes untouched skeleton files after a release by the project rule (§7.3)".
-    # That rule is C2's hash comparison; this asserts the overlay really goes through it rather
-    # than reimplementing it.
+    # `overlay upgrade` refreshes untouched skeleton files after a release by the same rule a
+    # project's files follow, which is the scaffold engine's hash comparison; this asserts the
+    # overlay really goes through it rather than reimplementing it.
     root = _an_overlay(tmp_path)
     (root / "README.md").write_text("stale", encoding="utf-8")
     _restamp(root, "README.md")  # record the hash of the stale text, as a release would
@@ -48,10 +48,10 @@ def test_a_hand_edited_file_is_skipped_and_named(tmp_path: Path) -> None:
 
 
 def test_the_two_permission_files_are_asked_about_even_when_unchanged(tmp_path: Path) -> None:
-    # §6.1 names exactly two exceptions to the hash rule, "which it diffs and asks about
-    # regardless of hash" — they are the two files that can grant capability, and a hash match
-    # is not consent for those. C2 has no verb for it and is frozen, so the decision list lives
-    # beside the plan rather than inside it.
+    # Exactly two files are exceptions to the hash rule, and `overlay upgrade` diffs and asks
+    # about them regardless of hash — they are the two files that can grant capability, and a
+    # hash match is not consent for those. The scaffold engine every area shares has no verb for
+    # it, so the decision list lives beside the plan rather than inside it.
     root = _an_overlay(tmp_path)
     decisions = upgrade(root, dry_run=True).decisions
     assert set(decisions) == {"common/claude/permissions.json", "common/claude/hooks.json"}
@@ -76,11 +76,11 @@ def test_a_dry_run_writes_nothing_where_a_real_run_would(tmp_path: Path) -> None
 def test_a_directory_that_is_not_an_overlay_is_refused_before_anything_is_written(
     tmp_path: Path,
 ) -> None:
-    # Review finding 10. `--root` defaults to `.` and was checked nowhere: in a directory
+    # `--root` defaults to `.` and was checked nowhere: in a directory
     # holding a `README.md` and a `src/main.py`, `keelline overlay upgrade --root .` created
     # the whole overlay — both plugin manifests, `hooks/hooks.json`, `common/**`, `.gitignore`
     # and `.github/workflows/scan.yml` — reported them as work done and exited 0. (Fourteen
-    # files when the finding was written; `OVERLAY_FILES` is sixteen now, which is why the
+    # files when the defect was found; `OVERLAY_FILES` is sixteen now, which is why the
     # count is not restated here.) Writing a workflow file into a repository the owner may then
     # commit is the concrete harm.
     #
@@ -111,7 +111,7 @@ def test_the_cli_exits_two_rather_than_zero_on_a_directory_that_is_not_an_overla
 
 
 def test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release(tmp_path: Path) -> None:
-    # Review finding 15. `overlay init` rewrote both manifests behind the scaffold ledger, so
+    # `overlay init` rewrote both manifests behind the scaffold ledger, so
     # every later `upgrade` reported `skip_modified .claude-plugin/plugin.json (hand-edited)` —
     # for the one file carrying `keelline.requires`, the version-compatibility declaration the
     # README advertises, and attributing to the owner an edit Keelline itself made. `init` now

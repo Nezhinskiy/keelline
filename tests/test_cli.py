@@ -198,7 +198,7 @@ def test_a_broken_area_never_erases_the_prompt_on_a_non_blocking_event(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], event: str
 ) -> None:
     # One later area's import-time bug in its commands.py must not cost the user what they
-    # typed: exit 2 on UserPromptSubmit erases the prompt (design §5.3).
+    # typed: exit 2 on UserPromptSubmit erases the prompt.
     monkeypatch.setattr("keelline.cli.discover_registrars", _broken)
     assert main(["hook", event]) == 0
     err = capsys.readouterr().err
@@ -243,9 +243,9 @@ def test_discovery_raising_a_base_exception_gets_the_same_verdicts_as_an_excepti
     code: int,
 ) -> None:
     # `main`'s own guard around discovery and the parser build stayed `except Exception` after
-    # A1 widened `dispatch`, `run_hook` and `cli.run` to `BaseException`, so an area importing
+    # `dispatch`, `run_hook` and `cli.run` were widened to `BaseException`, so an area importing
     # something that raises KeyboardInterrupt or asyncio.CancelledError at import time bypassed
-    # `_discovery_failed` (and its §5.3 judging) entirely instead of degrading open on
+    # `_discovery_failed` (and its per-event judging) entirely instead of degrading open on
     # SessionStart and refusing on PreToolUse and on a non-hook command, exactly like a
     # RuntimeError already does.
     monkeypatch.setattr("keelline.cli.discover_registrars", _broken_by_keyboard_interrupt)
@@ -281,9 +281,9 @@ def test_a_broken_parser_build_is_judged_like_a_broken_import(
     argv: list[str],
     code: int,
 ) -> None:
-    # An area's `register()` runs during the parser build, one line outside the try that judged
-    # its import. The bypass went both ways: PreToolUse returned 1 where §5.3 requires 2, and
-    # UserPromptSubmit returned 1 where it must degrade open. Two areas claiming one group name
+    # An area's `register()` runs during the parser build, one line outside the try that judged its
+    # import. The bypass went both ways: PreToolUse returned 1 where a blocking event requires 2,
+    # and UserPromptSubmit returned 1 where it must degrade open. Two areas claiming one group name
     # is the same failure, and a plausible merge accident in an architecture that adds areas.
     monkeypatch.setattr("keelline.cli.discover_registrars", lambda: list(registrars))
     assert main(argv) == code

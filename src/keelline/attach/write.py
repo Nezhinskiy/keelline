@@ -8,29 +8,29 @@ marked entry with a foreign one is **split, not replaced**, and a shape it canno
 **refused, not filtered**, because "dropping a group it did not recognise deletes somebody
 else's hook and says nothing".
 
-*Not C2's `plan`/`apply` for the settings file.* The engine stamps a digest of the document into
-the **committed** `.keelline/manifest.json`, which would publish a digest of the owner's personal
-allow rules to every collaborator. The pure functions are called instead — document string in,
-document string out, no manifest — and the ledger below takes the manifest's place. This is the
-one place where refusing an existing mechanism is right.
+*Not the scaffold engine's `plan`/`apply` for the settings file.* The engine stamps a digest of
+the document into the **committed** `.keelline/manifest.json`, which would publish a digest of
+the owner's personal allow rules to every collaborator. The pure functions are called
+instead — document string in, document string out, no manifest — and the ledger below takes
+the manifest's place. This is the one place where refusing an existing mechanism is right.
 
 *Not one id for every entry.* `owned_ids` returns `dict[str, str]`, so one shared
 `keelline:overlay` id yields exactly one provenance row however many entries there are, and the
 same id under two events keeps only the last. `permissions.overlay_entries` numbers them
 `overlay-<event>-<n>`, one per entry.
 
-*Not a pretence that the two halves are symmetric (DP4).* A hook entry's `# keelline:<id>` lives
+*Not a pretence that the two halves are symmetric.* A hook entry's `# keelline:<id>` lives
 inside its command string, so it has an in-band witness that survives the file being edited by
 hand. A `permissions.allow` string cannot carry one — `scaffold.mark` appends to a *command* —
 so an allow rule has exactly **one** witness, the ledger at `.keelline/local/attach.json`, and
 `detach` is only ever as good as that file.
 
 **The ledger is written under `.keelline/local/`, and the `.gitignore` region goes first.** The
-repository has no `.keelline` line today and the lane that would ship one is out of scope, so
-without that region `attach` drops the owner's personal allow rules into a tracked-by-default
-path. It is written before the ledger rather than beside it, so the ledger is never in a tracked
-path even for an instant — and if the region cannot be written, writing the ledger would be a
-leak, so the answer is a refusal rather than a warning.
+repository has no `.keelline` line today and nothing in this area ships one, so without that
+region `attach` drops the owner's personal allow rules into a tracked-by-default path. It is
+written before the ledger rather than beside it, so the ledger is never in a tracked path even
+for an instant — and if the region cannot be written, writing the ledger would be a leak, so the
+answer is a refusal rather than a warning.
 
 **Every write goes through a primitive that already exists.** `fsops.write_within(root, …)` for
 everything inside the project and `fsops.write_within(overlay, …)` for the binding record — the
@@ -101,9 +101,9 @@ IGNORE_REGION = "ignore"
 # `keelline assess` writes.
 IGNORED = (".keelline/local/", ".keelline/assessment.json")
 IGNORE_NOTE = "# Keelline's local state: yours, never a collaborator's."
-# The region body, spelled once. `init` (wave 4, the `project` area) records this same region
-# as a scaffold artifact, and a second spelling would let `init` and `attach` each report the
-# other's region as hand-edited.
+# The region body, spelled once. `init` (the `project` area) records this same region as a
+# scaffold artifact, and a second spelling would let `init` and `attach` each report the other's
+# region as hand-edited.
 IGNORE_BODY = "\n".join((IGNORE_NOTE, *IGNORED))
 PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
 # The hook's *name*; where it lives is `guards.hooks_dir`'s answer and not `.git/hooks`. An
@@ -113,8 +113,8 @@ PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
 # every time. `docs/cli.md`'s `setup --git-hooks` section states the rule this now follows:
 # `git rev-parse --git-path hooks`, never `core.hooksPath`.
 PRE_COMMIT_HOOK = "pre-commit"
-# §6.3's fallback for the one link that leaves Keelline's own channel: "a settings-file value is
-# subject to workspace trust and a link is not", so the symlink is preferred and this is taken
+# `attach`'s fallback for the one link that leaves Keelline's own channel: a settings-file value
+# is subject to workspace trust and a link is not, so the symlink is preferred and this is taken
 # only when it cannot be made.
 FALLBACK_KEY = "autoMemoryDirectory"
 # The fifth refusal `attach` owes before it writes anything, kept beside the four above it rather
@@ -193,7 +193,7 @@ class Attached:
 
 @dataclass(frozen=True)
 class AttachLedger:
-    """The only witness an allow rule has (DP4), and the record `detach` acts from.
+    """The only witness an allow rule has, and the record `detach` acts from.
 
     Not *authority*, and the difference is the whole of this docstring. `.gitignore` does not
     untrack a file a clone committed, so this path can arrive in a fresh checkout with contents
@@ -220,7 +220,7 @@ class AttachLedger:
     `scaffold.marker_id` and nothing else can appear there.
 
     `allow` and `store` are not bounded here, and saying why is part of the rule rather than an
-    omission. An allow rule has no grammar this lane owns — the ledger exists *because* a rule
+    omission. An allow rule has no grammar this area owns — the ledger exists *because* a rule
     cannot be told from the owner's own by its content — and `_withdraw_settings` only ever
     removes a rule the settings file already holds, so the worst a committed `allow` achieves is
     taking a permission away. `store` is read by nothing: `detach` derives every path it
@@ -260,8 +260,8 @@ def _checked(
 ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
     """`rules`, `settings_keys` and `directories`, or a `Refusal` counting what was never written.
 
-    Counted and never quoted: these strings are repository-authored by the Global Constraints'
-    own list, and a refusal built out of one is still one.
+    Counted and never quoted: these strings are repository-authored (principle 5), and a
+    refusal built out of one is still one.
     """
     rules = tuple(r for r in raw.get("rules", []) if isinstance(r, str))
     keys = tuple(k for k in raw.get("settings_keys", []) if isinstance(k, str))
@@ -344,7 +344,7 @@ def _write_ignore_region(root: Path) -> None:
 
     One `scaffold.upsert` with the `keelline:ignore` marker: everything outside the region comes
     back out as it went in, which is the whole point of a managed region and the reason this
-    does not need C2's manifest.
+    does not need the scaffold engine's manifest.
     """
     path = root / GITIGNORE
     try:
@@ -413,7 +413,7 @@ def _merged_settings(document: str, diff: PermissionDiff, binding: Binding) -> s
 
 
 def _codex_rules(root: Path, binding: Binding) -> tuple[str, ...]:
-    """Copy the overlay's standing rules to where Codex reads them (§6.3).
+    """Copy the overlay's standing rules to where Codex reads them.
 
     Kept apart from the Claude settings merge because the two harnesses fail differently and a
     shared path would hide which. The list itself is `permissions.codex_rules`, so that
@@ -435,7 +435,7 @@ def _codex_rules(root: Path, binding: Binding) -> tuple[str, ...]:
 def _record_binding(binding: Binding) -> bool:
     """Write `projects/<name>/project.toml`, keeping the first-attach date it already carries.
 
-    The record is the owner's consent (§6.2: "bound remote URL(s), first-attach date"), so a
+    The record is the owner's consent — the bound remote URL and the first-attach date — so a
     repository the overlay already records correctly is left alone — re-stamping the date on
     every attach would turn a fact into a timestamp of the last run.
     """
@@ -450,8 +450,8 @@ def _record_binding(binding: Binding) -> bool:
     relative = f"{PROJECTS}/{binding.project}/{PROJECT_RECORD}"
     first = _first_attach(binding.overlay / relative) or datetime.date.today().isoformat()
     # `tomlout` and not an f-string: the value is a git remote URL, which is repository-authored
-    # by the Global Constraints' own list, and one carrying a quote and a newline would write
-    # further keys into the record that decides what `attach` trusts.
+    # (principle 5), and one carrying a quote and a newline would write further keys into the
+    # record that decides what `attach` trusts.
     fsops.write_within(
         binding.overlay,
         relative,
@@ -472,7 +472,7 @@ def _first_attach(record: Path) -> str | None:
 
 
 def _secret_scan(binding: Binding, runner: Runner) -> str | None:
-    """§6.3: run `pre-commit install` in the overlay if it is missing.
+    """Run `pre-commit install` in the overlay if it is missing.
 
     `overlay init` runs it on the machine that created the overlay, which is the first attach's
     happy path — but a second machine clones an overlay initialised elsewhere and never runs
@@ -485,7 +485,7 @@ def _secret_scan(binding: Binding, runner: Runner) -> str | None:
     try:
         installed = (hooks_dir(binding.overlay) / PRE_COMMIT_HOOK).exists()
     except Refusal:
-        # `hooks_dir` shells out to `git`, and a `git` that cannot answer is this lane's own
+        # `hooks_dir` shells out to `git`, and a `git` that cannot answer is this area's own
         # kind of missing optional binary: a note, never a traceback, and never a `pre-commit
         # install` fired blind at an overlay whose hooks directory nobody could name.
         return (
@@ -550,8 +550,8 @@ def _write_ledger(
     # deleted from the overlay between two attaches is not written this time and so drops out of
     # a ledger built from this run alone — while the copy from the first attach is still sitting
     # in `.codex/rules/`, where Codex reads it as a standing instruction. `detach` would then
-    # leave an agent-steering file behind, and §6.3 asks for "idempotent and reversible by
-    # `detach`".
+    # leave an agent-steering file behind, and `attach` must stay idempotent and reversible by
+    # `detach`.
     placed = list(previous.rules) if previous is not None else []
     placed += [rule for rule in rules if rule not in placed]
     # `scaffold.marker_id` and not a second parser for the marker: the ledger's keys have to be
@@ -603,9 +603,9 @@ def _group_directories(binding: Binding, config: Config) -> list[str]:
 def _check_groups(binding: Binding, config: Config) -> None:
     """Refuse a `memory.groups` entry that leaves this project's share of the overlay — first.
 
-    §7.4 and D15: `memory.groups` is repository-authored and reaches no guard of its own —
-    `config/paths.py` says so in as many words, and names this lane as the one that has to call
-    the containment itself. This lane was calling it, and calling it too late: the refusal came
+    `memory.groups` is repository-authored (principle 5) and reaches no guard of its own —
+    `config/paths.py` says so in as many words, and leaves the containment to the module that
+    consumes the field. This module was calling it, and calling it too late: the refusal came
     out of `_prepare_store`, which runs after the ignore region, the `.codex/rules/` copies, the
     settings merge, the ledger **and** the overlay's binding record. So a clone committing
     `groups = ["../../escape"]` got `attach` to write five artifacts and exit 2, with
@@ -656,8 +656,8 @@ def _worktrees(root: Path) -> list[Path]:
     """Every checkout of this repository, from `git worktree list --porcelain`.
 
     Through `gitenv.git_run`, which scrubs `GIT_DIR` and `GIT_WORK_TREE`: an inherited one would
-    list the worktrees of a different repository altogether, and this lane then writes into each
-    one of them.
+    list the worktrees of a different repository altogether, and this module then writes into
+    each one of them.
     """
     code, out = git_run(root, "worktree", "list", "--porcelain")
     if code != 0:
@@ -673,7 +673,7 @@ def _worktrees(root: Path) -> list[Path]:
     # same state completed. Skipped here, so both halves read the same set.
     found: list[Path] = []
     # Lines split where git ended them: `splitlines()` also broke a path at a `\r` it holds, and
-    # listed `…/wt` — a directory that is not the worktree, and one this lane links into — for
+    # listed `…/wt` — a directory that is not the worktree, and one this module links into — for
     # the worktree at `…/wt\rx` (`gitenv.answer_lines`).
     for block in out.split("\n\n"):
         lines = answer_lines(block)
@@ -714,7 +714,7 @@ def _checkouts(root: Path) -> list[Path]:
 def _link_everywhere(
     root: Path, binding: Binding, config: Config, *, machine: Path | None, home: Path | None
 ) -> Links:
-    """The owning checkout first, then every other worktree (§6.3).
+    """The owning checkout first, then every other worktree.
 
     `attach_main` handles the checkout that holds the store — the case `worktree.link` excludes
     — and `link` handles the rest unchanged. A `PartialLink` propagates carrying **everything
@@ -777,19 +777,19 @@ def _recorded_keys(root: Path) -> tuple[str, ...]:
 def _harness_fallback(
     root: Path, config: Config, *, machine: Path | None, home: Path | None
 ) -> tuple[str, ...]:
-    """§6.3's fallback, taken only when the symlink could not be made — and withdrawn again here.
+    """The settings-file fallback, taken only when no symlink could be made — and withdrawn here.
 
-    The link is preferred "because a settings-file value is subject to workspace trust and a
-    link is not". It cannot be made on a filesystem that refuses symlinks, or where a real
-    directory already sits at the path — the case `worktree._link` refuses to clobber. The gate
+    The link is preferred because a settings-file value is subject to workspace trust and a link
+    is not. It cannot be made on a filesystem that refuses symlinks, or where a real directory
+    already sits at the path — the case `worktree._link` refuses to clobber. The gate
     is asked with the same predicate `worktree.harness_link_needed` answers for the link itself,
     so a store the owner has not approved gets neither channel.
 
     **And it is asked in both directions, in the same call**, which is `memory/worktree`'s rule
     one hop over: "a gate evaluated once, at creation, over state that persists is not a gate".
     A settings value is exactly such state, and this is the same channel that module calls "the
-    one hop that leaves this lane's gate" — the harness's own native reader, outside every
-    delimiter and every trust record this lane controls. `_apply_harness_link` already revokes
+    one hop that leaves keelline's gate" — the harness's own native reader, outside every
+    delimiter and every trust record this area controls. `_apply_harness_link` already revokes
     the *symlink* when the record lapses; this key outlived it, so a `git pull` that added one
     note shut every channel except the one pointing the harness straight at the new bytes.
 
@@ -886,7 +886,7 @@ def attach(
 
     `runner` and `home` are keyword-**required** rather than defaulted so that no test can reach
     a real `pre-commit` or the developer's own `~/.claude/`. A default here would leave that as
-    a convention, which is the thing the rule exists to replace: while this wave was being
+    a convention, which is the thing the rule exists to replace: while this module was being
     written, every call that omitted `home` computed a path under the real home directory.
     """
     # One load for the whole run, handed to `read_binding` rather than left for it to make a
@@ -1075,13 +1075,14 @@ def _ignore_region_remainder(root: Path) -> str | None:
 def _footprint_owns_region(root: Path) -> bool:
     """Whether `keelline init`'s footprint, and not this attach, put the ignore region there.
 
-    DC4, and it is an ownership rule rather than a last-writer one. `init` records the same
-    `keelline:ignore` block as a scaffold artifact, with the body imported from this module
-    rather than respelled -- a second spelling would let each command report the other's region
-    as hand-edited -- and that block is **committed**. Withdrawing it would take a line out of a
-    tracked file this command never wrote, and leave `upgrade` reading the footprint as
-    hand-edited on a repository nobody edited. `attach`'s own write stays and is idempotent;
-    only the withdrawal asks this.
+    A region `init`'s footprint records is `init`'s, whichever command wrote it last: an
+    ownership rule rather than a last-writer one. `init` records the same `keelline:ignore`
+    block as a scaffold artifact, with the body imported from this module rather than respelled
+    -- a second spelling would let each command report the other's region as hand-edited -- and
+    that block is **committed**. Withdrawing it would take a line out of a tracked file this
+    command never wrote, and leave `upgrade` reading the footprint as hand-edited on a
+    repository nobody edited. `attach`'s own write stays and is idempotent; only the withdrawal
+    asks this.
 
     The manifest and not a new ledger field: the ledger is untracked and per-checkout, while
     "whose region is this" has to answer the same for every clone of the project. A repository
@@ -1178,14 +1179,14 @@ def _withdraw_directories(root: Path, recorded: AttachLedger) -> tuple[str, ...]
 def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     """Remove exactly what `attach` added, reading the ledger for what that was.
 
-    It does **not** touch `projects/<name>/project.toml`. That record is the owner's consent
-    (§6.2), not a piece of local state: deleting it would turn every later re-attach into a
-    first attach, and re-ask a question that was already answered.
+    It does **not** touch `projects/<name>/project.toml`. That record is the owner's consent,
+    not a piece of local state: deleting it would turn every later re-attach into a first
+    attach, and re-ask a question that was already answered.
 
-    `machine` and `home` are keyword-required for the reason every function in this wave takes
-    them, and required rather than defaulted for the reason `attach` gives: a resolver without a
-    machine file reads the developer's real `~/.config/keelline/`, and the harness link is under
-    their real home. A caller that means "the machine owner's own" says `None` out loud.
+    `machine` and `home` are keyword-required, as they are on `attach` and on every helper here
+    that takes them, and required rather than defaulted for the reason `attach` gives: a resolver
+    without a machine file reads the developer's real `~/.config/keelline/`, and the harness link
+    is under their real home. A caller that means "the machine owner's own" says `None` out loud.
 
     **What it may refuse on, and when.** `detach` cannot refuse the way `attach` does once it has
     begun: by the time it reaches the link tree the recorded allow rules, the marked hook entries

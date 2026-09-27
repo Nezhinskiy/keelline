@@ -7,10 +7,11 @@ have run* against a stub instead of shelling out to `gh`, `git` or `pre-commit`.
 `subprocess.run` would hide the argv, which is the only part of these calls that can be wrong in
 a way a user notices: a missing `--private` publishes somebody's private overlay.
 
-A missing binary is a finding, never a traceback (the global constraints make `gh`, `git` and
-`pre-commit` optional), so an `OSError` from the launch becomes `Completed(NOT_FOUND, ...)` and
-the caller turns it into a note. A binary that ran and never returned gets its own code,
-`TIMED_OUT`, because "not installed" and "hung for five minutes" are different findings.
+A missing binary is a finding, never a traceback: Keelline installs none of `gh`, `git` and
+`pre-commit`, and has to report on a machine that lacks any of them. So an `OSError` from the launch
+becomes `Completed(NOT_FOUND, ...)` and the caller turns it into a note. A binary that ran and never
+returned gets its own code, `TIMED_OUT`, because "not installed" and "hung for five minutes" are
+different findings.
 """
 
 from __future__ import annotations
@@ -29,11 +30,12 @@ NOT_FOUND = 127
 # as `NOT_FOUND` -- which every caller reads as "gh is not installed". A wrong finding is worse
 # than a slow one, and the two states have different remedies.
 TIMED_OUT = 124
-# Wall-clock bound on one call, and deliberately far wider than `gitenv.GIT_TIMEOUT_SECONDS`
-# (D7: a cap, not a config key). That one bounds a local, argument-free query that neither
-# touches the network nor grows with the repository; every call here does the opposite — `gh
-# repo create --clone` waits on GitHub to generate a repository from a template, and the clone
-# that follows comes down the wire. Tune this for a hung process, not for a slow link.
+# Wall-clock bound on one call: a named cap (CONTRIBUTING.md#named-caps), and no shipped file
+# changes with it. Deliberately far wider than `gitenv.GIT_TIMEOUT_SECONDS`, which bounds a local,
+# argument-free query that neither touches the network nor grows with the repository; every call
+# here does the opposite — `gh repo create --clone` waits on GitHub to generate a repository from a
+# template, and the clone that follows comes down the wire. Tune this for a hung process, not for a
+# slow link.
 NETWORK_TIMEOUT_SECONDS = 300
 # Inherit the environment rather than scrub it: these are the machine owner's own authenticated
 # commands, and `gh` needs its token and `git` its ssh-agent to work at all. What is dropped is
@@ -46,7 +48,7 @@ NETWORK_TIMEOUT_SECONDS = 300
 # that redirect git was wrong.** `GH_HOST` and `GH_CONFIG_DIR` redirect `gh` the same way and
 # are kept deliberately: they are how a GitHub Enterprise owner reaches their own host, and
 # dropping them would break that installation outright to close a gap the inherited token does
-# not have. A lane that needs them gone should say which call and why.
+# not have. A caller that needs them gone should say which call and why.
 _ENV_DROP = (
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -68,10 +70,10 @@ _ENV_DROP = (
 # password.
 #
 # **This used to say the `ci-ref` row resolves a repository-authored URL, and it does not.** That
-# row has asked about `keelline.REPOSITORY_URL`, a module constant, since the wave-4 lane that
-# gave it one. The control is unchanged and still needed; what was wrong was the sentence
-# explaining it, which named the one caller it had stopped applying to -- and a false rationale on
-# a hardening is how a later lane concludes the hardening is unnecessary.
+# row has asked about `keelline.REPOSITORY_URL`, a module constant, ever since that constant was
+# introduced. The control is unchanged and still needed; what was wrong was the sentence explaining
+# it, which named the one caller it had stopped applying to -- and a false rationale on a hardening
+# is how a later change concludes the hardening is unnecessary.
 _ENV_FORCE = {"GIT_TERMINAL_PROMPT": "0"}
 # How a launched program's output is read: as text in the locale's codec, and a byte that codec
 # cannot read is U+FFFD rather than a `UnicodeDecodeError`. The rule rests on what every caller
@@ -139,7 +141,7 @@ class _SubprocessRunner:
 
 def subprocess_runner(*, timeout: float | None = None) -> Runner:
     """The real one. List form, never `shell=True`, and every repository- or argument-derived
-    value passed after a `--` so a name shaped like an option cannot become one (§3).
+    value passed after a `--` so a name shaped like an option cannot become one (principle 5).
 
     `timeout` is the wall-clock bound on each call this runner makes, defaulting to
     `NETWORK_TIMEOUT_SECONDS`. It is a keyword and it is on the factory rather than on the

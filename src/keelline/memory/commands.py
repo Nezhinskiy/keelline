@@ -1,4 +1,4 @@
-"""The `memory` group (§5.2). Every command takes `--store PATH` (§9.1).
+"""The `memory` group. Every command takes `--store PATH`.
 
 `--store` is an override of *where the notes are*, not of the rules about them: it is held to
 the same target rule as a link the resolver found, so passing a path is not a way around the
@@ -54,7 +54,7 @@ def _machine(args: argparse.Namespace) -> Path | None:
 # **stdout** under `--json` — twice, in one object, since the envelope carries it as both
 # `summary` and the message. `memory session-context` is a `hooks.json` entry, so the invariant
 # was holding only on the expectation that those entries never pass `--json`: an expectation
-# owned by a different lane, asserted by no test here, and contradicted by `hooks.py` going to
+# owned by a different area, asserted by no test here, and contradicted by `hooks.py` going to
 # real lengths to keep this same string out of `HookResult.context`.
 #
 # So the detail is kept and wrapped, rather than dropped. A person running `memory index` by
@@ -306,16 +306,17 @@ def run_session_context(args: argparse.Namespace) -> Result:
         known = ", ".join(b.value for b in Bundle)
         raise Refusal(f"unknown bundle {args.bundle!r}; known: {known}") from exc
     store, config = _store(args)
-    # §9.5: "On Codex the handler also injects the index, because Codex has no native
-    # auto-memory." Here rather than in `bundles.render`, which is a library function with no
+    # On Codex the index bundle is injected too, because Codex has no native auto-memory to load the
+    # index itself. Here rather than in `bundles.render`, which is a library function with no
     # environment to read; `detect_harness` is the hook area's own answer to the same question.
     #
     # **No payload is passed, so only the environment half of that answer is in play here.**
-    # `detect_harness` reads a stdin pair (`model`/`permission_mode`) *when it is handed one*,
-    # which the dispatcher does and this call site does not: there is no stdin payload at a
-    # command invocation. What decides it here is `PLUGIN_ROOT` alone — Codex sets it and also
-    # sets `CLAUDE_PLUGIN_ROOT`, so the `CLAUDE_*` names identify nothing (S1) and neither
-    # "claude" nor "unknown" reaches the render.
+    # `detect_harness` reads a stdin pair (`model`/`permission_mode`) *when it is handed one*, which
+    # the dispatcher does and this call site does not: there is no stdin payload at a command
+    # invocation. What decides it here is `PLUGIN_ROOT` alone — Codex sets it and, as the spike
+    # record (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) measured in its *Codex plugin
+    # hooks* trial, also sets `CLAUDE_PLUGIN_ROOT`, so the `CLAUDE_*` names identify nothing and
+    # neither "claude" nor "unknown" reaches the render.
     #
     # **This is the one shipped command whose output depends on the ambient environment**, and
     # it is deliberate rather than incidental: the bundle exists for the harness that has no

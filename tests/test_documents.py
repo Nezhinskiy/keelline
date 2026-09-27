@@ -43,7 +43,7 @@ FRESH_MONTHS = 2
 BACKING_LABELS = ("sourced", "measured", "thin")
 _LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 _FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
-# `| S12 | title | 2026-08 | 2026-09 | https://… | cited for | notes |` — seven cells. The
+# `| S<n> | title | 2026-08 | 2026-09 | https://… | cited for | notes |` — seven cells. The
 # published cell is a month or the word `living` for a maintained page that carries no date.
 _SOURCE_ROW = re.compile(
     r"^\| (S\d+) \| ([^|]+) \| (\d{4}-\d{2}|living) \| (\d{4}-\d{2}) \| "
@@ -146,8 +146,8 @@ def test_no_module_claims_the_test_tree_cannot_share_a_helper() -> None:
 
 def test_the_methodology_walks_are_not_empty() -> None:
     # The vacuity guard for every parametrised test below: an empty methodology directory
-    # or an empty sources table passes them all vacuously. Named apart from the two gate
-    # guards in `tests/test_neutral_wave2.py` so `-k` can pick one.
+    # or an empty sources table passes them all vacuously. Named apart from the gate guards in
+    # `tests/test_neutral.py` so `-k` can pick one.
     assert PRINCIPLES in public_documents()
     assert len(sources()) >= SOURCES_FLOOR
     assert len(principle_sections()) >= PRINCIPLES_FLOOR
@@ -171,8 +171,8 @@ def test_every_source_row_parses_and_the_table_has_no_other_rows() -> None:
 
 
 def test_every_citation_resolves_and_every_source_is_cited() -> None:
-    # Mutations: cite `[S99]` in a principle → the first assertion reddens; add a row `S98`
-    # nothing cites → the second reddens. Both directions, because an uncited source is a
+    # Mutations: cite `[S99]` in a principle → the first assertion reddens; add a source row
+    # that no `[S98]` cites → the second reddens. Both directions, because an uncited source is a
     # source someone meant to use and forgot, which is a claim left without its evidence.
     cited = set(_CITATION.findall(PRINCIPLES.read_text(encoding="utf-8")))
     cited |= set(_CITATION.findall((METHODOLOGY / "README.md").read_text(encoding="utf-8")))
@@ -297,7 +297,7 @@ def registered_commands() -> set[str]:
 
 # A vacuity floor, not a count of the commands this CLI ships: the parser registered twenty
 # when this test was written, and the number is here so that a walk which found nothing — or
-# half of them — cannot satisfy the subset check above it. A lane that ships a command raises
+# half of them — cannot satisfy the subset check above it. A change that ships a command raises
 # the parser's count and leaves this alone.
 REGISTERED_COMMANDS_FLOOR = 20
 
@@ -313,7 +313,7 @@ def test_the_parser_registers_what_this_test_expects_to_walk() -> None:
 
 def test_every_registered_command_has_a_readme_row() -> None:
     # Mutation: delete the `keelline docs trail` line from the README → reddens naming it.
-    # This is the test that makes the README a shared file every lane owes a line to.
+    # This is the test that makes the README a shared file every command owes a line to.
     named = {" ".join(line.split()[1:3]) for line in readme_invocations()}
     named |= {line.split()[1] for line in readme_invocations()}
     missing = sorted(command for command in registered_commands() if command not in named)
@@ -432,19 +432,17 @@ def test_the_readme_points_at_the_methodology_and_the_reference() -> None:
 
 
 CLI_REFERENCE = ROOT / "docs" / "cli.md"
-# The section Task 6 created and two later waves anchor on. Everything between its heading and
-# the next `## ` heading, so a table moved out of it stops being checked loudly rather than
-# quietly.
+# The `## Shared flags` section of `docs/cli.md`. Everything between its heading and the next `## `
+# heading, so a table moved out of it stops being checked loudly rather than quietly.
 _SHARED_FLAGS_SECTION = re.compile(r"^## Shared flags\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL)
 _TABLE_ROW = re.compile(r"^\| (?!Flag |Command and flag |---)(.+?) \| (.+?) \|$", re.MULTILINE)
 
 
 def test_the_shared_flag_tables_are_the_constants_and_not_a_second_spelling() -> None:
-    # Fix round 1, item 4. DC4's premise is that no sentence is spelled by hand, and the
-    # section this task added spelled all nine of them a second time in a document nothing
-    # checked — re-creating, one file over, exactly the drift the task exists to remove. Held
-    # row by row to `keelline.command`'s constants, the same way the README's Commands block is
-    # held to the real parser above.
+    # No shared-flag sentence is spelled by hand, and that section of `docs/cli.md` spelled all nine
+    # of them a second time in a document nothing checked — re-creating, one file over, exactly the
+    # drift one constant per flag exists to remove. Held row by row to `keelline.command`'s
+    # constants, the same way the README's Commands block is held to the real parser above.
     #
     # Mutation: change the `--machine` row's cell in `docs/cli.md` → reddens naming the row.
     from keelline.command import (
@@ -603,11 +601,11 @@ def test_the_doctor_table_is_the_registry_and_not_a_second_spelling() -> None:
     ]
 
 
-# Fix round 1, item 3. The five verdict sentences are `VERDICTS` in
-# `keelline.guards.attribute` and are reproduced by hand in `docs/cli.md`'s table; every test
-# that had them read the expectation back out of `VERDICTS`, which is shape 9 of the
-# `sweep-defect-class` skill's own reference — both sides move together under any reword. This
-# is the same rule the Shared flags tables are held to, one section over.
+# The five verdict sentences are `VERDICTS` in `keelline.guards.attribute` and are reproduced by
+# hand in `docs/cli.md`'s table; every test that had them read the expectation back out of
+# `VERDICTS`, which is shape 9 of the `sweep-defect-class` skill's own reference — both sides move
+# together under any reword. This is the same rule the Shared flags tables are held to, one section
+# over.
 _ATTRIBUTE_SECTION = re.compile(
     r"^## `keelline test attribute[^\n]*\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL
 )
@@ -640,7 +638,7 @@ def _anchor(heading: str) -> str:
 
 def test_the_cli_reference_contents_lists_every_section_in_order() -> None:
     # Every `## ` heading after the Contents, in order, each linked by GitHub's anchor: a command
-    # section a lane adds without its Contents line, or a heading renamed under a stale link, is
+    # section added without its Contents line, or a heading renamed under a stale link, is
     # a reference a reader cannot navigate. The floor is today's section count (44: the 39 there
     # were before `assess`, `gate`, `adopt begin`, `adopt promote` and `init --questions`), so a
     # walk that found nothing, or half, cannot pass.

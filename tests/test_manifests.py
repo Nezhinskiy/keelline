@@ -43,13 +43,12 @@ def test_codex_manifest_carries_no_hooks_or_skills_key() -> None:
     manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text())
     assert manifest["name"] == "keelline"
     assert "hooks" not in manifest
-    # `claude plugin validate` refuses "../skills/" as a path traversal attempt and
-    # reports "./skills/" as not found, because the value resolves relative to
-    # .codex-plugin/ itself: no string reaches the root-level skills/ directory from
-    # there. `skills/` now holds skills, but the key is the foundation/release lane's to
-    # add — this assertion is what encodes its absence today, and the lane that adds it
-    # rewrites this test and its name, once Codex's own manifest reading has actually
-    # been measured.
+    # `claude plugin validate` refuses "../skills/" as a path traversal attempt and reports
+    # "./skills/" as not found, because the value resolves relative to .codex-plugin/ itself: no
+    # string reaches the root-level skills/ directory from there. `skills/` now holds skills, but
+    # the key is the release's to add — this assertion is what encodes its absence today, and the
+    # change that adds it rewrites this test and its name, once Codex's own manifest reading has
+    # actually been measured.
     assert "skills" not in manifest
 
 
@@ -58,8 +57,8 @@ def test_the_repository_itself_passes_release_check() -> None:
 
 
 def test_the_repository_itself_carries_a_current_release_record() -> None:
-    # DC5: the record is kept true on every commit and not only at a tag, which is what makes
-    # it a record anyone has watched fail. A change to the wrapper, to `hooks/hooks.json` or to
+    # The release record is kept true on every commit and not only at a tag, which is what makes it
+    # a record anyone has watched fail. A change to the wrapper, to `hooks/hooks.json` or to
     # `scripts/keelline` that forgot `keelline release hashes` reddens here and in the gate.
     assert drift(ROOT) == []
 
@@ -148,8 +147,8 @@ def test_every_changelog_fragment_carries_towncriers_orphan_prefix() -> None:
 
     towncrier reads the part before `.<type>.md` as the fragment's issue reference and
     `issue_format = "{issue}"` renders it in parentheses at the end of the bullet, so the 26
-    fragments assembled for 0.1.0 would each have published an internal lane slug — one of
-    them a wave number. The `+` is towncrier's documented `orphan_prefix`; it suppresses the
+    fragments assembled for 0.1.0 would each have published an internal slug nobody outside
+    the repository can read. The `+` is towncrier's documented `orphan_prefix`; it suppresses the
     reference and leaves the slug readable in the repository, and it is per-fragment, so a
     fragment that one day names a real issue still renders its reference.
 

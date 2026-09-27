@@ -1,4 +1,4 @@
-"""Decide, then write (contract C2).
+"""Decide, then write.
 
 `plan` reads and decides; `apply` writes. The split is what makes `--dry-run` honest — the
 report a user approves is produced by the same code path that then runs — and it is what makes
@@ -8,15 +8,15 @@ Two rules are easy to state and easy to get backwards, so they are stated here o
 
 *An absent record does not mean "hands off" for every kind.* For a whole file it does: a file
 Keelline never wrote is somebody's. For a managed region and for keyed entries the file
-belongs to somebody by definition, and an absent record is the ordinary first install — §7.2's
-second and third rows exist for exactly that case. The hand-edit oracle for those two kinds is
-the region body and the marked entries, never the file around them.
+belongs to somebody by definition, and an absent record is the ordinary first install — the
+rules for regions and for keyed entries exist for exactly that case. The hand-edit oracle for
+those two kinds is the region body and the marked entries, never the file around them.
 
 *A refusal is an artifact's, not the plan's.* A file that cannot be read, a region whose markers
 no longer say where it ends, a settings document that is not JSON: each is recorded in
 `Plan.refusals` and the remaining templates are still decided. `plan` raises only for input no
 per-artifact report could rescue — the configured profile, the manifest itself, and a malformed
-`Template`, which is a bug in the lane that built it rather than a file a user can put right.
+`Template`, which is a bug in the caller that built it rather than a file a user can put right.
 Both shapes of malformed `Template` raise, symmetrically: a managed region that names no
 region, and keyed entries that name no entries. The second did not, and `entries or {}` turned
 it into a silent uninstall of whatever the user had wired up.
@@ -70,14 +70,14 @@ _IN_FILE = (Kind.MANAGED_REGION, Kind.KEYED_ENTRIES)
 # bad merge, a half-typed edit — and both are answered per artifact. `Refusal` itself is
 # deliberately not caught: `_payload_and_stamp` raises it for a `MANAGED_REGION` template
 # carrying no region name and for a `KEYED_ENTRIES` template carrying no entries, each a
-# malformed `Template` and so a bug in the lane that built it, not something a user can put
+# malformed `Template` and so a bug in the caller that built it, not something a user can put
 # right by editing a file.
 _OWN_FILE_REFUSALS = (RegionError, EntriesError)
 _VERB_FOR = {Kind.MANAGED_REGION: Verb.REGION_UPDATE, Kind.KEYED_ENTRIES: Verb.ENTRIES_UPDATE}
 
 
 def validate_sources(config: Config) -> None:
-    """§7.4's second rule: the two values that name a file inside the *plugin* root.
+    """Contain the two values that name a file inside the *plugin* root, not the project root.
 
     "Inside the project root" cannot bound them by construction, so each is validated as one
     path segment and looked up against the listing. The preset half is already enforced by the
@@ -228,11 +228,11 @@ def _payload_and_stamp(template: Template, current: str | None) -> tuple[str, st
     if template.kind is Kind.KEYED_ENTRIES:
         if template.entries is None:
             # `{}` means "remove every Keelline entry", and `Template.entries` defaults to
-            # `None` — so `template.entries or {}` read a lane that forgot one keyword argument
-            # as a lane asking to uninstall the user's hook wiring, reported the result as
+            # `None` — so `template.entries or {}` read a caller that forgot one keyword argument
+            # as a caller asking to uninstall the user's hook wiring, reported the result as
             # `entries_update` / "refreshed", and rewrote the manifest as though it were an
             # ordinary upgrade. The malformed-`Template` rule five lines above is the same
-            # rule: a bug in the lane that built it, raised rather than acted on. `{}` is left
+            # rule: a bug in the caller that built it, raised rather than acted on. `{}` is left
             # to mean removal, for the caller that genuinely wants it.
             raise Refusal(f"{template.id}: a keyed-entries template names no entries")
         if missing := unmarked(template.entries):
@@ -242,7 +242,7 @@ def _payload_and_stamp(template: Template, current: str | None) -> tuple[str, st
             # `owned()` renders the marked entries alone, so with none marked it answers `{}`
             # for both the payload and what is already on disk, the digests match, and the
             # artifact is reported `unchanged` — the report says "up to date" about a file
-            # nothing wrote. A lane that did not call `entries.mark` is a bug in that lane,
+            # nothing wrote. A caller that did not call `entries.mark` is a bug in that caller,
             # raised rather than acted on, exactly like a malformed `Template` above.
             raise Refusal(
                 f"{template.id}: a keyed-entries template carries {len(missing)} entry/entries "
@@ -292,8 +292,8 @@ def plan(
 ) -> Plan:
     """What applying `templates` under `config` would do, decided and not yet written.
 
-    `owners` is which artifacts the lane that built `templates` builds to write each place, and
-    `left_copies` says what it guards. A lane whose templates are never kept out of git (the
+    `owners` is which artifacts the caller that built `templates` builds to write each place, and
+    `left_copies` says what it guards. A caller whose templates are never kept out of git (the
     overlay's) has no ledger to guard and passes none.
     """
     validate_sources(config)
@@ -361,13 +361,11 @@ def plan(
                 )
                 continue
             if template.kind is Kind.ONCE and current is not None:
-                # `skip_modified`, which is the plan's decision table (row: "no record, file
-                # present, kind is `template` or `once`"), and not `unchanged`, which is what
-                # this said. The plan contradicts itself between that row and its prose, so the
-                # choice is recorded here: `unchanged` renders as "up to date", and Keelline has
-                # no idea whether this file is up to date — a create-once artifact is one it
-                # deliberately never looks inside again. "Left alone because it is yours" is the
-                # true statement, and it is the one the user can act on.
+                # `skip_modified` (no record, file present, kind `template` or `once`), and not
+                # `unchanged`, which is what this said: `unchanged` renders as "up to date", and
+                # Keelline has no idea whether this file is up to date — a create-once artifact
+                # is one it deliberately never looks inside again. "Left alone because it is
+                # yours" is the true statement, and it is the one the user can act on.
                 actions.append(
                     Action(
                         Verb.SKIP_MODIFIED,
@@ -687,8 +685,8 @@ def _write(root: Path, target: str, payload: str) -> None:
     `overlay` and `hooks-core` all write files that are not `Template`s, and the half they need
     is the walk, not this area's verdict vocabulary.
 
-    The second clause is what keeps C5's exit 2 reachable. A user who saves a file where a
-    directory component belongs while reading the dry-run report, then confirms, would
+    The second clause is what keeps the refusal exit code, 2, reachable. A user who saves a file
+    where a directory component belongs while reading the dry-run report, then confirms, would
     otherwise get a traceback instead of a refusal, and no race is needed for that.
     """
     try:
@@ -704,7 +702,7 @@ def _remove(root: Path, target: str, payload: str | None) -> None:
 
     The same second clause `_write` carries, for the same reason: a directory Keelline may read
     but not write to arrives here as EACCES from `os.unlink` rather than as an `UnsafePath`, and
-    only a refusal keeps C5's exit 2 reachable.
+    only a refusal keeps the refusal exit code, 2, reachable.
     """
     if payload is not None:
         _write(root, target, payload)

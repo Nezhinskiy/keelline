@@ -1,4 +1,4 @@
-"""Publish the overlay template repository from the owner's checkout (§5.9, §6.1, DC6).
+"""Publish the overlay template repository from the owner's checkout.
 
 Render `templates/overlay/` into a scratch directory, strip the scaffold ledger (a repository
 generated from a template carries none, and publishing one would make every generated overlay
@@ -14,8 +14,8 @@ is no separate `--dry-run` flag, because a second way to say the same thing is a
 to get wrong. The first draft of this ran `gh repo create --public` before the gate, so the
 documented dry run created a public repository on the owner's account.
 
-**It runs from the owner's authenticated checkout by design.** §5.9: the public repository's
-CI holds no credential that can write a second repository, so this is not a workflow and never
+**It runs from the owner's authenticated checkout by design.** The public repository's CI
+holds no credential that can write a second repository, so this is not a workflow and never
 becomes one. `gh` decides the protocol and carries the token; this module only names the argv.
 """
 

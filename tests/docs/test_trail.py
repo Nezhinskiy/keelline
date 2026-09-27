@@ -527,16 +527,17 @@ def test_a_trail_file_that_is_not_utf8_is_a_failure_not_an_internal_error(tmp_pa
 
 
 def test_a_trail_file_that_will_not_parse_never_quotes_its_own_keys(tmp_path: Path) -> None:
-    """P10, and newly reachable: `trail.toml` is one of the twelve files `keelline init` ships.
+    """A repository-authored key never prints raw, and here it is reachable: `trail.toml` is one
+    of the twelve files `keelline init` ships.
 
-    So after wave 4 every repository `init` touches has one that `read_trail` parses, and
-    `tomllib`'s own message embeds the source for several of its faults — a duplicate table is
-    reported with the table's name in it, and a TOML key is arbitrary quoted text. Only the
-    position prints, through `config.loader.toml_position`.
+    So every repository `init` touches has one that `read_trail` parses, and `tomllib`'s own
+    message embeds the source for several of its faults — a duplicate table is reported with the
+    table's name in it, and a TOML key is arbitrary quoted text. Only the position prints,
+    through `config.loader.toml_position`.
 
-    Mutation: the shared one, "a tomllib message is quoted back whole" — that entry names the two
-    P10 tests in `tests/config` and `tests/project`, and breaking `toml_position` reddens this
-    third call site's assertion the same way.
+    Mutation: the shared one, "a tomllib message is quoted back whole" — that entry names this
+    test beside the three in `tests/config` and `tests/project`, because breaking `toml_position`
+    reddens this call site's assertion the same way.
     """
     root, config = corpus(tmp_path, trail=None)
     (root / "docs" / "trail.toml").write_text(

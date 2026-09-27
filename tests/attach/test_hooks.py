@@ -55,7 +55,7 @@ def _event(root: Path, source: str | None = None) -> HookEvent:
 
 
 def _machine_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """The hook path reads `<home>/.config/keelline/config.toml` and nothing else (§5.4); HOME is
+    """The hook path reads `<home>/.config/keelline/config.toml` and nothing else; HOME is
     pinned so nothing of the developer's is read. `tests/doctor/test_command.py` pins it the same
     way, for the same reason and with the same one call."""
     home = tmp_path / "home"
@@ -405,7 +405,7 @@ def test_a_failure_with_no_except_of_its_own_is_silence_not_an_exception(
 ) -> None:
     """The blanket backstop, which every other case in this module leaves standing.
 
-    `except Exception` is what keeps an open handler from costing a session (§5.3), and every case
+    `except Exception` is what keeps an open handler from costing a session, and every case
     above reaches a path with an explicit `except` of its own — `Failure`, `Refusal`, `PathEscape`
     — so the blanket one could be deleted with this module green.
     `tests/memory/test_hooks.py::test_a_link_failure_is_silence_not_an_exception` is the sibling
@@ -416,9 +416,9 @@ def test_a_failure_with_no_except_of_its_own_is_silence_not_an_exception(
     imports it from `keelline.attach.binding` inside its own body, so the module attribute is the
     seam a monkeypatch reaches. The assertion is silence, and this is deliberately the case where
     the backstop *loses* a line: `NOT_ATTACHED` is already in `lines` and goes with the result,
-    which is the cost §5.3 accepts and the reason this is a floor and not a filter — the same
-    repository is told `NOT_ATTACHED` by
-    `test_an_unattached_overlay_project_is_told_to_attach` when nothing raises.
+    which is the cost an open handler accepts and the reason this is a floor and not a filter — the
+    same repository is told `NOT_ATTACHED` by `test_an_unattached_overlay_project_is_told_to_attach`
+    when nothing raises.
 
     Mutation: `mutations.toml`'s "an open session handler lets an unforeseen failure out".
     """
@@ -446,11 +446,11 @@ def test_the_registration_is_what_the_dispatcher_acts_on(
 
     **`Policy.OPEN`**: a failure of this handler is recorded and named on stderr and the run is not
     a refusal. `Policy.CLOSED` would turn a failed overlay lookup into a deny on the one channel a
-    refusal travels — the state D11 reserves for a guard that could not judge — out of a handler
-    that reads two git remotes and a manifest and protects nothing. `_overlay_status` is patched
-    to raise, because with the module's own backstop in place the handler cannot fail from inside;
-    that backstop has its own case above, and this one is about what happens when something gets
-    past it.
+    refusal travels — the state principle 6 reserves for a guard that could not decide — out of a
+    handler that reads two git remotes and a manifest and protects nothing. `_overlay_status` is
+    patched to raise, because with the module's own backstop in place the handler cannot fail from
+    inside; that backstop has its own case above, and this one is about what happens when something
+    gets past it.
 
     **`event`**: no other event in `EVENTS` reaches the handler at all. Asserted rather than given
     an oracle entry, because `event` is a name the dispatcher matches and not a guard —

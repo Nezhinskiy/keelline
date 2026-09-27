@@ -1,4 +1,4 @@
-"""What an overlay declares it needs, and whether a running Keelline meets it (P6).
+"""What an overlay declares it needs, and whether a running Keelline meets it.
 
 The declaration is read in the one form the template ships, `>=X.Y.Z`, and no other: a caller
 that wants a different comparison has a different question, and answering it here would grow

@@ -1,4 +1,4 @@
-"""D5: nothing inspected a built artifact. `resources.files` resolves to the checkout under
+"""Nothing used to inspect a built artifact. `resources.files` resolves to the checkout under
 `uv run`, so a `uv_build` change that dropped the template tree from the wheel would break
 `overlay create --local` for every installed user while every test stayed green."""
 

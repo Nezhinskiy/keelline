@@ -1,7 +1,8 @@
 # Hostile, a fixture project
 
-The clone half of S10 (§14). Nothing here is a real project: every file is an input that a
-repository is allowed to author and that must reach nothing it is not allowed to choose.
+The clone half of the clone-to-exfiltration scenario. Nothing here is a real project: every
+file is an input that a repository is allowed to author and that must reach nothing it is not
+allowed to choose.
 
 - `keelline.toml` names `smoke` — **another project's name** — so that a machine which has an
   overlay for `smoke` is asked to hand this clone that project's notes.

@@ -11,7 +11,8 @@ from keelline.overlay.template import template_root
 
 
 def overlay_with(root: Path, requires: object) -> Path:
-    """An overlay directory whose manifest declares `requires`; shared with Task 5 and Task 6."""
+    """An overlay directory whose manifest declares `requires`; the doctor, attach and setup
+    suites plant their overlays with it too."""
     (root / ".claude-plugin").mkdir(parents=True, exist_ok=True)
     body: dict[str, object] = {"name": "keelline-overlay", "version": "0.0.0"}
     if requires is not None:

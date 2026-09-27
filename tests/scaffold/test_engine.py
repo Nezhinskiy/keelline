@@ -163,9 +163,10 @@ def test_force_overrides_a_hand_edit(tmp_path: Path) -> None:
 
 
 def test_a_once_artifact_is_never_updated(tmp_path: Path) -> None:
-    # `skip_modified` and not `unchanged`: the plan's decision table says so, and `unchanged`
-    # renders as "up to date" for a file Keelline deliberately never looks inside again. The
-    # user needs "left alone because it is yours", which is the statement that is true.
+    # `skip_modified` and not `unchanged`: a file that is present with no record is `skip_modified`
+    # for a `template` or a `once` kind, and `unchanged` renders as "up to date" for a file Keelline
+    # deliberately never looks inside again. The user needs "left alone because it is yours", which
+    # is the statement that is true.
     (tmp_path / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
     template = a_template(id="claude-md", kind=Kind.ONCE, target="CLAUDE.md")
     result = plan(tmp_path, a_config(tmp_path), [template])
@@ -504,9 +505,9 @@ def test_an_unreadable_file_refuses_only_its_own_artifact(tmp_path: Path) -> Non
 
 
 def test_a_doubled_region_marker_refuses_only_its_own_artifact(tmp_path: Path) -> None:
-    # A bad merge, not an internal bug. §7.2 answers it with a refusal for this one artifact,
-    # and `render_report`'s REFUSED section exists to name exactly these — which it can only do
-    # if a plan is returned at all.
+    # A bad merge, not an internal bug. The engine answers it with a refusal for this one artifact,
+    # and `render_report`'s REFUSED section exists to name exactly these — which it can only do if a
+    # plan is returned at all.
     (tmp_path / "AGENTS.md").write_text(
         "PROSE\n"
         "<!-- keelline:harness:begin -->\nfirst\n<!-- keelline:harness:end -->\n"
@@ -550,7 +551,7 @@ def test_a_settings_document_the_engine_cannot_parse_refuses_only_its_own_artifa
 
 def test_a_keyed_entries_template_naming_no_entries_raises(tmp_path: Path) -> None:
     # The symmetric case, and the one that was missing. `Template.entries` defaults to `None`
-    # and `apply_entries(current, {})` means "remove every Keelline entry", so a lane that
+    # and `apply_entries(current, {})` means "remove every Keelline entry", so a caller that
     # forgot one keyword argument uninstalled the user's hook wiring — reported as
     # `entries_update` / "refreshed", with the manifest rewritten as an ordinary upgrade.
     settings = tmp_path / ".claude"
@@ -618,11 +619,11 @@ def test_one_unmarked_entry_beside_a_marked_one_is_still_a_refusal(tmp_path: Pat
 def test_an_entry_that_cannot_be_keyed_is_refused_rather_than_written(
     tmp_path: Path, entry: object
 ) -> None:
-    # `apply_entries` writes `wanted` into the user's file verbatim, and nothing between a lane
+    # `apply_entries` writes `wanted` into the user's file verbatim, and nothing between a caller
     # and that write validates its shape — `_entries_of` checks the *document*, not the mapping
     # coming in. An entry that cannot be keyed is the same bug whatever makes it unkeyable, and
     # the last case is why the shape guard is a guard rather than decoration: without it
-    # `entry.get` raises `AttributeError` out of `plan` instead of naming the lane's bug.
+    # `entry.get` raises `AttributeError` out of `plan` instead of naming the caller's bug.
     settings = tmp_path / ".claude"
     settings.mkdir()
     (settings / "settings.json").write_text(json.dumps({"hooks": OURS}), encoding="utf-8")
@@ -647,7 +648,7 @@ def test_an_empty_entries_mapping_still_means_remove_everything(tmp_path: Path) 
 
 def test_a_template_naming_no_region_raises_rather_than_becoming_a_refusal(tmp_path: Path) -> None:
     # The boundary of what `plan` converts into a per-artifact refusal. A `MANAGED_REGION`
-    # template carrying no region name is a malformed `Template`, so it is a bug in the lane
+    # template carrying no region name is a malformed `Template`, so it is a bug in the caller
     # that built it; recording it beside the user's own bad merges would hide it.
     template = a_template(kind=Kind.MANAGED_REGION, region=None, render=lambda: "R1")
     (tmp_path / "AGENTS.md").write_text("PROSE\n", encoding="utf-8")
@@ -883,8 +884,8 @@ def test_a_file_where_a_directory_belongs_refuses_rather_than_raising_oserror(
     tmp_path: Path,
 ) -> None:
     # No race and no symlink: the user saves a file at `docs` while reading the dry-run report,
-    # then confirms. A bare `OSError` here reaches the CLI as a traceback instead of C5's
-    # exit 2, which is what a refusal is for.
+    # then confirms. A bare `OSError` here reaches the CLI as a traceback instead of the exit 2
+    # a refusal is for.
     config = a_config(tmp_path)
     planned = plan(tmp_path, config, [a_template(id="doc", target="docs/README.md")])
     (tmp_path / "docs").write_text("a file the user just saved\n", encoding="utf-8")

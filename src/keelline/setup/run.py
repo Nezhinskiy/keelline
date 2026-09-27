@@ -1,4 +1,4 @@
-"""`setup(preset, ...)`: the walkthrough's steps 3 and 4 (§4) — machine setup, once.
+"""`setup(preset, ...)`: machine setup, once — after Keelline is installed, before any attach.
 
 Five things, each reported and each independently skippable, in this order: write the machine
 file (the personal defaults the preset names, for whichever of them nothing has recorded yet);
@@ -9,35 +9,34 @@ or record the private overlay.
 
 **A preset default never overwrites a value already recorded.** The first draft of this module
 rebuilt `[personal]` from the preset's own defaults on every run, which meant a second
-`setup --preset recommended` reset `reply_language` back to `""` even after the owner had set it
-by hand — exactly the value `skills/setup/SKILL.md` calls "the user's to set" and
-`setup.machine`'s own docstring promises survives a rewrite that "only set one of them" (Fix
-round 1, item 1). `_new_personal_values` computes only the keys the machine file does not
-already carry, and that is what both `write_machine` and the settings file's `pluginConfigs`
-receive — an empty dict on every run after the first, once every key has a recorded value.
+`setup --preset recommended` reset `reply_language` back to `""` even after the owner had set it by
+hand — exactly the value `skills/setup/SKILL.md` calls "the user's to set" and `setup.machine`'s own
+docstring promises survives a rewrite that "only set one of them". `_new_personal_values` computes
+only the keys the machine file does not already carry, and that is what both `write_machine` and the
+settings file's `pluginConfigs` receive — an empty dict on every run after the first, once every key
+has a recorded value.
 
-**Marketplaces are registered before anything is installed from them, and per-plugin sources
-are never guessed.** The first draft attempted `claude plugin install superpowers@obra` on a
-fresh machine and always failed there — `obra` and `upstash` are GitHub accounts, not
-marketplace names, and every measured successful install in this tree's own spike record
-(`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) is preceded by a `marketplace add`
-(Fix round 1, item 2). Checked before writing this fix (`gh api repos/...`, `claude plugin
-marketplace list` on the machine this was written on): `superpowers` and `context7` both ship
-in Anthropic's own official marketplace, `anthropics/claude-plugins-official`, which a Claude
-Code install already carries — the `marketplace add` this module still issues is idempotent
-defence in depth, not a first registration, and its own real output confirms that
-(`✔ Marketplace 'claude-plugins-official' already on disk`). No non-interactive, non-guessed
-source could be established for Codex, so nothing is attempted there for these two plugins; the
-recommended preset's own `[plugins.claude]` table and the README carry the reasoning and the
-recommendation respectively.
+**Marketplaces are registered before anything is installed from them, and per-plugin sources are
+never guessed.** The first draft attempted `claude plugin install superpowers@obra` on a fresh
+machine and always failed there — `obra` and `upstash` are GitHub accounts, not marketplace names,
+and every measured successful install in this tree's own spike record
+(`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) is preceded by a `marketplace add`. Checked
+before writing this fix (`gh api repos/...`, `claude plugin marketplace list` on the machine this
+was written on): `superpowers` and `context7` both ship in Anthropic's own official marketplace,
+`anthropics/claude-plugins-official`, which a Claude Code install already carries — the
+`marketplace add` this module still issues is idempotent defence in depth, not a first registration,
+and its own real output confirms that (`✔ Marketplace 'claude-plugins-official' already on disk`).
+No non-interactive, non-guessed source could be established for Codex, so nothing is attempted there
+for these two plugins; the recommended preset's own `[plugins.claude]` table and the README carry
+the reasoning and the recommendation respectively.
 
-**Two harnesses, two verbs, and no unmeasured flags.** Claude Code installs a plugin with
-`claude plugin install <name>@<marketplace>`, bare — the spike record's own transcript reports
-`(scope: user)` as the *default* a bare install already gets, not something a flag adds, and
-`-y` appears in that record only on `plugin uninstall`, never `install` (Fix round 1, item 3).
-Codex adds one with `codex plugin add <name>@<marketplace>` when a marketplace is declared for
-it — measured, not assumed, from this tree's own spike Task 1 and Task 2. A harness or a plugin
-with no declared marketplace gets a note, never a guessed argv.
+**Two harnesses, two verbs, and no unmeasured flags.** Claude Code installs a plugin with `claude
+plugin install <name>@<marketplace>`, bare — the spike record's own transcript reports
+`(scope: user)` as the *default* a bare install already gets, not something a flag adds, and `-y`
+appears in that record only on `plugin uninstall`, never `install`. Codex adds one with
+`codex plugin add <name>@<marketplace>` when a marketplace is declared for it — measured, not
+assumed, in that same spike record. A harness or a plugin with no declared marketplace gets a note,
+never a guessed argv.
 
 **`pluginConfigs` and not a flat top-level key.** Claude Code's own settings reference files a
 plugin's non-sensitive `userConfig` answers under `pluginConfigs[<plugin-id>].options`, keyed by
@@ -48,11 +47,11 @@ own shipped manifest and marketplace names (`tests/test_manifests.py`), which is
 plugin is actually installed under everywhere the preset's own `setup` runs.
 
 **The overlay root is validated before anything is written, and the create branch is gated on
-`--yes`.** The coordinator's ruling on the named risk this wave's first report raised: `--yes`
-on `--overlay <path>` would be theatre in a harness where the command line is written by a
-model, so it is not added there. What bounds the exposure instead is `_requested_overlay`, and
-it runs **above the first write** — above the machine file, the settings merge and the plugin
-installs, and for `create:` above `gh repo create` itself. Two controls:
+`--yes`.** `--yes` on `--overlay <path>` would be theatre in a harness where the command line
+is written by a model, so it is not added there. What bounds the exposure instead is
+`_requested_overlay`, and it runs **above the first write** — above the machine file, the
+settings merge and the plugin installs, and for `create:` above `gh repo create` itself. Two
+controls:
 
 * **it must be an overlay**, which is `overlay.api.require_overlay` and not a pair of `is_file`
   calls. The old probe was the two manifests *existing*, which the Keelline checkout satisfies
@@ -79,10 +78,10 @@ For `create:`, the destination is `home/<name>` and is knowable from the argumen
 (`overlay.api.target_root`), so it is checked before the call rather than after it: the first
 draft ran `gh repo create`, cloned, renamed both manifests and installed the secret scan, and
 *then* refused — leaving a private repository on somebody's GitHub account that nothing in the
-report mentioned. `--yes` gets the one real control the ruling does give it: `setup` refuses
-`--overlay create:<owner>/<name>` without it, because §6.1 asks for "explicit confirmation"
-before `gh repo create` runs, and creating a repository on GitHub is the one irreversible,
-outward-facing act this command performs.
+report mentioned. `--yes` gets the one control it can really carry: `setup` refuses
+`--overlay create:<owner>/<name>` without it, because `gh repo create` runs only after explicit
+confirmation, and creating a repository on GitHub is the one irreversible, outward-facing act
+this command performs.
 
 **A symlinked settings file is a refusal with a remedy that works, not an internal error.**
 `home` is the machine owner's own directory and a home managed by stow, chezmoi or a synced
@@ -129,14 +128,15 @@ from keelline.setup.machine import USER_SETTINGS, read_machine, write_machine
 # `.claude-plugin/marketplace.json`'s `name` (`tests/test_manifests.py` holds both). Claude
 # Code keys `pluginConfigs` by this pair, not by the plugin name alone.
 PLUGIN_ID = "keelline@keelline-marketplace"
-# The release tag scheme (`vX.Y.Z`, §5.9); `uv tool install` has no `--from`, so the positional
-# git URL form is the one D2 permits (`git+https://…@<tag>`). An f-string with a doubled brace,
-# because the concatenation it replaces read as somebody having forgotten one: `{version}` is
-# meant to survive into the template and be filled by the caller, and `{{version}}` says so.
+# The release tag scheme (`vX.Y.Z`); `uv tool install` has no `--from`, so the positional git URL
+# form pinned to a release tag is the install form (`git+https://…@<tag>`; principle 9: the CLI
+# installs from a git tag). An f-string with a doubled brace, because the concatenation it replaces
+# read as somebody having forgotten one: `{version}` is meant to survive into the template and be
+# filled by the caller, and `{{version}}` says so.
 INSTALL_COMMAND = f"uv tool install git+{REPOSITORY_URL}@v{{version}}"
 # One verb pair per harness, fixed here rather than in the preset: which CLI verb installs a
-# plugin is a property of the harness, never of any one plugin, and the two differ (measured,
-# Fix round 1 item 3's docstring paragraph above).
+# plugin is a property of the harness, never of any one plugin, and the two differ (measured;
+# the module docstring's "Two harnesses, two verbs" paragraph).
 _MARKETPLACE_ADD = {
     "claude": lambda source: ["claude", "plugin", "marketplace", "add", source],
     "codex": lambda source: ["codex", "plugin", "marketplace", "add", source],
@@ -193,7 +193,7 @@ def _new_personal_values(preset: dict[str, Any], machine: Path) -> dict[str, Any
 
     A key present in the file — set by an earlier `setup`, or by the owner's own hand — is the
     owner's, and a preset default may not win over it on a later run. An absent key gets the
-    preset's default, which is what makes a *first* run write all three (Fix round 1, item 1).
+    preset's default, which is what makes a *first* run write all three.
     """
     existing = _existing_personal(machine)
     return {k: v for k, v in _personal_defaults(preset).items() if k not in existing}
@@ -207,8 +207,8 @@ def _agents(preset: dict[str, Any]) -> tuple[str, ...]:
 def _marketplace(preset: dict[str, Any], agent: str) -> tuple[str, str] | None:
     """`(source, marketplace name)` for `agent`, or `None` when the preset declares none.
 
-    `None` is not a fault: it is "nothing here is vendored for this harness on a guess" (§5.6),
-    and the caller reports it as a note rather than attempting an argv nobody measured.
+    `None` is not a fault: nothing is vendored for a harness on a guess, and the caller reports
+    it as a note rather than attempting an argv nobody measured.
     """
     table = preset.get("plugins", {}).get(agent)
     if not isinstance(table, dict):
@@ -294,7 +294,7 @@ def _write_user_settings(
     `permissions.allow` — and `pluginConfigs` gets the same treatment, key by key inside its own
     `options`, so a value this run did not set survives a second one same as `write_machine`'s.
 
-    `settings` (R3) names the file itself, for the layout no `--home` can express: `stow` folds
+    `settings` names the file itself, for the layout no `--home` can express: `stow` folds
     a package as far as it can, so with `~/.claude` already there it links
     `~/.claude/settings.json` into a dotfiles tree, and `--home <dotfiles>/claude` writes
     `<dotfiles>/claude/.claude/settings.json` — a file no reader reads. When it is given, the
@@ -384,8 +384,8 @@ def _home_that_leads_there(home: Path, link: Path) -> Path | None:
     link's basename to its target's, which is trivially true for a per-file link, and printed
     `--home <dotfiles>/claude` — under which this command writes
     `<dotfiles>/claude/.claude/settings.json`, exits 0, and leaves the file the link leads to
-    untouched and every reader reading nothing. That is finding 14's shape arriving through the
-    remedy instead of through the default.
+    untouched and every reader reading nothing. That is the wrong-file write `--machine`'s old
+    default made, arriving through the remedy instead of through the default.
 
     What `--home H` actually writes is `H/<USER_SETTINGS>` and nothing else, so a remedy exists
     exactly when what the link leads to *is* a `<USER_SETTINGS>` inside some directory — and
@@ -472,8 +472,8 @@ def _check_settings_parent(settings: Path) -> None:
 
     A directory at the file's own name is refused in the same breath: it passed both checks
     above, and `_write_user_settings` then failed from `_read_document` with `Is a directory` —
-    a `Failure`, C5's exit 1, for a structural precondition — after `home.mkdir(parents=True)`
-    and after the machine configuration had been written.
+    a `Failure`, the findings exit code 1, for a structural precondition — after
+    `home.mkdir(parents=True)` and after the machine configuration had been written.
     """
     parent = settings.parent
     if not (parent.is_dir() and not parent.is_symlink()):
@@ -705,7 +705,7 @@ def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
     A path arm and two `git` arms. The path arm is equality or nesting either way round — a
     candidate *under* the project, and a candidate that *holds* it, which is the shape
     `git worktree add .worktrees/x` produces and which the first draft accepted. The `git` arms
-    are the sibling case the paths cannot see: `keelline.worktrees/wave-1` is not under
+    are the sibling case the paths cannot see: `keelline.worktrees/feature` is not under
     `keelline/`, so a clone committing its own manifests at its own root passed the path arm
     whenever `--root` was one of its worktrees — and this project's own preset rule makes
     `--root` a worktree by default. The first applies the path arm to every checkout
@@ -792,8 +792,8 @@ def _requested_overlay(
     `keelline-private/` inside this very checkout the first time a test exercised the branch.
     """
     if overlay is None:
-        # Nothing was asked for, so nothing is touched. §6.1's gate is that `--overlay` is the
-        # only way to reach the overlay at all, and `--yes` does not imply one: a default here
+        # Nothing was asked for, so nothing is touched. The creation gate is that `--overlay` is
+        # the only way to reach the overlay at all, and `--yes` does not imply one: a default here
         # would turn an omitted flag into a repository created on somebody's account.
         return None
     if overlay.startswith("create:"):
@@ -828,7 +828,7 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
     """Create the overlay if this run has to, record what there is, and say what happened.
 
     Everything here that can refuse is a **floor** under `_requested_overlay` rather than a
-    second copy of it, in the sense the `attach` lane settled the same shape: the checks above
+    second copy of it, in the sense the `attach` area settled the same shape: the checks above
     the first write are what a person acts on, and these are what catches a tree that changed in
     between — or, for the create branch, one that did not exist to be checked at all. What this
     function returns is written into the machine file, and every later `attach` on this machine

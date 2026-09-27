@@ -115,8 +115,8 @@ def test_a_missing_local_link_target_is_a_finding_and_external_links_are_not(
 
 
 def test_a_link_inside_a_fence_is_an_example_not_a_claim(tmp_path: Path) -> None:
-    # Every other reader in this plan blanks fences; this one must too. Mutation: scan the raw
-    # text instead of the blanked one — this reddens.
+    # The other readers in this area (`docs.graph`, `docs.plans`) blank fences; this one must too.
+    # Mutation: scan the raw text instead of the blanked one — this reddens.
     root, config = project(tmp_path, agents=AGENTS + "```\n[x](docs/example.md)\n```\n")
     assert check_links(root, config) == []
 

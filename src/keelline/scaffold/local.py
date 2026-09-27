@@ -43,7 +43,7 @@ from keelline.fsops import open_within, remove_within, write_within
 
 LOCAL_ROOT = ".keelline/local"
 # `[artifacts] local` artifacts live one directory further down, so no `[artifacts] local` entry
-# can land one on a file another lane keeps under `LOCAL_ROOT`: attach's ledger, the local-only
+# can land one on a file another area keeps under `LOCAL_ROOT`: attach's ledger, the local-only
 # note store, and the ledger below. `PATH_VALUE` refuses a `..` segment, so for that setting the
 # prefix is a boundary and not a convention; the anchor is this constant in the installed package.
 # A `[paths]` value never reaches `.keelline/` at all: `config.paths.validate_paths` refuses one

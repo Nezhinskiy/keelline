@@ -1,4 +1,4 @@
-"""What `keelline.scaffold` publishes, which is the whole of contract C2 for a consumer."""
+"""What `keelline.scaffold` publishes, which is the whole of the engine's contract for a caller."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ def test_the_three_refusals_a_consumer_catches_by_name_are_exported() -> None:
 
 
 def test_the_published_list_is_exactly_this_and_every_name_resolves() -> None:
-    # Five downstream lanes consume this surface, so the list may grow and may not shrink or
+    # Five downstream areas consume this surface, so the list may grow and may not shrink or
     # rename. Spelled out rather than counted, so a swap cannot pass for a no-op.
     assert scaffold.__all__ == EXPORTED
     assert [name for name in EXPORTED if not hasattr(scaffold, name)] == []

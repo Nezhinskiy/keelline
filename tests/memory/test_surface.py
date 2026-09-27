@@ -6,19 +6,13 @@ from __future__ import annotations
 import keelline.memory.api as memory
 
 
-def test_the_c3_surface_carries_what_every_downstream_lane_reaches_for() -> None:
-    # This list is the contract. A lane that needs something absent from it grows the list
-    # deliberately, in a commit that says which lane and why — it does not import a private
+def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
+    # This list is the contract. A consumer that needs something absent from it grows the list
+    # deliberately, in a commit that says which consumer and why — it does not import a private
     # module, and it does not get told after the fact that its import was a review finding.
     #
-    # **An equality now, and it was a subset.** The old comment said why: ten names were on
-    # `__all__` and had never been justified here, and "adding ten justifications for exports
-    # this plan did not ship would be this list claiming a review it never had". That is the
-    # honest form of a list nobody had audited — and it is also what let the surface reach
-    # seventy names, forty-five of them with no importer anywhere. The wave-3 refactor pass is
-    # that review: every name below now has its argument, in `api.py` or beside it here, so the
-    # assertion can be the one every other area is held to. A subset lets an export arrive
-    # unnoticed, which is the hole `tests/guards/test_surface.py` names.
+    # An equality, because every name below has its argument, in `api.py` or beside it here, and
+    # a subset lets an export arrive unnoticed — the hole `tests/guards/test_surface.py` names.
     #
     # No `mutations.toml` entry, for the reason every other area's surface test gives: the
     # mutation is adding an export, which is two lines in `api.py` — the import and the
@@ -70,7 +64,7 @@ def test_the_c3_surface_carries_what_every_downstream_lane_reaches_for() -> None
         "new_nonce",
         "UnsafeNote",
         # the trust gate. Repository bytes reach a model only after `keelline memory trust`
-        # and only inside a delimited region, so a lane that injects them has to be able to
+        # and only inside a delimited region, so an area that injects them has to be able to
         # ask this area whether it may, to see a store that was trusted and is not any more,
         # and to tell a broken record from an unapproved store.
         "may_inject",

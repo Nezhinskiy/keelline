@@ -1,4 +1,4 @@
-"""The import surface: everything a consumer lane may import from this area.
+"""The import surface: everything a consumer may import from this area.
 
 A module and not the package's `__init__`, for the reason `keelline.guards.api` and
 `keelline.memory.api` both give: area discovery imports a package before it imports the
@@ -11,7 +11,7 @@ asserts the `__init__` imports nothing at all.
 this list**, measured over `src/`, `scripts/` and `tests/`. So every other name below is here on
 an argument rather than on a caller, and the argument is written beside it.
 
-What is left is the two artifacts this area leaves on a project's disk, which outlive any lane
+What is left is the two artifacts this area leaves on a project's disk, which outlive any area
 that reads them:
 
 - the entry file's grammar — `parse_entry`, `load_entries` and the `Entry` they yield, with
@@ -29,9 +29,9 @@ refuses a surface exporting no function or record at all.
 **What is not here.** The rule vocabulary and the refusal messages `bugs check` reports
 (`problems` and its constants) stay in `keelline.ledger.check`, and the verbs that file or move an
 entry (`file_entry`, `next_identifier`, `renumber`) stay in `keelline.ledger.write` with their
-return types: no lane outside this area files or moves an entry without the command, and a type
-no published signature names is a value nobody can be handed. A lane that needs one grows this
-list, in a commit that says which lane and why.
+return types: no area outside this one files or moves an entry without the command, and a type
+no published signature names is a value nobody can be handed. An area that needs one grows this
+list, in a commit that says which area and why.
 
 Of the six names of the two artifacts, only `render_index` has an importer. Whether this area
 publishes at all is a structural decision and the owner's; the list stays above the floor

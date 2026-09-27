@@ -9,7 +9,8 @@ second a high-severity ledger entry rejected as a stale cache.
 
 Warn-only by construction: the tool has already run, and the verdict this guards is the
 human's next sentence, not the command. Once per context, which the dispatcher's `once_key`
-owns (see `hooks.py` and Premise 2 of the lane's plan for what that currently means).
+owns (see `hooks.py`, and `keelline.hooks.dispatch`, which decides and banks the one delivery, for
+what that currently means).
 
 Matching an actual pytest invocation, not the six letters "pytest" appearing anywhere in the
 command text, uses the shared scanner's tokens and segments: an argv0-anchored check per
@@ -17,9 +18,9 @@ segment, resolved past a leading shell assignment (`FOO=1 pytest`) and a small, 
 wrapper-prefix set (`env cmd`, `uv run cmd`). Under-reporting an unrecognised launcher is the
 safe direction for a warn-only note, so the set only grows when a real shape is reproduced.
 
-Which harness field says a run was red is Premise 1's finding: the Claude Code hooks
-reference gives the Bash `tool_response` as `stdout`, `stderr`, `interrupted` and `isImage`
-with no exit code, and a non-zero exit arriving on `PostToolUseFailure` as
+Which harness field says a run was red is read from the documentation, not guessed: the Claude
+Code hooks reference gives the Bash `tool_response` as `stdout`, `stderr`, `interrupted` and
+`isImage` with no exit code, and a non-zero exit arriving on `PostToolUseFailure` as
 `error: "Exit code N\\n…"`. `red_exit` reads both that shape and a `tool_response.exit_code`,
 so the notice is keyed on whichever the harness sends rather than on a field one lacks.
 
@@ -53,9 +54,10 @@ _PYTHON_ARGV0_PREFIX = "python"
 # code is then taken for the run's own. The documented shape puts `Exit code N` at the very
 # START of `error`, which is what the pair is protecting.
 _EXIT_CODE_ERROR = re.compile(r"\AExit code (\d+)")
-# Its own bound (D7), not `gitenv.GIT_TIMEOUT_SECONDS`: that constant covers "local,
-# argument-free, read-only" queries, and `git status --porcelain` walks the worktree. A
-# timeout here is `None`, "could not answer", which `test hygiene` turns into a refusal.
+# A named cap (CONTRIBUTING.md#named-caps) of its own, and no shipped file changes with it. Not
+# `gitenv.GIT_TIMEOUT_SECONDS`: that constant covers "local, argument-free, read-only" queries, and
+# `git status --porcelain` walks the worktree. A timeout here is `None`, "could not answer", which
+# `test hygiene` turns into a refusal.
 STATUS_TIMEOUT_SECONDS = 20
 # PEP 552: every .pyc opens with a 4-byte magic, then a 4-byte little-endian flags word, then
 # four more bytes whose MEANING is decided by bit 0 of those flags.

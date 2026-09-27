@@ -41,7 +41,7 @@ fine; a runtime one is not.
 `fsops.write_within` / `mkdirs_within` / `remove_within` then do the write through an
 `O_NOFOLLOW` walk, so a component that becomes a symlink after the check cannot redirect it.
 Do not add a `Path.write_text`, a `mkdir(parents=True)` or an `os.replace` on a string path to
-a lane that puts files into a repository.
+code that puts files into a repository.
 
 **Repository bytes are data.** Anything a repository authored — a note, an index line, a
 `memory.groups` entry, a refusal message built out of one — reaches the model only inside
@@ -55,6 +55,52 @@ sequence drives the screen. So a name the repository chose — a file name, a no
 `memory.groups` entry, a TOML key — is printed through `keelline.printed`: `printable` where the
 command's `--json` carries the name, and `quoted` in a refusal, where the message is the only
 place the name appears.
+
+Two narrower rules follow from the same stance. The code cites each by name, and this is where
+the name is defined.
+
+### Named caps
+
+A bound comes from one of three places. A limit a project may tune — a document's line or word
+count, a note's time to live — is a key under `[budgets]`, which a project may lower below its
+preset and never raise. A limit the harness sets — how much of an index it loads, how many
+characters of a hook's output it keeps — is a key under `[native_caps]`. Code reads both
+through `Config` (`src/keelline/config/schema.py`). Every other bound — a subprocess's
+wall-clock timeout, how many bytes of a repository-authored file are read, how deep a parser
+descends — is a *named cap*: a constant in the code, almost always a module-level one with a
+name, and never a configuration key. None of them is a project's to move, because each one
+protects the run itself from a hung program, an oversized file or a pathological input, and a
+`keelline.toml` is repository-authored (principle 5). The one timeout a project does set,
+`[gates] custom_timeout_seconds`, bounds the project's own gate command rather than anything
+Keelline runs for itself.
+
+The comment beside a named cap says what it bounds and why the number is what it is. When the number
+has to agree with a shipped file, the comment names that file, so a change to either is visibly a
+change to both: `doctor`'s `WORKFLOW_MAX_BYTES` names `src/keelline/templates/project/keelline.yml`,
+which it must stay well above, and `NEARLY_FULL` names `hooks/hooks.json`, where a bundle's slot
+count is raised. When no such file exists — a timeout on a hung `git`, the longest command
+`bg-cleanup` will read — the comment says so rather than inventing one.
+
+### Enumerated writes
+
+A command's section in [docs/cli.md](docs/cli.md) names every path the command writes, in a
+paragraph that opens with **Writes** (a read-only command's says "**Writes** nothing"), and the
+command writes those paths and no others: a change that makes a command write somewhere new
+names the path there in the same commit. `keelline hook`, which is internal, is held to the same
+rule: its paragraph names what it keeps inside the one directory Keelline owns under the data
+root the harness hands it (`${CLAUDE_PLUGIN_DATA}/keelline/`, which `src/keelline/hooks/sink.py`
+writes), and the one handler that writes outside it.
+
+Removal is held tighter. Every file or directory Keelline removes is one it names before it looks —
+a fixed name in the code, a path its ledger or manifest recorded, one its configuration computes, or
+a directory above a file the same run removed — and none is found by listing a directory and
+removing what the listing returned, with two exceptions, each inside a directory only Keelline
+writes. The hook sink's sessions are unbounded in number, so it lists its `markers/` directory and
+prunes all but the newest `MARKER_SESSIONS_KEPT` sessions. And `keelline uninstall` walks
+`.keelline/local/artifacts/` and removes the directories it finds there that are empty, because
+that tree holds nothing but the local artifacts the same run just removed. Both go through `fsops`,
+as every removal in a project root does. A temporary directory a command creates for itself and removes whole when
+it finishes is outside the rule: nothing but that command ever wrote into it.
 
 ## Areas
 
@@ -84,9 +130,9 @@ nor a `hooks.py`.)
   its `__all__` must equal exactly what it imports — a test parses the file and checks, and
   `tests/test_areas.py` walks every module under `src/keelline/` and fails on a cross-area
   import that reaches past one. The list is what consumers actually reach for, not what the
-  area finds tidy: a lane that needs something absent from it grows it deliberately, in a commit
-  that says which lane and why. `cli.py` is the CLI frame rather than an area, and its one
-  direct import of `hooks.policy` is named in that test rather than skipped silently.
+  area finds tidy: a consumer that needs something absent from it grows it deliberately, in a
+  commit that says which consumer and why. `cli.py` is the CLI frame rather than an area, and its
+  one direct import of `hooks.policy` is named in that test rather than skipped silently.
 - **`keelline.hooks.api` is the one exception, and it is structural rather than drift.** That
   module *defines* the vocabulary two areas share — `EVENTS`, `Policy`, `Decision`, `HookEvent`,
   `HookResult`, `Handler`, `Sink`, `NullSink`, `detect_harness` and the sink's on-disk layout —
@@ -104,7 +150,7 @@ plugin ships and `agents/` the agent files; [skills/README.md](skills/README.md)
 contract — a skill body is **action language** and never names a harness tool, a `SKILL.md` is
 capped at 80 lines with the detail in `<skill>/references/`, and every `keelline …` invocation
 in a skill must parse against the real parser or be listed in `NOT_YET_SHIPPED` against the
-package that will ship it. `tests/skills/test_skills.py` holds all three, and the lane that
+package that will ship it. `tests/skills/test_skills.py` holds all three, and the change that
 ships a command deletes its `NOT_YET_SHIPPED` entry.
 
 ## Tests
@@ -225,7 +271,7 @@ do not add an entry to the exemption.
 A test must never read or write the developer's real `~/.config/keelline/`, `~/.claude/` or
 `~/.codex/`. Pass `--machine` to a command, `machine=` to `resolve`, `home=` where a function
 takes one, and use `tmp_path` for everything else. A test must not shell out to `gh`, `claude`,
-`codex` or `pre-commit` either: `overlay.api.Runner` is the seam those calls go through, and a
+`codex` or `pre-commit` either: `keelline.runner.Runner` is the seam those calls go through, and a
 stub records the argv, which is the part of them that can be wrong in a way somebody notices.
 
 ## Commits and changelog
@@ -238,8 +284,8 @@ User-visible changes need a towncrier fragment in `changelog.d/`, named
 `+<slug>.<type>.md` where type is `feature`, `fix` or `change`. The leading `+` is towncrier's
 orphan prefix, and it is not decoration: without it towncrier reads the slug as an issue
 reference and prints it in parentheses at the end of the bullet, so the release notes everyone
-reads would carry the project's internal lane vocabulary. Write the fragment as a release note
-someone outside the project can read — not as a note to yourself about the lane.
+reads would carry a file-name slug that means nothing to them. Write the fragment as a release
+note someone outside the project can read — not as a note to yourself about the change.
 
 `uv run keelline release check` cross-checks the version across `pyproject.toml`, `uv.lock`,
 the package, and both plugin manifests. It runs in CI; run it before you push.
@@ -252,7 +298,7 @@ references to it cannot be followed from here. You do not need a plan for a bug 
 documentation change; open an issue or a pull request and say what you found.
 
 The delivered plans in `docs/plans/` are a record, not a work list. Their `**Interfaces:**`
-blocks are kept current and are what a later lane builds against; their code blocks are
+blocks are kept current and are what later work builds against; their code blocks are
 as-planned and may differ from what shipped.
 
 ## Security

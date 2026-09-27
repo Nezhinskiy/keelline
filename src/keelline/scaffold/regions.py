@@ -1,4 +1,4 @@
-"""Marker-delimited regions inside files a person owns (§7.2).
+"""Marker-delimited regions inside files a person owns.
 
 The rule that makes these safe is narrow: the tool reads and rewrites what is between its two
 markers and returns every other byte unchanged. So a project may keep its own `AGENTS.md` and

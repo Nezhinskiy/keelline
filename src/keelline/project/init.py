@@ -1,4 +1,4 @@
-"""`keelline init --yes`: the footprint, written by the engine in two passes (§8.1, §7.2, DC3).
+"""`keelline init --yes`: the footprint, written by the engine in two passes.
 
 The three write-once files are `Kind.ONCE` artifacts in a pass of their own and the rest of the
 footprint is the second, because two artifacts cannot target one file in one pass. Both are
@@ -199,8 +199,8 @@ def _existing(root: Path) -> tuple[str, dict[str, object]] | None:
     source for several of its faults — a duplicate table or inline-table key is reported with
     the key in it, and a TOML key is arbitrary quoted text — so the exception is bounded by
     `config.loader.toml_position` before any of it prints. The file is `keelline.toml`, which
-    P4 makes an adopted repository's own document, and this refusal is one the `init` skill is
-    instructed to relay and stop on.
+    on adoption is the repository's own document, read as its answers rather than replaced, and
+    this refusal is one the `init` skill is instructed to relay and stop on.
     """
     text = read_document(root)
     if text is None:

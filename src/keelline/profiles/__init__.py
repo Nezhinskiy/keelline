@@ -7,9 +7,9 @@ text: the name arrives from a repository's `keelline.toml`, so it is never print
 
 `detects` is what `init` asks: which profile a repository looks like. `evaluate` and the
 `Outcome` it returns run a profile's checks against a repository; `keelline assess` calls them
-and reports each failed check as one item of its inventory. They live here rather than in the
-assessing lane because the checks are this package's data, and a reader of them there would be
-a second one.
+and reports each failed check as one item of its inventory. They live here rather than in
+`keelline.assess` because the checks are this package's data, and a reader of them there would
+be a second one.
 """
 
 from __future__ import annotations

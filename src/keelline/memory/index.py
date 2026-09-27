@@ -1,4 +1,4 @@
-"""The index is a rendering, not a file anyone edits (D6, §9.3).
+"""The index is a rendering, not a file anyone edits.
 
 Two machines editing one hand-written index is the most contended file in the store; a
 generated one is resolved by regeneration. The curation does not disappear, it moves into each
@@ -6,9 +6,9 @@ note's `index:` line — and because a second writer appends its own lines to th
 generator harvests those before it renders, so nothing a session wrote is lost.
 
 Sections come from `[memory] groups`, one per folder, and a note's `group` is rendered as a
-sub-heading *inside* its folder's section. Read literally, §9.2's "the folder is the default"
-would put a `group` value into the section list, which no configuration declares; this is the
-reading that keeps both sentences true.
+sub-heading *inside* its folder's section. A note's folder is its default group, and read
+literally that default would put a `group` value into the section list, which no configuration
+declares; nesting the group under its folder is the reading that keeps both rules true.
 """
 
 from __future__ import annotations
@@ -92,7 +92,7 @@ class Reconciliation:
     unreadable: list[tuple[Path, str]]
     # The notes this run actually rewrote, empty when `write=False`. `trust.refresh_if_trusted`
     # needs to know which files Keelline itself authored, so that carrying trust across
-    # `memory index` cannot also carry it across whatever else landed on disk (§9.4).
+    # `memory index` cannot also carry it across whatever else landed on disk.
     written: list[Path] = field(default_factory=list)
     # Notes that had a line waiting for them in the index and were not allowed to take it,
     # because the index is repository data and the note is not (`_harvestable`). They get a
@@ -145,7 +145,7 @@ def _resolved_if_permitted(store: Store, config: Config, target: Path) -> Path |
 
 
 def index_source(store: Store, config: Config) -> Path | None:
-    """The index's own §9.1 target rule — the one `store._group_targets` applies to every
+    """The index's own per-link target rule — the one `store._group_targets` applies to every
     configured group, applied here because nothing upstream applies it to `MEMORY.md`.
 
     `store.py` does not track the index as a group (it is not a `memory.groups` entry), so no
@@ -158,7 +158,7 @@ def index_source(store: Store, config: Config) -> Path | None:
     question: is there something here to source. An absent target and a *refused* symlink
     (outside overlay mode, or resolving outside this project's share) both answer None, and so
     does a symlink that resolves to a *permitted* location with nothing written there yet —
-    reading nothing from a link §6.3 created before `memory index` ever ran is correct, not a
+    reading nothing from a link `attach` created before `memory index` ever ran is correct, not a
     refusal. `_destination` is the one place that must tell the second and third causes apart,
     which is why it does not reuse this return value for the "nothing yet" case; see its own
     docstring.
@@ -198,9 +198,9 @@ def _harvestable(store: Store, source: Path | None, note: Note) -> bool:
     overlay mode the index is legitimately a real file the clone shipped at `paths.memory`
     (`index_source`: "a real file sources itself, unconditionally") while the notes resolve out
     into the machine's own overlay. `reconcile(write=True)` then persisted repository-authored
-    titles into `common/memory` — shared with *every project on the machine* and, per §6.2,
-    synced across machines — from where another project whose index is the §6.3 symlink injects
-    them raw, unwrapped, with no trust record anywhere in the chain.
+    titles into `common/memory` — shared with *every project on the machine* and synced across
+    machines — from where another project whose index is `attach`'s symlink injects them raw,
+    unwrapped, with no trust record anywhere in the chain.
 
     So the rule is one trust domain per harvest: **repository bytes do not become machine
     state.** A note that is itself repository data may take a repository index's line — nothing
@@ -233,8 +233,8 @@ def _to_machine(store: Store, config: Config) -> bool:
     Mirrors `index_source` and `_destination`'s own three-cause shape rather than reusing
     either return value: `index_source`'s None already conflates "refused" with
     "permitted-but-dangling", which is exactly the distinction this needs kept apart from the
-    *other* direction — a permitted, dangling link is machine state (`True`) the moment §9.1
-    would honour it, not only once something has been written there.
+    *other* direction — a permitted, dangling link is machine state (`True`) the moment the
+    target rule would honour it, not only once something has been written there.
     """
     source = index_source(store, config)
     if source is not None:
@@ -254,7 +254,7 @@ def _publishable(store: Store, to_machine: bool, note: Note) -> bool:
     a note's *own* `index:` line (curated in its frontmatter, or already harvested) is
     repository-authored text whenever the note's own file is repository data, and `render_index`
     put that text into `MEMORY.md` unconditionally, including when this run's destination is
-    machine state (§6.2's `common/memory`, shared across every project on the machine and
+    machine state (the overlay's `common/memory`, shared across every project on the machine and
     synced across machines). Same rule as `_harvestable`, same domain: repository bytes do not
     become machine state.
 
@@ -368,7 +368,7 @@ def _extra(config: Config, store: Store) -> list[str]:
     """`memory.index_extra` entries that actually stay inside the project root.
 
     `config/paths.py` names this field, alongside `memory.groups`, as one its own guard does
-    not cover, and assigns the check to "the lane that consumes them" in as many words. The
+    not cover, and assigns the check to "the module that first reads those fields". The
     strings are repository-controlled and land verbatim in `MEMORY.md`, which the `index`
     bundle injects — the same channel a symlinked index reaches. `contained` is called without
     `allow_final_symlink`, unlike `_group_targets`: a group legitimately *is* a symlink in
@@ -411,7 +411,7 @@ def _extra(config: Config, store: Store) -> list[str]:
 def render_index(reconciled: Reconciliation, config: Config, store: Store) -> str:
     """The rendered `MEMORY.md` text, holding back whatever `_publishable` refuses.
 
-    `_to_machine` can only be `True` when the destination is a §9.1-permitted symlink
+    `_to_machine` can only be `True` when the destination is a permitted symlink
     resolving outside this project's repository, which happens only in overlay mode — so every
     in-repo and local-only store renders exactly what it always has, and only a destination
     that actually reaches machine state drops anything.
@@ -465,8 +465,8 @@ def _destination(store: Store, config: Config) -> Path:
     the destination is the real path, and the check reports drift against nothing. An index
     that **is** a symlink comes apart into the other two: *refused* — outside overlay mode, or
     resolving outside this project's share of the overlay — where writing would clobber exactly
-    the link §9.1 declined to honour, and *permitted but not yet created* — §6.3 has `attach`
-    create the symlink before `memory index` ever renders a file behind it, so the very first
+    the link the target rule declined to honour, and *permitted but not yet created* — `attach`
+    creates the symlink before `memory index` ever renders a file behind it, so the very first
     run in an overlay project always finds this shape. `index_source` answers None for the
     second and third causes alike, because both are "nothing to read" — but they are not the
     same answer *here*: refused is a boundary this store may never write across, and
@@ -531,11 +531,12 @@ def check_index(store: Store, config: Config, reconciled: Reconciliation) -> Ind
 def write_index(store: Store, config: Config, text: str) -> Path:
     """Write the index to the file the readers source, and return that file.
 
-    Takes `config` — a C3 contract change — because `_destination` cannot answer without it,
-    and answering without it was the defect; the overlay half comes from `store.machine`. The
-    returned path is the file actually written, which in overlay mode is the shared copy in the
-    overlay rather than the link inside the checkout; `trust.refresh_if_trusted` resolves both
-    to the same file, so the record still covers the index it just wrote.
+    Takes `config` — a change to a signature `memory/api.py` published at the time — because
+    `_destination` cannot answer without it, and answering without it was the defect; the
+    overlay half comes from `store.machine`. The returned path is the file actually written,
+    which in overlay mode is the shared copy in the overlay rather than the link inside the
+    checkout; `trust.refresh_if_trusted` resolves both to the same file, so the record still
+    covers the index it just wrote.
     """
     if not store.path.is_dir():
         raise Failure(f"{store.path} does not exist; the store was not created")

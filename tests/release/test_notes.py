@@ -1,7 +1,7 @@
-"""`release notes`: the towncrier wrapper §5.2 lists, driven through the runner seam.
+"""`release notes`: the towncrier wrapper, driven through the runner seam.
 
-towncrier is a development dependency and is *invoked*, never imported (Global
-Constraints); the argv is the contract, and a stub records it.
+towncrier is a development dependency and is *invoked*, never imported — the runtime imports only
+the standard library; the argv is the contract, and a stub records it.
 """
 
 from __future__ import annotations

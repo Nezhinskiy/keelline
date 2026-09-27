@@ -7,7 +7,7 @@ updates:
   # comment names the directory rather than counting the actions, the way it used to.
   # What it does NOT cover is `src/keelline/templates/overlay/.github/workflows/`: the
   # overlay template's own pins are not in a workflow directory the platform reads, and
-  # `RELEASING.md` §4 is where they are checked by hand.
+  # `RELEASING.md` section 4 is where they are checked by hand.
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -1,5 +1,5 @@
-"""Backticked repository paths in notes that no longer resolve (the memory lane's Task 12), and
-the one grammar for a wiki-link.
+"""Backticked repository paths in notes that no longer resolve (`memory refs`), and the one
+grammar for a wiki-link.
 
 Notes are read as authoritative and they age silently: nothing in the tree points back at
 them, so a module they name can be deleted without anything going red, and the next session
@@ -33,7 +33,7 @@ from keelline.printed import quoted
 from keelline.prose import blank_fences, path_references
 
 # `[[name]]` addresses a note by its stem. Owned here because a wiki-link is the memory area's
-# grammar; the docs area's graph check imports it from the C3 surface rather than respelling it.
+# grammar; the docs area's graph check imports it from `memory/api.py` rather than respelling it.
 WIKI_LINK = re.compile(r"\[\[([^\]]+)\]\]")
 # Deliberate placeholders a note may write without claiming a file. Not a config key.
 _PLACEHOLDER_STEMS = frozenset({"foo", "bar", "baz", "qux", "xxx"})
@@ -140,7 +140,7 @@ def unresolved(root: Path, config: Config, store: Store, walked: Walk) -> list[F
 
 
 def audience_violations(store: Store, config: Config, walked: Walk) -> list[Finding]:
-    """§11: a note in the cross-project group must not `[[link]]` into a project-scoped one,
+    """A note in the cross-project group must not `[[link]]` into a project-scoped one,
     because that link dangles for every other project. Empty for a store with no cross-project
     group — every non-overlay store."""
     overlay = overlay_root(store.machine)

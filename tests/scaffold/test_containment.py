@@ -83,7 +83,7 @@ def load_at(root: Path) -> Config:
     return load(root, machine=root / "absent.toml")
 
 
-# --- the three fields C1 owns ---------------------------------------------------------------
+# --- the three fields the configuration loader owns -------------------------------------------
 
 
 def test_the_loader_refuses_every_escaping_paths_value(tmp_path: Path) -> None:
@@ -103,11 +103,11 @@ def test_the_loader_refuses_every_escaping_paths_value(tmp_path: Path) -> None:
 
 
 def test_an_absolute_paths_value_is_refused_by_the_grammar_before_contained_is_reached() -> None:
-    # Finding 5, fix round 1: with the `[paths]` grammar loop (P10, Task 1) running before any
-    # `contained()` call, an absolute value like the one this fixture used to carry for
-    # `architecture` is refused by the grammar first — `contained()`'s own `..`-shaped message
-    # never fires for it, and folding it into `HOSTILE_PATHS` let one guard silently cover for
-    # the other. Asserted directly against the grammar instead.
+    # With the `[paths]` grammar loop running before any `contained()` call, an absolute value like
+    # the one this fixture used to carry for `architecture` is refused by the grammar first —
+    # `contained()`'s own `..`-shaped message never fires for it, and folding it into
+    # `HOSTILE_PATHS` let one guard silently cover for the other. Asserted directly against the
+    # grammar instead.
     from keelline.config.schema import PATH_VALUE
 
     assert PATH_VALUE.match("/etc") is None
@@ -206,7 +206,7 @@ def test_load_preset_names_the_key_its_caller_passes() -> None:
     assert "\x1b" not in message and "IGNORE" not in message
 
 
-# --- the field C2 owns -----------------------------------------------------------------------
+# --- the field the scaffold engine owns -------------------------------------------------------
 
 
 def test_the_engine_refuses_a_profile_the_loader_lets_through(tmp_path: Path) -> None:
@@ -300,9 +300,9 @@ def _init(root: Path) -> None:
 def test_a_refused_paths_value_leaves_no_manifest_behind(tmp_path: Path) -> None:
     """The end-to-end consequence, through `init` and the `[paths]` table a clone commits.
 
-    Hostile in exactly one value, and that value is B1's own: every other key is the preset's,
-    so no older `..` rule can be what refuses it. Before the fix this run wrote nine files and
-    the manifest and then raised inside `apply`, leaving a repository `init` refuses for ever.
+    Hostile in exactly one value, and that value is the one the fix is about: every other key is the
+    preset's, so no older `..` rule can be what refuses it. Before the fix this run wrote nine files
+    and the manifest and then raised inside `apply`, leaving a repository `init` refuses for ever.
 
     **No single-edit mutation reddens this, and that is measured rather than assumed.** Two
     guards stand in front of the write — the `[paths]` grammar and `contained()`'s component
@@ -333,7 +333,7 @@ def test_a_refused_paths_value_leaves_no_manifest_behind(tmp_path: Path) -> None
 def test_a_paths_value_inside_the_control_directory_is_refused_before_any_write(
     tmp_path: Path,
 ) -> None:
-    """B2, end to end through `init`, with the developer's own hook on disk.
+    """A reserved `.git` component, end to end through `init`, with the developer's hook on disk.
 
     The `agents-md` artifact is a `MANAGED_REGION`, which the engine's "exists and Keelline did
     not write it" guard exempts, so this reached `region_update` and `fsops._mode_of` carried the
@@ -394,11 +394,11 @@ def test_the_engine_refuses_a_control_directory_target_the_loader_never_sees(
 # --- the two fields nobody guards yet ---------------------------------------------------------
 
 
-def test_two_of_the_fixtures_own_fields_reach_no_guard_in_this_lane(tmp_path: Path) -> None:
-    """§7.4 names `ledger.code_roots` and `memory.index_extra` contained targets, and this
-    lane consumes neither: `config/paths.py`'s docstring hands them to whichever lane first
-    reads them, which is `ledger` and `memory-engine`. Pinned here so the day one of them
-    starts refusing, this assertion is the reminder that §7.4's fixture is finally whole."""
+def test_two_of_the_fixtures_own_fields_reach_no_guard_in_scaffold(tmp_path: Path) -> None:
+    """`ledger.code_roots` and `memory.index_extra` are contained targets as well, and `scaffold`
+    consumes neither: `config/paths.py`'s docstring hands them to whichever area first reads them,
+    which is `ledger` and `memory`. Pinned here so the day one of them starts refusing, this
+    assertion is the reminder that every contained target these fixtures name is finally guarded."""
     write_config(tmp_path, HOSTILE_FIELDS_SCAFFOLD_NEVER_READS)
     config = load_at(tmp_path)
     assert config.ledger.code_roots == ("../../../../etc", "/etc/passwd")

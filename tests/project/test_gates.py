@@ -1,9 +1,9 @@
 """A bare repository `init --yes` has just written passes every gate the workflow runs.
 
-The fixture guard beside this one says the committed fixture is what the templates render; this
-one says the templates render a project the gates accept, which is a different claim and the
-one a first adopter meets. The five invocations are the five built-in gates `keelline gate` runs
-in `.github/workflows/check.yml`, driven through their own commands and the real parser the way
+The fixture guard beside this one says planning over the committed fixture has nothing left to
+create; this one says the templates render a project the gates accept, which is a different claim
+and the one a first adopter meets. The five invocations are the five built-in gates `keelline gate`
+runs in `.github/workflows/check.yml`, driven through their own commands and the real parser the way
 `tests/test_fixtures.py` drives them.
 """
 
@@ -73,10 +73,11 @@ def _invoke(root: Path, tmp_path: Path, argv: list[str]) -> tuple[int, str]:
 def test_every_gate_the_workflow_runs_passes_on_a_freshly_initialised_repository(
     tmp_path: Path, argv: list[str]
 ) -> None:
-    # The from-scratch half of DC11, and the one that would catch a template the gates reject:
-    # the captured trail block (DC10) is held green by `docs trail --check` here, an
-    # `AGENTS.md` skeleton over its budget would fail `docs check`, and a `docs/bugs/` with an
-    # audits directory and a rendered index is what keeps `bugs check` out of its inert arm.
+    # The from-scratch half of what the fixture guard beside this one holds, and the one that would
+    # catch a template the gates reject: the captured trail block is held green by `docs trail
+    # --check` here, an `AGENTS.md` skeleton over its budget would fail `docs check`, and a
+    # `docs/bugs/` with an audits directory and a rendered index is what keeps `bugs check` out of
+    # its inert arm.
     root = _initialised(tmp_path)
     code, printed = _invoke(root, tmp_path, argv)
     assert code == 0, printed

@@ -29,15 +29,15 @@ def test_the_template_tree_is_reachable_at_all() -> None:
 
 
 def test_the_template_ships_no_allow_rule_anywhere() -> None:
-    # §12: "Overlay template shipping `allow` rules or hooks → a test over templates/overlay/
-    # fails the release." The plugin author may never grant a permission (§3, first row); only
-    # the machine owner may, by editing their own instance after it is theirs.
+    # An overlay template that ships an `allow` rule or a hook fails the release, and this test
+    # over templates/overlay/ is what fails it. The plugin author may never grant a permission;
+    # only the machine owner may, by editing their own instance after it is theirs.
     for path in _json_files():
         assert "allow" not in _keys(json.loads(path.read_text(encoding="utf-8"))), path
 
 
 def test_the_template_ships_no_hook_entry() -> None:
-    # Same row. An overlay hook is the machine owner's to add; one shipped in the template
+    # Same rule. An overlay hook is the machine owner's to add; one shipped in the template
     # would execute on every machine that created an instance from it.
     #
     # The `if "hooks" in payload` guard this replaced was the defect: a file with no `hooks`
@@ -57,12 +57,12 @@ def test_the_template_ships_no_hook_entry() -> None:
 def test_the_preset_grants_nothing_anywhere_in_it() -> None:
     # The same rule for the other shipped file that can carry permissions. An earlier draft
     # asserted `"allow" not in preset["deny"]` — an allow key nested INSIDE the deny table,
-    # which nobody writes. §3 forbids an allow rule anywhere in anything the author ships.
+    # which nobody writes. An allow rule is forbidden anywhere in anything the author ships.
     assert "allow" not in _keys(load_preset("recommended"))
 
 
 def test_the_template_ignores_env_files() -> None:
-    # §6.4: the overlay may hold hostnames, user ids and env-file paths; it never holds
+    # The overlay may hold hostnames, user ids and env-file paths; it never holds
     # credentials. This is the cheap half of that promise; gitleaks is the other half.
     #
     # The patterns, from the non-comment lines, and not `".env" in text`: that substring test
@@ -129,12 +129,13 @@ def test_the_template_ships_permissions_that_are_neither_granted_nor_pretended()
 # *job* grants every scope while a top-level `permissions: contents: read` sits above it looking
 # correct, which is the same escalation shape with the top-level assertion intact.
 _WRITE_SCOPE = re.compile(r"^\s*[a-z-]+:\s*write(-all)?\s*$", re.MULTILINE)
-# A pinned action: `owner/repo@<40 hex>`, with the release it is in a trailing comment. D16: a
-# full-length commit sha is the only immutable reference GitHub Actions has. The comment's shape
-# is this repository's own convention, taken from `.github/workflows/`, where every `uses:` is
-# already pinned this way -- the overlay template was the one place it was not. `v7`, `v6.0.0` and
-# everything between are all spellings that convention uses, so all three are accepted: a test
-# that rejected the house style would be a trap for whoever next bumps a pin.
+# A pinned action: `owner/repo@<40 hex>`, with the release it is in a trailing comment. Pins are
+# immutable (principle 9 of `docs/methodology/principles.md`), and a full-length commit sha is the
+# only immutable reference GitHub Actions has. The comment's shape is this repository's own
+# convention, taken from `.github/workflows/`, where every `uses:` is already pinned this way -- the
+# overlay template was the one place it was not. `v7`, `v6.0.0` and everything between are all
+# spellings that convention uses, so all three are accepted: a test that rejected the house style
+# would be a trap for whoever next bumps a pin.
 _PINNED_USES = re.compile(r"\A[\w.-]+/[\w.-]+@[0-9a-f]{40} # v\d+(\.\d+){0,2}\Z")
 
 
@@ -179,12 +180,12 @@ def test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_toke
 
 
 def test_the_scan_workflow_pins_every_action_at_an_immutable_revision() -> None:
-    # Finding 23, and the same argument the `rev:` case above makes one directory over: a tag is
+    # The same argument the `rev:` case above makes one directory over: a tag is
     # a name its owner can move. `actions/checkout@v4` and `gitleaks/gitleaks-action@v2` were
     # mutable major tags in a file that runs with `secrets.GITHUB_TOKEN` over a repository
     # holding the owner's rules and notes -- while the sibling `.pre-commit-config.yaml` argued
     # at length that an unpinned revision "lets somebody else choose what runs on your machine".
-    # D16: a full-length commit sha is the only immutable reference Actions has.
+    # A full-length commit sha is the only immutable reference Actions has.
     #
     # Mutation: `mutations.toml`'s "the overlay's secret scan follows a moveable action tag".
     steps = [
@@ -213,8 +214,8 @@ def test_no_file_in_the_tree_is_undeclared() -> None:
 def test_the_templates_plan_cleanly_into_an_empty_directory(tmp_path: Path) -> None:
     from keelline.scaffold import apply, plan
 
-    # The overlay writes through C2 like every other lane, which is what makes `overlay
-    # upgrade` the engine's hash-and-skip rule rather than a second implementation of it.
+    # The overlay writes through the scaffold engine like every other area, which is what makes
+    # `overlay upgrade` the engine's hash-and-skip rule rather than a second implementation of it.
     planned = plan(tmp_path, preset_defaults("keelline-private"), templates())
     assert planned.refusals == ()
     assert len(planned.actions) == len(OVERLAY_FILES)
@@ -235,7 +236,7 @@ def test_the_manifest_records_a_comparable_version(tmp_path: Path) -> None:
 def _keys(value: object) -> set[str]:
     """Every key anywhere in a parsed JSON/TOML document.
 
-    Recursive on purpose: the risk §3 names is an allow rule *anywhere* in a shipped file, and
+    Recursive on purpose: the risk is an allow rule *anywhere* in a shipped file, and
     a top-level membership test misses `permissions.allow`, which is where one would actually
     be written.
     """
@@ -294,7 +295,7 @@ def test_the_overlay_readme_counts_the_files_a_create_actually_leaves() -> None:
 
 
 def test_the_capability_files_are_spelled_once_and_are_shipped_files() -> None:
-    # S1: the comment beside `CAPABILITY_FILES` said the two names were "not spelled twice"
+    # The comment beside `CAPABILITY_FILES` said the two names were "not spelled twice"
     # while the tuple was built by filtering `OVERLAY_FILES` against a second spelling of
     # them. One spelling now: `CAPABILITY_NAMES` is unpacked into `OVERLAY_FILES` and
     # `CAPABILITY_FILES` is that same tuple.
@@ -308,7 +309,7 @@ def test_the_capability_files_are_spelled_once_and_are_shipped_files() -> None:
     # emptied without emptying `OVERLAY_FILES` too; one spelling removed that guard, and
     # `CAPABILITY_NAMES = ()` satisfies the alias comparison, the subset (`OVERLAY_FILES`
     # unpacks the tuple) and the loop below, while silently emptying `overlay upgrade`'s
-    # decision list — the one list §6.1 diffs "regardless of hash".
+    # decision list — the one list it diffs and asks about regardless of hash.
     assert len(CAPABILITY_NAMES) == 2, CAPABILITY_NAMES
     assert CAPABILITY_FILES == CAPABILITY_NAMES
     assert set(CAPABILITY_NAMES) <= set(OVERLAY_FILES)
@@ -358,7 +359,7 @@ def test_the_overlay_readme_accounts_for_every_file_a_create_leaves() -> None:
 
 
 def test_the_template_ships_a_dependabot_configuration_for_its_pinned_actions() -> None:
-    # R4: the scan workflow pins both actions by full-length SHA, and nothing told the owner
+    # The scan workflow pins both actions by full-length SHA, and nothing told the owner
     # a pin was two years old. The same Dependabot shape this repository uses for its own
     # actions. Mutation: delete the `github-actions` ecosystem line -> reddens.
     text = (template_root() / ".github" / "dependabot.yml").read_text(encoding="utf-8")
@@ -367,7 +368,7 @@ def test_the_template_ships_a_dependabot_configuration_for_its_pinned_actions() 
 
 
 def test_the_overlay_tree_is_the_shared_resolvers_answer() -> None:
-    # One resolver for both shipped trees (DC9). Mutation (comment): make `template_root`
+    # One resolver for both shipped trees. Mutation (comment): make `template_root`
     # join the path itself -> equal today, and the two drift the day one changes.
     from keelline.templates import tree
 

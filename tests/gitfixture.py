@@ -8,9 +8,9 @@ modules had drifted from `os.devnull` to the literal `"/dev/null"`. Nothing held
 other, so each fixture was protected by whichever subset its author happened to write.
 
 Here rather than in each module because there is no reason left for the copies: the sentence
-that used to justify them — "`tests/` is not a package (CONTRIBUTING…)" — was false and was
-deleted in the wave that follows this one's, `tests/__init__.py` is tracked, and
-`tests/snapshot.py` is the precedent for a shared test module.
+that used to justify them — "`tests/` is not a package (CONTRIBUTING…)" — was false and is
+gone from CONTRIBUTING.md, `tests/__init__.py` is tracked, and `tests/snapshot.py` is the
+precedent for a shared test module.
 
 **The environment is sealed rather than inherited, and that is the hardening.** An inherited
 `GIT_DIR`, `GIT_WORK_TREE` or `GIT_INDEX_FILE` points `git` at a repository other than the one
@@ -35,9 +35,9 @@ runs of the same fixture on two machines produce the same author. Three modules 
 now merely redundant.
 
 `home` defaults to `root.parent`, which is inside `tmp_path` for every fixture in this suite:
-the global constraint is that a test never reads or writes the developer's real home, and
-pointing the two configuration variables at `os.devnull` is the first half of that, not the
-whole of it.
+CONTRIBUTING.md's Tests section holds a test to never reading or writing the developer's real
+home, and pointing the two configuration variables at `os.devnull` is the first half of that,
+not the whole of it.
 """
 
 from __future__ import annotations

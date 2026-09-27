@@ -431,11 +431,11 @@ def _repo_with_guard(root: Path) -> None:
 def test_the_working_tree_is_never_written_and_pytest_runs_in_the_scratch_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # DC1, and the retrospective's A3: the oracle used to rewrite `mutation.file` in place and
-    # restore it from a string held in memory, so two runs at once interleaved writes over one
-    # file. It now applies every mutation to a detached worktree of HEAD. Proved from both
-    # sides: every byte of the repository is identical before and after, and the fixture test
-    # reports that it was collected from somewhere that is not this repository.
+    # The oracle proves HEAD and never the working tree. It used to rewrite `mutation.file` in
+    # place and restore it from a string held in memory, so two runs at once interleaved writes
+    # over one file. It now applies every mutation to a detached worktree of HEAD. Proved from
+    # both sides: every byte of the repository is identical before and after, and the fixture
+    # test reports that it was collected from somewhere that is not this repository.
     #
     # Mutation (declared): `_run`'s `cwd=cwd` back to `cwd=ROOT` -> pytest is collected from
     # the repository, the probe path lands under `tmp_path`, and the second assertion reddens.
@@ -729,10 +729,10 @@ def test_a_terminate_mid_run_ends_it_promptly_and_leaves_no_checkout(
 def test_a_scratch_checkout_that_cannot_be_created_is_a_refusal_not_an_in_place_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # No fallback to the old in-place behaviour: an oracle that silently mutated the working
-    # tree because `git worktree add` failed would reintroduce the exact hazard DC1 removes.
-    # `subprocess.run` is wrapped so that only the worktree call fails; `git status` and pytest
-    # are real.
+    # No fallback to the old in-place behaviour: an oracle that silently mutated the working tree
+    # because `git worktree add` failed would reintroduce the exact hazard the scratch checkout
+    # removes. `subprocess.run` is wrapped so that only the worktree call fails; `git status` and
+    # pytest are real.
     #
     # No mutation entry of its own: the in-place fallback is a code path this module no
     # longer has, so there is no line to substitute. Measured by hand instead — making
@@ -802,13 +802,8 @@ def _a_reaped_pid() -> int:
 def test_a_second_oracle_refuses_rather_than_sweeping_the_first_ones_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `sweep_stale_scratch` has always assumed a single writer and its own docstring says so —
-    # "a second run started while the first is working would sweep the first's checkout out from
-    # under it". Nothing enforced it, and during the wave-3 refactor pass's review exactly that
-    # happened: a filtered run started beside an unfiltered one removed its checkout, and every
-    # mutation
-    # after that point reported FINDING. 138 of them, all false, on a clean tree. A comment
-    # naming a hazard does not stop the hazard.
+    # `sweep_stale_scratch` assumes a single writer: without the lock, a second run started
+    # beside a first removes its checkout and turns every later mutation into a false FINDING.
     #
     # The assertion is the *checkout surviving*, not the exit code: a refusal that still swept
     # would exit 1 too, and exit 1 is what this oracle returns for a finding as well.

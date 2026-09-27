@@ -6,7 +6,7 @@ disagree about what an identifier is and no one of them can be corrected alone. 
 every reader and writer asks is what makes a prefix that changes change all of them together,
 and it is why this grammar exists at all rather than as a constant per module. A leaf module:
 the ledger, the plan lint (`Fixes BR-nnn`) and the memory graph (`[[BR-nnn]]`) all read it, and
-none of them may import another's area. The prefix is repository-controlled (§3): it is
+none of them may import another's area. The prefix is repository-controlled (principle 5): it is
 interpolated into patterns and filenames, so it is held to a shape before either happens.
 """
 
@@ -22,9 +22,9 @@ from keelline.errors import Refusal
 if TYPE_CHECKING:
     from keelline.config.schema import Config
 
-# Upper-case letters and digits, one to eight characters, letter first. Not a budget: a cap on
-# what may be interpolated into a regular expression and a filename, and the eight is what a
-# `PREFIX-nnn.md` filename stays readable at.
+# Upper-case letters and digits, one to eight characters, letter first. Not a budget but a named cap
+# (CONTRIBUTING.md#named-caps) on what may be interpolated into a regular expression and a filename,
+# and the eight is what a `PREFIX-nnn.md` filename stays readable at.
 PREFIX = re.compile(r"\A[A-Z][A-Z0-9]{0,7}\Z")
 # Three digits or more: `renumber` and every reader enforce it. The plan lint's `Fixes` rule
 # and the allocator's `git log` reader build their patterns from this same constant, so none of

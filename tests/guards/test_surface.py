@@ -7,9 +7,9 @@ from __future__ import annotations
 import keelline.guards.api as guards
 
 
-def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
-    # This list is the contract. A lane that needs something absent from it grows the list
-    # deliberately, in a commit that says which lane and why — and an EQUALITY is what makes
+def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
+    # This list is the contract. A consumer that needs something absent from it grows the list
+    # deliberately, in a commit that says which consumer and why — and an EQUALITY is what makes
     # that true. `required <= set(__all__)` let an export be added and pass, and so did the
     # parse that compares `__all__` against this module's own imports: adding an import and an
     # `__all__` entry together satisfied both, so between them the two could only catch a
@@ -20,9 +20,7 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
     # hand instead — re-exporting `hygiene.is_pytest_run` reddens this test and this test alone,
     # and under the old `required <= set(...)` the very same change left all three tests green.
     #
-    # Twenty-nine names left in the first half of the wave-3 refactor pass, every one of them
-    # published against `assess` before it existed; when it arrived it needed only `commit_gate`.
-    # What is below is the whole of what another area actually imports.
+    # What is below is what another area reaches for, with the argument for each in `api.py`.
     required = {
         # the git hook, for setup, and the two results its verbs return
         "HOOK_NAME",

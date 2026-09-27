@@ -1,8 +1,8 @@
-# §5.8's smoke: the plugin installed from this checkout with the real harness CLI under a
+# The install smoke: the plugin installed from this checkout with the real harness CLI under a
 # temporary configuration directory, every hook entry fed a sample event through the
 # INSTALLED wrapper, the reusable workflow called in the same-repository form — the two
 # `owner/repo/…@ref` forms are `smoke-release.yml`'s, for the reason `same-repository-form`
-# below states — and the clone-to-exfiltration scenario (S10). Weekly as well as on every
+# below states — and the clone-to-exfiltration scenario. Weekly as well as on every
 # change, because the harness CLI
 # moves under this repository and only a run can say whether an install still works.
 #
@@ -60,7 +60,7 @@ jobs:
         id: install
         # Measured 2026-09-19 on a laptop against 2.1.263: both commands exit 0 with no
         # authentication and no network, and the installed wrapper carries its executable
-        # bit (DC8).
+        # bit, which the wrapper needs to run at all.
         run: |
           export CLAUDE_CONFIG_DIR="$RUNNER_TEMP/claude"
           claude plugin marketplace add "$PWD"
@@ -116,7 +116,7 @@ jobs:
           assert wanted <= named, wanted - named
           assert not red, red
           PY
-      - name: The clone-to-exfiltration scenario (S10)
+      - name: The clone-to-exfiltration scenario
         env:
           INSTALLED: ${{ steps.install.outputs.root }}
         run: |

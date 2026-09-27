@@ -30,7 +30,7 @@ from keelline.fsops import (
 def _umasked(mode: int = NEW_FILE_MODE) -> int:
     """`mode` as the kernel will actually create it under this process's umask.
 
-    The suite must not assert `0o644` outright: forcing that mode is the defect N2 named, and a
+    The suite must not assert `0o644` outright: forcing that mode is a defect of its own, and a
     test that pins the forced value passes only because the machine running it happens to use
     `umask 022`. Read once and restored immediately — `os.umask` is a set-and-return.
     """
@@ -211,13 +211,13 @@ def test_an_absolute_path_is_refused(tmp_path: Path) -> None:
 def test_a_current_directory_component_is_refused(tmp_path: Path) -> None:
     # `PurePosixPath` normalises `.` away today, so this asserts the guard rather than the
     # parse: the normalisation is pathlib's implementation detail and this is the single place
-    # five later lanes' containment rests on.
+    # every caller's containment rests on.
     with pytest.raises(UnsafePath):
         checked_components("docs/./a.md")
 
 
 def test_gits_control_directory_is_reserved_at_every_depth_and_in_any_case() -> None:
-    # B2. Nothing reserved `.git`: the walk refused a symlink, `..`, an absolute path and an
+    # Nothing reserved `.git`: the walk refused a symlink, `..`, an absolute path and an
     # empty component, and a control directory is none of those. Both halves of the rule are
     # asserted, because either alone is a rule a clone can spell its way past — the default
     # filesystem on macOS is case-insensitive, so `.GIT/hooks/pre-commit` reaches the same file,
@@ -334,9 +334,10 @@ def test_rmdir_within_removes_an_empty_directory_and_tolerates_an_absent_one(
 
 
 def test_rmdir_within_refuses_an_escaping_target(tmp_path: Path) -> None:
-    # The same containment as its sibling, asserted separately: this walk is what stands
-    # between a payload-controlled marker segment and an `rmdir` loop outside the one directory
-    # D14 permits, and a new public name on this surface is read as that guarantee.
+    # The same containment as its sibling, asserted separately: this walk is what stands between a
+    # payload-controlled marker segment and an `rmdir` loop outside the hook sink's marker tree,
+    # one of the two removals a listing drives (CONTRIBUTING.md#enumerated-writes), and a new
+    # public name on this surface is read as that guarantee.
     outside = tmp_path / "outside"
     (outside / "victim").mkdir(parents=True)
     with pytest.raises(UnsafePath):
@@ -402,7 +403,7 @@ def test_a_directory_that_cannot_be_fsynced_does_not_fail_a_written_file(tmp_pat
 def test_a_symlink_is_created_through_the_walk_and_never_through_a_symlinked_parent(
     tmp_path: Path,
 ) -> None:
-    # N1: `memory/worktree._link` created links with `Path.symlink_to` after a `Path.exists`
+    # `memory/worktree._link` created links with `Path.symlink_to` after a `Path.exists`
     # check, so a component swapped for a symlink between the two put the link wherever the
     # link pointed. The primitive walks with O_NOFOLLOW and creates through the directory
     # descriptor, so a symlinked parent is refused and nothing lands behind it.

@@ -69,7 +69,7 @@ def test_a_handler_stays_silent_on_every_event_but_its_own(registered: str, othe
 
 
 def test_a_decision_that_arrived_as_a_plain_string_still_denies() -> None:
-    # A lane building a HookResult dynamically hands us "deny", not Decision.DENY. `Decision` is
+    # A handler building a HookResult dynamically hands us "deny", not Decision.DENY. `Decision` is
     # a StrEnum, so the comparison must be by value: under identity this deny would be an
     # unrecognised verdict instead, which an OPEN handler's policy swallows.
     result = HookResult(decision=cast(Decision, "deny"))
@@ -106,7 +106,7 @@ def test_a_closed_handler_that_raises_refuses() -> None:
 
 
 def test_a_policy_that_arrived_as_a_plain_string_still_closes() -> None:
-    # A lane that builds a Handler dynamically hands us "closed", not Policy.CLOSED; mypy
+    # An area that builds a Handler dynamically hands us "closed", not Policy.CLOSED; mypy
     # cannot see that, so the cast stands in for it.
     closed = cast(Policy, "closed")
     outcome = dispatch(event(), [handler("g", closed, RuntimeError("boom"))], None, sink=Recorder())
@@ -282,7 +282,7 @@ def test_policy_is_taken_from_handlers_that_failed_not_from_all_registered() -> 
 
 def test_a_cap_below_the_envelope_is_recorded_and_emits_nothing() -> None:
     # No JSON envelope fits in 20 characters, so the honest output is none at all: anything
-    # longer than the cap is replaced by the platform with a preview and a file path (§9.5).
+    # longer than the cap is replaced by the platform with a preview and a file path.
     recorder = Recorder()
     handlers = [handler("a", Policy.OPEN, HookResult(context="x" * 50))]
     outcome = dispatch(event(), handlers, None, sink=recorder, cap=20)

@@ -38,8 +38,9 @@ def _initialised_project(tmp_path: Path) -> Path:
 
 
 def test_the_file_written_is_the_file_both_readers_already_read(tmp_path: Path) -> None:
-    # The whole point of DP5, asserted from the readers' side rather than the writer's: a
-    # schema this writer invented would round-trip through its own reader and fail in a hook.
+    # The whole point of writing the file both existing readers already read, asserted from the
+    # readers' side rather than the writer's: a schema this writer invented would round-trip through
+    # its own reader and fail in a hook.
     path = tmp_path / "config.toml"
     write_machine(path, personal={"reply_language": "ru"}, overlay_root=tmp_path / "ov", machine={})
     assert overlay_root(path) == tmp_path / "ov"
@@ -73,15 +74,14 @@ def test_a_hostile_value_cannot_write_a_second_key(tmp_path: Path) -> None:
     # serialiser as `project.toml`'s remote URL, and one escaping rule for both is the reason
     # `tomlout` exists rather than two format strings.
     #
-    # Deviation from the plan's literal assertion, recorded rather than silently kept: the
-    # brief's body reads `["artifact_language"] != "zz"`, which raises `KeyError` once the
-    # value is escaped correctly — nothing here ever asked for a second key, so none is present
-    # at all, and a bracket lookup cannot tell "escaped safely" from "never happened" apart
-    # from "the naive concatenation this guards against". `.get(...)` reads the same intent —
-    # no working `artifact_language = "zz"` key exists — without failing on the safe outcome
-    # the escaping is supposed to produce. Mutation: format `reply_language` with an f-string
-    # instead of `tomlout.dumps` → the naive concatenation closes the string early and this
-    # test reddens on `== "zz"`.
+    # Why `.get(...)` and not a bracket lookup: `["artifact_language"] != "zz"` raises `KeyError`
+    # once the value is escaped correctly — nothing here ever asked for a second key, so none is
+    # present at all, and a bracket lookup cannot tell "escaped safely" from "never happened" apart
+    # from "the naive concatenation this guards against". `.get(...)` reads the same intent — no
+    # working `artifact_language = "zz"` key exists — without failing on the safe outcome the
+    # escaping is supposed to produce. Mutation: format `reply_language` with an f-string instead of
+    # `tomlout.dumps` → the naive concatenation closes the string early and this test reddens on
+    # `== "zz"`.
     path = tmp_path / "config.toml"
     write_machine(
         path,
@@ -93,8 +93,8 @@ def test_a_hostile_value_cannot_write_a_second_key(tmp_path: Path) -> None:
 
 
 def test_the_preset_names_the_plugins_and_the_deny_rules() -> None:
-    # §5.6. superpowers is named because the design's own non-goal says so: "this is not a
-    # replacement for superpowers. The recommended preset installs it."
+    # superpowers is named because `README.md` says so: Keelline is not a replacement for
+    # superpowers, and the recommended preset installs it.
     preset = load_preset("recommended")
     assert any("superpowers" in name for name in preset["plugins"]["install"])
     assert any(".env" in rule for rule in preset["deny"]["global"])
@@ -119,7 +119,7 @@ def test_the_preset_denies_reading_env_files_by_value() -> None:
     ]
 
 
-# --- the file this writer shares with a human (review finding 12) ---
+# --- the file this writer shares with a human ---
 
 
 def test_a_table_this_writer_does_not_know_survives_a_rewrite(tmp_path: Path) -> None:

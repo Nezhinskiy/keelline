@@ -127,10 +127,10 @@ def test_the_skeleton_states_the_budgets_this_project_will_be_held_to() -> None:
     config = preset_defaults("widget")
     body = {t.id: t for t in _prepared(config).once}["agents-skeleton"].render()
     assert "at most 300\nlines and 3,000 words" in body and "below at most 50 lines" in body
-    # A project may lower a budget and never raise it (D7), so the rendered sentence follows the
-    # override down and ignores it upward -- `effective`'s rule, read through the file that
-    # states it. `agents_md_words` is left at the preset in the same case, so a fill that took
-    # one number for all three cannot pass.
+    # A project may lower a budget and never raise it, so the rendered sentence follows the override
+    # down and ignores it upward -- `effective`'s rule, read through the file that states it.
+    # `agents_md_words` is left at the preset in the same case, so a fill that took one number for
+    # all three cannot pass.
     lowered = replace(
         config,
         budgets=replace(config.budgets, configured={"agents_md_lines": 250, "status_lines": 999}),
@@ -181,7 +181,7 @@ def test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherw
     body = {t.id: t for t in footprint}["ci-workflow"].render()
     assert f"/.github/workflows/check.yml@{SHA}\n" in body and "%%" not in body
     assert 'branches: ["main"]' in body
-    for mode, phrase in (("none", "[ci] mode is none"), ("uvx", "ships with a later lane")):
+    for mode, phrase in (("none", "[ci] mode is none"), ("uvx", "ships in a later release")):
         varied = replace(_recording(config), ci=replace(_recording(config).ci, mode=mode))
         prepared = _prepared(varied, resolution=PINNED)
         assert phrase in prepared.skipped["ci-workflow"], mode
@@ -343,10 +343,10 @@ def test_the_rendered_caller_grants_the_reusable_workflow_read_access_and_nothin
 def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file() -> None:
     """The two-pass design's premise, which nothing made true until the collision refusal.
 
-    `scaffold.engine.plan` has no duplicate-target detection and C2 is frozen, so with two
-    `[paths]` keys aimed at one file both plans reported zero refusals, `apply` wrote both, the
-    file held only the second artifact's bytes, and the manifest recorded two different `sha256`
-    values for one target. Measured on this tree before the guard, with
+    `scaffold.engine.plan` has no duplicate-target detection and the scaffold engine's contract is
+    frozen, so with two `[paths]` keys aimed at one file both plans reported zero refusals, `apply`
+    wrote both, the file held only the second artifact's bytes, and the manifest recorded two
+    different `sha256` values for one target. Measured on this tree before the guard, with
     `paths.roadmap = paths.roadmap_history = "docs/x.md"`: `refusals: 0 0`, the manifest held a
     record for `roadmap` and one for `roadmap-history` both naming `docs/x.md` and carrying
     different `sha256` values, the file began `# Roadmap history`, and `"Design and plan trail" in

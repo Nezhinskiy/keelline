@@ -1,4 +1,4 @@
-"""In-repo notes are data, and reach the model only after the owner says so once (§9.4).
+"""In-repo notes are data, and reach the model only after the owner says so once.
 
 The gate turns on **where the notes are**, not on what `memory.mode` says. `mode` is a field
 in the clone's own `keelline.toml`; keying on it lets a hostile repository declare
@@ -41,15 +41,15 @@ class UnsafeNote(Refusal):
     """A note whose body forges the marker that is supposed to contain it.
 
     Repository-controlled content trying to escape a containment boundary is a refusal, not a
-    routine finding (C5) — the same line `config/paths.py`'s `PathEscape` draws. A caller that
-    tolerates exit 1 as "proceed anyway" must never read an attempted marker forgery that way.
+    routine finding (exit 2, not 1) — the same line `config/paths.py`'s `PathEscape` draws. A caller
+    that tolerates exit 1 as "proceed anyway" must never read an attempted marker forgery that way.
     """
 
 
 # Byte length of the per-invocation nonce (`secrets.token_hex`): 8 bytes is 64 bits of entropy,
-# enough that no note can predict or reuse it. Fixed by design, not a budget or cap — no shipped
-# config file has any business overriding it (consistent with `gitenv.GIT_TIMEOUT_SECONDS` and
-# `UNRANKED` in notes.py, which name a constant for the same reason).
+# enough that no note can predict or reuse it. A constant rather than a key for the reason a named
+# cap is one (CONTRIBUTING.md#named-caps): no project has any business choosing it, and no shipped
+# file changes with it.
 _NONCE_BYTES = 8
 
 
@@ -90,7 +90,7 @@ class TrustState:
 
 
 def changed(state: TrustState) -> bool:
-    """A store that was trusted and is not any more — §9.4's "a changed hash re-prompts"."""
+    """A store that was trusted and is not any more — the case a changed hash re-prompts for."""
     return state.recorded is not None and state.recorded != state.current
 
 
@@ -125,8 +125,8 @@ def _entry(key: str, content: str) -> bytes:
     and concatenated those with no length prefix and no escaping. Both halves are
     repository-controlled and NUL is valid UTF-8, so `read_note` happily parses a note whose
     body carries a splice: one note holding `A <NUL> p/b.md <NUL> B` produced exactly the byte
-    stream two notes `A` and `B` produce, and §9.4's "a changed hash re-prompts" did not hold
-    across the restructuring.
+    stream two notes `A` and `B` produce, and the rule that a changed hash re-prompts did not
+    hold across the restructuring.
 
     Hashing each half instead makes every entry **two fixed-width sha256 hex digests, 128
     ASCII bytes**. Every entry boundary in the stream therefore falls at a multiple of 128 and
@@ -148,14 +148,14 @@ _CONFIG_KEY = "\0keelline:memory-config\0"
 
 
 def _config_digest(config: Config) -> str:
-    """The repository-controlled configuration this lane renders into a file the gate covers.
+    """The repository-controlled configuration this area renders into a file the gate covers.
 
     `memory.index_extra` lives in `keelline.toml`, which no store file covers, and `_extra`
     renders it straight into `MEMORY.md` — the file the `index` bundle injects. An attacker who
     changed nothing else therefore left the digest untouched, and the next `memory index`
     carried their pointers in under a still-valid record, blessed on the way past by
-    `refresh_if_trusted` because Keelline itself authored that write. §9.4's "a changed hash
-    re-prompts" has to mean the hash covers what actually reaches the file.
+    `refresh_if_trusted` because Keelline itself authored that write. The rule that a changed
+    hash re-prompts has to mean the hash covers what actually reaches the file.
 
     Only this field, not the whole file. Folding `keelline.toml` in wholesale would revoke
     memory trust on every unrelated edit — a budget, a branch name — and a prompt that fires

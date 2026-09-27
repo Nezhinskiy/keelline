@@ -1,4 +1,4 @@
-"""The `docs` and `plan` groups (§5.2)."""
+"""The `docs` and `plan` groups."""
 
 from __future__ import annotations
 
