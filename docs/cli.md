@@ -834,38 +834,40 @@ passed. A gate never reports that as a finding; it is the one outcome every comm
 gates spells `could not run`, and `--json` carries it as `answered: false` with a fixed `reason`
 naming the command that shows why.
 
-**The `docs` and `trail` gates judge tracked files.** That is the contract. CI checks out what git
+**The `docs` and `trail` gates judge tracked files.** That is the contract: CI checks out what git
 tracks and nothing else, so a file that is on disk here and that git does not track — never added,
 or ignored — is one those gates read here and CI never sees, and there the gate's own finding for
-an absent file fails every pull request. The files are `[paths] agents_md` and every file or
-directory its links name, for `docs`, and `[paths] roadmap` and the `trail.toml` beside it, for
-`trail`. A symlink is tracked as the link alone, and a checkout writes the link whether or not what
-it names is there, so each path is walked as the filesystem walks it, one component at a time, and
-every symlink on the way is followed, a symlinked directory's included: every step and the file it
-lands on must be tracked. A project below its repository's top may link to a
-tracked file beside it, which every checkout has, so where a link leads is judged against the work
-tree's top; a link whose target is absolute or climbs out of the repository counts as untracked,
-since no other checkout has what it names. Tracked means in git's index, as `git ls-files` lists
-it, so a file staged and not yet committed counts — CI checks out commits, so commit it with the
-change that promotes the gate. When one of them is on disk and untracked, `assess` reports its gate
-as could not run, its `reason` saying it could not judge the tree as CI will, and adds an
-`untracked` item naming the files — the first untracked step on a link's way, or the link that
-leads out, and when that step is outside the project, the last link inside it that led there — each
-inside the path grammar or withheld; the gate counts as one that would fail. A name that differs
-from the one git tracks only in case — a link to `Notes.md` where git tracks `notes.md` — reads
-the committed file on a filesystem that folds case, as macOS's does by default, and nothing in a
-Linux checkout: its gate could not run the same way, and the name goes to a `case-differs` item
-instead, whose remedy is to spell it as `git ls-files` does, since the file is committed. Where
-case is kept apart and the two names are two files, the one read is simply untracked. Inside a git work
-tree, a git that gives no answer about it is never read as tracked: the gate could not run the same
-way, and its item is `could-not-look`. Outside a work tree nothing is asked, since there is no
-index to ask and no checkout for CI to take, and both gates judge the files as they are, as `docs
-trail` lists every document there. The roadmap the `docs` gate reads for its prose budget is not
-asked about: an absent roadmap adds no finding, so one CI cannot see can only make the verdict here
-stricter than CI's. `keelline gate` asks nothing about tracking — it runs on the checkout CI took,
-where such a file is simply absent and the gate's own finding says so — and `keelline adopt
-promote` never enforces such a gate. To keep one of those files out of git, take its gate out of
-`[gates] builtin`.
+an absent file fails every pull request. So `assess` reports such a gate as could not run, its
+`reason` saying it could not judge the tree as CI will, and counts it as one that would fail, and
+`keelline adopt promote` never enforces it. To keep one of those files out of git, take its gate out
+of `[gates] builtin`.
+
+- **The files.** `[paths] agents_md` and every file or directory its links name, for `docs`, and
+  `[paths] roadmap` and the `trail.toml` beside it, for `trail`. The roadmap the `docs` gate reads
+  for its prose budget is not asked about: an absent roadmap adds no finding, so one CI cannot see
+  can only make the verdict here stricter than CI's.
+- **Tracked** means in git's index, as `git ls-files` lists it, so a file staged and not yet
+  committed counts — CI checks out commits, so commit it with the change that promotes the gate.
+- **Symlinks.** A symlink is tracked as the link alone, and a checkout writes the link whether or
+  not what it names is there, so each path is walked as the filesystem walks it, one component at
+  a time, and every symlink on the way is followed, a symlinked directory's included: every step
+  and the file it lands on must be tracked. Where a link leads is judged against the work tree's
+  top, since a project below it may link to a tracked file beside it, which every checkout has; a
+  link whose target is absolute or climbs out of the repository counts as untracked, since no other
+  checkout has what it names.
+- **The items.** An `untracked` item names the files: the first untracked step on a path, or the
+  link that leads out, and when that step is outside the project, the last link inside it that led
+  there. A name that differs from the one git tracks only in case — a link to `Notes.md` where git
+  tracks `notes.md` — reads the committed file on a filesystem that folds case, as macOS's does by
+  default, and nothing in a Linux checkout, so it goes to a `case-differs` item instead, whose
+  remedy is to spell it as `git ls-files` does; where case is kept apart and the two names are two
+  files, the one read is simply untracked. Each name is inside the path grammar or withheld.
+- **No answer.** Inside a git work tree, a git that gives no answer is never read as tracked: the
+  gate could not run the same way, and its item is `could-not-look`. Outside a work tree nothing is
+  asked, since there is no index to ask and no checkout for CI to take, and both gates judge the
+  files as they are, as `docs trail` lists every document there.
+- **`keelline gate`** asks nothing about tracking: it runs on the checkout CI took, where such a
+  file is simply absent and the gate's own finding says so.
 
 **A gate's row.** `keelline assess`, `keelline gate` and `keelline adopt promote` each give every
 gate they ran one `--json` row in one shape: `name`; `enforcing`; `answered`, false when the gate
@@ -2487,7 +2489,7 @@ as the check is required on the gate branch only.
 | `path` | `"."` | the project root inside the caller's checkout, for a monorepo or a fixture. A **plain relative path** — letters, digits, `.`, `_`, `-` and `/`, with no `..` component — and anything else is refused before a gate runs, because the value reaches the run's own outputs, and those carry the base commit the gates' configuration is read from. A root any component of which is a symbolic link in the checkout is refused too |
 | `python-version` | `"3.13"` | the interpreter Keelline runs on; 3.11 is the floor |
 | `only` | `""` | the checks to run, space-separated: `config` and any configured gate name. Empty runs the configuration check and every configured gate, and the configuration check runs whatever this names |
-| `timeout-minutes` | `15` | the job's time limit, in whole minutes from 5 to 60; a value outside the range fails the job in its first step, before anything is checked out, and so does a fraction the runner does not render as a whole number |
+| `timeout-minutes` | `15` | the job's time limit, a whole number of minutes from 5 to 60; any other value fails the job in its first step, before anything is checked out |
 
 The caller's job needs `contents: read`. That is the default, so the lines above are enough —
 but a caller that sets `permissions:` at workflow level replaces the default rather than adding
@@ -2527,11 +2529,9 @@ pull-request content, so that line is one a pull request can edit, and this is w
 through the input: this job's limit, anywhere from 5 to 60, in every run the pull request starts —
 one per push, and one per edit of its title, description or base. Through the input it cannot
 remove the limit, raise it past 60, or turn running out into a pass: a job that runs out of time is
-cancelled, and a required check that was cancelled has not passed. A value outside the range fails
-the job in its first step rather than being quietly replaced. A fraction inside it is the job's
-limit by then and fails that step too, unless the runner renders it as a whole number — it keeps
-fifteen significant digits, so `5.000000000000001` is `5` — and either way the limit stays inside
-the range.
+cancelled, and a required check that was cancelled has not passed. Any value but a whole number
+from 5 to 60 fails the job in its first step rather than being quietly replaced, and whatever was
+passed, the limit the job runs under stays inside the range.
 
 **What the input does not bound.** The rest of the caller file is pull-request content as well, and
 runs as the pull request wrote it: a matrix around the call runs this job once per leg, each leg

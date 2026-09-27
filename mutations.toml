@@ -11960,8 +11960,8 @@ reddens = [
 ]
 
 # The reusable workflow's time limit is the caller's to move, and the caller is pull-request
-# content: the expression reads the caller's value only inside 5 to 60, so no pull request can
-# buy the job more than an hour of the project's runner time per push.
+# content: the expression reads the caller's value only inside 5 to 60, so the input cannot give
+# one run of this job more than an hour.
 [[mutation]]
 name = "the reusable workflow's time limit reaches ten hours"
 file = ".github/workflows/check.yml"
