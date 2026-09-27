@@ -31,8 +31,8 @@ the float and the nested table that used to make every future run exit 2 round-t
 the one refusal left names this file, the key, and what to do about it instead of naming a
 serialiser the owner has never heard of.
 
-**`fsops.write_atomically` on a bare `Path`, not `fsops.write_within`.** Every other writer in
-Keelline owns a root — a project checkout, the overlay — and walks into it with `O_NOFOLLOW`.
+**`fsops.write_atomically` on a bare `Path`, not `fsops.write_within`.** Every other writer
+`setup` uses owns a root — a project checkout, the overlay — and walks into it with `O_NOFOLLOW`.
 This file has no such root: `config.machine.machine_config_path` resolves to
 `~/.config/keelline/config.toml` or wherever `--machine`/`KEELLINE_CONFIG`/`XDG_CONFIG_HOME`
 sends it, and that directory is not one this process was handed as "the thing to stay inside

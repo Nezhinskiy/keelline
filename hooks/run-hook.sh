@@ -29,9 +29,9 @@
 # **`PATH` is the chooser the tty gate did not close, and it is contained rather than dropped.**
 # The last candidate below is bare `python3`, resolved through `PATH`, and an `env` block can set
 # `PATH` — so gating `KEELLINE_PYTHON_CANDIDATES` alone moved the choice from one variable to
-# another. Dropping the entry is not the answer: it is the measured fall-through, and a
-# machine whose Python lives under `pyenv`, `nix` or `asdf` has none at any of the four absolute
-# paths. What a hostile clone can actually stage is narrower than "any `PATH`" — a shipped
+# another. Dropping the entry is not the answer: a spike measured the need for this last-resort
+# fall-through, and a machine whose Python lives under `pyenv`, `nix` or `asdf` has none at any
+# of the four absolute paths. What a hostile clone can actually stage is narrower than "any `PATH`" — a shipped
 # interpreter plus a `PATH` entry naming its own tree — so **no candidate that resolves inside
 # the project root is used**, which costs those installations nothing because their interpreter
 # is never under the checkout. It is the containment `setup` applies to a recorded overlay root,

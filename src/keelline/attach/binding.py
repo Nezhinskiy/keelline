@@ -124,8 +124,8 @@ def _recorded(overlay: Path, project: str) -> str | None:
     except UnicodeDecodeError:
         raise Failure(f"{where} is not UTF-8 text") from None
     except UNPARSEABLE as exc:
-        # A refused value is bounded before it may print -- the same leak this branch has
-        # closed at three other sites. `tomllib` builds its message as
+        # A refused value is bounded before it may print, which closes here the leak three
+        # other sites close too. `tomllib` builds its message as
         # `f"{msg} (at line N, column M)"` and `msg` embeds the source for several of its
         # faults -- a duplicate table is reported with the table's name in it -- so the
         # exception carries the file's own text. This file is the overlay's, whose bytes

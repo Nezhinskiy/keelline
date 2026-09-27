@@ -87,7 +87,7 @@ def run_doctor(args: argparse.Namespace) -> Result:
     checks = run_checks(
         root,
         # `None` means the machine owner's own, said out loud rather than defaulted — the rule
-        # every function this plan added follows, and for the reason `attach.write` gives: a
+        # every function that takes `home` follows, and for the reason `attach.write` gives: a
         # resolver without one reads the developer's real `~`.
         home=Path(args.home).expanduser() if args.home else None,
         machine=Path(args.machine) if args.machine else None,

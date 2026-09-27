@@ -917,8 +917,8 @@ def _hook_entries(context: Context) -> Row:
     clone can commit, so a repository that commits a marked hook entry *and* a ledger recording
     that entry's id got this row to answer "all accounted for" — a committable file silencing the
     one check whose entire purpose is that nobody's entries go unlisted. That is the defect
-    `_attached` once had — the ledger taken at its word — one field over, and it gets the same
-    rule: what could `attach` possibly have written here? An id is credible only if the entry
+    `attach.write.AttachLedger` records — `detach` taking the ledger at its word — one field
+    over, and it gets the same rule: what could `attach` possibly have written here? An id is credible only if the entry
     it names is one the **overlay** currently grants, and the overlay is trusted by construction
     because its root comes from the machine configuration rather than from anything a
     repository can reach.

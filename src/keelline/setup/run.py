@@ -385,8 +385,8 @@ def _home_that_leads_there(home: Path, link: Path) -> Path | None:
     link's basename to its target's, which is trivially true for a per-file link, and printed
     `--home <dotfiles>/claude` — under which this command writes
     `<dotfiles>/claude/.claude/settings.json`, exits 0, and leaves the file the link leads to
-    untouched and every reader reading nothing. That is finding 14's shape arriving through the
-    remedy instead of through the default.
+    untouched and every reader reading nothing. That is the wrong-file write `--machine`'s old
+    default made, arriving through the remedy instead of through the default.
 
     What `--home H` actually writes is `H/<USER_SETTINGS>` and nothing else, so a remedy exists
     exactly when what the link leads to *is* a `<USER_SETTINGS>` inside some directory — and

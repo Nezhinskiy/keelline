@@ -1,4 +1,4 @@
-# The release smoke: the plugin installed from this checkout with the real harness CLI under a
+# The install smoke: the plugin installed from this checkout with the real harness CLI under a
 # temporary configuration directory, every hook entry fed a sample event through the
 # INSTALLED wrapper, the reusable workflow called in the same-repository form — the two
 # `owner/repo/…@ref` forms are `smoke-release.yml`'s, for the reason `same-repository-form`
