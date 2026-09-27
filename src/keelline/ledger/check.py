@@ -99,21 +99,27 @@ def _base_ledger(root: Path, config: Config, base: str) -> _BaseLedger:
     alone answers, the newest by date, can predate an entry another of them carries: a merge
     deletes that entry all the same. So each is listed with one `git ls-tree -r` of the two
     configured paths, whose names come back relative to `root`, and their entries are united.
-    Entries are append-only, so the union refuses no branch that deleted nothing.
+    Entries are append-only, so on a base that kept its entries the union refuses no branch that
+    deleted nothing; an entry removed from the base itself, by a direct push, is still named on
+    a branch whose merge bases include one from before the removal, and is restored on the base.
 
     A base shaped like an option is refused, as `plan check` refuses it. A base git cannot list,
     one that shares no commit with HEAD, and any base in a shallow clone, where the commits HEAD
-    forked from can be cut off and the merge base git sees be an older one, are a `Failure` —
+    forked from can be cut off and the merge base git sees be an older one, or in a clone git
+    will not say is not shallow, are a `Failure` —
     "could not run" to a gate — and never "the base has no ledger", which would pass exactly the
     change this question exists to catch.
     """
     if base.startswith("-"):
         raise Refusal(f"{base!r} looks like an option, not a base ref")
     bugs, index = config.paths.bugs, config.paths.bug_index
+    # Whether the clone is shallow is asked first, and a question git does not answer is not
+    # "not shallow": read so, a shallow clone would go on to an older merge base.
     code, out = git_run(root, "rev-parse", "--is-shallow-repository")
-    if code == 0 and out.strip() == "true":
+    if code != 0 or out.strip() == "true":
+        cause = _SHALLOW if code == 0 else NO_ANSWER if code < 0 else f"git exited {code}"
         raise Failure(
-            _BASE_UNREAD.format(bugs=bugs, index=index, base=base, root=root, cause=_SHALLOW)
+            _BASE_UNREAD.format(bugs=bugs, index=index, base=base, root=root, cause=cause)
         )
     code, out = git_run(root, "merge-base", "--all", base, "HEAD")
     forks = out.split() if code == 0 else []

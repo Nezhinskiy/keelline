@@ -10426,10 +10426,22 @@ reddens = [
 [[mutation]]
 name = "a shallow clone is compared at whatever merge base it can see"
 file = "src/keelline/ledger/check.py"
-before = '    if code == 0 and out.strip() == "true":'
+before = '    if code != 0 or out.strip() == "true":'
 after = "    if False:"
 reddens = [
   "tests/ledger/test_check.py::test_a_shallow_clone_is_a_failure_never_an_older_fork_point",
+]
+
+# Whether the clone is shallow is itself a question: a timeout or a refusal read as "not shallow"
+# lets a shallow clone go on to the older merge base it can see.
+[[mutation]]
+name = "a shallow check git does not answer reads as a full clone"
+file = "src/keelline/ledger/check.py"
+before = '    if code != 0 or out.strip() == "true":'
+after = '    if code == 0 and out.strip() == "true":'
+reddens = [
+  "tests/ledger/test_check.py::test_a_shallow_check_git_does_not_answer_is_a_failure_never_a_full_clone[no-answer]",
+  "tests/ledger/test_check.py::test_a_shallow_check_git_does_not_answer_is_a_failure_never_a_full_clone[refused]",
 ]
 
 # A base that shares no commit with HEAD has no fork point, and "the base carried nothing" would

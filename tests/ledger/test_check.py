@@ -8,12 +8,15 @@ from __future__ import annotations
 import os
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
+from keelline.gitenv import NO_ANSWER, git_run
+from keelline.ledger import check
 from keelline.ledger.check import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, problems, uninitialised
 from keelline.ledger.entries import load_entries
 from keelline.ledger.index import render_index
@@ -430,6 +433,33 @@ def test_a_shallow_clone_is_a_failure_never_an_older_fork_point(tmp_path: Path) 
     with pytest.raises(Failure) as caught:
         problems(shallow, config, "refs/remotes/origin/main")
     assert "shallow" in str(caught.value)
+
+
+@needs_git
+@pytest.mark.parametrize(
+    ("answer", "cause"),
+    [(-1, NO_ANSWER), (128, "git exited 128")],
+    ids=["no-answer", "refused"],
+)
+def test_a_shallow_check_git_does_not_answer_is_a_failure_never_a_full_clone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: int, cause: str
+) -> None:
+    # Whether the clone is shallow is a question too: read as "not shallow" when git gave no
+    # answer or refused, a shallow clone went on to the merge base it could see, an older one
+    # than the real fork point, which is the case the shallow check exists to close. Mutation
+    # (declared): only a `true` answer counted -> the listing below goes ahead and answers `[]`.
+    root, config, base = _committed_ledger(tmp_path, ("BR-001",))
+
+    def unanswered(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        if args[:2] == ("rev-parse", "--is-shallow-repository"):
+            return answer, ""
+        return git_run(where, *args, **kwargs)
+
+    monkeypatch.setattr(check, "git_run", unanswered)
+    with pytest.raises(Failure) as caught:
+        problems(root, config, base)
+    assert f"({cause})" in str(caught.value)
+    assert "proved nothing" in str(caught.value)
 
 
 @needs_git

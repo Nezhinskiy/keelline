@@ -620,13 +620,15 @@ What the change forked with is the ledger at every commit `git merge-base --all 
 names, their entries taken together: an entry the base filed after the branch forked is not one
 the branch deleted, and a deletion is still named on a branch behind its base, on the merge
 commit CI checks out, and on a history with several merge bases, where the one git would pick
-alone can predate the entry while a merge deletes it all the same. Entries are append-only, so
-taking them together refuses no branch that deleted nothing. `--base` is what the `bugs` gate
-passes, the base it judges against; a base git cannot list, one that shares no commit with
-`HEAD`, and any base in a shallow clone, where the commits `HEAD` forked from can be cut off and
-the merge base git sees be an older one, fail (`1`) rather than read as a base with no ledger,
-and under a gate that is the gate not running: fetch the whole history (`fetch-depth: 0`).
-Without `--base` the tree alone is judged.
+alone can predate the entry while a merge deletes it all the same. Entries are append-only, so on
+a base that kept its entries taking them together refuses no branch that deleted nothing; an entry
+removed from the base itself, by a direct push, is still named on a criss-crossed branch whose
+merge bases include one from before the removal: restore it on the base. `--base` is what the
+`bugs` gate passes, the base it judges against; a base git cannot list, one that shares no commit
+with `HEAD`, and any base in a shallow clone, or in one git will not say is not shallow, where
+the commits `HEAD` forked from can be cut off and the merge base git sees be an older one, fail
+(`1`) rather than read as a base with no ledger, and under a gate that is the gate not running:
+fetch the whole history (`fetch-depth: 0`). Without `--base` the tree alone is judged.
 A generated index with no directory behind it is a deleted ledger and exits `1`. Git enumerates
 the files where the root is the top of a checkout (tracked plus untracked-not-ignored), and a
 walk stands in elsewhere. A file whose first 2 KiB carry `keelline:ledger:fixtures` holds sample
