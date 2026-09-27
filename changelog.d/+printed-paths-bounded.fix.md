@@ -13,3 +13,9 @@ prints as itself, so ordinary output is unchanged. On a summary line, any other 
 refusal has no `--json` payload to point to, so there the name is quoted with its line breaks
 and control characters escaped. The same applies to a `docs/trail.toml` `[states]` key that
 names no document.
+
+Three values from the repository that are not file names get the same escaping where a refusal
+names them: a `memory.groups` entry that `keelline memory refs` could not resolve, the
+`[project] base_branch` that `keelline test attribute` compares against when no `--base` is given,
+and the error text for an invalid `docs/trail.toml` theme pattern, which repeats characters from
+the pattern itself.

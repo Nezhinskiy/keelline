@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from keelline.errors import Failure, Refusal
+from keelline.findings import quoted
 from keelline.gitenv import git_run, scrubbed_env
 from keelline.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
 
@@ -168,6 +169,9 @@ def _extract(root: Path, ref: str, into: Path) -> None:
 def attribute(root: Path, *, command: str, base: str, runner: Runner) -> Attribution:
     if base.startswith("-"):
         raise Refusal("--base must name a ref, not an option")
+    # Named in the refusals below through `quoted`: without `--base` the ref is `origin/` plus
+    # `project.base_branch`, which the repository writes and no grammar bounds.
+    shown = quoted(base)
     # Guarded for the reason `_extract` gives: `git_run` decodes stderr strictly, so git's own
     # error text carrying a non-UTF-8 byte escapes as a bare `UnicodeDecodeError`. A `Failure`
     # and not the `(-1, "")` skip, because this command has no verdict without a merge-base.
@@ -175,7 +179,7 @@ def attribute(root: Path, *, command: str, base: str, runner: Runner) -> Attribu
         code, merge_base = git_run(root, "merge-base", "HEAD", base)
     except UnicodeDecodeError:
         raise Failure(
-            f"`git merge-base HEAD {base}` printed output this process cannot decode, so there "
+            f"`git merge-base HEAD {shown}` printed output this process cannot decode, so there "
             f"is no merge-base to compare against"
         ) from None
     merge_base = merge_base.strip()
@@ -183,9 +187,9 @@ def attribute(root: Path, *, command: str, base: str, runner: Runner) -> Attribu
     # exit code and must not be rendered as one: `exited -1; is origin/main fetched?` sends a
     # reader to fetch a ref when the answer is that there is no git here.
     if code == -1:
-        raise Failure(f"git could not be run, so `merge-base HEAD {base}` never executed")
+        raise Failure(f"git could not be run, so `merge-base HEAD {shown}` never executed")
     if code != 0 or not merge_base:
-        raise Failure(f"`git merge-base HEAD {base}` exited {code}; is {base} fetched?")
+        raise Failure(f"`git merge-base HEAD {shown}` exited {code}; is {shown} fetched?")
     ambient = _executed("working tree", runner.run(["sh", "-c", command], root))
     with tempfile.TemporaryDirectory(prefix="keelline-attribute-") as scratch:
         head = Path(scratch) / "head"

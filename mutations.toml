@@ -7706,3 +7706,41 @@ after = "{note.path.name}"
 reddens = [
   "tests/memory/test_refs.py::test_a_note_that_stops_decoding_is_named_escaped_never_raw",
 ]
+
+# Three repository-written values that are not paths and reached a refusal raw: a group name,
+# `project.base_branch` and the error text `re` builds out of a `trail.toml` pattern.
+[[mutation]]
+name = "memory refs names an unresolved group unescaped in its head line again"
+file = "src/keelline/memory/commands.py"
+before = "names=\", \".join(map(quoted, names))"
+after = "names=\", \".join(names)"
+reddens = [
+  "tests/memory/test_refs.py::test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw",
+]
+
+[[mutation]]
+name = "the store names a missing group unescaped in its reason again"
+file = "src/keelline/memory/store.py"
+before = "f\"{quoted(group)} is not in the store\""
+after = "f\"{group} is not in the store\""
+reddens = [
+  "tests/memory/test_refs.py::test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw",
+]
+
+[[mutation]]
+name = "test attribute names a crafted base unescaped again"
+file = "src/keelline/guards/attribute.py"
+before = "    shown = quoted(base)"
+after = "    shown = base"
+reddens = [
+  "tests/guards/test_attribute.py::test_a_crafted_base_reaches_the_refusal_escaped_never_raw",
+]
+
+[[mutation]]
+name = "a trail.toml pattern's re.error reaches the refusal unescaped again"
+file = "src/keelline/docs/trail.py"
+before = "has an invalid pattern: {str(exc)!r}"
+after = "has an invalid pattern: {exc}"
+reddens = [
+  "tests/docs/test_trail.py::test_a_crafted_theme_pattern_reaches_the_refusal_escaped_never_raw",
+]

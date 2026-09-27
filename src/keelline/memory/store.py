@@ -57,6 +57,7 @@ from keelline.config.machine import machine_config_path
 from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
 from keelline.errors import Failure
+from keelline.findings import quoted
 from keelline.gitenv import GIT_ENV_KEEP, GIT_TIMEOUT_SECONDS, scrubbed_env
 
 LOCAL_STORE = Path(".keelline") / "local" / "memory"
@@ -400,16 +401,16 @@ def _group_targets(
             unavailable[group] = str(exc)
             continue
         if not target.exists():
-            unavailable[group] = f"{group} is not in the store"
+            unavailable[group] = f"{quoted(group)} is not in the store"
             continue
         if target.is_symlink():
             if overlay is None:
-                unavailable[group] = f"{group} is a link and no overlay is recorded"
+                unavailable[group] = f"{quoted(group)} is a link and no overlay is recorded"
                 continue
             allowed = permitted_roots(overlay, config.project.name)
             if not any(_inside(target, permitted) for permitted in allowed):
                 unavailable[group] = (
-                    f"{group} links outside this project's share of the overlay "
+                    f"{quoted(group)} links outside this project's share of the overlay "
                     f"({', '.join(str(p) for p in allowed)})"
                 )
                 continue

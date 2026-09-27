@@ -338,3 +338,15 @@ def test_a_trail_file_that_will_not_parse_never_quotes_its_own_keys(tmp_path: Pa
     message = str(caught.value)
     assert "is not valid TOML" in message and "ignore-prior-rules" not in message
     assert re.search(r"\(at line \d+, column \d+\)\Z", message), message
+
+
+def test_a_crafted_theme_pattern_reaches_the_refusal_escaped_never_raw(tmp_path: Path) -> None:
+    # `re` copies characters of the pattern into its own error text, and the pattern is
+    # `trail.toml`'s, so an escape sequence in it reached the terminal through `docs trail`.
+    # Mutation: interpolate the `re.error` unquoted in `read_trail` — this reddens.
+    # A basic TOML string, so `\u001b` is decoded to the byte itself before `re` sees it.
+    trail = '[[theme]]\nlabel = "x"\npattern = "[\\u001b-\\u0001]"\n'
+    root, config = corpus(tmp_path, trail=trail)
+    with pytest.raises(Failure, match="has an invalid pattern") as raised:
+        read_trail(trail_path(root, config))
+    assert "\x1b" not in str(raised.value)

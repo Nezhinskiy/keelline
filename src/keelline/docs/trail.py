@@ -140,8 +140,10 @@ def read_trail(path: Path) -> Trail:
         try:
             themes.append((entry["label"], re.compile(entry["pattern"])))
         except re.error as exc:
+            # `repr`, like the label beside it: `re` copies characters of the pattern into its
+            # own message, and the pattern is `trail.toml`'s, escape sequences included.
             raise Failure(
-                f"{path}: theme {entry['label']!r} has an invalid pattern: {exc}"
+                f"{path}: theme {entry['label']!r} has an invalid pattern: {str(exc)!r}"
             ) from None
     states = raw.get("states", {})
     if not isinstance(states, dict) or not all(

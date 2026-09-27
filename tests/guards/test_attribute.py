@@ -375,3 +375,17 @@ def test_git_output_this_process_cannot_decode_is_a_failure_and_not_a_traceback(
     monkeypatch.setattr("keelline.guards.attribute.git_run", undecodable)
     with pytest.raises(Failure, match=names):
         attribute(root, command="true", base="main", runner=_Coded({}))
+
+
+@needs_git
+def test_a_crafted_base_reaches_the_refusal_escaped_never_raw(tmp_path: Path) -> None:
+    # Without `--base` the ref is `origin/` plus `project.base_branch`, which the repository
+    # writes and the loader bounds by no grammar. The refusals that name it printed it raw, so a
+    # line break and `::error::` forged a workflow command in CI and an escape sequence reached
+    # the terminal. Mutation: bind the base unquoted for the refusals in `attribute` — this
+    # reddens.
+    root = _repo(tmp_path)
+    with pytest.raises(Failure, match="fetched") as raised:
+        attribute(root, command="true", base="origin/x\n::error::forged\x1b[2J", runner=_Coded({}))
+    message = str(raised.value)
+    assert "\x1b" not in message and "\n" not in message

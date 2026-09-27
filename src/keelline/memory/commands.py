@@ -24,7 +24,7 @@ from keelline.command import CHECK_HELP, common_flags
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
-from keelline.findings import printable
+from keelline.findings import printable, quoted
 from keelline.hooks.api import detect_harness
 from keelline.memory import trust
 from keelline.memory.bundles import Bundle, fit, render
@@ -399,8 +399,11 @@ _UNAVAILABLE_GROUPS = (
 
 def _unavailable(unavailable: dict[str, str]) -> Refusal:
     names = sorted(unavailable)
-    reasons = "\n".join(f"{group}: {unavailable[group]}" for group in names)
-    head = _UNAVAILABLE_GROUPS.format(count=len(unavailable), names=", ".join(names))
+    # Each name through `quoted`, the head's and the reasons' alike: `memory.groups` is
+    # repository-written and bounded by no grammar, and `trust.wrap` delimits text for the model
+    # without escaping a byte for the terminal. The store's reasons quote it the same way.
+    reasons = "\n".join(f"{quoted(group)}: {unavailable[group]}" for group in names)
+    head = _UNAVAILABLE_GROUPS.format(count=len(unavailable), names=", ".join(map(quoted, names)))
     return Refusal(f"{head}\n{trust.wrap(reasons, trust.new_nonce())}")
 
 

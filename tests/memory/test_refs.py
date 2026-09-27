@@ -312,3 +312,24 @@ def test_a_note_that_stops_decoding_is_named_escaped_never_raw(tmp_path: Path) -
     with pytest.raises(Failure, match="is not valid UTF-8") as raised:
         _lines(parsed)
     assert "\x1b" not in str(raised.value) and "\n" not in str(raised.value)
+
+
+def test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `memory.groups` is repository-written and the loader bounds no grammar on it, by design:
+    # each lane contains a group against its own anchor. The refusal that names an unresolved
+    # group printed it raw twice, in the head line and in the store's reason under it, so a line
+    # break and `::error::` forged a workflow command and an escape sequence reached the
+    # terminal. Mutation: join the head's names unquoted in `_unavailable`, or name the group
+    # unquoted in `_group_targets`' "is not in the store" reason — either reddens.
+    root, _config = project(tmp_path)
+    crafted = "gone\\n::error::forged\\u001b[2J"
+    (root / "keelline.toml").write_text(
+        CONFIG.replace('"project-volatile"]', f'"project-volatile", "{crafted}"]'),
+        encoding="utf-8",
+    )
+    assert invoke(["memory", "refs", *flags(root)]) == 2
+    err = capsys.readouterr().err
+    assert "could not be resolved" in err and "is not in the store" in err
+    assert "\x1b" not in err and "\n::error::" not in err
