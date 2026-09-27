@@ -5468,6 +5468,19 @@ reddens = [
   "tests/test_gitfixture.py::test_the_sealed_environment_carries_nothing_that_could_redirect_git",
 ]
 
+# Apple's git reads a gitconfig inside Xcode that `GIT_CONFIG_SYSTEM` does not replace, and it
+# names `main` as the default branch: a test whose `init` had no `-b` passed on a Mac and failed
+# on every CI runner. The behavioural test reddens only where that file exists, so this entry
+# names the key set, which reddens on every git the oracle runs.
+[[mutation]]
+name = "a fixture git reads the machine's unreplaceable system configuration again"
+file = "tests/gitfixture.py"
+before = '            "GIT_CONFIG_NOSYSTEM": "1",'
+after = "            # (not sealed)"
+reddens = [
+  "tests/test_gitfixture.py::test_the_sealed_environment_carries_nothing_that_could_redirect_git",
+]
+
 # The durable half. A guard that stopped walking reports no offences for the same reason a clean
 # tree does, so the walk's own floor is what this proves — narrowed to the one file the walk
 # already excludes, `modules` comes back empty and the floor is the assertion that goes red.

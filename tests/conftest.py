@@ -2,9 +2,10 @@
 configuration.
 
 `tests/gitfixture.py` seals the `git` a fixture runs (`GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM`
-at `os.devnull`, `HOME` under `tmp_path`). The `git` the product runs is another matter:
-`keelline.gitenv.scrubbed_env` keeps `HOME` on purpose, because a real user's global excludes
-and configuration are theirs to have honoured, and it drops every `GIT_CONFIG_*` variable. So
+at `os.devnull`, `GIT_CONFIG_NOSYSTEM` set, `HOME` under `tmp_path`). The `git` the product
+runs is another matter: `keelline.gitenv.scrubbed_env` keeps `HOME` on purpose, because a real
+user's global excludes and configuration are theirs to have honoured, and it drops every
+`GIT_CONFIG_*` variable. So
 under test that `git` read the developer's `~/.gitconfig` and `~/.config/git/ignore`: with
 `CLAUDE.md` in a global excludes file, `check-ignore` answered differently and the project
 tests failed by the dozen on one machine and passed on the next.

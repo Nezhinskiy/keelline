@@ -1343,6 +1343,10 @@ def test_git_refusing_the_repository_inside_a_checkout_refuses_the_overlay(
     candidate.mkdir()
     _seed_overlay(candidate)
     _dubious_git(tmp_path, monkeypatch, DUBIOUS[dubious](main.resolve()))
+    # The premise, asked of the `git` the product runs: it refuses the main checkout. A runner
+    # whose configuration defeats the fake owner fails here, at the setup, and not at the
+    # verdict below, where the path arm's refusal reads as a different message.
+    assert gitenv.git_run(main.resolve(), "rev-parse", "--git-dir")[0] == 128
     with pytest.raises(Refusal, match="refused to describe the repository"):
         _record(tmp_path, candidate, linked)
     assert overlay_root(tmp_path / "config.toml") is None

@@ -164,7 +164,7 @@ def test_a_bound_linked_pushed_and_satisfied_project_hears_nothing(
     root, overlay, machine = _recorded(tmp_path, monkeypatch)
     _bind(overlay)
     bare = tmp_path / "remote.git"
-    git(tmp_path, "init", "-q", "--bare", str(bare))
+    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
     git(overlay, "init", "-q", "-b", "main")
     git(overlay, "add", "-A")
     git(overlay, "commit", "-qm", "chore: overlay")
@@ -211,7 +211,7 @@ def test_an_upstream_that_is_behind_still_reports_both_counts(
     # the line -- so making the two exclusive did not cost the case that reports both counts.
     root, overlay, machine = _recorded(tmp_path, monkeypatch)
     bare = tmp_path / "remote.git"
-    git(tmp_path, "init", "-q", "--bare", str(bare))
+    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
     git(overlay, "init", "-q", "-b", "main")
     git(overlay, "add", "-A")
     git(overlay, "commit", "-qm", "chore: overlay")
@@ -324,7 +324,7 @@ def test_the_budget_this_module_documents_is_the_one_it_pays(
     assert asked == []
 
     bare = tmp_path / "remote.git"
-    git(tmp_path, "init", "-q", "--bare", str(bare))
+    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
     git(overlay, "init", "-q", "-b", "main")
     _bind(overlay)
     git(overlay, "add", "-A")
@@ -375,7 +375,7 @@ def test_a_context_that_has_already_been_asked_does_not_re_pay_the_sync(
     monkeypatch.setattr(overlay_api, "overlay_sync", counted)
     root, overlay, machine = _recorded(tmp_path, monkeypatch)
     bare = tmp_path / "remote.git"
-    git(tmp_path, "init", "-q", "--bare", str(bare))
+    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
     git(overlay, "init", "-q", "-b", "main")
     _bind(overlay)
     git(overlay, "add", "-A")
