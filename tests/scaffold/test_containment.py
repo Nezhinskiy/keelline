@@ -300,9 +300,9 @@ def _init(root: Path) -> None:
 def test_a_refused_paths_value_leaves_no_manifest_behind(tmp_path: Path) -> None:
     """The end-to-end consequence, through `init` and the `[paths]` table a clone commits.
 
-    Hostile in exactly one value, and that value is B1's own: every other key is the preset's,
-    so no older `..` rule can be what refuses it. Before the fix this run wrote nine files and
-    the manifest and then raised inside `apply`, leaving a repository `init` refuses for ever.
+    Hostile in exactly one value, and that value is the one the fix is about: every other key is the
+    preset's, so no older `..` rule can be what refuses it. Before the fix this run wrote nine files
+    and the manifest and then raised inside `apply`, leaving a repository `init` refuses for ever.
 
     **No single-edit mutation reddens this, and that is measured rather than assumed.** Two
     guards stand in front of the write — the `[paths]` grammar and `contained()`'s component
@@ -333,7 +333,7 @@ def test_a_refused_paths_value_leaves_no_manifest_behind(tmp_path: Path) -> None
 def test_a_paths_value_inside_the_control_directory_is_refused_before_any_write(
     tmp_path: Path,
 ) -> None:
-    """B2, end to end through `init`, with the developer's own hook on disk.
+    """A reserved `.git` component, end to end through `init`, with the developer's hook on disk.
 
     The `agents-md` artifact is a `MANAGED_REGION`, which the engine's "exists and Keelline did
     not write it" guard exempts, so this reached `region_update` and `fsops._mode_of` carried the

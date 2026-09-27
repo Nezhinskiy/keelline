@@ -178,7 +178,7 @@ def test_a_dry_run_writes_nothing_and_reports_both_plans(tmp_path: Path) -> None
 
 @needs_git
 def test_a_refused_footprint_writes_nothing_at_all(tmp_path: Path) -> None:
-    # B1 of the review: a repository committing an AGENTS.md with an orphan end marker made
+    # A repository committing an AGENTS.md with an orphan end marker made
     # the first draft write three files and exit 2. Mutation (oracle): apply the once pass
     # before the refusal check -> the snapshot reddens.
     root = _repo(tmp_path)
@@ -194,8 +194,8 @@ def test_an_existing_configuration_without_a_manifest_is_adopted_and_never_repla
     tmp_path: Path,
 ) -> None:
     # An existing configuration is read as the answers rather than replaced: the hand-written file
-    # is the answer sheet, and it is a create-once artifact — a create-once artifact is created when
-    # absent and not looked inside again, so the file comes back byte for byte and the report names
+    # is the answer sheet, and a create-once artifact is created when absent and not looked inside
+    # again, so the file comes back byte for byte and the report names
     # it as left alone. What proves the answers were *read* is where the footprint landed: under the
     # `[paths]` this file declares and under none of the preset's.
     #

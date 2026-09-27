@@ -6,7 +6,7 @@ from __future__ import annotations
 import keelline.memory.api as memory
 
 
-def test_the_c3_surface_carries_what_every_downstream_lane_reaches_for() -> None:
+def test_the_memory_surface_carries_what_every_downstream_lane_reaches_for() -> None:
     # This list is the contract. A lane that needs something absent from it grows the list
     # deliberately, in a commit that says which lane and why — it does not import a private
     # module, and it does not get told after the fact that its import was a review finding.

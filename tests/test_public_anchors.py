@@ -37,8 +37,10 @@ SCOPE = ("src", "skills", "docs", "hooks", "agents", "tests", "scripts")
 TOP_LEVEL = ("README.md", "CONTRIBUTING.md", "RELEASING.md", "mutations.toml")
 EXEMPT = ("docs/plans", "tests/test_public_anchors.py")
 
-# The trees that are code rather than documents, where the plans' bookkeeping arm applies.
+# The trees that are code rather than documents, where the plans' bookkeeping arm applies. A
+# fixture is a document a test reads, whatever tree it sits in, so it is held as one.
 CODE = ("src", "tests", "scripts", "mutations.toml")
+FIXTURES = "tests/fixtures"
 
 # Each arm is named so a hit says what it is.
 CITATIONS = (
@@ -58,13 +60,16 @@ CITATIONS = (
 )
 
 # The plans' own bookkeeping, which means nothing once the code has shipped: the wave a line
-# landed in, the task that wrote it, the review round that changed it and the finding by its
-# number in that round. Code says what it does and why; when it did it is git's. Held to the
+# landed in, the task that wrote it, the review round that changed it and the finding or item by
+# its number in that round. Code says what it does and why; when it did it is git's. Held to the
 # code, because a document may legitimately talk about a task or a round in its own sense.
 CODE_ONLY = (
     (
         "plan vocabulary",
-        re.compile(r"\b[Ww]ave[- ]\d|\b[Tt]his wave\b|\bTask \d|\b[Ff]ix round|\b[Ff]inding \d"),
+        re.compile(
+            r"\b[Ww]ave[- ]\d|\b[Tt]his wave\b|\bWave [A-Z]\d*\b|\bTask \d|\b[Ff]ix round"
+            r"|\b[Rr]ound \d|\b[Ii]tem \d|\b[Ff]inding \d"
+        ),
     ),
 )
 
@@ -89,9 +94,15 @@ def citations(text: str, *, code: bool = False) -> list[tuple[int, str, str]]:
     return found
 
 
+def is_code(relative: str) -> bool:
+    if relative.startswith(FIXTURES + "/"):
+        return False
+    return relative.split("/", 1)[0] in CODE
+
+
 def file_citations(relative: str, text: str) -> list[tuple[int, str, str]]:
     """`citations` for the tracked file at `relative`, with the code-only arms in the code."""
-    return citations(text, code=relative.split("/", 1)[0] in CODE)
+    return citations(text, code=is_code(relative))
 
 
 def walked() -> list[Path]:
@@ -145,13 +156,21 @@ def test_the_plan_vocabulary_gate_discriminates() -> None:
         "the second fix round",
         "Review round 1, finding 5.",
         "this wave's first report",
+        "Wave A2's writing commands",
+        "round 1, item 2",
     ):
         assert citations(planted, code=True), planted
         assert citations(planted) == [], planted
     # And the walk applies the arm by where a file lives: in the code and nowhere else.
     for code in ("src/keelline/runner.py", "tests/test_cli.py", "scripts/x.py", "mutations.toml"):
         assert file_citations(code, "the wave-4 lane"), code
-    for document in ("docs/cli.md", "README.md", "RELEASING.md", "skills/README.md"):
+    for document in (
+        "docs/cli.md",
+        "README.md",
+        "RELEASING.md",
+        "skills/README.md",
+        "tests/fixtures/smoke-project/docs/plans/README.md",
+    ):
         assert file_citations(document, "the wave-4 lane") == [], document
     for clean in (
         "a task the hook runs in the background",

@@ -191,7 +191,7 @@ def _link(root: Path, relative: str, source: Path) -> bool:
     makes linking twice a no-op. Everything else — nothing there, or a symlink pointing
     anywhere else, dangling included — is replaced.
 
-    **Every hop goes through the `O_NOFOLLOW` walk, and that is the whole of N1.** The old
+    **Every hop goes through the `O_NOFOLLOW` walk, and that is the whole fix.** The old
     form asked `Path.exists()` and then wrote through the same `Path`: a component swapped
     for a symlink between the two questions redirected the link wherever the swapped
     component pointed, and `mkdir(parents=True)` created the directories to land it. Here the

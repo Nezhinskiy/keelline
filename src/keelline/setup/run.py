@@ -129,10 +129,10 @@ from keelline.setup.machine import USER_SETTINGS, read_machine, write_machine
 # `.claude-plugin/marketplace.json`'s `name` (`tests/test_manifests.py` holds both). Claude
 # Code keys `pluginConfigs` by this pair, not by the plugin name alone.
 PLUGIN_ID = "keelline@keelline-marketplace"
-# The release tag scheme (`vX.Y.Z`); `uv tool install` has no `--from`, so the positional git
-# URL form pinned to a release tag is the install form (`git+https://…@<tag>`, principle 9's
-# immutable pin). An f-string with a doubled brace, because the concatenation it replaces read
-# as somebody having forgotten one: `{version}` is meant to survive into the template and be
+# The release tag scheme (`vX.Y.Z`); `uv tool install` has no `--from`, so the positional git URL
+# form pinned to a release tag is the install form (`git+https://…@<tag>`; principle 9: the CLI
+# installs from a git tag). An f-string with a doubled brace, because the concatenation it replaces
+# read as somebody having forgotten one: `{version}` is meant to survive into the template and be
 # filled by the caller, and `{{version}}` says so.
 INSTALL_COMMAND = f"uv tool install git+{REPOSITORY_URL}@v{{version}}"
 # One verb pair per harness, fixed here rather than in the preset: which CLI verb installs a

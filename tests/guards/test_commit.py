@@ -607,8 +607,8 @@ def test_a_control_byte_in_a_body_does_not_split_the_commit_into_two_records(
 def test_a_range_shaped_like_an_option_is_refused_before_git_sees_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Principle 5: a value that reaches a subprocess is untrusted. `--all` is the whole-history
-    # sweep the source had; `--output=/tmp/x` is what the refusal exists for.
+    # A value that reaches a subprocess in an option's position is untrusted. `--all` is the
+    # whole-history sweep the source had; `--output=/tmp/x` is what the refusal exists for.
     import subprocess as sp
 
     def forbidden(*args: object, **kwargs: object) -> object:

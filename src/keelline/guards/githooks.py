@@ -171,7 +171,7 @@ def uninstall(root: Path) -> Removed:
     # file dropped beside an installed hook is unexamined — and the installed hook has been
     # `exec`ing it on every commit since, which is the larger fact. Restoring it is therefore
     # the honest end of that state rather than a new exposure, and it is deliberate: the
-    # `.local` name is the plan's contract with the `setup` lane, and a provenance marker or an
+    # `.local` name is the contract `setup` relies on, and a provenance marker or an
     # unconditional refusal here would be this module inventing a different one.
     if local.exists():
         local.rename(target)

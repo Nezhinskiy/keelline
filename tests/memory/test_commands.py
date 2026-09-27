@@ -447,7 +447,7 @@ def test_the_machines_own_index_is_still_harvested_into_the_machines_notes(
 
 
 @needs_git
-def test_memory_index_bootstraps_a_dangling_section_6_3_link(
+def test_memory_index_bootstraps_a_dangling_attach_link(
     overlay_project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `attach` creates the index symlink before any content exists behind it — that ordering is

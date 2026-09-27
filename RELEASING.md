@@ -38,8 +38,8 @@ to lag. That is the form `release.yml` runs.
 **If this is the first release, do section 3 first.** The `pypi` environment is the only human
 gate this process has, and it is a gate only once it exists: GitHub **auto-creates** an
 environment that a job names and the repository does not have, with no protection rules on it.
-So a first release run top to bottom without section 3 waits for nobody — `publish` runs unapproved
-and fails on Trusted Publishing for want of a pending publisher, and `github-release` runs
+So a first release run top to bottom without section 3 waits for nobody — `publish` runs
+unapproved and fails on Trusted Publishing for want of a pending publisher, and `github-release` runs
 unapproved and creates a public GitHub Release. Section 3 is what makes step 7's sentence true.
 
 1. **Be on `main`, current, and green.** The release workflow builds from the tag, so anything

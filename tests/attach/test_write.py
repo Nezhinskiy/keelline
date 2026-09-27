@@ -215,7 +215,7 @@ def test_confirmed_merges_the_rules_and_records_each_entry_under_its_own_id(
 
 
 def test_an_entry_the_overlay_stopped_granting_is_taken_back_out(tmp_path: Path) -> None:
-    # I3, walked end to end: the overlay grants a hook entry, `attach` installs it, the owner
+    # Walked end to end: the overlay grants a hook entry, `attach` installs it, the owner
     # deletes it from the overlay, `attach` runs again. The second run adds nothing — no allow
     # rule, no wanted entry — so it used to return the document untouched, leaving a marked
     # entry that still FIRES while the ledger (rebuilt from the overlay) forgot it. `doctor`
@@ -867,7 +867,7 @@ def test_a_pre_commit_that_is_already_installed_is_not_run_again(tmp_path: Path)
 
 
 def test_a_hook_outside_dot_git_still_counts_as_installed(tmp_path: Path) -> None:
-    # I2. The hook's directory is `git rev-parse --git-path hooks`, never `.git/hooks` and
+    # The hook's directory is `git rev-parse --git-path hooks`, never `.git/hooks` and
     # never `core.hooksPath` read by hand — the rule `docs/cli.md` states for `setup
     # --git-hooks` and `guards.githooks.hooks_dir` implements. With `core.hooksPath` set, a
     # hardcoded path finds the scan missing on EVERY attach and shells out to `pre-commit

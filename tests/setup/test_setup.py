@@ -329,8 +329,8 @@ def test_the_overlay_offer_is_never_taken_without_being_asked(tmp_path: Path) ->
 def test_pointing_at_an_existing_overlay_records_its_root_and_creates_nothing(
     tmp_path: Path,
 ) -> None:
-    # The second of the three answers `--overlay` can give — create one, record an existing one, or
-    # leave the overlay alone — and the answer a second machine gives: the overlay already exists
+    # The second of the three answers to where the overlay is — create one, record an existing one,
+    # or pass no `--overlay` — and the answer a second machine gives: the overlay already exists
     # and is cloned, and `setup` only records it.
     existing = tmp_path / "overlay"
     existing.mkdir()
@@ -586,9 +586,9 @@ def test_a_missing_keelline_on_path_is_a_note(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `uv tool install` has no `--from`, so the positional git URL form pinned to a release tag
-    # (principle 9's immutable pin) is what the note must name; asserted here rather than left to
-    # eyeballing, since it is the one line a typo in the URL or the tag would hide from every other
-    # test in this module.
+    # (principle 9: the CLI installs from a git tag) is what the note must name; asserted here
+    # rather than left to eyeballing, since it is the one line a typo in the URL or the tag would
+    # hide from every other test in this module.
     monkeypatch.setattr("shutil.which", lambda name: None)
     report = setup(
         "recommended",

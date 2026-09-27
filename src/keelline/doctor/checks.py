@@ -1709,7 +1709,7 @@ def run_checks(
 ) -> list[Check]:
     """The sixteen rows, always sixteen, whatever state the machine is in.
 
-    Four keyword parameters, which is what the plan's `Interfaces:` block names. A fifth,
+    Four keyword parameters, which is the published signature. A fifth,
     `candidates`, used to thread `KEELLINE_PYTHON_CANDIDATES` into the `wrapper` check's
     subprocess so a test could fail the interpreter probe; the wrapper now honours that variable
     only from an interactive terminal and this probe is handed `/dev/null`, so the parameter

@@ -990,9 +990,9 @@ def test_the_worktree_module_writes_links_only_through_fsops() -> None:
     source = Path(worktree.__file__).read_text(encoding="utf-8")
     # The positive half first, because an absence proves nothing on its own: this pin stayed
     # green with `_link` deleted outright, and green with the body rewritten as
-    # `os.symlink(str(source), root / relative)` — the same path-based write N1 is about,
-    # spelled without a dot-method. Both halves together say the module reaches the primitives
-    # and reaches nothing else.
+    # `os.symlink(str(source), root / relative)` — the same path-based write the walk exists to
+    # replace, spelled without a dot-method. Both halves together say the module reaches the
+    # primitives and reaches nothing else.
     assert "fsops.symlink_within(" in source and "fsops.unlink_within(" in source
     forbidden = re.findall(
         r"\.symlink_to\(|\.unlink\(|\.mkdir\(|os\.symlink\(|os\.mkdir\(|os\.unlink\(", source

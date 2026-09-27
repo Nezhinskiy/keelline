@@ -568,10 +568,10 @@ def _strip_line_continuations(text: str) -> str:
     for an argument bash actually reads as `secrets/` + a literal newline + `.env` --
     not a path that exists, and not the one the guard would deny. That is a FALSE DENIAL
     (the naive strip invents a match bash's own argument never contains), which is the
-    fail-CLOSED direction the plan's binding requirement asks for when the guard's model
-    and bash disagree -- but it is still a wrong model of what bash executes, and a wrong
-    model is a liability the far side of the ledger has already been burned by (see the
-    module docstring's heredoc history). This function stays quote-aware instead: exactly
+    fail-CLOSED direction a guard must take when its model and bash disagree -- but it
+    is still a wrong model of what bash executes, and a wrong model is a liability the
+    far side of the ledger has already been burned by (see the module docstring's
+    heredoc history). This function stays quote-aware instead: exactly
     as precise as bash itself, so it introduces no new mismatch in either direction on any
     shape measured for this fix -- both the four that must now deny and the false-denial
     probes (a wrapped `docker compose` invocation, a continued `find`, and a heredoc body

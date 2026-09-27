@@ -1129,8 +1129,9 @@ reddens = [
   "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
 ]
 
-# `RD` and a number is the one two-letter prefix that no other arm reaches when it is written bare: the
-# one-letter arm needs a word boundary before the `D`, and the bracketed arm needs brackets.
+# No other arm reaches a two-letter prefix written bare — the one-letter arm needs a word
+# boundary before its letter and the bracketed arm needs brackets — so each prefix is spelled in
+# the arm or not refused at all. `RD` stands for the four: drop it and that spelling is back.
 [[mutation]]
 name = "the public-anchor gate forgets the RD prefix"
 file = "tests/test_public_anchors.py"
@@ -1190,8 +1191,19 @@ reddens = [
 [[mutation]]
 name = "the public-anchor gate stops seeing plan vocabulary"
 file = "tests/test_public_anchors.py"
-before = '''        re.compile(r"\b[Ww]ave[- ]\d|\b[Tt]his wave\b|\bTask \d|\b[Ff]ix round|\b[Ff]inding \d"),'''
-after = '''        re.compile(r"\b[Ww]ave[- ]\d(?!)"),'''
+before = '''            r"\b[Ww]ave[- ]\d|\b[Tt]his wave\b|\bWave [A-Z]\d*\b|\bTask \d|\b[Ff]ix round"'''
+after = '''            r"(?!)"'''
+reddens = [
+  "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
+]
+
+# A fixture is a document a test reads — the smoke project's own plans, a hostile clone's README —
+# and a fixture that talks about a task or a round in its own sense is not plan bookkeeping.
+[[mutation]]
+name = "the public-anchor walk holds the fixtures to the code-only arms"
+file = "tests/test_public_anchors.py"
+before = '    if relative.startswith(FIXTURES + "/"):'
+after = '    if False:'
 reddens = [
   "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
 ]
@@ -1201,7 +1213,7 @@ reddens = [
 [[mutation]]
 name = "the public-anchor walk never applies the code-only arms"
 file = "tests/test_public_anchors.py"
-before = '    return citations(text, code=relative.split("/", 1)[0] in CODE)'
+before = '    return citations(text, code=is_code(relative))'
 after = '    return citations(text, code=False)'
 reddens = [
   "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
@@ -1210,7 +1222,7 @@ reddens = [
 [[mutation]]
 name = "the public-anchor walk applies the code-only arms to every tree"
 file = "tests/test_public_anchors.py"
-before = '    return citations(text, code=relative.split("/", 1)[0] in CODE)'
+before = '    return citations(text, code=is_code(relative))'
 after = '    return citations(text, code=True)'
 reddens = [
   "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
@@ -5815,8 +5827,7 @@ reddens = [
   "tests/release/test_pins.py::test_is_released_judges_semver_tags_and_never_the_alias",
 ]
 
-# One helper, two readers: the section list and, since round 2, the unknown-key lists inside a
-# known table. Dropping the filter reddens both, which is the point of their sharing it.
+# One helper, two readers: the section list and the unknown-key lists inside a known table. Dropping the filter reddens both, which is the point of their sharing it.
 [[mutation]]
 name = "an unknown name is no longer bounded before it prints"
 file = "src/keelline/config/loader.py"
@@ -6687,8 +6698,9 @@ reddens = [
 # `Sync.ahead` is `None` when the count is UNKNOWN -- a branch with no upstream has every commit
 # unpushed -- and the two lines were appended by two independent `if`s with `ahead=sync.ahead or 0`
 # under the second. So a session heard "nothing backs it up" and "0 unpushed commit(s)" in one
-# breath, with the number on the sentence that was false. Parked twice as "the plan specified that
-# condition exactly"; the plan is not the authority on whether a sentence is true.
+# breath, with the number on the sentence that was false. Left twice on the grounds that the
+# condition was specified exactly; a specification is not the authority on whether a sentence is
+# true.
 [[mutation]]
 name = "a session with no upstream is told it has 0 unpushed commits"
 file = "src/keelline/attach/hooks.py"

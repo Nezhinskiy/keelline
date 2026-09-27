@@ -225,7 +225,7 @@ def main(argv: list[str]) -> int:
     )
 
     # The dispatcher's own SessionStart entry, under the lapsed record. Measured rather than
-    # predicted: the plan expected a `worktree-link` line reporting the store as not linked,
+    # predicted: the expectation was a `worktree-link` line reporting the store as not linked,
     # and this clone never produces one — `memory.hooks._link_worktree` speaks for a LINKED
     # WORKTREE, and the clone is a main checkout with no link ever created, so the handler's
     # own answer is "nothing to do" and the envelope carries no context at all. That is the

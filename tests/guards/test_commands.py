@@ -225,7 +225,7 @@ def test_commit_strip_refuses_an_option_shaped_path() -> None:
 
 
 def test_commit_strip_keeps_gits_trailing_comment_block_intact(tmp_path: Path) -> None:
-    # T5-2: a realistic `prepare-commit-msg` file — subject, blank, an attribution trailer,
+    # A realistic `prepare-commit-msg` file — subject, blank, an attribution trailer,
     # then git's own comment block (`core.commentChar` default `#`). `offending_lines` judges
     # only the message's *trailing attribution block* (commit.py's docstring), and in this file
     # the last paragraph is git's comment block, which is not attribution and therefore ends
@@ -573,7 +573,7 @@ def test_test_attribute_refuses_a_base_shaped_like_an_option(
 ) -> None:
     # Exit 2, the third code the CLI row promises: `--base` reaches `git merge-base` as an
     # argument, so a `-`-shaped value is refused above the first subprocess rather than
-    # becoming an option to it (principle 5). Reddened by deleting the `base.startswith("-")`
+    # becoming an option to it. Reddened by deleting the `base.startswith("-")`
     # raise in `attribute`; measured — the command then exits 1 with git's own complaint.
     #
     # The assertion was once `== 2` plus the word "refused:", which ANY refusal on this path

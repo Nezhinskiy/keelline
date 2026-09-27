@@ -223,7 +223,7 @@ REFUSED = (
 
 
 def test_the_grammar_admits_exactly_what_the_component_rule_accepts() -> None:
-    # B1, and the shape of it: `PATH_VALUE` and `fsops.checked_components` are the two readers
+    # The shape of the defect: `PATH_VALUE` and `fsops.checked_components` are the two readers
     # of a `[paths]` value, and they have to answer the same question. They did not. The charset
     # form admitted an empty component, a trailing slash and a leading `./`, every one of which
     # `checked_components` refuses — so a value could clear the grammar, clear `contained()`
@@ -271,7 +271,7 @@ def test_contained_refuses_every_spelling_the_write_would_refuse(tmp_path: Path)
 def test_a_paths_value_naming_gits_control_directory_is_refused_and_never_quoted(
     tmp_path: Path,
 ) -> None:
-    # B2. `.git` was reserved by nothing: the grammar admits a leading dot, and `contained()`
+    # `.git` was reserved by nothing: the grammar admits a leading dot, and `contained()`
     # refused an absolute path, `..` and a symlink but not a control directory. The `agents-md`
     # artifact is a `MANAGED_REGION`, so it is exempt from the engine's "exists and Keelline did
     # not write it" guard and takes the `region_update` path — and `fsops._mode_of` carries the

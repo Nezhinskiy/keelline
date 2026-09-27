@@ -300,7 +300,7 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
     diff = diff_permissions(root, binding)
     real = len(unlinked_groups(root, config))
     # Named and not merely counted, and on this result rather than in `PermissionDiff`: the
-    # diff's three fields are fixed by the plan's Interfaces block, and a fourth would blur what
+    # diff's three fields are its published interface, and a fourth would blur what
     # `widens` means. These names come out of the overlay, so they are the owner's own and may
     # be printed.
     rules = tuple(target for target, _ in codex_rules(binding))

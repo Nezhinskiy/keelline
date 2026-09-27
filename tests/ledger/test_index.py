@@ -313,7 +313,7 @@ def test_an_index_that_cannot_be_decoded_is_a_ledger_error_not_an_empty_index(
 
 
 def test_load_entries_reports_an_undecodable_entry_as_a_ledger_error(tmp_path: Path) -> None:
-    # Wave A2's writing commands call `load_entries`; a bare `UnicodeDecodeError` out of it
+    # The ledger's writing commands call `load_entries`; a bare `UnicodeDecodeError` out of it
     # would reach the frame as an internal error rather than as findings.
     root, config = project(tmp_path)
     ledger(root, {1: entry(1)})

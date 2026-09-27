@@ -148,8 +148,8 @@ UNPUSHED = (
 # no-upstream case still reports the half that is knowable, and `UNPUSHED` is reached only with
 # a real `ahead` to print.
 #
-# This condition was parked twice during development as "the plan specified it exactly". The plan
-# is the authority on what to build; it is not the authority on whether a sentence is true.
+# This condition was left twice during development on the grounds that it was specified exactly.
+# A specification decides what to build; it does not decide whether a sentence is true.
 
 
 def _asked_before(event: HookEvent) -> bool:
