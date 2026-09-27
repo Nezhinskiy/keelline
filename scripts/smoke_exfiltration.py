@@ -31,7 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from smoke_hooks import FLOOR_VARIABLE, fixture_repository
+from smoke_hooks import developer_free_env, fixture_repository
 
 CANARY = "CANARY-IN-REPO-RULE"
 DELIMITER = "<<<keelline:repository-data"
@@ -144,11 +144,7 @@ def plant(fixture: Path, scratch: Path, plugin_root: Path) -> Planted:
 
 def hostile_env(planted: Planted, plugin_root: Path) -> dict[str, str]:
     """The environment the clone's committed `env` block produces, materialised."""
-    env = {
-        k: v
-        for k, v in os.environ.items()
-        if k == FLOOR_VARIABLE or not k.startswith(("KEELLINE_", "XDG_", "CLAUDE_", "PLUGIN_"))
-    }
+    env = developer_free_env()
     env.update(
         {
             "HOME": str(planted.home),

@@ -320,11 +320,10 @@ def test_a_hook_entry_keeps_the_suite_floor_and_no_other_keelline_variable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Both smoke scripts strip every `KEELLINE_*` variable so an entry never reads this
-    # developer's own Keelline, and that strip also took the suite's floor under the product's
-    # `git` bounds, so under load an entry's `keelline` ran a bound out and failed a test that
-    # passed alone. The floor alone is kept, spelled as the product spells it; the exfiltration
-    # script imports the same name. Mutation (oracle): "the hook smoke strips the suite's floor"
-    # -> this reddens.
+    # developer's own Keelline, and without an exception that strip would take the suite's floor
+    # under the product's `git` bounds too. The floor alone is kept, spelled as the product
+    # spells it, in the one base environment both scripts build on. Mutation (oracle): "the hook
+    # smoke strips the suite's floor" -> this reddens.
     smoke = _load("smoke_hooks")
     assert smoke.FLOOR_VARIABLE == gitenv.FLOOR_VARIABLE
     monkeypatch.setenv("KEELLINE_CONFIG", str(tmp_path / "developer.toml"))

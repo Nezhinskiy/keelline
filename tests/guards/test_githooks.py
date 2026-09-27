@@ -44,8 +44,9 @@ def launching(tmp_path: Path) -> dict[str, str]:
     A `keelline` shim leading `PATH`, so the hook's first branch is the one exercised — the same
     branch a `uv tool install` user takes. The shim runs this checkout's package, and it has to
     be first because the `git commit` below runs the commit-msg hook this test just installed,
-    and that hook is what invokes `keelline`. And the suite's floor under the product's own
-    `git` (`tests/floor.py`), which git hands on to the hook and the hook to that `keelline`.
+    and that hook is what invokes `keelline`. The suite's floor under the product's own `git`
+    (`tests/floor.py`) is layered on too: git hands it on to the hook, and the hook to that
+    `keelline`.
     """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)

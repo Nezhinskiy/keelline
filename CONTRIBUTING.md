@@ -143,10 +143,11 @@ that is not the mutation, and that reads as *caught*. The product's own bounds o
 such clock, so `tests/conftest.py` lifts every `git_run` bound to a floor of its own, through
 the environment variable `gitenv.FLOOR_VARIABLE`, which the product honours only as a raise
 (`src/keelline/gitenv.py` says why that is safe). A `keelline` the suite starts as a separate
-process gets the same floor: a spawner that builds its child's environment rather than
-inheriting it adds `tests.floor.floor_env()` after whatever it strips. A test about a bound
-running out removes the variable and passes a small bound of its own, as
-`tests/test_git_run.py` does. The floor also hides a bound shrunk below git's own latency, so
+process gets the same floor: a spawner that strips the developer's own variables takes
+`tests.floor.developer_free_environ()`, which keeps the floor, and one that builds its child's
+environment from nothing adds `tests.floor.floor_env()`. A test about a bound running out
+removes the variable and passes a small bound of its own, as `tests/test_git_run.py` does. The
+floor also hides a bound shrunk below git's own latency, so
 that file holds every bound a `git_run` call passes to at least a second, and a bound you add is
 a row in its table.
 

@@ -1,20 +1,12 @@
 """The floor the suite puts under every `git` the product runs, in a test's own process and in
 every `keelline` a test starts as a separate one.
 
-The product's own bounds on `git` are sized for a machine doing one thing. Under a full `-n auto`
-run beside other sessions' work a five-second `rev-parse` and a two-second `status` ran out, the
-caller read that as no answer, and the test failed for the machine's load rather than for the
-code — and a verdict decided by load is one the oracle reads as a caught mutation.
-`tests/conftest.py` used to raise the floor by assignment, which reaches only the test's own
-process: a `keelline` started through the launcher, the hook wrapper or a git hook's shim still
-ran under the bare five-second bound, failed the suite at random at load averages of eight to
-eleven, and passed when run alone.
-
-So the floor travels the one way that crosses a process boundary: `gitenv.FLOOR_VARIABLE`, set
-in this process's environment for every test by `tests/conftest.py`. A spawner that inherits
-`os.environ` passes it on as it is. A spawner that builds its child's environment — most of them,
-because a child must not read the developer's own `KEELLINE_*` or `HOME` — adds `floor_env()`
-after it has stripped what it strips. `gitenv` explains why the product may honour the variable.
+`tests/conftest.py` sets `gitenv.FLOOR_VARIABLE` in this process's environment for every test.
+A spawner that starts from `os.environ` takes `developer_free_environ()`, which drops the
+developer's own harness and Keelline variables and keeps the floor, so it cannot get the one
+without the other. A spawner that builds its child's environment from nothing adds
+`floor_env()`. A test about a bound running out removes the variable, and its children then get
+none either.
 """
 
 from __future__ import annotations
@@ -25,13 +17,23 @@ from keelline import gitenv
 
 SUITE_GIT_FLOOR_SECONDS = 60.0
 
+# The developer's own variables: a harness's (`CLAUDE_`, and Codex's `PLUGIN_`), Keelline's, and
+# the XDG base directories that move `git`'s and Keelline's configuration. A child must not read
+# any of them, because the machine running the suite is not the one the test is about.
+DEVELOPERS = ("CLAUDE_", "PLUGIN_", "KEELLINE_", "XDG_")
+
+
+def is_developers(name: str) -> bool:
+    """Whether a test strips `name` from what it runs: every developer variable but the floor."""
+    return name.startswith(DEVELOPERS) and name != gitenv.FLOOR_VARIABLE
+
+
+def developer_free_environ() -> dict[str, str]:
+    """This process's environment without the developer's own variables, floor included."""
+    return {key: value for key, value in os.environ.items() if not is_developers(key)}
+
 
 def floor_env() -> dict[str, str]:
-    """The floor as the one environment entry a spawned `keelline` needs to inherit it.
-
-    Read from this process's environment rather than spelled again, so a test that removed the
-    floor to exercise a bound running out gives its children none either: one channel, one
-    state, in every process the test runs.
-    """
+    """The floor as the one environment entry a spawned `keelline` needs to inherit it."""
     value = os.environ.get(gitenv.FLOOR_VARIABLE)
     return {} if value is None else {gitenv.FLOOR_VARIABLE: value}

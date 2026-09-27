@@ -94,7 +94,8 @@ def env(home: Path, **extra: str) -> dict[str, str]:
 
     `extra` is for a module whose difference is real: `tests/guards/test_githooks.py` puts a
     `keelline` shim on `PATH` because its `git commit` has to run the commit-msg hook it just
-    installed, and that shim is the branch the test exists to exercise.
+    installed, and that shim is the branch the test exists to exercise; it adds the suite's
+    floor (`tests/floor.py`) as well, for the `keelline` that hook starts.
     """
     sealed = {key: os.environ[key] for key in ENV_KEEP if key in os.environ}
     sealed.update(
