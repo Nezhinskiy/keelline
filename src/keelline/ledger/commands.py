@@ -91,12 +91,19 @@ def run_bugs_renumber(args: argparse.Namespace) -> Result:
     root, config = root_and_config(args)
     result = renumber(root, config, args.old, args.new)
     void = result.void.relative_to(root).as_posix()
-    data = {"old": args.old, "new": args.new, "void": void, "unswept": result.unswept}
+    # Each file as `{path, reason}`, and the line names each by its `path`: a path may hold
+    # `": "`, so a `"path: reason"` string could not be split back into the two.
+    data = {
+        "old": args.old,
+        "new": args.new,
+        "void": void,
+        "unswept": [asdict(u) for u in result.unswept],
+    }
     if result.unswept:
         return Result(
             f"FAIL: {args.old} moved to {args.new}, but {len(result.unswept)} file(s) still "
             f"reference {args.old} and must be fixed by hand "
-            f"({listed([printable(u.split(':', 1)[0]) for u in result.unswept])}); "
+            f"({listed([printable(u.path) for u in result.unswept])}); "
             f"a void pointer remains at {void}",
             data,
             exit_code=1,

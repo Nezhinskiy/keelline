@@ -86,6 +86,19 @@ class UnsafePath(OSError):
     """A component of the path is a symlink, is not a directory, or leaves the root."""
 
 
+def said(error: OSError) -> str:
+    """What an `OSError` says about a file without naming it: `str(error)` carries the path as it
+    was opened — the absolute one, under this machine's own layout — so a report that names the
+    file relative to the root says the error beside it as its `strerror`, or its class's name.
+
+    `UnsafePath` alone is said whole, decided by its type: it is Keelline's own refusal, raised
+    with a message and no errno, and the message names the path relative to the root. Any other
+    error's message may carry a path, whether or not it has a file name."""
+    if isinstance(error, UnsafePath):
+        return str(error)
+    return error.strerror or type(error).__name__
+
+
 def path_key(relative: str) -> str:
     """The form in which two root-relative paths are compared for identity: case-folded.
 

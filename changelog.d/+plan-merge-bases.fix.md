@@ -11,7 +11,8 @@ full one.
 `keelline test attribute` no longer picks one merge base when `HEAD` and the base have several, or
 when the clone is shallow. Each of several is as much "before this change" as the others, and the
 one git picks alone could file a failure the change brought back as pre-existing. The command now
-says the attribution is undetermined, names every merge base and the remedy, and runs nothing.
+says the attribution is undetermined, counts the merge bases, names up to eight of them and the
+remedy, and runs nothing.
 
 `plan`, `bugs` and `test attribute` now ask git for the merge bases one way. A git a signal ended
 is read as no answer everywhere; `plan` used to read it as a base that does not resolve and send

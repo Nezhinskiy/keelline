@@ -481,7 +481,8 @@ def test_renumber_reports_a_file_it_could_not_sweep_and_keeps_both_endpoints(
         result = renumber(root, config, "BR-001", "BR-009")
     finally:
         locked.chmod(0o644)
-    assert len(result.unswept) == 1 and "src/locked.py" in result.unswept[0]
+    assert [u.path for u in result.unswept] == ["src/locked.py"]
+    assert result.unswept[0].reason.startswith("could not be read to check for BR-001")
     assert (root / "docs" / "bugs" / "BR-009.md").is_file()
     void = (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8")
     assert "status: void" in void
@@ -503,8 +504,8 @@ def test_renumber_reports_a_file_it_could_not_write_back(tmp_path: Path) -> None
         result = renumber(root, config, "BR-001", "BR-009")
     finally:
         sealed.chmod(0o755)
-    assert len(result.unswept) == 1
-    assert "src/sealed/a.py: could not be written" in result.unswept[0]
+    assert [u.path for u in result.unswept] == ["src/sealed/a.py"]
+    assert result.unswept[0].reason.startswith("could not be written")
     assert (sealed / "a.py").read_text(encoding="utf-8") == "# BR-001\n"
 
 

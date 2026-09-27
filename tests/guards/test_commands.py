@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
+from keelline.findings import LISTED_LIMIT
 from tests.gitfixture import git
 
 
@@ -594,3 +595,21 @@ def test_test_attribute_refuses_a_base_shaped_like_an_option(
     ]
     assert invoke(argv) == 2
     assert "--base must name a ref" in capsys.readouterr().err
+
+
+@needs_git
+def test_commit_check_names_at_most_the_listed_limit_of_offences(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A range holds any number of commits, so the offences on the line are bounded in number by
+    # nothing: it counts every commit, names the first `LISTED_LIMIT` offences, and says how many
+    # more, and `--json`'s `violations` carries every one. Mutation (oracle): "commit check names
+    # every offence" -> this reddens.
+    dirty = "fix: dirty\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"
+    root = repo(tmp_path, *[dirty] * (LISTED_LIMIT + 2))
+    argv = ["commit", "check", "--range", "base..HEAD", "--root", str(root)]
+    assert invoke([*argv, "--machine", str(tmp_path / "m.toml")]) == 1
+    line = capsys.readouterr().out.strip()
+    assert line.startswith(f"FAIL: {LISTED_LIMIT + 2} of {LISTED_LIMIT + 2} commit message(s)")
+    assert line.count("[attribution trailer naming an AI tool]") == LISTED_LIMIT
+    assert "[attribution trailer naming an AI tool], and 2 more. " in line

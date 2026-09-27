@@ -19,6 +19,7 @@ from keelline.areas import SubParsers
 from keelline.command import common_flags
 from keelline.config.loader import load
 from keelline.errors import Failure, Refusal
+from keelline.findings import listed
 from keelline.result import Result
 
 if TYPE_CHECKING:
@@ -152,8 +153,9 @@ def run_commit_check(args: argparse.Namespace) -> Result:
     }
     if not report.violations:
         return Result(f"OK: {report.commits} commit message(s) checked", data)
-    items = "; ".join(
-        f"{v.sha[:12]} line {o.line} [{o.label}]" for v in report.violations for o in v.offences
+    # Capped: a range holds any number of commits, and `violations` carries every offence.
+    items = listed(
+        [f"{v.sha[:12]} line {o.line} [{o.label}]" for v in report.violations for o in v.offences]
     )
     return Result(
         f"FAIL: {len(report.violations)} of {report.commits} commit message(s) carry an "

@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from keelline.errors import Failure, Refusal
+from keelline.findings import listed
 from keelline.gitenv import NO_ANSWER, SHALLOW, ForkUnknown, fork_points, git_run, scrubbed_env
 from keelline.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
 
@@ -160,8 +161,8 @@ def _merge_base(root: Path, base: str) -> str:
     """The one commit run (3) extracts, or a `Failure` saying why there is none.
 
     `gitenv.fork_points` names every merge base, or says why they are not known. More than one
-    is undetermined: naming them all is the report, and picking one would be a verdict about a
-    tree nobody asked for.
+    is undetermined: counting them and naming the first `findings.LISTED_LIMIT` is the report,
+    and picking one would be a verdict about a tree nobody asked for.
     """
     forks = fork_points(root, base)
     if isinstance(forks, ForkUnknown):
@@ -178,7 +179,7 @@ def _merge_base(root: Path, base: str) -> str:
     if len(forks) > 1:
         raise Failure(
             f"the attribution is undetermined: HEAD and {base} have {len(forks)} merge bases "
-            f"({', '.join(forks)}), each as much before this change as the others, and a "
+            f"({listed(forks)}), each as much before this change as the others, and a "
             f"failure can pass on one and fail on another; merge {base} into the change so its "
             f"tip is the one merge base, or pass `--base` naming the commit to compare against"
         )

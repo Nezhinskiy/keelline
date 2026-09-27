@@ -110,6 +110,9 @@ What it does, in order:
 `--check` exits `1` when the index has drifted, when it is over its word budget, when it is past
 the harness's line or byte caps, or when a file in the store cannot be parsed as a note — one
 whose name is not UTF-8 on disk included, since the index names every note by its file's name.
+Such a file is named by its path inside the store, on the line and in `--json`'s `unreadable`
+alike, as `memory refs` names it. Every list of names on the line names up to eight and says
+how many more there are; `--json` carries every one.
 The same findings are printed on the write path too — they just do not fail it, because `--check`
 is the mode that fails a build.
 
@@ -468,8 +471,9 @@ two paragraphs — and it ends at the first paragraph holding any body line. Bod
 judged, and a person whose name happens to be a vendor word is not a violation.
 `[commit_messages] attribution_check = false` stops the rules being applied: no message is ever
 a violation, but the range must still be readable, because the report says how many messages it
-read. Exits `1` naming each offence as `sha line N [label]` — never the text, which is the
-repository's — and `2` when git cannot read the range or the range looks like an option.
+read. Exits `1` naming up to eight offences as `sha line N [label]` and counting the rest —
+never the text, which is the repository's; `--json`'s `violations` carries every one — and `2`
+when git cannot read the range or the range looks like an option.
 
 **Writes** nothing. `keelline gate`'s `commit` gate, which the reusable workflow runs, reads the
 range from the base to `HEAD` through this same check.
@@ -557,11 +561,12 @@ Run one failing command three times and say what the three exit codes mean. The 
 That merge base has to be one commit. When `git merge-base --all REF HEAD` names several — a
 history the change merged into from both sides of a base merge has them — each is as much
 "before this change" as the others and a failure can pass on one and fail on another, so the
-attribution is undetermined and the command says so, naming them all, rather than extract the one
-git would pick alone. Merge the base into the change, which makes its tip the one merge base, or
-pass `--base` naming the commit you mean. A shallow clone is undetermined too, since the commit
-`HEAD` forked from can be cut off there and an older one stand in for it, and so is a clone git
-cannot say is shallow or not. All of it is decided before anything runs.
+attribution is undetermined and the command says so, counting them and naming up to eight,
+rather than extract the one git would pick alone. Merge the base into the change, which makes
+its tip the one merge base, or pass `--base` naming the commit you mean. A shallow clone is
+undetermined too, since the commit `HEAD` forked from can be cut off there and an older one stand
+in for it, and so is a clone git cannot say is shallow or not. All of it is decided before
+anything runs.
 
 `--base` defaults to `refs/remotes/origin/<[project] base_branch>`, named in full so that no tag of
 the short spelling stands in for it; pass it to compare against another ref.
@@ -698,7 +703,10 @@ index is regenerated — both endpoints first, then the sweep, so an interruptio
 resolving to the pointer rather than to nothing. Rejects an occupied `NEW` or a missing `OLD`
 (`1`) and raises the index refusals of `bugs index` (`2`) before touching anything. A file the sweep
 could not read or write is listed and the command exits `1` naming it, because once the pointer
-exists a stale mention in that file looks intentional to `bugs check` forever. The moved entry's
+exists a stale mention in that file looks intentional to `bugs check` forever. The line counts
+them and names up to eight; `--json`'s `unswept` carries every one, each an object with `path`
+and `reason`. The path is relative to the root, and the reason is the error in words, naming no
+absolute path; a refusal of Keelline's own may repeat the root-relative path. The moved entry's
 own body is the operator's to rewrite and is not swept.
 
 **Writes** the two entry files, every rewritten file, and `<paths.bug_index>`.
@@ -731,11 +739,14 @@ not ignore, grouped by the first `[[theme]]` in `trail.toml` (beside the roadmap
 `pattern` is found in its filename, `Unfiled` otherwise, each annotated with its `[states]` entry or
 `delivered`. `--check` exits `1` when the listing is stale and writes nothing. Two guards make
 the listing unable to lie by silence: a state naming a document that no longer exists fails
-(`1`) before anything is written, and a document that enters the listing without a declared
-state is written as `delivered` and then reported (`1`) — a design is written before the thing
-is built. A listing that named no document before, such as a new project's first, reports none
-of them, so the first design and plan need their states declared before the first run. That
-second guard fires on the writing path only: a row enters the listing through
+(`1`) before anything is written, counting every such key and naming up to eight, with a note
+that a re-run after updating those names the rest (a key longer than 120 characters is named by
+its first 120 and its length); and a document that enters the listing
+without a declared state is written as `delivered` and then reported (`1`), counted and named
+up to eight on the line and every one in `--json`'s `undeclared` — a design is written before
+the thing is built. A listing that named no document before, such as a new project's first,
+reports none of them, so the first design and plan need their states declared before the first
+run. That second guard fires on the writing path only: a row enters the listing through
 `docs trail`, whose exit `1` the operator sees, and `--check` has no earlier listing to compare
 against, so a defaulted `delivered` that was committed over that report is invisible to CI.
 A theme's `pattern` is a small part of regular-expression syntax, meaning what it means to a
@@ -747,7 +758,8 @@ the name's length times its own, and a pattern holds at most 256 characters and 
 at most 32 themes, since every name is tried against every theme until one matches. Any other
 syntax — a group, a class, `+`, `?` or `{n}` — is refused rather than read otherwise.
 A `trail.toml` outside its contract fails (`1`): a non-string label, a pattern outside that
-syntax or longer than 256 characters, more than 32 themes, a file that is not valid UTF-8, or a `label` or `[states]` value that is not a single
+syntax or longer than 256 characters (the refusal names the theme by its `label`, a label
+longer than 120 characters by its first 120 and its length), more than 32 themes, a file that is not valid UTF-8, or a `label` or `[states]` value that is not a single
 line or that carries either marker — both are written into the listing verbatim, so one could
 otherwise split the block and push repository prose into the roadmap. A listed document's name
 is held to the same rule, and to one more: a name that is not a single line, carries either
@@ -803,8 +815,9 @@ clone runs the commands that clone configured, as running its test suite would. 
 probes below, which read files and the git index and never run a tool or reach the network.
 
 `--builtin` runs the built-in gates and the probes and no custom gate: for a clone whose
-commands you have not agreed to run. The summary names the custom gates it left out, which count
-toward no total, and the inventory lists them under `skipped`.
+commands you have not agreed to run. The summary names up to eight of the custom gates it left
+out and counts the rest, which count toward no total, and the inventory lists every one under
+`skipped`.
 
 `REF` is the revision `plan` and `commit` compare against, and the one `bugs` compares the ledger
 with where `HEAD` forked from it (whether it carried one when the tree has none, and which entries
@@ -999,8 +1012,8 @@ Run locally on a branch `keelline upgrade` made, a moved `[ci] ref` is refused u
 `--workflow-sha` with the commit the new `uses:` line names; with it, the run answers what CI will.
 
 **Printed.** `config: …` first when the configuration check runs: how many keys changed, how many
-were refused and their names, or that the base has no `keelline.toml` at this path. Then one line
-per gate: `<name>: enforcing, N finding(s)`, `<name>: advisory, N finding(s)`, or `could not run`
+were refused and up to eight of their names, or that the base has no `keelline.toml` at this
+path. Then one line per gate: `<name>: enforcing, N finding(s)`, `<name>: advisory, N finding(s)`, or `could not run`
 in place of the count, or `not run: the run had already failed` for a custom gate not started
 once the run had failed; and, after the gates that ran, `<name>: advisory, not run until the base
 has this command` (or `enforcing`) for each custom gate whose command the base does not have. A run
@@ -1086,8 +1099,9 @@ the manifest's record of it when that record still describes the file. `--json` 
 Runs gates strictly on the tree as it is, and enforces those that pass by adding them to
 `[keelline] enforced`. With no `GATE`, it runs every configured gate that does not enforce yet,
 enforces each one that passes, names the rest with their finding counts, and exits 1 if any
-failed. With names, they pass together or nothing is written, and a named gate that already
-enforces is refused rather than skipped. Once every configured gate enforces, the state becomes
+failed; the line names up to eight gates in each of its two lists and counts the rest, and
+`--json` carries every one. With names, they pass together or nothing is written, and a named
+gate that already enforces is refused rather than skipped. Once every configured gate enforces, the state becomes
 `installed` and `enforced` is emptied: under `installed` an empty list means every configured
 gate, so a gate the project adds later enforces from its first run — for a custom gate, the
 first run after it lands on the base branch, since `keelline gate` runs none before. An
@@ -1160,11 +1174,16 @@ filenames are skipped. In an overlay store, a note in a cross-project group that
 into a project-scoped note is an `audience` finding. Exits `1` listing `note:line [rule]`; the
 targets are in `--json`. A note that exists and would not parse is counted on the line and
 named in `--json`, and is exit `1` too: an unread note is not a clean note. Refuses (`2`) when a
-configured group could not be resolved, naming each group and carrying the resolver's own reason
-for it inside the delimited region that marks repository-authored text as data — because a walk
-over a subset that reports nothing stale is worse than no guard. Where *no* store resolves at
-all, the exit is `1`: that comes from the resolver every `memory` command shares, so part of the
-store being unreadable is a refusal while the whole of it being unreadable is findings. That is
+configured group could not be resolved, counting them on a line that names none, then naming
+every group with the resolver's own reason for it, one per line, inside the delimited region that
+marks repository-authored text as data — the one list of names not capped at eight, since the
+region is data rather than a line, and on the path a model reads the harness keeps at most
+`[native_caps] hook_output_chars` of it — because a walk over a subset that reports nothing stale
+is worse than no guard. Where *no* store resolves at
+all, the exit is `1`, with the number of configured groups and the reasons for the first eight
+of them in sorted order, a group longer than 120 characters named by its first 120 and its
+length: that comes from the resolver every `memory` command shares, so part of the store being
+unreadable is a refusal while the whole of it being unreadable is findings. That is
 the wrong way round by the ordering above, it is a known issue in the `memory` area, and until
 it is fixed a caller should gate on a non-zero exit rather than on the number. Write a path that
 deliberately does not resolve in *italics*.
@@ -1246,7 +1265,7 @@ keys that are Keelline's to rewrite: `[keelline] version`, `state` and `enforced
 (`1`) naming the file. A repository that already carries `.keelline/manifest.json` is refused
 (`2`): re-running `init` is `keelline upgrade`. `keelline uninstall` later keeps a
 `keelline.toml` you wrote, the version line included. When that file configures
-`[gates.custom]`, a `note:` names those gates, five at most and then a count, and says that
+`[gates.custom]`, a `note:` names those gates, up to eight and then a count, and says that
 `keelline assess`, `keelline gate` and `keelline adopt promote` run their commands: in a clone,
 those are commands the clone wrote, and the dry run you read before `--yes` says so. The
 commands themselves never print.

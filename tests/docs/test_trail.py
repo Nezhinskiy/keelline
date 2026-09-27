@@ -34,6 +34,7 @@ from keelline.docs.trail import (
 )
 from keelline.errors import Failure
 from keelline.gitenv import NO_ANSWER, git_run
+from keelline.printed import CLIPPED_CHARS
 from tests.cli import cli
 from tests.gitfixture import git
 
@@ -597,7 +598,22 @@ def test_a_theme_pattern_or_a_theme_count_past_its_bound_fails_in_keelline_s_wor
     path.write_text(themes(1, longest + "c"), encoding="utf-8")
     with pytest.raises(Failure) as caught:
         read_trail(path)
-    assert str(caught.value) == f"{path}: theme 't0': {TOO_LONG}"
+    # The label prints as every repository-chosen name in a refusal does, through `quoted`: as
+    # itself inside the path grammar, escaped outside it.
+    assert str(caught.value) == f"{path}: theme t0: {TOO_LONG}"
+    path.write_text(f'[[theme]]\nlabel = "a theme"\npattern = "{longest}c"\n', encoding="utf-8")
+    with pytest.raises(Failure) as caught:
+        read_trail(path)
+    assert str(caught.value) == f"{path}: theme 'a theme': {TOO_LONG}"
+    # The label is the repository's and bounded in length by nothing, so a long one prints as
+    # its start and its length. Mutation: print the label whole in `read_trail` — this reddens.
+    label = "t" * 200_000
+    path.write_text(f'[[theme]]\nlabel = "{label}"\npattern = "{longest}c"\n', encoding="utf-8")
+    with pytest.raises(Failure) as caught:
+        read_trail(path)
+    assert str(caught.value) == (
+        f"{path}: theme {label[:CLIPPED_CHARS]}…({len(label)} chars): {TOO_LONG}"
+    )
     path.write_text(themes(THEMES_MAX + 1, "a"), encoding="utf-8")
     with pytest.raises(Failure) as caught:
         read_trail(path)

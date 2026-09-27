@@ -11,6 +11,7 @@ from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Failure
+from keelline.findings import LISTED_LIMIT
 from keelline.memory.api import resolve, walk
 from keelline.memory.refs import (
     _ignored,
@@ -19,6 +20,7 @@ from keelline.memory.refs import (
     source_roots,
     unresolved,
 )
+from keelline.printed import CLIPPED_CHARS, clipped
 from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
 from tests.gitfixture import git
 
@@ -340,6 +342,72 @@ def test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw(
     assert "is not in the store" in captured.err
     assert_never_raw(captured.out, captured.err)
     assert repr(CRAFTED) in captured.err
+
+
+def test_a_store_with_no_group_resolved_counts_them_and_names_at_most_the_listed_limit(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `memory.groups` is bounded in number by nothing — the loader only drops repeats — and
+    # when none resolves, the resolver's reason joined every one of them, uncapped, into a
+    # refusal with no `--json` behind it. It counts them now and names the first `LISTED_LIMIT`
+    # through `findings.listed`, the one cap every such line takes. Mutation: join every reason
+    # uncapped in `resolve` — this reddens.
+    root, _config = project(tmp_path)
+    names = [f"g{number:02d}" for number in range(LISTED_LIMIT + 3)]
+    (root / "keelline.toml").write_text(
+        CONFIG.replace(
+            'groups = ["developer", "project-stable", "project-volatile"]',
+            "groups = [" + ", ".join(f'"{name}"' for name in names) + "]",
+        ),
+        encoding="utf-8",
+    )
+    assert invoke(["memory", "refs", *flags(root)]) == 1
+    err = capsys.readouterr().err
+    assert f"none of the {len(names)} configured group(s) resolved" in err
+    assert [name for name in names if f"{name} is not in the store" in err] == names[:LISTED_LIMIT]
+    assert "and 3 more" in err
+
+
+def test_a_store_with_no_group_resolved_names_the_first_groups_in_sorted_order(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # "The first eight" means one thing whichever order `memory.groups` declares them in: the
+    # sorted order, which the data region for the same failure and the trail's stale keys use.
+    # Mutation (oracle): "the unresolved groups are named in declared order" -> this reddens.
+    root, _config = project(tmp_path)
+    names = [f"g{number:02d}" for number in range(LISTED_LIMIT + 3)]
+    (root / "keelline.toml").write_text(
+        CONFIG.replace(
+            'groups = ["developer", "project-stable", "project-volatile"]',
+            "groups = [" + ", ".join(f'"{name}"' for name in reversed(names)) + "]",
+        ),
+        encoding="utf-8",
+    )
+    assert invoke(["memory", "refs", *flags(root)]) == 1
+    err = capsys.readouterr().err
+    assert [name for name in names if f"{name} is not in the store" in err] == names[:LISTED_LIMIT]
+
+
+def test_a_long_group_is_named_clipped_on_the_unresolved_groups_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A group is the repository's and bounded in length by nothing, the same class as a trail
+    # key, so the refusal names it by `printed.clipped`: its start and its length, in the line's
+    # own naming and in the resolver's reason alike. Mutation (oracle): "an unresolved group is
+    # named unclipped" -> this reddens.
+    root, _config = project(tmp_path)
+    group = "g" * (CLIPPED_CHARS + 30)
+    (root / "keelline.toml").write_text(
+        CONFIG.replace(
+            'groups = ["developer", "project-stable", "project-volatile"]',
+            f'groups = ["{group}"]',
+        ),
+        encoding="utf-8",
+    )
+    assert invoke(["memory", "refs", *flags(root)]) == 1
+    err = capsys.readouterr().err
+    assert f"{clipped(group)}: {clipped(group)} is not in the store" in err
+    assert group not in err
 
 
 def test_the_unresolved_groups_line_names_no_group_outside_the_data_region(

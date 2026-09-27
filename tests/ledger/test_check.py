@@ -15,6 +15,7 @@ import pytest
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
+from keelline.findings import LISTED_LIMIT
 from keelline.gitenv import NO_ANSWER, git_run
 from keelline.ledger import check
 from keelline.ledger.check import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, problems, uninitialised
@@ -679,3 +680,43 @@ def test_an_entry_that_is_not_utf8_is_reported_rather_than_crashing_the_check(
     assert "docs/bugs/BR-002.md [unreadable-entry]" in [p.label for p in found]
     unreadable = next(p for p in found if p.rule == "unreadable-entry")
     assert "is not valid UTF-8" in unreadable.detail
+
+
+def test_a_duplicate_identifier_names_at_most_the_listed_limit_of_its_files(
+    tmp_path: Path,
+) -> None:
+    # The files claiming one identifier are bounded in number by nothing but the ledger, so the
+    # detail names the first `LISTED_LIMIT` and counts the rest. Nothing is lost from `--json`:
+    # only one file's name can be its identifier, so every other holder is named by an
+    # `id-mismatch` finding of its own. Mutation (oracle): "a duplicate identifier names every
+    # file that claims it" -> the detail equality reddens.
+    root, config = project(tmp_path)
+    names = [f"BR-{n:03}" for n in range(1, LISTED_LIMIT + 4)]
+    ledger(root, config, dict.fromkeys(names, entry(1)))
+    found = problems(root, config)
+    duplicate = [p for p in found if p.rule == "duplicate-id"]
+    shown = ", ".join(f"docs/bugs/{name}.md" for name in names[:LISTED_LIMIT])
+    assert [p.detail for p in duplicate] == [
+        f"BR-001 is claimed by more than one file: {shown}, and 3 more"
+    ]
+    mismatched = {p.path for p in found if p.rule == "id-mismatch"}
+    assert mismatched == {f"docs/bugs/{name}.md" for name in names[1:]}
+
+
+def test_a_duplicate_identifier_names_its_own_file_first_whatever_the_sort(
+    tmp_path: Path,
+) -> None:
+    # The one holder with no `id-mismatch` finding is the file named after the identifier, so
+    # the capped detail names it first: otherwise, sorted last past the cap, it was named nowhere
+    # in `--json`. Every other holder is named by a finding of its own. Mutation (oracle): "a
+    # duplicate identifier names its holders in path order" -> this reddens.
+    root, config = project(tmp_path)
+    names = [f"BR-{n:03}" for n in range(1, LISTED_LIMIT + 4)]
+    ledger(root, config, dict.fromkeys(names, entry(len(names))))
+    found = problems(root, config)
+    shown = ", ".join(f"docs/bugs/{name}.md" for name in [names[-1], *names[: LISTED_LIMIT - 1]])
+    assert [p.detail for p in found if p.rule == "duplicate-id"] == [
+        f"{names[-1]} is claimed by more than one file: {shown}, and 3 more"
+    ]
+    mismatched = {p.path for p in found if p.rule == "id-mismatch"}
+    assert mismatched == {f"docs/bugs/{name}.md" for name in names[:-1]}

@@ -25,6 +25,7 @@ import pytest
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import load, loads
 from keelline.config.schema import NAME_RULE, Config
+from keelline.findings import LISTED_LIMIT
 from keelline.project.commands import CUSTOM_GATES, STAMPED, run_init
 from keelline.project.init import (
     HEAD_CURRENT,
@@ -667,16 +668,21 @@ def test_uninstall_says_it_keeps_a_keelline_toml_you_wrote(tmp_path: Path) -> No
 
 
 @needs_git
-def test_past_a_few_custom_gates_the_note_counts_the_rest(tmp_path: Path) -> None:
-    # Bounded: a file with many gates prints a few names and a count, never a list as long as
-    # the repository makes it. Mutation (by hand): every name printed -> the equality reddens.
+@pytest.mark.parametrize("extra", [0, 3], ids=["exactly-the-limit", "past-the-limit"])
+def test_past_the_listed_limit_the_custom_gate_note_counts_the_rest(
+    tmp_path: Path, extra: int
+) -> None:
+    # Bounded by the one cap every list of names on a line takes, `LISTED_LIMIT`, and not by a
+    # second limit of its own: a file with many gates prints the first names and a count, never a
+    # list as long as the repository makes it. Mutation (oracle): "init's custom-gate note keeps
+    # a limit of its own" -> the exactly-the-limit case reddens.
     root = repository(tmp_path)
-    names = [f"g{n}" for n in range(7)]
+    names = [f"g{n:02}" for n in range(LISTED_LIMIT + extra)]
     (root / "keelline.toml").write_text(DOCUMENT + _gates(*names), encoding="utf-8")
     code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
     assert code == 0, printed
-    shown = "g0, g1, g2, g3, g4, and 2 more"
-    assert CUSTOM_GATES.format(count=7, names=shown) in printed.splitlines()
+    shown = ", ".join(names[:LISTED_LIMIT]) + (f", and {extra} more" if extra else "")
+    assert CUSTOM_GATES.format(count=len(names), names=shown) in printed.splitlines()
 
 
 @needs_git

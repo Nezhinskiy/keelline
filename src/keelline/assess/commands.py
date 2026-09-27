@@ -284,6 +284,7 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
     )
     from keelline.assess.state import promote
     from keelline.config.layout import local_base
+    from keelline.findings import listed
 
     root, config = root_and_config(args)
     base = args.base or local_base(config)
@@ -293,9 +294,10 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
     advisory = [f"{r.name} ({findings_text(r)})" for r in transition.results if r.failing]
     advisory += [f"{name} (not on the base)" for name in transition.waiting]
     advisory += [f"{name} (not run, as --builtin asked)" for name in transition.skipped]
-    parts = [f"promoted: {', '.join(transition.promoted) or 'nothing'}"]
+    # Both lists capped, since custom gates are the repository's to add; `--json` has each.
+    parts = [f"promoted: {listed(list(transition.promoted)) or 'nothing'}"]
     if advisory:
-        parts.append(f"still advisory: {', '.join(advisory)}")
+        parts.append(f"still advisory: {listed(advisory)}")
     parts.append(f"state {transition.after}")
     lines = ["; ".join(parts)]
     if advisory:

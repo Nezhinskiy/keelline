@@ -10,7 +10,9 @@ from pathlib import Path
 from keelline.assess.assessment import (
     FORMAT,
     NOT_IGNORED,
+    SKIPPED,
     UNNAMED,
+    Assessment,
     _gate_items,
     assess,
     document,
@@ -20,7 +22,7 @@ from keelline.assess.assessment import (
 )
 from keelline.assess.gates import BUILTIN, GateResult
 from keelline.attach.api import IGNORE_BODY
-from keelline.findings import Finding
+from keelline.findings import LISTED_LIMIT, Finding
 from keelline.project.api import ASSESSMENT
 from tests.assess.smoke import BASE, smoke_repo
 from tests.cli import cli
@@ -123,3 +125,14 @@ def test_a_gate_finding_outside_the_path_grammar_is_withheld_without_pointing_at
     (only,) = _gate_items(docs, result)
     assert only.where == (f"{UNNAMED}:3 [dead-link]",)
     assert "--json" not in UNNAMED
+
+
+def test_the_custom_gates_builtin_left_out_are_named_at_most_to_the_listed_limit() -> None:
+    # Custom gates are the repository's to add, so `--builtin` can leave out any number of them:
+    # the summary names the first `LISTED_LIMIT` and counts the rest, and the inventory file's
+    # `skipped` carries every one. Mutation (oracle): "assess names every custom gate --builtin
+    # left out" -> this reddens.
+    names = tuple(f"g{n:02}" for n in range(LISTED_LIMIT + 3))
+    text = render(Assessment("HEAD", "main", "adopting", (), (), (), skipped=names))
+    shown = ", ".join(names[:LISTED_LIMIT]) + ", and 3 more"
+    assert SKIPPED.format(names=shown) in text.splitlines()
