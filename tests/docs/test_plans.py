@@ -24,10 +24,10 @@ from keelline.docs.plans import (
     touched_plans,
 )
 from keelline.errors import Failure, Refusal
-from keelline.gitenv import NO_ANSWER, git_run
+from keelline.gitenv import DISJOINT, NO_ANSWER, git_run
 from tests.cli import cli
 from tests.crafted import CRAFTED, assert_never_raw
-from tests.gitfixture import git, plant_path
+from tests.gitfixture import answer_shallow_check, criss_cross, dated, git, plant_path
 
 CONFIG = """
 [keelline]
@@ -322,13 +322,6 @@ def test_a_diff_git_gave_no_answer_for_is_not_a_shallow_checkout(
     assert "fetch-depth" not in str(caught.value)
 
 
-def _at(root: Path, tick: int, *args: str) -> str:
-    """`git args` with the author and committer date of the `tick`th commit, so git orders
-    merge bases as the test says rather than by the clock."""
-    stamp = f"@{1_700_000_000 + tick * 1000} +0000"
-    return git(root, *args, GIT_AUTHOR_DATE=stamp, GIT_COMMITTER_DATE=stamp).strip()
-
-
 OLD = "an old plan, from before it had a Scope line\n"
 
 
@@ -336,75 +329,57 @@ OLD = "an old plan, from before it had a Scope line\n"
 def test_a_plan_is_linted_whichever_of_several_merge_bases_git_would_pick(tmp_path: Path) -> None:
     # A criss-cross: `main` fixes an old plan and then merges a colleague's side branch, forked
     # before the fix and committed after it; the change merges the fixing commit and the side
-    # branch itself, then puts the old plan back. HEAD and the base then have two merge bases,
-    # and `<base>...HEAD` diffs against the newer-dated one, the side branch's, which holds the
-    # old plan too: nothing was linted, and merging the change puts the old plan back on
-    # `main`. Every merge base is diffed and the plans are taken together. Mutations
-    # (declared): `--all` dropped, or only the first merge base diffed -> nothing is linted.
+    # branch itself, then puts the old plan back. `<base>...HEAD` diffs against git's pick, the
+    # side branch, which holds the old plan too: nothing was linted, and merging the change put
+    # the old plan back on `main`. Every merge base is diffed and the plans are taken together.
+    # Mutations (declared): `--all` dropped, or only the first merge base diffed -> nothing is
+    # linted.
     root, config = project(tmp_path)
     git(root, "init", "-q", "-b", "main")
     old = plan(root, OLD)
     git(root, "add", "-A")
-    _at(root, 1, "commit", "-q", "-m", "the old plan")
-    first = _at(root, 1, "rev-parse", "HEAD")
-    plan(root, SCOPE + "fixed\n")
-    _at(root, 2, "commit", "-q", "-am", "fix the plan")
-    fixed = _at(root, 2, "rev-parse", "HEAD")
-    git(root, "checkout", "-q", "-b", "side", first)
-    (root / "side.txt").write_text("side\n", encoding="utf-8")
-    git(root, "add", "-A")
-    _at(root, 3, "commit", "-q", "-m", "a colleague's side branch")
-    side = _at(root, 3, "rev-parse", "HEAD")
-    git(root, "checkout", "-q", "main")
-    _at(root, 4, "merge", "-q", "--no-ff", "--no-edit", "side")
-    base = _at(root, 4, "rev-parse", "HEAD")
-    git(root, "checkout", "-q", "--detach", fixed)
-    _at(root, 5, "merge", "-q", "--no-ff", "--no-edit", side)
+    dated(root, 1, "commit", "-q", "-m", "the old plan")
+    shape = criss_cross(root, lambda: plan(root, SCOPE + "fixed\n"))
     git(root, "checkout", "-q", "-b", "change")
-    # The premise: two merge bases, and the one git picks is the one without the fix.
-    assert sorted(git(root, "merge-base", "--all", base, "HEAD").split()) == sorted([fixed, side])
-    assert git(root, "merge-base", base, "HEAD").strip() == side
-    # A branch that merged both and put nothing back lints the fixed plan, which is clean.
-    assert lint(root, config, plans=[], base=base).findings == []
+    # A branch that merged both and put nothing back lints nothing: its plan is the base's own.
+    assert lint(root, config, plans=[], base=shape.base).findings == []
     old.write_text(OLD, encoding="utf-8")
-    _at(root, 6, "commit", "-q", "-am", "put the old plan back")
-    assert git(root, "diff", "--name-only", f"{base}...HEAD", "--", "docs/plans") == ""
-    result = lint(root, config, plans=[], base=base)
+    dated(root, 6, "commit", "-q", "-am", "put the old plan back")
+    # The premise: git's one pick hides the plan.
+    assert git(root, "diff", "--name-only", f"{shape.base}...HEAD", "--", "docs/plans") == ""
+    result = lint(root, config, plans=[], base=shape.base)
     assert result.linted == [old]
     assert [f.rule for f in result.findings] == ["scope-missing"]
 
 
 @needs_git
-def test_a_plan_the_base_already_holds_as_the_change_does_is_not_the_change_s(
-    tmp_path: Path,
-) -> None:
+def test_a_plan_the_base_holds_as_head_does_is_not_linted(tmp_path: Path) -> None:
     # A branch stacked on another, which merged `main` after `main` gained a plan with a
     # finding, and then `main` merged the branch below it: the two merge bases are the commit
     # the stack merged and the lower branch's tip, and against the second that plan differs.
-    # The stack never touched it, and merging the stack changes nothing about it, because its
-    # copy is the base's own. A plan is the change's only where it differs from the base too.
-    # Mutation (declared): the base comparison dropped -> the base's plan is linted here and
-    # its finding fails a change that never touched it.
+    # The stack never touched it, and merging the stack alters nothing about it, because its
+    # copy is the base's own. Mutation (declared): the base comparison dropped -> the base's
+    # plan is linted here and its finding fails a change that never touched it.
     root, config = project(tmp_path)
     git(root, "init", "-q", "-b", "main")
     git(root, "add", "-A")
-    _at(root, 1, "commit", "-q", "-m", "seed")
+    dated(root, 1, "commit", "-q", "-m", "seed")
     git(root, "checkout", "-q", "-b", "lower")
     (root / "lower.txt").write_text("lower\n", encoding="utf-8")
     git(root, "add", "-A")
-    _at(root, 2, "commit", "-q", "-m", "the lower branch")
+    dated(root, 2, "commit", "-q", "-m", "the lower branch")
     git(root, "checkout", "-q", "main")
     plan(root, "a plan the base took with no Scope line\n")
     git(root, "add", "-A")
-    _at(root, 3, "commit", "-q", "-m", "a plan on the base")
+    dated(root, 3, "commit", "-q", "-m", "a plan on the base")
     git(root, "checkout", "-q", "-b", "stacked", "lower")
-    _at(root, 4, "merge", "-q", "--no-ff", "--no-edit", "main")
+    dated(root, 4, "merge", "-q", "--no-ff", "--no-edit", "main")
     (root / "stacked.txt").write_text("stacked\n", encoding="utf-8")
     git(root, "add", "-A")
-    _at(root, 5, "commit", "-q", "-m", "the stacked branch")
+    dated(root, 5, "commit", "-q", "-m", "the stacked branch")
     git(root, "checkout", "-q", "main")
-    _at(root, 6, "merge", "-q", "--no-ff", "--no-edit", "lower")
-    base = _at(root, 6, "rev-parse", "HEAD")
+    dated(root, 6, "merge", "-q", "--no-ff", "--no-edit", "lower")
+    base = dated(root, 6, "rev-parse", "HEAD")
     git(root, "checkout", "-q", "stacked")
     # The premise: two merge bases, and against one of them the base's plan differs.
     forks = git(root, "merge-base", "--all", base, "HEAD").split()
@@ -471,34 +446,26 @@ def test_a_shallow_check_git_does_not_answer_never_reads_as_a_full_clone(
     raised: type[Failure],
     cause: str,
 ) -> None:
-    # Whether the clone is shallow is a question too: read as "not shallow" when git gave no
-    # answer or refused, a shallow clone went on to the merge base it could see, an older one
-    # than the real fork point, which is the case the shallow check exists to close. Mutation
-    # (declared): only a `true` answer counted -> the diff below goes ahead and nothing raises.
-    from keelline.docs import plans as module
-
+    # What an unknown fork point means to this lint: a git that gave no answer is a plain
+    # `Failure`, whose remedy is not a deeper checkout, and a refusal is `BaseUnresolvable`.
+    # Mutation (declared, on `gitenv`): the shallow check's failure ignored -> the diff goes
+    # ahead and nothing raises; (declared) `answered` ignored -> no answer is `BaseUnresolvable`.
     root, config = project(tmp_path)
     git(root, "init", "-q", "-b", "main")
     git(root, "add", "-A")
     git(root, "commit", "-qm", "seed")
-    real = git_run
-
-    def unanswered(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
-        if args[:2] == ("rev-parse", "--is-shallow-repository"):
-            return answer, ""
-        return real(where, *args, **kwargs)
-
-    monkeypatch.setattr(module, "git_run", unanswered)
-    with pytest.raises(raised, match=re.escape(cause)) as caught:
+    answer_shallow_check(monkeypatch, answer)
+    with pytest.raises(Failure, match=re.escape(cause)) as caught:
         lint(root, config, plans=[], base="HEAD")
+    assert type(caught.value) is raised
     assert "NOTHING was linted" in str(caught.value)
 
 
 @needs_git
 def test_a_base_that_shares_no_history_with_the_tree_will_not_resolve(tmp_path: Path) -> None:
     # A base with no commit in common with HEAD leaves nothing to diff against, and "no plan
-    # changed" would pass whatever the change carries. Mutation (declared): no merge base read
-    # as nothing touched -> the lint answers OK over no plans.
+    # changed" would pass whatever the change carries. Mutation (declared, on `gitenv`): no
+    # merge base read as none to compare -> the lint answers OK over no plans.
     root, config = project(tmp_path)
     git(root, "init", "-q", "-b", "main")
     plan(root, "no scope here\n")
@@ -508,7 +475,7 @@ def test_a_base_that_shares_no_history_with_the_tree_will_not_resolve(tmp_path: 
     git(root, "commit", "-q", "-m", "no shared history")
     other = git(root, "rev-parse", "HEAD").strip()
     git(root, "checkout", "-q", "-f", "main")
-    with pytest.raises(BaseUnresolvable, match="shares no history"):
+    with pytest.raises(BaseUnresolvable, match=re.escape(DISJOINT)):
         lint(root, config, plans=[], base=other)
 
 

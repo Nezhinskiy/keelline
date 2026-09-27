@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from keelline.errors import Failure, Refusal
 from keelline.findings import Finding
-from keelline.gitenv import NO_ANSWER, git_run
+from keelline.gitenv import ForkUnknown, fork_points, git_run
 from keelline.identifiers import identifiers
 from keelline.ledger.entries import (
     Entry,
@@ -62,13 +62,11 @@ ENTRY_REMOVED = (
     "bugs renumber`, which leaves a `void` entry at the old number"
 )
 _BASE_UNREAD = (
-    "git could not find the commits HEAD forked from `{base}` at, or list {bugs} and {index} "
-    "there, under {root} ({cause}), so whether this change deleted the ledger or an entry of it "
-    "is unknown and the bugs gate proved nothing. In CI the cause is a checkout too shallow to "
-    "hold the base ref (`fetch-depth: 0`); locally it is a `--base` that names a ref this clone "
-    "does not have, or one that shares no history with HEAD"
+    "what the commits HEAD forked from `{base}` at hold of {bugs} and {index} is unknown under "
+    "{root} ({cause}), so whether this change deleted the ledger or an entry of it is unknown "
+    "and the bugs gate proved nothing. Fetch the whole history (`fetch-depth: 0` in CI), or "
+    "pass a `--base` this clone holds that shares history with HEAD"
 )
-_SHALLOW = "this clone is shallow, so the commits HEAD forked from may be cut off"
 
 
 @dataclass(frozen=True)
@@ -103,37 +101,31 @@ def _base_ledger(root: Path, config: Config, base: str) -> _BaseLedger:
     deleted nothing; an entry removed from the base itself, by a direct push, is still named on
     a branch whose merge bases include one from before the removal, and is restored on the base.
 
-    A base shaped like an option is refused, as `plan check` refuses it. A base git cannot list,
-    one that shares no commit with HEAD, and any base in a shallow clone, where the commits HEAD
-    forked from can be cut off and the merge base git sees be an older one, or in a clone git
-    will not say is not shallow, are a `Failure` —
-    "could not run" to a gate — and never "the base has no ledger", which would pass exactly the
-    change this question exists to catch.
+    A base shaped like an option is refused, as `plan check` refuses it. Fork points
+    `gitenv.fork_points` cannot name — a base git cannot resolve, one that shares no commit with
+    HEAD, a shallow clone, and one git cannot say is shallow or not — and a listing git does not
+    give, are a `Failure` — "could not run" to a gate — and never "the base has no ledger",
+    which would pass exactly the change this question exists to catch.
     """
     if base.startswith("-"):
         raise Refusal(f"{base!r} looks like an option, not a base ref")
     bugs, index = config.paths.bugs, config.paths.bug_index
-    # Whether the clone is shallow is asked first, and a question git does not answer is not
-    # "not shallow": read so, a shallow clone would go on to an older merge base.
-    code, out = git_run(root, "rev-parse", "--is-shallow-repository")
-    if code != 0 or out.strip() == "true":
-        cause = _SHALLOW if code == 0 else NO_ANSWER if code < 0 else f"git exited {code}"
-        raise Failure(
+
+    def unread(unknown: ForkUnknown) -> Failure:
+        cause = unknown.cause
+        return Failure(
             _BASE_UNREAD.format(bugs=bugs, index=index, base=base, root=root, cause=cause)
         )
-    code, out = git_run(root, "merge-base", "--all", base, "HEAD")
-    forks = out.split() if code == 0 else []
+
+    forks = fork_points(root, base)
+    if isinstance(forks, ForkUnknown):
+        raise unread(forks)
     found: set[str] = set()
     for fork in forks:
         code, out = git_run(root, "ls-tree", "-r", "-z", "--name-only", fork, "--", bugs, index)
         if code != 0:
-            break
+            raise unread(ForkUnknown.of(code))
         found.update(name for name in out.split("\0") if name)
-    if code != 0 or not forks:
-        cause = NO_ANSWER if code < 0 else f"git exited {code}"
-        raise Failure(
-            _BASE_UNREAD.format(bugs=bugs, index=index, base=base, root=root, cause=cause)
-        )
     names = sorted(found)
     ids = identifiers(config)
     under = f"{bugs}/"

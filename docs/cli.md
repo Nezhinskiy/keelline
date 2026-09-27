@@ -554,14 +554,14 @@ Run one failing command three times and say what the three exit codes mean. The 
    base's tip: a base branch that advanced after the fork would otherwise carry commits that
    are not "before this change" into the before side.
 
-That merge-base has to be one commit. When `git merge-base --all HEAD REF` names several — a
+That merge base has to be one commit. When `git merge-base --all REF HEAD` names several — a
 history the change merged into from both sides of a base merge has them — each is as much
 "before this change" as the others and a failure can pass on one and fail on another, so the
 attribution is undetermined and the command says so, naming them all, rather than extract the one
-git would pick alone. Merge the base into the change, which makes its tip the one merge-base, or
-pass `--base` naming the commit you mean. A shallow clone, or one git will not say is not
-shallow, is undetermined too: the commit `HEAD` forked from can be cut off there and an older one
-stand in for it. Both are decided before anything runs.
+git would pick alone. Merge the base into the change, which makes its tip the one merge base, or
+pass `--base` naming the commit you mean. A shallow clone is undetermined too, since the commit
+`HEAD` forked from can be cut off there and an older one stand in for it, and so is a clone git
+cannot say is shallow or not. All of it is decided before anything runs.
 
 `--base` defaults to `refs/remotes/origin/<[project] base_branch>`, named in full so that no tag of
 the short spelling stands in for it; pass it to compare against another ref.
@@ -607,7 +607,7 @@ asked for), `merge_base` (the commit actually extracted) and `verdict`. Record t
 where the failure is discussed: a verdict without its inputs cannot be re-run.
 
 Exits `0` with a verdict, `1` when the merge-base cannot be resolved (`is
-refs/remotes/origin/main fetched?`), when the attribution is undetermined (several merge-bases, or
+refs/remotes/origin/main fetched?`), when the attribution is undetermined (several merge bases, or
 a shallow clone), when `git archive` fails, or when an archive is missing tracked
 files because the archived tree's own `.gitattributes` excluded them, and `2` when `--base` is
 shaped like an option, which is refused above the first subprocess rather than handed to `git` as
@@ -679,9 +679,9 @@ a base that kept its entries taking them together refuses no branch that deleted
 removed from the base itself, by a direct push, is still named on a criss-crossed branch whose
 merge bases include one from before the removal: restore it on the base. `--base` is what the
 `bugs` gate passes, the base it judges against; a base git cannot list, one that shares no commit
-with `HEAD`, and any base in a shallow clone, or in one git will not say is not shallow, where
-the commits `HEAD` forked from can be cut off and the merge base git sees be an older one, fail
-(`1`) rather than read as a base with no ledger, and under a gate that is the gate not running:
+with `HEAD`, any base in a shallow clone, where the commits `HEAD` forked from can be cut off and
+the merge base git sees be an older one, and any base in a clone git cannot say is shallow or
+not, fail (`1`) rather than read as a base with no ledger, and under a gate that is the gate not running:
 fetch the whole history (`fetch-depth: 0`). Without `--base` the tree alone is judged.
 A generated index with no directory behind it is a deleted ledger and exits `1`. Git enumerates
 the files where the root is the top of a checkout (tracked plus untracked-not-ignored), and a
@@ -762,15 +762,13 @@ listing every document on disk; outside one, every document is listed.
 ## `keelline plan check [--base REF] [PATH …]`
 
 With `PATH` arguments, lint exactly those plans; without, the plans under `[paths] plans` that
-differ between `HEAD` and any commit `git merge-base --all REF HEAD` names, `REF` defaulting to
+merging the change could alter on `REF`, `REF` defaulting to
 `refs/remotes/origin/<project.base_branch>`, the fully qualified name, as for `keelline assess`
-and `keelline gate`, so a tag called `origin/<branch>` cannot stand in for it. Every merge base,
-not the one `REF...HEAD` diffs against: a history the change shapes itself can give it several,
-and the one git picks alone can already hold an old plan the change puts back, which merging the
-change then puts back on the base unlinted. A plan is linted when it differs from any of them and
-from `REF` itself: one whose copy in `HEAD` is `REF`'s own is not the change's, since merging the
-change leaves it as it is, and without that a branch stacked on another would answer for a plan
-the base gained before the stack merged the base in. Five rules, each from a
+and `keelline gate`, so a tag called `origin/<branch>` cannot stand in for it. Those are the plans
+whose copy in `HEAD` differs from `REF`'s and from that of any commit `git merge-base --all REF
+HEAD` names: a copy equal to every merge base's leaves the merge taking `REF`'s, and one equal to
+`REF`'s leaves it as it is. Every merge base, not the one `REF...HEAD` diffs against, which can
+already hold an old plan the change puts back. Five rules, each from a
 retrospective: every backticked path resolves unless the line says `(create)` or declares it
 on a `Create:`/`Test:` line; no step is phrased as already knowing its answer (`confirm that
 nothing …`, `verify no …`, `check that it does not …`); a `**Scope:**` line with content is
@@ -780,11 +778,12 @@ red`, `reddens 8 assertions`) is a finding unless its own sentence marks it an e
 Fenced code is fixture text, and so is a path claim that lands outside the project root —
 an absolute one, or one that walks out through `..` — which is never settled against the
 filesystem, because that answer would be about the machine rather than about the repository. A
-base that does not resolve, one that shares no commit with `HEAD`, and any base in a shallow
-clone, or in one git will not say is not shallow, where the commits `HEAD` forked from can be
-cut off and an older commit stand in for them, are this command's `base-unresolvable` finding
-(`1`), never an OK: fetch the whole history (`fetch-depth: 0`). A git that could not be run or
-ran past its time limit fails (`1`) with that cause in words. The `plan` gate that
+base that does not resolve, one that shares no commit with `HEAD`, any base in a shallow clone,
+where the commits `HEAD` forked from can be cut off and an older commit stand in for them, and
+any base in a clone git refuses to say is shallow or not, are this command's `base-unresolvable`
+finding (`1`), never an OK: fetch the whole history (`fetch-depth: 0`). A git that could not be
+run or ran past its time limit, on any of these questions, fails (`1`) with that cause in
+words. The `plan` gate that
 `keelline assess`, `keelline gate` and `keelline adopt promote` run reads the same cause as a
 gate that could not run, as `commit` does, because it says nothing about any plan. A `REF`
 shaped like an option is refused (`2`) before git sees it. Uncommitted plans

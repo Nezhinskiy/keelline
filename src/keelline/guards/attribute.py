@@ -6,10 +6,10 @@ Between (2) and (3) the only variable is the code; between (1) and (2) the only 
 the environment — provided the command syncs its own environment, which is the caller's to
 arrange and the reason the command is an argument.
 
-Run (3) needs one merge-base, and a history can have several: each is as much "before this
+Run (3) needs one merge base, and a history can have several: each is as much "before this
 change" as the others, a failure can pass on one and fail on another, and the one git picks
 alone, the newest by date, is not the one the change forked from in any sense the others are
-not. So several merge-bases, like a shallow clone where the real one can be cut off and an older
+not. So several merge bases, like a shallow clone where the real one can be cut off and an older
 commit stand in for it, leave the attribution undetermined: a `Failure` naming why, before
 anything runs, and never a verdict read off a tree chosen for the reader.
 
@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from keelline.errors import Failure, Refusal
-from keelline.gitenv import NO_ANSWER, git_run, scrubbed_env
+from keelline.gitenv import NO_ANSWER, SHALLOW, ForkUnknown, fork_points, git_run, scrubbed_env
 from keelline.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
 
 VERDICTS = (
@@ -159,41 +159,28 @@ def _extract(root: Path, ref: str, into: Path) -> None:
 def _merge_base(root: Path, base: str) -> str:
     """The one commit run (3) extracts, or a `Failure` saying why there is none.
 
-    Whether the clone is shallow is asked first, and a question git does not answer is not
-    "not shallow". Then `git merge-base --all HEAD <base>`: with more than one answer, naming
-    them all is the report, and picking one would be a verdict about a tree nobody asked for.
+    `gitenv.fork_points` names every merge base, or says why they are not known. More than one
+    is undetermined: naming them all is the report, and picking one would be a verdict about a
+    tree nobody asked for.
     """
-    code, out = git_run(root, "rev-parse", "--is-shallow-repository")
-    if code != 0:
-        cause = NO_ANSWER if code == -1 else f"git exited {code}; is --root inside a checkout?"
+    forks = fork_points(root, base)
+    if isinstance(forks, ForkUnknown):
+        if forks.cause == SHALLOW:
+            remedy = "; fetch the whole history (`git fetch --unshallow`) and run it again"
+        elif forks.answered:
+            remedy = f"; is {base} fetched, and is --root inside a checkout?"
+        else:
+            remedy = ""
         raise Failure(
-            f"the attribution is undetermined: whether this clone is shallow is unknown "
-            f"({cause}), and in a shallow clone the merge-base git sees can be an older commit"
+            f"the attribution is undetermined: the merge base of HEAD and {base} is unknown "
+            f"({forks.cause}){remedy}"
         )
-    if out.strip() == "true":
-        raise Failure(
-            f"the attribution is undetermined: this clone is shallow, so the commit HEAD forked "
-            f"from {base} at can be cut off and an older one stand in for it; fetch the whole "
-            f"history (`git fetch --unshallow`) and run it again"
-        )
-    code, out = git_run(root, "merge-base", "--all", "HEAD", base)
-    forks = out.split()
-    # `git_run`'s own sentinel for "no answer", which is not an exit code and must not be
-    # rendered as one: `exited -1; is origin/main fetched?` sends a reader to fetch a ref when
-    # the answer is that there is no git here, or that it ran past its bound. A `Failure` and not
-    # the listing's skip, because this command has no verdict without a merge-base.
-    if code == -1:
-        raise Failure(
-            f"{NO_ANSWER}, so `merge-base --all HEAD {base}` gave nothing to compare against"
-        )
-    if code != 0 or not forks:
-        raise Failure(f"`git merge-base --all HEAD {base}` exited {code}; is {base} fetched?")
     if len(forks) > 1:
         raise Failure(
-            f"the attribution is undetermined: HEAD and {base} have {len(forks)} merge-bases "
+            f"the attribution is undetermined: HEAD and {base} have {len(forks)} merge bases "
             f"({', '.join(forks)}), each as much before this change as the others, and a "
             f"failure can pass on one and fail on another; merge {base} into the change so its "
-            f"tip is the one merge-base, or pass `--base` naming the commit to compare against"
+            f"tip is the one merge base, or pass `--base` naming the commit to compare against"
         )
     return forks[0]
 

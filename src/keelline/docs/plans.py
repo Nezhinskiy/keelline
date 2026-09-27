@@ -71,14 +71,14 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING
 
 from keelline.config.layout import local_base
 from keelline.config.paths import contained
 from keelline.docs.hygiene import read_document
 from keelline.errors import Failure, Refusal
 from keelline.findings import Finding
-from keelline.gitenv import NO_ANSWER, git_run
+from keelline.gitenv import NO_ANSWER, ForkUnknown, fork_points, git_run
 from keelline.identifiers import identifiers
 from keelline.prose import blank_fences, path_references, resolves_within
 
@@ -126,16 +126,13 @@ _MARKED_AS_EXPECTATION = re.compile(r"\bexpect(?:s|ed|ation|ations)?\b", re.IGNO
 _SENTENCE_END = re.compile(r"[.!?][)\]\"'`]*\s")
 
 _BASE_UNRESOLVABLE = (
-    "the plans HEAD changed since the commits it forked from `{base}` at are not known under "
-    "{root} ({cause}), so NOTHING was linted and this gate proved nothing. In CI the cause is a "
-    "checkout too shallow to hold those commits (`fetch-depth: 0`); locally it is a shallow "
-    "clone, a `--base` that names a ref this clone does not have, or one that shares no history "
-    "with HEAD."
+    "which plans HEAD changes against `{base}` is unknown under {root} ({cause}), so NOTHING "
+    "was linted and this gate proved nothing. Fetch the whole history (`fetch-depth: 0` in CI), "
+    "or pass a `--base` this clone holds that shares history with HEAD."
 )
-_SHALLOW = "this clone is shallow, so they can be cut off and an older commit stand in for them"
 _NO_ANSWER = (
-    "{no_answer}, so the plans changed since the commits HEAD forked from `{base}` at under "
-    "{root} could not be listed and NOTHING was linted"
+    "{no_answer}, so which plans HEAD changes against `{base}` under {root} could not be listed "
+    "and NOTHING was linted"
 )
 _SCOPE_MISSING = (
     'no `**Scope:**` admission criterion — one line saying "a change belongs to this branch '
@@ -183,50 +180,26 @@ def _is_git_repo(root: Path) -> bool:
     return git_run(root, "rev-parse", "--is-inside-work-tree")[0] == 0
 
 
-def _unresolved(code: int, base: str, root: Path, cause: str = "") -> NoReturn:
-    """A question about the fork point git did not answer: a `Failure` when git gave no answer
-    at all, and `BaseUnresolvable` when it answered with a refusal or `cause` says why the
-    answer it gave is not one."""
-    if code == -1:
+def _unresolved(unknown: ForkUnknown, base: str, root: Path) -> Failure:
+    """What a question about the change's plans git did not answer means to this lint: a
+    `Failure` when git gave no answer at all, and `BaseUnresolvable` otherwise."""
+    if not unknown.answered:
         # Not "the base does not resolve": that finding's remedy is a deeper checkout, and a
         # git that could not be run or ran past its bound is a clone that may hold every ref.
-        raise Failure(_NO_ANSWER.format(no_answer=NO_ANSWER, base=base, root=root))
-    raise BaseUnresolvable(
-        _BASE_UNRESOLVABLE.format(base=base, root=root, cause=cause or f"git exited {code}")
-    )
-
-
-def _fork_points(root: Path, base: str) -> list[str]:
-    """Every commit HEAD forked from `base` at: `git merge-base --all <base> HEAD`, each best
-    common ancestor.
-
-    `<base>...HEAD` diffs against one of them, and a history the change shapes itself can give
-    it several. The one git picks, the newest by date, can hold a plan as the change left it
-    while another holds the version the base carries since: a change that merged both and put
-    an old plan back diffed clean against the first, and merging it put that plan back on the
-    base unlinted. So the plans changed against each are listed by the caller, and taken
-    together.
-
-    Whether the clone is shallow is asked first, and a question git does not answer is not
-    "not shallow": in a shallow clone the fork point can be cut off and the merge base git sees
-    be an older commit, which holds the old plan as well. A shallow clone, one git will not say
-    is not shallow, and a base that shares no commit with HEAD all mean the fork point is not
-    known, so nothing can be linted against it.
-    """
-    code, out = git_run(root, "rev-parse", "--is-shallow-repository")
-    if code != 0 or out.strip() == "true":
-        _unresolved(code, base, root, _SHALLOW if code == 0 else "")
-    code, out = git_run(root, "merge-base", "--all", base, "HEAD")
-    forks = out.split() if code == 0 else []
-    if code != 0 or not forks:
-        _unresolved(code, base, root)
-    return forks
+        return Failure(_NO_ANSWER.format(no_answer=NO_ANSWER, base=base, root=root))
+    return BaseUnresolvable(_BASE_UNRESOLVABLE.format(base=base, root=root, cause=unknown.cause))
 
 
 def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path]:
-    """Plans this change touches: those that differ between HEAD and any commit it forked from
-    `base` at, and between HEAD and `base` itself. `BaseUnresolvable` when those commits cannot
-    be found, and a `Failure` when git gave no answer at all.
+    """Plans this change touches: those merging it could alter on `base`. `BaseUnresolvable`
+    when that cannot be known, and a `Failure` when git gave no answer at all.
+
+    A plan is one of them when HEAD's copy differs from `base`'s and from that of any commit
+    `gitenv.fork_points` names. If it equals every fork point's, git's merge takes the base's
+    copy; if it equals the base's, the merge leaves it as it is; either way merging alters
+    nothing. Every fork point, not the one `<base>...HEAD` diffs against: that one can already
+    hold an old plan the change puts back. And the base too, because against a fork point alone
+    a plan the base changed since it reads as the change's own.
 
     Read with `-z`, the same way and for the same reason as `unlinted_plans`: without it git
     C-quotes any path holding a space or a non-ASCII byte, splitting on whitespace then tears
@@ -250,23 +223,21 @@ def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path]:
     if base.startswith("-"):
         raise Refusal(f"{base!r} looks like an option, not a base ref")
     relative = plans_dir.relative_to(root).as_posix()
+    forks = fork_points(root, base)
+    if isinstance(forks, ForkUnknown):
+        raise _unresolved(forks, base, root)
+
+    def changed(since: str) -> set[str]:
+        code, out = git_run(root, "diff", "--name-only", "-z", since, "HEAD", "--", relative)
+        if code != 0:
+            raise _unresolved(ForkUnknown.of(code), base, root)
+        return {name for name in out.split("\0") if name.endswith(".md")}
+
     found: set[str] = set()
-    for fork in _fork_points(root, base):
-        found |= _changed(root, fork, relative, base)
-    # A plan whose copy in HEAD is the base's own is not the change's, whatever a merge base
-    # holds: merging the change leaves it as the base has it. Without this, the union lints on
-    # a branch stacked on another, once the base merged the lower one, a plan the base gained
-    # before the stack merged the base in, and fails the stack on a file it never touched.
-    found &= _changed(root, base, relative, base)
+    for fork in forks:
+        found |= changed(fork)
+    found &= changed(base)
     return [root / name for name in sorted(found)]
-
-
-def _changed(root: Path, since: str, relative: str, base: str) -> set[str]:
-    """The plans under `relative` that differ between `since` and HEAD."""
-    code, out = git_run(root, "diff", "--name-only", "-z", since, "HEAD", "--", relative)
-    if code != 0:
-        _unresolved(code, base, root)
-    return {name for name in out.split("\0") if name.endswith(".md")}
 
 
 def unlinted_plans(root: Path, plans_dir: Path) -> list[Path] | None:

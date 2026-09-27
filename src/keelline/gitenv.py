@@ -35,6 +35,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 # Everything else is dropped, `GIT_DIR` and `GIT_WORK_TREE` above all.
@@ -217,3 +218,55 @@ def git_run(
         return -1, ""
     answer = completed.stdout.decode(codec, "surrogateescape")
     return completed.returncode, answer
+
+
+SHALLOW = (
+    "this clone is shallow, so the commits HEAD forked from can be cut off and an older one "
+    "stand in for them"
+)
+DISJOINT = "HEAD and the base share no commit"
+
+
+@dataclass(frozen=True)
+class ForkUnknown:
+    """Why the commits HEAD forked from a base at are not known: `cause` in words, and whether
+    git answered at all, since a git that gave no answer sends a reader to a different remedy
+    than a clone that is shallow or a base it refused."""
+
+    cause: str
+    answered: bool
+
+    @classmethod
+    def of(cls, code: int) -> ForkUnknown:
+        """A question git exited `code` on. Any negative code is no answer: `git_run`'s `-1`,
+        and a git a signal ended, which `subprocess` reports as the signal's negative."""
+        if code < 0:
+            return cls(NO_ANSWER, answered=False)
+        return cls(f"git exited {code}", answered=True)
+
+
+def fork_points(root: Path, base: str) -> list[str] | ForkUnknown:
+    """Every commit HEAD forked from `base` at — `git merge-base --all <base> HEAD`, each best
+    common ancestor, in git's order — or why they are not known.
+
+    Every one, because a history the change shapes itself can have several, and the one git
+    picks alone, the newest by date, is not the fork point in any sense the others are not: a
+    reader of one answers about a tree the change can choose. Whether the clone is shallow is
+    asked first, and a question git does not answer is not "not shallow": in a shallow clone the
+    fork point can be cut off and an older commit be what git names. A shallow clone, one git
+    will not answer about, and a base that shares no commit with HEAD are all not known. What
+    that means, and what to do about it, each caller says in its own words; the base is refused
+    by the caller when it is shaped like an option, before this is asked.
+    """
+    code, out = git_run(root, "rev-parse", "--is-shallow-repository")
+    if code != 0:
+        return ForkUnknown.of(code)
+    if out.strip() == "true":
+        return ForkUnknown(SHALLOW, answered=True)
+    code, out = git_run(root, "merge-base", "--all", base, "HEAD")
+    forks = out.split()
+    if code == 1 and not forks:
+        return ForkUnknown(DISJOINT, answered=True)
+    if code != 0 or not forks:
+        return ForkUnknown.of(code)
+    return forks

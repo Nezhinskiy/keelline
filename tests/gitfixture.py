@@ -45,11 +45,14 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from keelline import gitenv
 from keelline.runner import Completed
 
 # The one spelling of the skip, published here because five modules had written it out.
@@ -162,3 +165,60 @@ def plant_path(root: Path, raw: bytes, content: str = "planted\n") -> None:
     source.write_text(content, encoding="utf-8")
     blob = git(root, "hash-object", "-w", str(source)).strip()
     git(root, "update-index", "--add", "--cacheinfo", f"100644,{blob},{os.fsdecode(raw)}")
+
+
+def dated(root: Path, tick: int, *args: str) -> str:
+    """`git args` with the author and committer date of the `tick`th commit, stripped of its
+    trailing newline, so git orders merge bases as the test says rather than by the clock."""
+    stamp = f"@{1_700_000_000 + tick * 1000} +0000"
+    return git(root, *args, GIT_AUTHOR_DATE=stamp, GIT_COMMITTER_DATE=stamp).strip()
+
+
+@dataclass(frozen=True)
+class CrissCross:
+    base: str  # `main`, having merged the side branch
+    fixed: str  # the commit on `main` the side branch forked before
+    side: str  # the side branch's tip, committed after `fixed`: git's own pick
+
+
+def criss_cross(root: Path, fix: Callable[[], object]) -> CrissCross:
+    """Two merge bases between `main` and HEAD, the one git picks alone being the older state.
+
+    From the commit `main` has checked out, which the caller made at tick 1: `fix()` edits the
+    tree and is committed on `main` (tick 2); a side branch forks before it and commits
+    `side.txt` after it (tick 3); `main` merges the side branch (tick 4); and HEAD is left
+    detached on the fix merged with the side branch (tick 5). The premise is asserted here, so
+    no caller's test can pass because git changed its pick: the merge bases are the fix and the
+    side branch, and `git merge-base` alone answers the side branch.
+    """
+    first = git(root, "rev-parse", "HEAD").strip()
+    fix()
+    git(root, "add", "-A")
+    dated(root, 2, "commit", "-q", "-m", "the fix")
+    fixed = git(root, "rev-parse", "HEAD").strip()
+    git(root, "checkout", "-q", "-b", "side", first)
+    (root / "side.txt").write_text("side\n", encoding="utf-8")
+    git(root, "add", "-A")
+    dated(root, 3, "commit", "-q", "-m", "a colleague's side branch")
+    side = git(root, "rev-parse", "HEAD").strip()
+    git(root, "checkout", "-q", "main")
+    dated(root, 4, "merge", "-q", "--no-ff", "--no-edit", "side")
+    base = git(root, "rev-parse", "HEAD").strip()
+    git(root, "checkout", "-q", "--detach", fixed)
+    dated(root, 5, "merge", "-q", "--no-ff", "--no-edit", side)
+    assert sorted(git(root, "merge-base", "--all", base, "HEAD").split()) == sorted([fixed, side])
+    assert git(root, "merge-base", base, "HEAD").strip() == side
+    return CrissCross(base, fixed, side)
+
+
+def answer_shallow_check(monkeypatch: pytest.MonkeyPatch, code: int) -> None:
+    """Make the shallow check `gitenv.fork_points` asks exit `code` with nothing on stdout;
+    every other git call, that one's merge base included, is the real one."""
+    real = gitenv.git_run
+
+    def answered(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        if args[:2] == ("rev-parse", "--is-shallow-repository"):
+            return code, ""
+        return real(where, *args, **kwargs)
+
+    monkeypatch.setattr(gitenv, "git_run", answered)

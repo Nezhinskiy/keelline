@@ -69,8 +69,8 @@ jobs:
       - name: The caller's repository
         # `fetch-depth: 0` is not a convenience: the base ref, the merge bases `plan check` and
         # `bugs check` read and the commit range `commit check` reads all come out of this
-        # checkout, which may not be shallow, and
-        # `persist-credentials: false` means there is no token to fetch them with afterwards.
+        # checkout, which must not be shallow, and `persist-credentials: false` means there is
+        # no token to fetch them with afterwards.
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           path: project
