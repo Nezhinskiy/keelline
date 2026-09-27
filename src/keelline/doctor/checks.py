@@ -1300,9 +1300,10 @@ def _overlay_requires(context: Context) -> Row:
     return Row(OK, f"the overlay requires Keelline {spec}, which {running} satisfies")
 
 
-# `init` records `[ci] ref` as a commit, and the documented opt-in is the mutable `v1` alias.
-# Both are judged against the public repository's own tags, which is why neither ever reaches
-# a subprocess: a sha cannot be asked for by name, so the row asks `git ls-remote` about a
+# `init` records `[ci] ref` as a commit, and the documented opt-in, from 1.0.0 on, is the mutable
+# `v1` alias; before the first 1.x release the public repository carries no such tag, and the row
+# is red. Both are judged against the public repository's own tags, which is why neither ever
+# reaches a subprocess: a sha cannot be asked for by name, so the row asks `git ls-remote` about a
 # constant URL and a constant pattern (`release.pins`) and compares in Python.
 _SHA = re.compile(r"\A[0-9a-f]{40}\Z")
 ALIAS = "v1"

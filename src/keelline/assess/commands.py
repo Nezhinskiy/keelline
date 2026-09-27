@@ -92,6 +92,22 @@ NOT_RUN = (
     "note: --builtin ran no custom gate, and a custom gate is promoted only by a run that runs "
     "its command; without --builtin, adopt promote runs the commands [gates.custom] names"
 )
+# A gate `adopt promote` did not enforce because it reads a file CI's checkout will not have: one
+# git does not track, or a symlink leading out of the repository. `{files}` are names found on disk,
+# each through `printable`; `--json` carries them whole. `{remedy}` is the one `keelline assess`
+# gives the same item (`keelline.assess.tracked`), so the two cannot drift apart.
+UNTRACKED_NOTE = (
+    "note: {gate} reads {files}, which CI's checkout will not have, so CI would fail {gate} on "
+    "every pull request, and {gate} is not enforced; {remedy}"
+)
+CASE_NOTE = (
+    "note: {gate} reads {files}, which git tracks only under a name that differs in case, so CI's "
+    "checkout will not have them and {gate} is not enforced; {remedy}"
+)
+UNASKED_NOTE = (
+    "note: git gave no answer to whether it tracks the files {gate} reads, so {gate} is not "
+    "enforced; {remedy}"
+)
 ONLY_UNKNOWN = (
     "--only names {count} gate(s) the configuration this run uses does not have; `config` is "
     "the configuration check, and every other name is a gate from [gates]"
@@ -262,6 +278,10 @@ def _transition(transition: Transition) -> dict[str, object]:
         "unanswered": list(transition.unanswered),
         "not_on_base": list(transition.waiting),
         "skipped": list(transition.skipped),
+        "untracked": {
+            u.gate: list(u.files) for u in transition.unseen if u.git_answered and u.files
+        },
+        "case_differs": {u.gate: list(u.case_differs) for u in transition.unseen if u.case_differs},
     }
 
 
@@ -283,8 +303,10 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
         findings_text,
     )
     from keelline.assess.state import promote
+    from keelline.assess.tracked import CASE_REMEDY, REMEDY, UNASKED_REMEDY
     from keelline.config.layout import local_base
     from keelline.findings import listed
+    from keelline.printed import printable
 
     root, config = root_and_config(args)
     base = args.base or local_base(config)
@@ -307,6 +329,17 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
             lines.append(WAITING)
         if transition.skipped:
             lines.append(NOT_RUN)
+        for unseen in transition.unseen:
+            if not unseen.git_answered:
+                lines.append(UNASKED_NOTE.format(gate=unseen.gate, remedy=UNASKED_REMEDY))
+                continue
+            if unseen.files:
+                files = listed([printable(name) for name in unseen.files])
+                remedy = REMEDY.format(gate=unseen.gate)
+                lines.append(UNTRACKED_NOTE.format(gate=unseen.gate, files=files, remedy=remedy))
+            if unseen.case_differs:
+                cased = listed([printable(name) for name in unseen.case_differs])
+                lines.append(CASE_NOTE.format(gate=unseen.gate, files=cased, remedy=CASE_REMEDY))
         lines.append(BUILTIN_FINDINGS_ELSEWHERE if args.builtin else FINDINGS_ELSEWHERE)
     data = _transition(transition)
     return Result("\n".join(lines), data, exit_code=1 if advisory else 0)

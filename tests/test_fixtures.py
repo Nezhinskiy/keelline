@@ -710,6 +710,35 @@ def test_a_project_root_below_the_checkout_is_where_the_gates_run(tmp_path: Path
     assert written["root"] == "project/sub/project", written
 
 
+SMOKE_RELEASE = WORKFLOWS / "smoke-release.yml"
+CALLED = "Nezhinskiy/keelline/.github/workflows/check.yml"
+
+
+@pytest.mark.skipif(not SMOKE_RELEASE.is_file(), reason="smoke-release.yml is not in the sdist")
+def test_the_release_smoke_calls_the_release_this_tree_carries() -> None:
+    """RELEASING.md's last step dispatches this workflow at every release, and `uses:` takes no
+    expression, so the tag it calls is written out and moved by hand in the release commit.
+
+    Held to the version the tree carries, which the release workflow's own suite run checks at
+    the tag: a stale tag smokes the release before, and one past the tree names a tag that does
+    not exist yet, so the dispatch fails at creation for want of a ref. The alias a `1.x`
+    release moves is not called here: a `0.x` release has none, and a job naming a tag that
+    does not exist fails the whole dispatch before any job runs. Mutation (declared): the
+    release job calls `@v1` again.
+    """
+    import keelline
+
+    document = load(SMOKE_RELEASE.read_text(encoding="utf-8"))
+    assert isinstance(document, dict) and isinstance(document["jobs"], dict), document
+    uses = {
+        name: job.get("uses") for name, job in document["jobs"].items() if isinstance(job, dict)
+    }
+    assert uses == {
+        "at-the-development-branch": f"{CALLED}@dev",
+        "at-the-release": f"{CALLED}@v{keelline.__version__}",
+    }, uses
+
+
 RELEASE_WORKFLOW = WORKFLOWS / "release.yml"
 GATE_JOB = "environment-gate"
 GATE_STEP = "The pypi environment is a gate and not a name GitHub invented"

@@ -828,10 +828,48 @@ could not run, and each counts as failing; a `note:` after the summary says the 
 and suggests `--base refs/heads/<project.base_branch>`, as `adopt promote` does.
 
 A gate that could not judge the tree — a base that is not there, an unreadable plan, a range git
-cannot read, a custom gate that could not start or ran past `custom_timeout_seconds` — is
-failing: a gate that could not look has not passed. A gate never reports that as a finding; it
-is the one outcome every command that runs gates spells `could not run`, and `--json` carries it
-as `answered: false` with a fixed `reason` naming the command that shows why.
+cannot read, a custom gate that could not start or ran past `custom_timeout_seconds`, a file it
+reads that CI's checkout will not have (below) — is failing: a gate that could not look has not
+passed. A gate never reports that as a finding; it is the one outcome every command that runs
+gates spells `could not run`, and `--json` carries it as `answered: false` with a fixed `reason`
+naming the command that shows why.
+
+**The `docs` and `trail` gates judge tracked files.** That is the contract: CI checks out what git
+tracks and nothing else, so a file that is on disk here and that git does not track — never added,
+or ignored — is one those gates read here and CI never sees, and there the gate's own finding for
+an absent file fails every pull request. So `assess` reports such a gate as could not run, its
+`reason` saying it could not judge the tree as CI will, and counts it as one that would fail, and
+`keelline adopt promote` never enforces it. To keep one of those files out of git, take its gate out
+of `[gates] builtin`.
+
+- **The files.** `[paths] agents_md` and every file or directory its links name, for `docs`, and
+  `[paths] roadmap` and the `trail.toml` beside it, for `trail`. The roadmap the `docs` gate reads
+  for its prose budget is not asked about: an absent roadmap adds no finding, so one CI cannot see
+  can only make the verdict here stricter than CI's.
+- **Tracked** means in git's index, as `git ls-files` lists it, so a file staged and not yet
+  committed counts — CI checks out commits, so commit it with the change that promotes the gate.
+- **Symlinks.** A symlink is tracked as the link alone, and a checkout writes the link whether or
+  not what it names is there, so each path is walked as the filesystem walks it, one component at
+  a time, and every symlink on the way is followed, a symlinked directory's included: every step
+  and the file it lands on must be tracked. Where a link leads is judged against the work tree's
+  top, since a project below it may link to a tracked file beside it, which every checkout has; a
+  link whose target is absolute or climbs out of the repository counts as untracked, since no other
+  checkout has what it names, and so does a link that differs on disk from the one git has — one
+  retargeted and not staged — since a checkout writes git's, which may lead elsewhere.
+- **The items.** An `untracked` item names the files: the first untracked step on a path, a link
+  that differs on disk from git's, or a link that leads out of the repository, a directory's
+  included, and when that step or link is outside the project, the last link inside it that led
+  there. A name that differs from the one git tracks only in case — a link to `Notes.md` where git
+  tracks `notes.md` — reads the committed file on a filesystem that folds case, as macOS's does by
+  default, and nothing in a Linux checkout, so it goes to a `case-differs` item instead, whose
+  remedy is to spell it as `git ls-files` does; where case is kept apart and the two names are two
+  files, the one read is simply untracked. Each name is inside the path grammar or withheld.
+- **No answer.** Inside a git work tree, a git that gives no answer is never read as tracked: the
+  gate could not run the same way, and its item is `could-not-look`. Outside a work tree nothing is
+  asked, since there is no index to ask and no checkout for CI to take, and both gates judge the
+  files as they are, as `docs trail` lists every document there.
+- **`keelline gate`** asks nothing about tracking: it runs on the checkout CI took, where such a
+  file is simply absent and the gate's own finding says so.
 
 **A gate's row.** `keelline assess`, `keelline gate` and `keelline adopt promote` each give every
 gate they ran one `--json` row in one shape: `name`; `enforcing`; `answered`, false when the gate
@@ -1127,6 +1165,16 @@ a `note:` saying to land it on the base branch first, because `keelline gate` wo
 in the pull request that carries the promotion. A base that cannot be read, or has no
 `keelline.toml`, has no command, so every custom gate waits.
 
+A `docs` or `trail` gate that reads a file CI's checkout will not have is never promoted, since CI
+would fail the gate on every pull request (*The `docs` and `trail` gates judge tracked files*,
+under `keelline assess`). It could not run, is named `(could not run)`, and a `note:` for it names
+up to eight of the files and counts the rest, each inside the path grammar or withheld, and says
+to commit them — an ignored one needs
+its ignore rule removed, or `git add -f` — and to point a symlink it names at a tracked file in the
+repository, or to keep them out of git and take the gate out of `[gates] builtin`. A file git
+tracks only under a name that differs in case gets a `note:` of its own, saying to spell it as
+`git ls-files` does; one git gave no answer about is named with a `note:` saying so.
+
 `--builtin` runs the built-in gates and no custom gate, as `keelline assess --builtin` does: for
 a clone whose commands you have not agreed to run, where the base is the clone author's and its
 having a command is no brake. A custom gate is promoted only by a run that ran its command, so
@@ -1138,7 +1186,12 @@ back as a gate not on the base does.
 as `keelline assess` defines it, `enforcing` when this run promoted it), `promoted`, `failing`,
 which maps each gate that ran and did not pass to its finding count, `unanswered`, the gates that
 could not run, `not_on_base`, the custom gates not run because the base does not have their
-command, and `skipped`, the custom gates `--builtin` did not run. When a gate stays advisory, the summary ends with a line saying where its findings are
+command, `skipped`, the custom gates `--builtin` did not run, `untracked`, which maps each gate
+not promoted because it reads files CI's checkout will not have to those files, other than the
+ones below, and `case_differs`, which maps each gate not promoted because git tracks a file it
+reads only under a name that differs in case to those files, as read; a gate whose only such files
+differ in case is under `case_differs` alone. When a gate stays
+advisory, the summary ends with a line saying where its findings are
 (`keelline assess --json`, or `keelline assess --builtin --json` under `--builtin`, or the
 gate's own command), and, when `plan`, `commit` or `bugs`
 could not run and the base is not in the checkout, a `note:` saying so and naming `--base` with
@@ -1332,17 +1385,18 @@ pins the ref **it** records, and `doctor` judges whether that is a released comm
 job.
 
 Seven states cost the artifact rather than the run, each reported under `skipped` with one
-sentence: `[ci] mode` is `none`; `[ci] mode` is `uvx`, whose form of the gate has not shipped;
-the public repository could not be asked for its tags; no released tag matches the
-Keelline running, which is every repository's state before the first release; the `keelline.toml`
-this repository already had records no `[ci] ref`, so there is nothing a workflow could pin that
-anything records; `[ci] ref` is not a full-length commit sha, which is the only immutable form
-and the only one `init` renders — the documented mutable `v1` alias is a file you write by hand;
-and `[ci] gate_branch` is not a plain branch name. `--no-ci` is the first of those on purpose: it
-puts `[ci] mode = "none"` into the document this run builds and asks no remote anything. **On a
-repository that already has a `keelline.toml` the flag governs this run and nothing more** — that
-document is a create-once artifact, reported `skip_modified`, so the file still says whatever it
-said and the next `init` would ask the remote again. Writing `none` there is yours to do.
+sentence: `[ci] mode` is `none`; `[ci] mode` is `uvx`, whose form of the gate has not shipped; the
+public repository could not be asked for its tags; no released tag matches the Keelline running,
+which is every repository's state before the first release; the `keelline.toml` this repository
+already had records no `[ci] ref`, so there is nothing a workflow could pin that anything records;
+`[ci] ref` is not a full-length commit sha, which is the only immutable form and the only one
+`init` renders — the mutable `v1` alias, from `1.0.0` on, is a file you write by hand, and until
+then a `0.x` project pins the commit; and `[ci] gate_branch` is not a plain branch name. `--no-ci`
+is the first of those on purpose: it puts `[ci] mode = "none"` into the document this run builds
+and asks no remote anything. **On a repository that already has a `keelline.toml` the flag governs
+this run and nothing more** — that document is a create-once artifact, reported `skip_modified`, so
+the file still says whatever it said and the next `init` would ask the remote again. Writing `none`
+there is yours to do.
 
 **The two states about the remote are reported only on a run that creates the document.** On the
 adoption path the answer is the fifth one whatever the remote said, because it is the whole
@@ -1527,10 +1581,11 @@ that right and run `keelline upgrade` again. The `CI:` line says the workflow pi
 when this run created it, refreshed it or found it current; a workflow the report lists
 `skip_modified` or refuses was left as it is and may pin anything, and the line says so.
 
-**A `[ci] ref` that is not a commit is yours.** The documented `v1` alias, or any other value
-that is not a full-length sha, is a choice to track a moving Keelline, so `upgrade` moves
-`[keelline] version` alone: it never replaces that ref with a sha, and never renders a workflow
-over the one you wrote around it. The `CI:` line says no workflow was rendered around the ref.
+**A `[ci] ref` that is not a commit is yours.** The `v1` alias, documented from `1.0.0` on, or any
+other value that is not a full-length sha, is a choice to track a moving Keelline, so `upgrade`
+moves `[keelline] version` alone: it never replaces that ref with a sha, and never renders a
+workflow over the one you wrote around it. The `CI:` line says no workflow was rendered around the
+ref.
 
 **A project recording a newer Keelline is refused** (`2`), before anything is written: an older
 plugin would repin an older release and put older bytes over newer ones. The recorded version is
@@ -2302,7 +2357,7 @@ nobody sees, so that is where they all are.
 | `cli-path` | whether `keelline` resolves on `PATH` | `PATH` |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
 | `overlay-requires` | whether the overlay this machine records requires a Keelline the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `keelline.toml` |
-| `ci-ref` | whether `[ci] ref` is the commit of a released Keelline tag (or the `v1` alias, reported as mutable), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/keelline.yml*, read as a regular file and to a bound |
+| `ci-ref` | whether `[ci] ref` is the commit of a released Keelline tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/keelline.yml*, read as a regular file and to a bound |
 | `store-debris` | files in the note store that are not notes | the note store |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl` |
 | `ignored-env` | `KEELLINE_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |
@@ -2437,6 +2492,7 @@ as the check is required on the gate branch only.
 | `path` | `"."` | the project root inside the caller's checkout, for a monorepo or a fixture. A **plain relative path** — letters, digits, `.`, `_`, `-` and `/`, with no `..` component — and anything else is refused before a gate runs, because the value reaches the run's own outputs, and those carry the base commit the gates' configuration is read from. A root any component of which is a symbolic link in the checkout is refused too |
 | `python-version` | `"3.13"` | the interpreter Keelline runs on; 3.11 is the floor |
 | `only` | `""` | the checks to run, space-separated: `config` and any configured gate name. Empty runs the configuration check and every configured gate, and the configuration check runs whatever this names |
+| `timeout-minutes` | `15` | the job's time limit, a whole number of minutes from 5 to 60; any value the runner does not render as a whole number from 5 to 60 fails the job in its first step, before anything is checked out |
 
 The caller's job needs `contents: read`. That is the default, so the lines above are enough —
 but a caller that sets `permissions:` at workflow level replaces the default rather than adding
@@ -2457,8 +2513,35 @@ appends its results to the job summary. No resolver and no build backend; the ne
 checkouts, whatever `setup-python` fetches when the runner has no matching interpreter cached,
 and, on a pull request that moves `[ci] ref`, one listing of Keelline's public release tags.
 It is one job because a job is billed by the whole minute: a push costs one runner-minute, not
-one per gate. Its check, in the caller `init` writes, is `check / gates`. The job is cancelled
-after 15 minutes; a custom gate that needs longer belongs in a workflow of your own.
+one per gate. Its check, in the caller `init` writes, is `check / gates`.
+
+**The time limit is bounded, and running out still fails.** The job is cancelled after
+`timeout-minutes`, 15 unless the caller passes another. The caller `init` writes passes none; a
+project whose own gates need longer adds one line under its `with:`:
+
+```yaml
+    with:
+      base: main
+      timeout-minutes: 30
+```
+
+The range is fixed at 5 to 60, in this file and not in yours. 5 is the least a healthy run needs —
+two full-depth checkouts, an interpreter and two gate runs on a runner that has cached nothing —
+and 60 is the most this input lets one run of the job spend of your runner time. The caller file is
+pull-request content, so that line is one a pull request can edit, and this is what it can move
+through the input: this job's limit, anywhere from 5 to 60, in every run the pull request starts —
+one per push, and one per edit of its title, description or base. Through the input it cannot
+remove the limit, raise it past 60, or turn running out into a pass: a job that runs out of time is
+cancelled, and a required check that was cancelled has not passed. Any value the runner does not
+render as a whole number from 5 to 60 fails the job in its first step rather than being quietly
+replaced, and whatever was passed, the limit the job runs under stays inside the range.
+
+**What the input does not bound.** The rest of the caller file is pull-request content as well, and
+runs as the pull request wrote it: a matrix around the call runs this job once per leg, each leg
+with a limit of its own, and a `uses:` pointed at another workflow runs none of this file, under
+whatever limit that workflow sets, up to the platform's own 360 minutes. That is a change to
+`.github/`, and under the settings below a code owner reviews it before it merges — not before it
+runs, since a pull request's run starts before any review.
 
 **Your own gates run on a bare runner.** The second step has the runner image and the
 interpreter `python-version` names, and nothing of your project's: a custom gate that needs
@@ -2571,8 +2654,12 @@ tag there is no commit to name, so `init` reports the workflow skipped with the 
 nothing into `.github/`, and `keelline upgrade` renders it once a release matches. `@v1` is the
 documented opt-in for a project that would rather track the major, written by hand;
 `keelline upgrade` then moves `[keelline] version` alone and leaves the ref and that file as they
-are. `smoke-release.yml` in this repository runs both moving forms on demand, so that they are
-known to work — it is not a form this reference tells you to write.
+are. The alias exists from `1.0.0` on: a `0.x` minor may break what the one before it did, so
+there is no `v0` to track, a `0.x` project pins the commit, and until the first `1.x` release
+`keelline doctor` reports `v1` red, as a tag the public repository does not carry.
+`smoke-release.yml` in this repository runs the `owner/repo/…@ref` form on demand, at `@dev` and
+at the latest release's tag, so that the branch and tag forms are known to work — it is not a form
+this reference tells you to write.
 
 **What proves it.** `tests/test_fixtures.py` and `tests/test_check_workflow.py` run the job's
 three scripts, extracted from this file, against real clones: a `base:` naming a branch the
@@ -2696,7 +2783,7 @@ local = []               # scaffold template ids whose artifact is written under
 [ci]
 mode = "reusable"        # reusable | uvx | none — how this project means to be gated
 ref = ""                 # the commit of the Keelline release the workflow is pinned to;
-                         # `init` writes it; `v1` is the documented mutable opt-in
+                         # `init` writes it; from 1.0.0, `v1` is the mutable opt-in
 gate_branch = "main"     # the branch the workflow gates; left out, [project] base_branch
 
 [gates]
@@ -2744,9 +2831,11 @@ built-in gate's name nor `config`, which names the configuration check. `keellin
 `keelline gate` and [the reusable workflow](#the-reusable-workflow) run exactly the configured
 gates. A custom gate runs only from a command a person or a workflow runs on purpose, never
 from a hook or `doctor`, so running such a command in a clone runs the commands that clone
-configured, as running its test suite would. A project that keeps its roadmap or its
-`AGENTS.md` out of git (`[artifacts] local`) drops `trail` or `docs` from `[gates] builtin`:
-those gates read the committed place, where the file is not.
+configured, as running its test suite would. The `docs` and `trail` gates judge tracked files,
+so a project that keeps its roadmap or its `AGENTS.md` out of git — ignored, never added, or
+written under `[artifacts] local` — drops `trail` or `docs` from `[gates] builtin`: those gates
+read the committed place, where in CI the file is not, and `keelline assess` reports such a gate
+and `keelline adopt promote` never enforces it.
 
 **Enforcement is per gate.** `[keelline] enforced` lists the gates promoted while a project
 adopts Keelline, and `state = "installed"` means every gate the project runs. Both keys are

@@ -99,9 +99,10 @@ IGNORE_ARTIFACT = "gitignore"
 # repository-authored — on the adoption path it is whatever `keelline.toml` already carried —
 # and it lands in a YAML file GitHub executes. A full-length sha and nothing else: it is the
 # only immutable reference a reusable workflow can take (principle 9), it is the only form
-# `doctor`'s `ci-ref` row can resolve against the public repository's tags, and the documented
-# mutable `v1` alias is a file a project writes by hand rather than one `init` renders. The
-# anchor is this constant in the installed package; nothing a repository writes can move it.
+# `doctor`'s `ci-ref` row can resolve against the public repository's tags, and the mutable `v1`
+# alias, documented from 1.0.0 on, is a file a project writes by hand rather than one `init`
+# renders. The anchor is this constant in the installed package; nothing a repository writes can
+# move it.
 CI_REF = re.compile(r"\A[0-9a-f]{40}\Z")
 _SENTINEL = re.compile(r"%%[A-Z_]+%%")
 NO_TAG = (
@@ -140,8 +141,9 @@ NO_REF = (
     "`keelline upgrade` records a released commit there and renders the workflow around it"
 )
 BAD_REF = (
-    "[ci] ref is not a full-length commit sha, so no workflow was rendered around it; the "
-    "mutable `v1` alias is documented and is yours to write by hand"
+    "[ci] ref is not a full-length commit sha, so no workflow was rendered around it; from 1.0.0 "
+    "on, the mutable `v1` alias is documented and is yours to write by hand, and until then a "
+    "0.x project pins the commit"
 )
 # Named and never quoted: the value is repository-authored, so the refusal names the key and
 # the grammar and leaves the bytes where they were.

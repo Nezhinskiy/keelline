@@ -11058,8 +11058,8 @@ reddens = [
 [[mutation]]
 name = "the init skill hands over adopt promote without --builtin after a no"
 file = "skills/init/references/adoption.md"
-before = "     `keelline adopt promote --builtin`: without the flag it runs the commands the user"
-after = "     `keelline adopt promote`: without the flag it runs the commands the user"
+before = "     step 1 it is `keelline adopt promote --builtin`: without the flag it runs the commands the"
+after = "     step 1 it is `keelline adopt promote`: without the flag it runs the commands the"
 reddens = [
   "tests/skills/test_skills.py::test_the_init_skill_keeps_a_no_to_the_clone_s_commands_through_the_whole_adoption",
 ]
@@ -11957,4 +11957,495 @@ after = """        if False:
             raise unread(ForkUnknown.of(code))"""
 reddens = [
   "tests/ledger/test_check.py::test_a_listing_git_refuses_at_a_merge_base_is_a_failure_never_an_empty_ledger",
+]
+
+# The reusable workflow's time limit is the caller's to move, and the caller is pull-request
+# content: the expression reads the caller's value only inside 5 to 60, so the input cannot give
+# one run of this job more than an hour.
+[[mutation]]
+name = "the reusable workflow's time limit reaches ten hours"
+file = ".github/workflows/check.yml"
+before = "    timeout-minutes: ${{ inputs.timeout-minutes >= 5 && inputs.timeout-minutes <= 60 && inputs.timeout-minutes || 15 }}"
+after = "    timeout-minutes: ${{ inputs.timeout-minutes >= 5 && inputs.timeout-minutes <= 600 && inputs.timeout-minutes || 15 }}"
+reddens = [
+  "tests/test_check_workflow.py::test_the_job_s_time_limit_is_an_input_the_expression_holds_inside_its_bounds",
+]
+
+# A value outside the range would otherwise run silently under the default the expression stands
+# in for it: the caller asked for a bound it did not get. The first step refuses it.
+[[mutation]]
+name = "the time limit's bound step admits any value"
+file = ".github/workflows/check.yml"
+before = "            [5-9]|[1-5][0-9]|60) ;;"
+after = "            *) ;;"
+reddens = [
+  "tests/test_check_workflow.py::test_a_time_limit_outside_its_bounds_fails_the_job_before_anything_runs[4]",
+  "tests/test_check_workflow.py::test_a_time_limit_outside_its_bounds_fails_the_job_before_anything_runs[61]",
+  "tests/test_check_workflow.py::test_a_time_limit_outside_its_bounds_fails_the_job_before_anything_runs[7.5]",
+]
+
+[[mutation]]
+name = "the time limit's refusal stops failing the job"
+file = ".github/workflows/check.yml"
+before = """
+              echo "::error::timeout-minutes: must be a whole number of minutes from 5 to 60"
+              exit 1
+"""
+after = """
+              echo "::error::timeout-minutes: must be a whole number of minutes from 5 to 60"
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_a_time_limit_outside_its_bounds_fails_the_job_before_anything_runs[61]",
+]
+
+# The `docs` and `trail` gates judge tracked files. A file those gates read here that git does not
+# track is absent in CI, where the gate's own finding fails every pull request, so a verdict taken
+# over it here is not CI's, and a promotion earned on it enforces a gate that cannot pass there.
+[[mutation]]
+name = "every file a gate reads reads as tracked"
+file = "src/keelline/assess/tracked.py"
+before = "    return relative in listing.names or relative in listing.dirs"
+after = "    return True"
+reddens = [
+  "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[agents-md]",
+  "tests/assess/test_tracked.py::test_an_ignored_file_is_untracked_too",
+  "tests/assess/test_tracked.py::test_adopt_promote_never_enforces_a_gate_that_reads_an_untracked_file",
+]
+
+[[mutation]]
+name = "the trail gate's trail.toml is not asked about"
+file = "src/keelline/docs/trail.py"
+before = "    return [contained(root, config.paths.roadmap), trail_path(root, config)]"
+after = "    return [contained(root, config.paths.roadmap)]"
+reddens = [
+  "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[trail-toml]",
+]
+
+# `check_links` asks whether a target exists, and CI answers for the tracked tree: a link to a file
+# git does not track passes here and is `missing-link` there.
+[[mutation]]
+name = "the docs gate's link targets are not asked about"
+file = "src/keelline/docs/hygiene.py"
+before = "    return [contained(root, config.paths.agents_md), *linked]"
+after = "    return [contained(root, config.paths.agents_md)]"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_file_the_always_loaded_document_links_to_is_read_by_the_docs_gate",
+  "tests/assess/test_tracked.py::test_a_linked_roadmap_git_does_not_track_is_read_by_both_gates",
+]
+
+[[mutation]]
+name = "the tracked check asks git outside a work tree"
+file = "src/keelline/assess/tracked.py"
+before = """    if not in_work_tree(root):
+        return ()"""
+after = """    if False:
+        return ()"""
+reddens = [
+  "tests/assess/test_tracked.py::test_outside_a_git_work_tree_the_files_are_judged_as_they_are",
+]
+
+# Inside a work tree, a listing git did not give says nothing about what CI will see.
+[[mutation]]
+name = "a git that gives no answer reads as tracking every file"
+file = "src/keelline/assess/tracked.py"
+before = """        if tracked is None:
+            result.append(Unseen(name, tuple(files), git_answered=False))
+            continue"""
+after = """        if tracked is None:
+            continue"""
+reddens = [
+  "tests/assess/test_tracked.py::test_a_git_that_gives_no_answer_is_never_read_as_tracked",
+]
+
+[[mutation]]
+name = "assess judges a gate over files CI cannot see as CI would"
+file = "src/keelline/assess/assessment.py"
+before = "    results, unseen = as_ci_sees(root, config, run_gates(GateContext(root, config, base), names))"
+after = "    results, unseen = run_gates(GateContext(root, config, base), names), ()"
+reddens = [
+  "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[agents-md]",
+]
+
+[[mutation]]
+name = "adopt promote enforces a gate over files CI cannot see"
+file = "src/keelline/assess/state.py"
+before = "    results, unseen = as_ci_sees(root, config, ran)"
+after = "    results, unseen = ran, ()"
+reddens = [
+  "tests/assess/test_tracked.py::test_adopt_promote_never_enforces_a_gate_that_reads_an_untracked_file",
+]
+
+[[mutation]]
+name = "adopt promote's note on an untracked file is not printed"
+file = "src/keelline/assess/commands.py"
+before = "                lines.append(UNTRACKED_NOTE.format(gate=unseen.gate, files=files, remedy=remedy))"
+after = "                pass"
+reddens = [
+  "tests/assess/test_tracked.py::test_adopt_promote_s_refusal_says_to_track_the_file_and_names_it",
+]
+
+# A link target is any name the document wrote: it is named only inside the path grammar.
+[[mutation]]
+name = "an untracked item names a link target outside the path grammar"
+file = "src/keelline/assess/tracked.py"
+before = "                [printable(f, withheld) for f in files],"
+after = "                list(files),"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_link_target_outside_the_path_grammar_is_withheld_where_it_is_named",
+]
+
+[[mutation]]
+name = "adopt promote's note names a link target outside the path grammar"
+file = "src/keelline/assess/commands.py"
+before = "                files = listed([printable(name) for name in unseen.files])"
+after = "                files = listed(list(unseen.files))"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_link_target_outside_the_path_grammar_is_withheld_where_it_is_named",
+]
+
+# RELEASING.md's last step dispatches the release smoke at every release, and a job naming a tag
+# that does not exist fails the whole dispatch before any job runs: during `0.x` that is `v1`.
+[[mutation]]
+name = "the release smoke calls the alias a 0.x release does not have"
+file = ".github/workflows/smoke-release.yml"
+before = "    uses: Nezhinskiy/keelline/.github/workflows/check.yml@v0.1.0"
+after = "    uses: Nezhinskiy/keelline/.github/workflows/check.yml@v1"
+reddens = [
+  "tests/test_fixtures.py::test_the_release_smoke_calls_the_release_this_tree_carries",
+]
+
+# git tracks a symlink as the link alone, and CI checks it out dangling when what it leads to is
+# untracked or outside the repository: a path read through a tracked symlink is judged by where
+# the link leads, walked one component at a time as the filesystem walks it.
+[[mutation]]
+name = "a symlinked link target is judged by the link alone"
+file = "src/keelline/assess/tracked.py"
+before = "        if not link.is_symlink():"
+after = "        if True:"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[to-an-ignored-file]",
+  "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[through-an-ignored-link]",
+]
+
+# A committed directory symlink on the way to a file is written by every checkout, and the file
+# behind it is tracked at its real path: CI reads through it, so the walk follows it too.
+[[mutation]]
+name = "only the last component of a path is asked whether it is a symlink"
+file = "src/keelline/assess/tracked.py"
+before = "        if not link.is_symlink():"
+after = "        if not link.is_symlink() or todo:"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_committed_symlinked_directory_on_a_link_s_way_is_followed[to-a-tracked-directory]",
+  "tests/assess/test_tracked.py::test_a_committed_symlinked_directory_on_a_link_s_way_is_followed[to-an-ignored-directory]",
+]
+
+# Every exit of the walk but the last is "a checkout would not have this": each must name the
+# path, never answer "tracked".
+[[mutation]]
+name = "a climb above the work tree's top reads as one a checkout has"
+file = "src/keelline/assess/tracked.py"
+before = "                return leads  # a climb above the work tree's top: no checkout has it"
+after = "                return None"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[out-of-the-project]",
+  "tests/assess/test_tracked.py::test_a_symlink_below_the_top_that_no_checkout_has_names_the_link[out-of-the-repository]",
+]
+
+[[mutation]]
+name = "the first untracked step on a path reads as tracked"
+file = "src/keelline/assess/tracked.py"
+before = "            return named  # the first untracked step"
+after = "            return None"
+reddens = [
+  "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[agents-md]",
+  "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[to-an-ignored-file]",
+]
+
+# The cap is the backstop for a walk that ever follows more links than the filesystem did: one
+# that runs out of hops has not reached a tracked file, so it may not answer that it has.
+[[mutation]]
+name = "a link walk that runs out of hops answers tracked"
+file = "src/keelline/assess/tracked.py"
+before = "            return named  # a chain longer than the walk follows"
+after = "            return None"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_link_chain_longer_than_the_cap_is_named_where_the_walk_stopped",
+]
+
+[[mutation]]
+name = "a link to an absolute target reads as one a checkout has"
+file = "src/keelline/assess/tracked.py"
+before = "            return leads  # a target that is absolute: no other checkout has it"
+after = "            return None"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[absolute]",
+]
+
+[[mutation]]
+name = "a walk that reaches a tracked file names it all the same"
+file = "src/keelline/assess/tracked.py"
+before = """            named = step[len(prefix) :]
+    return None"""
+after = """            named = step[len(prefix) :]
+    return relative"""
+reddens = [
+  "tests/assess/test_tracked.py::test_a_tree_whose_every_read_file_is_tracked_is_judged_as_it_is",
+  "tests/assess/test_tracked.py::test_a_committed_symlinked_directory_on_a_link_s_way_is_followed[to-a-tracked-directory]",
+]
+
+# A link's target is read from the link's own directory, as the filesystem reads it.
+[[mutation]]
+name = "a symlink's target is followed from the link, not from its directory"
+file = "src/keelline/assess/tracked.py"
+before = """        done.pop()
+        todo.extendleft(reversed(_parts(target)))"""
+after = """        todo.extendleft(reversed(_parts(target)))"""
+reddens = [
+  "tests/assess/test_tracked.py::test_a_symlinked_link_target_that_leads_to_a_tracked_file_is_judged",
+]
+
+# `..` climbs out of a symlinked directory from where the directory leads, not from where the link
+# sits: collapsed as text, `sub/../elsewhere.md` is a tracked file the filesystem never reads.
+[[mutation]]
+name = "a link's target is collapsed as text before it is walked"
+file = "src/keelline/assess/tracked.py"
+before = "        todo.extendleft(reversed(_parts(target)))"
+after = "        todo.extendleft(reversed(_parts(os.path.normpath(target))))"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_climb_out_of_a_symlinked_directory_is_walked_as_the_filesystem_walks_it[elsewhere]",
+]
+
+[[mutation]]
+name = "a `..` in a link's target does not step back out of the directory reached"
+file = "src/keelline/assess/tracked.py"
+before = """            done.pop()
+            continue"""
+after = """            continue"""
+reddens = [
+  "tests/assess/test_tracked.py::test_a_symlink_to_a_tracked_file_elsewhere_in_the_repository_is_judged",
+]
+
+# What is named is the file to commit: the untracked file a link leads to, and not the link.
+[[mutation]]
+name = "the untracked file a link leads to is not named, only the link"
+file = "src/keelline/assess/tracked.py"
+before = "            named = step[len(prefix) :]"
+after = "            pass"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[to-an-ignored-file]",
+]
+
+# A step whose path climbs is named by the link that led there: `sub/../notes.md` names nothing a
+# person can commit.
+[[mutation]]
+name = "a step whose path climbs is named by its own path"
+file = "src/keelline/assess/tracked.py"
+before = "        if os.pardir not in todo and step.startswith(prefix):"
+after = "        if step.startswith(prefix):"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_climb_out_of_a_symlinked_directory_is_walked_as_the_filesystem_walks_it[itself]",
+]
+
+# What is printed is inside the project: a step beside it is named by the last link inside it.
+[[mutation]]
+name = "a step outside the project is named by its own path"
+file = "src/keelline/assess/tracked.py"
+before = "        if os.pardir not in todo and step.startswith(prefix):"
+after = "        if os.pardir not in todo:"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_symlink_below_the_top_that_no_checkout_has_names_the_link[on-through-a-link-beside-the-project]",
+]
+
+# A tracked directory is one git lists a file under; the walk asks every directory on its way.
+[[mutation]]
+name = "a directory with a tracked file under it reads as untracked"
+file = "src/keelline/assess/tracked.py"
+before = "    return relative in listing.names or relative in listing.dirs"
+after = "    return relative in listing.names"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_tree_whose_every_read_file_is_tracked_is_judged_as_it_is",
+]
+
+# Every caller `init` writes passes no time limit, so only the smoke's own call of the reusable
+# workflow shows the platform taking a caller's value, through the expression, as the job's bound.
+[[mutation]]
+name = "no real run passes the reusable workflow a time limit of its own"
+file = ".github/workflows/smoke.yml"
+before = "      timeout-minutes: 25"
+after = "      timeout-minutes: 15"
+reddens = [
+  "tests/test_check_workflow.py::test_a_real_run_passes_the_time_limit_a_value_of_its_own",
+]
+
+# A project may sit below its repository's top, and a symlink in it may name a tracked file beside
+# it, which every checkout has: a climb is judged against the work tree's top, not the project.
+[[mutation]]
+name = "a climb out of the project reads as a climb out of the repository"
+file = "src/keelline/assess/tracked.py"
+before = "            if not done:"
+after = "            if len(done) <= prefix.count(\"/\"):"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_symlink_to_a_tracked_file_elsewhere_in_the_repository_is_judged",
+]
+
+# What a gate reads by path is on its record, next to the gate function it must agree with, and
+# the tracked-files check knows no gate by name: a gate whose record declares nothing is not asked
+# about, whatever it reads.
+[[mutation]]
+name = "the docs gate's record declares no files it reads"
+file = "src/keelline/assess/gates.py"
+before = "        docs_reads,"
+after = "        None,"
+reddens = [
+  "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[agents-md]",
+]
+
+[[mutation]]
+name = "the trail gate's record declares no files it reads"
+file = "src/keelline/assess/gates.py"
+before = "        trail_reads,"
+after = "        None,"
+reddens = [
+  "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[roadmap]",
+  "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[trail-toml]",
+]
+
+# A name that differs from the tracked one only in case is the same file on a filesystem that folds
+# case and no file in a Linux checkout. The file is committed, so the remedy is to spell the name
+# as git does, and the test holds on both filesystems: where case is kept apart, a second name for
+# the same file stands in for the fold.
+[[mutation]]
+name = "a name git tracks in another case reads as untracked"
+file = "src/keelline/assess/tracked.py"
+before = "    return _same_file(listing.top / here, listing.top / spelled)"
+after = "    return False"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_link_that_differs_from_the_tracked_file_only_in_case_says_so",
+  "tests/assess/test_tracked.py::test_adopt_promote_s_note_on_a_case_difference_says_to_spell_it_as_git_does",
+]
+
+[[mutation]]
+name = "a name git tracks in another case is reported as untracked as well"
+file = "src/keelline/assess/tracked.py"
+before = "            untracked = tuple(n for n in missing if n not in cased)"
+after = "            untracked = missing"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_link_that_differs_from_the_tracked_file_only_in_case_says_so",
+]
+
+[[mutation]]
+name = "adopt promote's note on a case difference is not printed"
+file = "src/keelline/assess/commands.py"
+before = "                lines.append(CASE_NOTE.format(gate=unseen.gate, files=cased, remedy=CASE_REMEDY))"
+after = "                pass"
+reddens = [
+  "tests/assess/test_tracked.py::test_adopt_promote_s_note_on_a_case_difference_says_to_spell_it_as_git_does",
+]
+
+[[mutation]]
+name = "adopt promote's --json leaves out the files git tracks in another case"
+file = "src/keelline/assess/commands.py"
+before = '        "case_differs": {u.gate: list(u.case_differs) for u in transition.unseen if u.case_differs},'
+after = '        "case_differs": {},'
+reddens = [
+  "tests/assess/test_tracked.py::test_adopt_promote_s_note_on_a_case_difference_says_to_spell_it_as_git_does",
+]
+
+# `adopt promote`'s own text, not only its transition: the note is the no-answer item's remedy.
+[[mutation]]
+name = "adopt promote's note on a git that gives no answer is not printed"
+file = "src/keelline/assess/commands.py"
+before = "                lines.append(UNASKED_NOTE.format(gate=unseen.gate, remedy=UNASKED_REMEDY))"
+after = "                pass"
+reddens = [
+  "tests/assess/test_tracked.py::test_adopt_promote_s_note_on_a_git_that_gives_no_answer_says_how_to_see_why",
+]
+
+# A listing git refused after naming the top says nothing about what it tracks: read as empty, it
+# would make every file untracked with a reason git never gave.
+[[mutation]]
+name = "a listing git refuses is read as an empty one"
+file = "src/keelline/assess/tracked.py"
+before = """    if code != 0:
+        return None
+    names = frozenset("""
+after = """    names = frozenset("""
+reddens = [
+  "tests/assess/test_tracked.py::test_a_listing_git_refuses_after_naming_the_top_is_no_answer[--cached]",
+]
+
+# A gate can answer without reaching a path it reads (the trail gate stops at a missing roadmap),
+# and the refusal of that path must leave the gate to its result, never end the run.
+[[mutation]]
+name = "a path a gate answered without reaching ends the run"
+file = "src/keelline/assess/tracked.py"
+before = """            # That result already fails, so nothing here could make it pass.
+            continue"""
+after = """            # That result already fails, so nothing here could make it pass.
+            raise"""
+reddens = [
+  "tests/assess/test_tracked.py::test_a_path_a_gate_answered_without_reaching_is_left_to_its_result",
+]
+
+[[mutation]]
+name = "a name that reaches no file reads as the same file as another"
+file = "src/keelline/assess/tracked.py"
+before = """    except OSError:
+        return False
+
+
+def _case_differs("""
+after = """    except OSError:
+        return True
+
+
+def _case_differs("""
+reddens = [
+  "tests/assess/test_tracked.py::test_a_name_that_reaches_no_file_is_never_the_same_file_as_another",
+]
+
+# A link is followed as it is on disk, and a checkout writes it as git has it: a link retargeted on
+# disk and not staged may lead to a tracked file here and to nothing in CI.
+[[mutation]]
+name = "a link changed on disk is followed as it is on disk"
+file = "src/keelline/assess/tracked.py"
+before = "            return named  # a link changed on disk: a checkout writes the one git has"
+after = "            pass"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_link_retargeted_on_disk_and_not_staged_is_named[directory-link]",
+  "tests/assess/test_tracked.py::test_a_link_retargeted_on_disk_and_not_staged_is_named[file-link]",
+]
+
+[[mutation]]
+name = "a listing of changed files git refuses is read as an empty one"
+file = "src/keelline/assess/tracked.py"
+before = """    if code != 0:
+        return None
+    changed = frozenset("""
+after = """    changed = frozenset("""
+reddens = [
+  "tests/assess/test_tracked.py::test_a_listing_git_refuses_after_naming_the_top_is_no_answer[--modified]",
+]
+
+# What to fix is the link that leads out of the repository, so it is named, not the path through
+# it; and only a link inside the project is named, never one beside it.
+[[mutation]]
+name = "a link that leads out is named by the path through it"
+file = "src/keelline/assess/tracked.py"
+before = "            leads = here[len(prefix) :]"
+after = "            pass"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_directory_link_that_leads_out_of_the_repository_is_named_by_the_link[climbs-out]",
+  "tests/assess/test_tracked.py::test_a_directory_link_that_leads_out_of_the_repository_is_named_by_the_link[absolute]",
+]
+
+[[mutation]]
+name = "a link outside the project is named as the link that led out"
+file = "src/keelline/assess/tracked.py"
+before = """        if here.startswith(prefix):
+            leads = here[len(prefix) :]"""
+after = """        if True:
+            leads = here[len(prefix) :]"""
+reddens = [
+  "tests/assess/test_tracked.py::test_a_symlink_below_the_top_that_no_checkout_has_names_the_link[out-through-a-link-beside-the-project]",
 ]

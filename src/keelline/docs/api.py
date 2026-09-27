@@ -8,16 +8,18 @@ whole area — and with it the configuration layer — into every `discover()` c
 
 **Outside this area, `project` imports `trail_target` (the paragraphs on `trail_path` and
 `trail_target` say why), `keelline.assess.gates` imports the three gate functions (the last
-paragraph) and `keelline.assess.state` imports `lint` and `declared_state`, to check an adoption
-plan; nothing imports any other name on this list**, measured over `src/`, `scripts/` and
+paragraph), `keelline.assess.state` imports `lint` and `declared_state`, to check an adoption
+plan, and `keelline.assess.gates` records what the `docs` and `trail` gates read by path through
+`docs_reads` and `trail_reads`; nothing imports any other name on this list**, measured over
+`src/`, `scripts/` and
 `tests/`: this area's own tests reach `keelline.docs.plans`, `keelline.docs.hygiene`,
 `keelline.docs.graph` and `keelline.docs.trail` directly, and every other area runs the commands.
 So every other name below is here on an argument rather than on a caller, and the argument is
 written beside it — a surface that survives a trim with no explanation is what made the trim
 necessary.
 
-The five besides `trail_target` and the three gate functions are the four checks this area
-*is*, one call each, and the one record one of them returns:
+The five besides `trail_target`, the gate functions and what two of them read are the four
+checks this area *is*, one call each, and the one record one of them returns:
 
 - `check_budgets`, `check_links` and `check_memory_graph` each answer one question about the
   documentation tree and return `Finding`s from `keelline.findings`, the leaf three areas
@@ -52,6 +54,12 @@ would refuse whenever that place passed through a symlink, and it stays in
 declares no state: a first listing would record it as `delivered` without a word, and the row's
 spelling and the trail's reading are this area's.
 
+**`docs_reads` and `trail_reads`, for `keelline assess` and `keelline adopt promote`**, which ask
+git whether each file those gates read by path is tracked, since CI sees only those. Each lists
+what its gate reads, beside the gate function it must agree with: the link targets are read by
+this area's link reader, so the gate and the question cannot disagree about which files a link
+names. `keelline.assess.gates` holds them on the gates' records.
+
 **Three gate functions, for `keelline assess`.** `docs_gate`, `plan_gate` and
 `trail_gate` are each `(root, config, base) -> list[Finding]`, one gate's whole composition.
 `keelline assess` runs them as values, and this area's own commands answer with the same
@@ -60,9 +68,9 @@ wraps (`plan check` calls `lint`), so a command and its gate cannot drift apart.
 """
 
 from keelline.docs.graph import check_memory_graph
-from keelline.docs.hygiene import check_budgets, check_links, docs_gate
+from keelline.docs.hygiene import check_budgets, check_links, docs_gate, docs_reads
 from keelline.docs.plans import Lint, lint, plan_gate
-from keelline.docs.trail import declared_state, trail_gate, trail_target
+from keelline.docs.trail import declared_state, trail_gate, trail_reads, trail_target
 
 __all__ = [
     "Lint",
@@ -71,8 +79,10 @@ __all__ = [
     "check_memory_graph",
     "declared_state",
     "docs_gate",
+    "docs_reads",
     "lint",
     "plan_gate",
     "trail_gate",
+    "trail_reads",
     "trail_target",
 ]

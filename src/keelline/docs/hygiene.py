@@ -158,11 +158,13 @@ def check_budgets(root: Path, config: Config) -> list[Finding]:
     return found
 
 
-def check_links(root: Path, config: Config) -> list[Finding]:
+def _links(root: Path, config: Config) -> list[tuple[str, Path]]:
+    """Each local link target in the always-loaded document, with where it lands inside the
+    root; a target that lands outside it is left out."""
     agents_path = contained(root, config.paths.agents_md)
     if not agents_path.is_file():
         return []
-    found: list[Finding] = []
+    found: list[tuple[str, Path]] = []
     agents = read_document(agents_path, config.paths.agents_md)
     # Fenced code is an example, not a claim — the same rule every other reader here applies.
     for target in local_markdown_targets(blank_fences(agents)):
@@ -170,9 +172,30 @@ def check_links(root: Path, config: Config) -> list[Finding]:
         # out of `docs/` into `src/` is inside the project, while `../../../etc/hosts` is not
         # and is never asked of the filesystem — that answer would be about this disk.
         landed = resolves_within(root, target, base=agents_path.parent)
-        if landed is not None and not landed.exists():
-            found.append(Finding("missing-link", config.paths.agents_md, None, target))
+        if landed is not None:
+            found.append((target, landed))
     return found
+
+
+def check_links(root: Path, config: Config) -> list[Finding]:
+    return [
+        Finding("missing-link", config.paths.agents_md, None, target)
+        for target, landed in _links(root, config)
+        if not landed.exists()
+    ]
+
+
+def docs_reads(root: Path, config: Config) -> list[Path]:
+    """The files the `docs` gate reads by path, each once, there or not: the always-loaded
+    document and every file or directory its links name, as `check_links` reads them. A CI
+    checkout that lacks one fails the gate (`missing-document`, `missing-link`).
+
+    The roadmap, which the budgets read for its prose, is not among them: it is read only when
+    it is there, and an absent one adds no finding, so a roadmap a checkout lacks can only make a
+    verdict taken here stricter than CI's.
+    """
+    linked = dict.fromkeys(landed for _, landed in _links(root, config))
+    return [contained(root, config.paths.agents_md), *linked]
 
 
 def docs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:

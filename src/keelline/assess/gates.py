@@ -43,7 +43,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from keelline.docs.api import docs_gate, plan_gate, trail_gate
+from keelline.docs.api import docs_gate, docs_reads, plan_gate, trail_gate, trail_reads
 from keelline.errors import KeellineError
 from keelline.findings import Finding
 from keelline.guards.api import commit_gate
@@ -104,6 +104,10 @@ class Gate:
     remedy: str
     command: str  # what a person runs for this gate, with BASE where the base goes
     run: Callable[[Path, Config, str], list[Finding]]
+    # The files the gate reads by path, there or not, when an absent one changes its verdict: a
+    # checkout that lacks one judges otherwise (`keelline.assess.tracked`). `None` for a gate that
+    # reads none that way: one that reads git, or a custom gate, whose reads Keelline cannot know.
+    reads: Callable[[Path, Config], list[Path]] | None = None
 
 
 BUILTIN: tuple[Gate, ...] = (
@@ -111,9 +115,11 @@ BUILTIN: tuple[Gate, ...] = (
         "docs",
         None,
         "run `keelline docs check` and fix each finding; a checked document kept out of git "
-        "([artifacts] local) drops docs from [gates] builtin instead",
+        "(ignored, never added, or under [artifacts] local) drops docs from [gates] builtin "
+        "instead",
         "docs check",
         docs_gate,
+        docs_reads,
     ),
     Gate(
         "bugs",
@@ -140,9 +146,11 @@ BUILTIN: tuple[Gate, ...] = (
         "trail",
         None,
         "run `keelline docs trail` and commit the roadmap it rewrites; a roadmap kept out of "
-        "git ([artifacts] local) drops trail from [gates] builtin instead",
+        "git (ignored, never added, or under [artifacts] local) drops trail from [gates] builtin "
+        "instead",
         "docs trail --check",
         trail_gate,
+        trail_reads,
     ),
 )
 

@@ -562,6 +562,13 @@ def test_the_legitimate_user_runs_every_command_to_the_end(
         (root / CONFIG_FILE).write_text(case.document(with_paths=True))
     _surround(root, case)
     for command in case.commands:
+        if command == "adopt-promote":
+            # The `docs` gate judges tracked files, since CI checks out nothing else, so the
+            # person stages the document `init` wrote before promoting the gate that reads it, as
+            # the adoption skill asks; untracked, `promote` would rightly leave it advisory. Before
+            # the snapshot below, so the objects this `git add` writes are not the command's.
+            agents_md = load(root, machine=tmp_path / "absent.toml").paths.agents_md
+            git(root, "add", "--", agents_md)
         hidden = _hidden(root, case, command)
         git_before = _git_files(root)
         refused = _outcome(command, root, tmp_path, case.given)
