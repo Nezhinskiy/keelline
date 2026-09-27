@@ -59,7 +59,7 @@ Three things hold everywhere:
 - [`keelline assess [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#keelline-assess---base-ref---builtin---root-path---machine-path)
 - [`keelline gate [--only NAME]… [--base REF] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`](#keelline-gate---only-name---base-ref---builtin----custom---workflow-sha-sha---annotate---summary-file---root-path---machine-path)
 - [`keelline adopt begin PLAN [--root PATH] [--machine PATH]`](#keelline-adopt-begin-plan---root-path---machine-path)
-- [`keelline adopt promote [GATE …] [--base REF] [--root PATH] [--machine PATH]`](#keelline-adopt-promote-gate----base-ref---root-path---machine-path)
+- [`keelline adopt promote [GATE …] [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#keelline-adopt-promote-gate----base-ref---builtin---root-path---machine-path)
 - [`keelline memory refs`](#keelline-memory-refs)
 - [`keelline init --yes [--dry-run] [--name NAME] [--base-branch BRANCH] [--agent NAME …] [--profile NAME] [--memory-mode MODE] [--local ID …] [--no-ci] [--root PATH] [--machine PATH]`](#keelline-init---yes---dry-run---name-name---base-branch-branch---agent-name----profile-name---memory-mode-mode---local-id----no-ci---root-path---machine-path)
 - [`keelline init --questions [--root PATH] [--machine PATH]`](#keelline-init---questions---root-path---machine-path)
@@ -969,7 +969,7 @@ file. `--json` carries, on exit 0, `before` and `after`, the state on each side.
 | 1 | the plan has findings under `plan check`, or its trail row declares no state, and nothing was written; or `keelline.toml` is missing or does not load |
 | 2 | `PLAN` is not an adoption plan, there is no file at the path given (named without the path), or `keelline.toml` is refused |
 
-## `keelline adopt promote [GATE …] [--base REF] [--root PATH] [--machine PATH]`
+## `keelline adopt promote [GATE …] [--base REF] [--builtin] [--root PATH] [--machine PATH]`
 
 Runs gates strictly on the tree as it is, and enforces those that pass by adding them to
 `[keelline] enforced`. With no `GATE`, it runs every configured gate that does not enforce yet,
@@ -1001,11 +1001,18 @@ a `note:` saying to land it on the base branch first, because `keelline gate` wo
 in the pull request that carries the promotion. A base that cannot be read, or has no
 `keelline.toml`, has no command, so every custom gate waits.
 
+`--builtin` runs the built-in gates and no custom gate, as `keelline assess --builtin` does: for
+a clone whose commands you have not agreed to run, where the base is the clone author's and its
+having a command is no brake. A custom gate is promoted only by a run that ran its command, so
+each one is not run and not promoted, is named `(not run, as --builtin asked)` with a `note:`
+saying that without `--builtin` the command runs them, and, named beside other gates, holds them
+back as a gate not on the base does.
+
 `--json` carries, on exit 0 or 1, `before`, `after`, `gates` (a gate's row for each gate it ran,
 as `keelline assess` defines it, `enforcing` when this run promoted it), `promoted`, `failing`,
 which maps each gate that ran and did not pass to its finding count, `unanswered`, the gates that
-could not run, and `not_on_base`, the custom gates not run because the base does not have their
-command. When a gate stays advisory, the summary ends with a line saying where its findings are
+could not run, `not_on_base`, the custom gates not run because the base does not have their
+command, and `skipped`, the custom gates `--builtin` did not run. When a gate stays advisory, the summary ends with a line saying where its findings are
 (`keelline assess --json`, or the gate's own command), and, when `plan`, `commit` or `bugs`
 could not run and the base is not in the checkout, a `note:` saying so and naming `--base` with
 the project's base branch, since a gate that could not run for want of the base says nothing
@@ -1020,7 +1027,7 @@ list, or `keelline.toml` no longer loads.
 | Exit | Meaning |
 |---|---|
 | 0 | every gate it ran passed and now enforces, or an adopting project whose every gate enforces was installed |
-| 1 | a gate failed, could not run, or is a custom gate whose command the base does not have: with names, nothing was written; without, the others were enforced; or `keelline.toml` is missing or does not load |
+| 1 | a gate failed, could not run, is a custom gate whose command the base does not have, or is a custom gate `--builtin` did not run: with names, nothing was written; without, the others were enforced; or `keelline.toml` is missing or does not load |
 | 2 | a name that is not a configured gate, a named gate that already enforces, nothing left to promote, a project that configures no gate, a `--base` outside its grammar (from the parser), a manifest that cannot be read, or `keelline.toml` refused |
 
 ## `keelline memory refs`

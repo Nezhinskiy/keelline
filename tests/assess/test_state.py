@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from keelline.assess.commands import BASE_NOT_THERE, WAITING
+from keelline.assess.commands import BASE_NOT_THERE, NOT_RUN, WAITING
 from keelline.assess.report import FINDINGS_ELSEWHERE
 from keelline.assess.state import NO_SUCH_PLAN, begin, promote
 from keelline.config.loader import CONFIG_FILE, load, preset_defaults
@@ -536,6 +536,61 @@ def test_a_custom_gate_the_base_runs_another_command_for_waits_and_the_command_s
     assert not (root / MARKER).exists()
     code, out, _ = cli(root, tmp_path, "adopt", "promote", MARKER, "--base", base, "--json")
     assert json.loads(out)["not_on_base"] == [MARKER]
+
+
+def test_builtin_runs_no_custom_gate_and_promotes_the_built_ins_alone(tmp_path: Path) -> None:
+    # In a clone, `origin/<base>` is the clone author's, so a base that has a custom gate's
+    # command is no brake: after the person declined the clone's commands, `adopt promote` ran
+    # them anyway. `builtin` runs none, and a custom gate it did not run is never promoted: named
+    # beside a built-in it holds the whole promotion back, and with no names every built-in that
+    # passes is promoted and the custom gate stays advisory. Mutations (oracle): "adopt promote
+    # --builtin still runs the custom gates" -> the marker is written and the gate promoted;
+    # "a named custom gate --builtin did not run holds nothing back" -> `docs` is written alone.
+    root, _ = _project(tmp_path)
+    base = _with_marker_gate(root)
+    before = _document(root)
+    transition = promote(
+        root,
+        _config(root, tmp_path),
+        ["docs", MARKER],
+        base=base,
+        machine=tmp_path / "m.toml",
+        builtin=True,
+    )
+    assert (transition.promoted, transition.skipped, transition.waiting) == ((), (MARKER,), ())
+    assert not (root / MARKER).exists()
+    assert _document(root) == before
+    transition = promote(
+        root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml", builtin=True
+    )
+    assert not (root / MARKER).exists()
+    assert (transition.promoted, transition.skipped) == (BUILTIN_GATES, (MARKER,))
+    assert [r.name for r in transition.results] == list(BUILTIN_GATES)
+    loaded = _config(root, tmp_path).keelline
+    assert (loaded.state, loaded.enforced) == ("adopting", BUILTIN_GATES)
+
+
+def test_adopt_promote_builtin_names_the_custom_gates_it_did_not_run(tmp_path: Path) -> None:
+    # The command says which gates it left out and why, lists them apart in `--json`, and exits
+    # 1, since they stay advisory; the note says what running them takes, so the person who
+    # declined decides again rather than the command. Mutation (advisory): the `skipped` names
+    # left out of the advisory list -> the command exits 0 and reddens.
+    root, _ = _project(tmp_path)
+    base = _with_marker_gate(root)
+    code, out, err = cli(root, tmp_path, "adopt", "promote", "--builtin", "--base", base)
+    assert code == 1, err
+    assert out.splitlines() == [
+        f"promoted: {', '.join(BUILTIN_GATES)}; still advisory: {MARKER} (not run, as --builtin "
+        "asked); state adopting",
+        NOT_RUN,
+        FINDINGS_ELSEWHERE,
+    ]
+    assert not (root / MARKER).exists()
+    code, out, _ = cli(root, tmp_path, "adopt", "promote", "--builtin", "--base", base, "--json")
+    assert code == 1
+    printed = json.loads(out)
+    assert (printed["skipped"], printed["not_on_base"], printed["promoted"]) == ([MARKER], [], [])
+    assert not (root / MARKER).exists()
 
 
 def test_adopt_begin_json_carries_the_state_on_each_side_and_nothing_else(tmp_path: Path) -> None:

@@ -64,6 +64,10 @@ PLAN_HELP = (
     "a relative path is read from the current directory"
 )
 PROMOTE_HELP = "enforce the named gates if all pass now; with none named, each gate that passes"
+PROMOTE_BUILTIN_HELP = (
+    "the built-in gates only: no command from [gates.custom] runs, so no custom gate is "
+    "promoted, for a repository whose commands you have not agreed to run"
+)
 GATES_HELP = "configured gate names (default: every gate not yet enforcing)"
 BEGUN = (
     "adopting: the plan passes plan check, and every gate stays advisory until "
@@ -82,6 +86,10 @@ BASE_READERS = frozenset({"plan", "commit", "bugs"})
 WAITING = (
     "note: a custom gate is promoted once the base's keelline.toml has its command, since "
     "`keelline gate` runs it only then; land it on the base branch first, then promote it"
+)
+NOT_RUN = (
+    "note: --builtin ran no custom gate, and a custom gate is promoted only by a run that runs "
+    "its command; without --builtin, adopt promote runs the commands [gates.custom] names"
 )
 ONLY_UNKNOWN = (
     "--only names {count} gate(s) the configuration this run uses does not have; `config` is "
@@ -243,6 +251,7 @@ def _transition(transition: Transition) -> dict[str, object]:
         "failing": transition.failing,
         "unanswered": list(transition.unanswered),
         "not_on_base": list(transition.waiting),
+        "skipped": list(transition.skipped),
     }
 
 
@@ -265,10 +274,11 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
     root, config = root_and_config(args)
     base = args.base or local_base(config)
     machine = Path(args.machine) if args.machine else None
-    transition = promote(root, config, args.gates, base=base, machine=machine)
+    transition = promote(root, config, args.gates, base=base, machine=machine, builtin=args.builtin)
     # Gate names only: the loader holds each to a grammar, and a count is Keelline's own.
     advisory = [f"{r.name} ({findings_text(r)})" for r in transition.results if r.failing]
     advisory += [f"{name} (not on the base)" for name in transition.waiting]
+    advisory += [f"{name} (not run, as --builtin asked)" for name in transition.skipped]
     parts = [f"promoted: {', '.join(transition.promoted) or 'nothing'}"]
     if advisory:
         parts.append(f"still advisory: {', '.join(advisory)}")
@@ -279,6 +289,8 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
             lines.append(BASE_NOT_THERE.format(branch=config.project.base_branch))
         if transition.waiting:
             lines.append(WAITING)
+        if transition.skipped:
+            lines.append(NOT_RUN)
         lines.append(FINDINGS_ELSEWHERE)
     data = _transition(transition)
     return Result("\n".join(lines), data, exit_code=1 if advisory else 0)
@@ -320,4 +332,5 @@ def register(groups: SubParsers) -> None:
     promotion = common_flags(adopt_sub.add_parser("promote", help=PROMOTE_HELP))
     promotion.add_argument("gates", nargs="*", metavar="GATE", help=GATES_HELP)
     promotion.add_argument("--base", default=None, type=base_ref, help=BASE_REF_HELP)
+    promotion.add_argument("--builtin", action="store_true", help=PROMOTE_BUILTIN_HELP)
     promotion.set_defaults(func=run_adopt_promote)

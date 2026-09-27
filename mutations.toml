@@ -9393,7 +9393,7 @@ reddens = [
 [[mutation]]
 name = "a named promotion writes the gates that passed"
 file = "src/keelline/assess/state.py"
-before = "    if (names and (len(promoted) < len(results) or waiting)) or not promoted:"
+before = "    if (names and (len(promoted) < len(results) or waiting or skipped)) or not promoted:"
 after = "    if not promoted:"
 reddens = [
   "tests/assess/test_state.py::test_named_gates_are_promoted_all_together_or_not_at_all",
@@ -9402,8 +9402,8 @@ reddens = [
 [[mutation]]
 name = "a promotion with no names writes nothing once one gate fails"
 file = "src/keelline/assess/state.py"
-before = "    if (names and (len(promoted) < len(results) or waiting)) or not promoted:"
-after = "    if len(promoted) < len(results) or waiting or not promoted:"
+before = "    if (names and (len(promoted) < len(results) or waiting or skipped)) or not promoted:"
+after = "    if len(promoted) < len(results) or waiting or skipped or not promoted:"
 reddens = [
   "tests/assess/test_state.py::test_with_no_names_every_passing_gate_is_enforced_and_the_rest_are_named",
 ]
@@ -9709,7 +9709,7 @@ reddens = ["tests/assess/test_state.py::test_begin_refuses_a_plan_whose_trail_ro
 [[mutation]]
 name = "promote enforces a custom gate whose command the base does not have"
 file = "src/keelline/assess/state.py"
-before = "    waiting = _not_on_base(root, config, wanted, base=base, machine=machine)"
+before = "    waiting = _not_on_base(root, config, asked, base=base, machine=machine)"
 after = "    waiting = ()"
 reddens = [
   "tests/assess/test_state.py::test_a_custom_gate_the_base_does_not_have_is_neither_run_nor_promoted",
@@ -9718,8 +9718,8 @@ reddens = [
 [[mutation]]
 name = "a named promotion writes the gates that passed beside one that waits for the base"
 file = "src/keelline/assess/state.py"
-before = "    if (names and (len(promoted) < len(results) or waiting)) or not promoted:"
-after = "    if (names and len(promoted) < len(results)) or not promoted:"
+before = "    if (names and (len(promoted) < len(results) or waiting or skipped)) or not promoted:"
+after = "    if (names and (len(promoted) < len(results) or skipped)) or not promoted:"
 reddens = [
   "tests/assess/test_state.py::test_a_custom_gate_the_base_does_not_have_is_neither_run_nor_promoted",
 ]
@@ -10459,6 +10459,45 @@ after = """    }"""
 reddens = [
   "tests/assess/test_gate_command.py::test_json_carries_the_verdict_and_each_gate_s_count_and_no_finding",
   "tests/assess/test_state.py::test_every_command_that_runs_gates_gives_a_gate_the_same_json_row",
+]
+
+# In a clone the base is the clone author's, so a base that has a custom gate's command is no
+# brake on running it: after a no to the clone's commands, `adopt promote` ran them anyway.
+[[mutation]]
+name = "adopt promote --builtin still runs the custom gates"
+file = "src/keelline/assess/state.py"
+before = "    skipped = tuple(n for n in wanted if builtin and n in config.gates.custom)"
+after = "    skipped: tuple[str, ...] = ()"
+reddens = [
+  "tests/assess/test_state.py::test_builtin_runs_no_custom_gate_and_promotes_the_built_ins_alone",
+  "tests/assess/test_state.py::test_adopt_promote_builtin_names_the_custom_gates_it_did_not_run",
+]
+
+[[mutation]]
+name = "a named custom gate --builtin did not run holds nothing back"
+file = "src/keelline/assess/state.py"
+before = "    if (names and (len(promoted) < len(results) or waiting or skipped)) or not promoted:"
+after = "    if (names and (len(promoted) < len(results) or waiting)) or not promoted:"
+reddens = [
+  "tests/assess/test_state.py::test_builtin_runs_no_custom_gate_and_promotes_the_built_ins_alone",
+]
+
+[[mutation]]
+name = "adopt promote drops --builtin on the way to the promotion"
+file = "src/keelline/assess/commands.py"
+before = "    transition = promote(root, config, args.gates, base=base, machine=machine, builtin=args.builtin)"
+after = "    transition = promote(root, config, args.gates, base=base, machine=machine, builtin=False)"
+reddens = [
+  "tests/assess/test_state.py::test_adopt_promote_builtin_names_the_custom_gates_it_did_not_run",
+]
+
+[[mutation]]
+name = "the init skill hands over adopt promote without --builtin after a no"
+file = "skills/init/references/adoption.md"
+before = "     `keelline adopt promote --builtin`: without the flag it runs the commands the user"
+after = "     `keelline adopt promote`: without the flag it runs the commands the user"
+reddens = [
+  "tests/skills/test_skills.py::test_the_init_skill_keeps_a_no_to_the_clone_s_commands_through_the_whole_adoption",
 ]
 
 [[mutation]]

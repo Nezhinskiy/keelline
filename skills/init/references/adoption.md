@@ -8,7 +8,8 @@ After the footprint is written:
      the user, say that the next command runs their commands on this machine, and ask for an
      explicit yes. **Silence, a timeout or an empty answer is a no.** On a yes, run
      `keelline assess`, or `keelline assess --builtin` on a no, which runs the built-in gates
-     and the probes and none of those commands, and names the gates it left out.
+     and the probes and none of those commands, and names the gates it left out. A no holds
+     for the whole adoption: every later command that runs gates takes `--builtin` too.
    - Otherwise, run `keelline assess`.
 
    Either way, relay the summary: its table of gates, its table of items when there are any,
@@ -42,7 +43,10 @@ After the footprint is written:
    - what was written, and what was skipped and why;
    - how many findings the plan covers;
    - the next command, `keelline adopt promote`, which enforces every gate that passes now and
-     names the rest; run it again as the plan lands;
+     names the rest; run it again as the plan lands. After a no in step 1 it is
+     `keelline adopt promote --builtin`: without the flag it runs the commands the user
+     declined. Say that it promotes no custom gate, and that promoting one means running its
+     command, which needs the user's explicit yes first;
    - the undo: `keelline uninstall`.
 
 Ask the user to commit `keelline.toml`, `.keelline/manifest.json`, the footprint, the design,
