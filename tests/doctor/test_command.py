@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from keelline import gitenv
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.doctor import checks
 from keelline.doctor.api import OK, RED, SKIP, WARN, Check
@@ -42,6 +43,11 @@ def _nothing_of_the_developers_own(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     with a plugin root is `tests/doctor/test_checks.py`'s.
     """
     for name in list(os.environ):
+        # The suite's floor under the product's `git` bounds is the test runner's, not the
+        # developer's, and `doctor` runs its `git` in this process: stripped, a loaded machine
+        # could run a five-second `rev-parse` out, and a row would read it as no answer.
+        if name == gitenv.FLOOR_VARIABLE:
+            continue
         if name.startswith(("CLAUDE_", "PLUGIN_", "KEELLINE_", "XDG_")):
             monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))

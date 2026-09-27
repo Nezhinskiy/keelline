@@ -73,17 +73,18 @@ BOUND_FLOOR_SECONDS: float = 0
 # and passes a small bound of its own.
 #
 # **Why a variable here is safe.** It is read from this process's environment and from nothing a
-# repository commits: no `keelline.toml` key, no machine-file key, no argument names it. It can
-# only raise: `bound_floor` never answers below `BOUND_FLOOR_SECONDS`, and `git_run` takes the
-# larger of it and the caller's bound, so no value of it shortens any bound, and one that is not
-# a finite number is ignored. The route by which a repository reaches a process's environment is
-# a harness applying a committed `.claude/settings.json` `env` block, and that same block sets
-# `PATH`, which chooses the `git` every call here executes (the module docstring). So a block
-# that sets this variable gains only a longer wait on a `git` it could replace outright. In a
-# hook that wait can outlast the harness's own timeout on the entry, which ends the hook
-# unanswered; what an unanswered hook lets through, the same block's own `git` lets through at
-# once, by answering whatever a guard wants to hear. The wait is capped all the same, at
-# `FLOOR_CEILING_SECONDS`.
+# repository commits: no `keelline.toml` key, no machine-file key, no argument names it. It can only
+# raise: `bound_floor` never answers below `BOUND_FLOOR_SECONDS`, and `git_run` takes the larger of
+# it and the caller's bound, so no value of it shortens any bound, and one that is not a finite
+# number is ignored. A repository reaches a process's environment only through something that
+# applies a file it commits — a harness's `.claude/settings.json` `env` block, which applies without
+# a trust prompt in a non-interactive session, or a `direnv`, `mise` or devcontainer environment —
+# and every one of those sets `PATH` as readily, which chooses the `git` every call here executes
+# (the module docstring). So a repository that sets this variable gains only a longer wait on a
+# `git` it could replace outright. In a hook that wait can outlast the harness's own timeout on the
+# entry, which ends the hook unanswered; what an unanswered hook lets through, the same file's own
+# `git` lets through at once, by answering whatever a guard wants to hear. The wait is capped all
+# the same, at `FLOOR_CEILING_SECONDS`.
 FLOOR_VARIABLE = "KEELLINE_GIT_FLOOR_SECONDS"
 # Ten minutes: far above what any load makes a local `git` take, and far below a timeout that
 # `subprocess` cannot represent — `timeout=1e300` raises `OverflowError`, which `git_run` does

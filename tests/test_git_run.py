@@ -241,8 +241,8 @@ def test_the_suite_floor_outlasts_a_bound_its_caller_asked_for(
     # `tests/conftest.py` lifts every `git_run` bound to its floor, so a loaded machine cannot
     # run a caller's two- or five-second bound out and turn a test red for the load. A `git` that
     # answers after half a second, under a bound a fifth of that, still answers here. Mutation
-    # (advisory): `timeout=max(timeout, bound_floor())` back to `timeout=timeout` — the floor is
-    # never applied, the call runs out, and this reddens.
+    # (oracle): "the git runner ignores the floor a test runner sets" — the variable is never
+    # read, the call runs out, and this reddens.
     _a_git_that_sleeps(tmp_path, monkeypatch, 0.5)
     assert git_run(tmp_path, "rev-parse", timeout=0.1) == (0, "")
 
@@ -327,9 +327,11 @@ def test_the_floor_variable_never_shortens_a_bound(
 def test_a_floor_variable_that_raises_nothing_leaves_the_product_floor(
     monkeypatch: pytest.MonkeyPatch, value: str
 ) -> None:
-    # Not a number, not finite, or not above zero: the floor stays the product's own. `nan`
-    # would otherwise poison `max` by argument order, and `inf` is past what `subprocess` can
-    # wait for at all.
+    # Not a number, not finite, or not above zero: the floor stays the product's own. `inf` is
+    # ignored rather than read as the ceiling, because nobody means ten minutes by it. `nan`
+    # would fall to the product's floor through `max` even unchecked, so its row documents the
+    # contract rather than guarding a line. Mutation (oracle): "a floor variable that is not
+    # finite is honoured" -> the `inf` row reddens.
     monkeypatch.setenv(gitenv.FLOOR_VARIABLE, value)
     assert gitenv.bound_floor() == gitenv.BOUND_FLOOR_SECONDS == 0
 

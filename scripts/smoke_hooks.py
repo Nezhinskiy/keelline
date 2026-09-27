@@ -33,16 +33,16 @@ VOLATILE_NOTE = "SMOKE-VOLATILE-NOTE"
 # Keelline's own rules, from the shipped preset rather than from the repository — so this one
 # is the row that proves `preset-rules` still renders when the store is empty of them.
 PRESET_RULE = "### decision-forks"
+# The one `KEELLINE_*` variable an entry keeps: the floor a test runner puts under the product's
+# own bounds on `git` (`keelline.gitenv.FLOOR_VARIABLE`, which can only raise them). Under the
+# test suite it is the suite's, so the entries run under the floor every other `keelline` the
+# suite starts runs under, and do not fail the suite for the machine's load. Run on its own, the
+# script passes on whatever the environment holds, which at most lengthens a wait.
+FLOOR_VARIABLE = "KEELLINE_GIT_FLOOR_SECONDS"
 # Measured 2026-09-19 against the shipped `hooks/hooks.json` and this fixture: thirteen
 # entries, fourteen rows (`PreToolUse` carries two samples). Both are asserted because a run
 # that executes fewer rows prints an identically green summary — the shape `unsampled` and
 # `unentered` close for events and nothing closed for rows.
-# The one `KEELLINE_*` variable an entry keeps: the floor a test runner puts under the product's
-# own bounds on `git` (`keelline.gitenv.FLOOR_VARIABLE`, which can only raise them). Under the
-# test suite it is the suite's, so the entries run under the floor every other `keelline` the
-# suite starts runs under, and do not fail the suite for the machine's load; run on its own,
-# nothing sets it.
-FLOOR_VARIABLE = "KEELLINE_GIT_FLOOR_SECONDS"
 EXPECTED_ENTRIES = 13
 EXPECTED_ROWS = 14
 
