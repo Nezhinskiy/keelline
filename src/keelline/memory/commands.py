@@ -24,7 +24,7 @@ from keelline.command import CHECK_HELP, common_flags
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
-from keelline.findings import printable, quoted
+from keelline.findings import labels
 from keelline.hooks.api import detect_harness
 from keelline.memory import trust
 from keelline.memory.bundles import Bundle, fit, render
@@ -40,6 +40,7 @@ from keelline.memory.index import (
 )
 from keelline.memory.inventory import inventory, totals
 from keelline.memory.store import Store, in_repository, resolved
+from keelline.printed import printable, quoted
 from keelline.result import Result
 
 
@@ -161,18 +162,18 @@ def _with(summary: str, note: str | None) -> str:
     return summary if note is None else f"{summary}; {note}"
 
 
-def _named(names: list[str]) -> str:
+def _printed(names: list[str]) -> str:
     """Names the store or `keelline.toml` supplied, joined for a summary line. Each is a file
     name or a `name:` a repository can commit, escape sequences included, so each goes through
     `printable`; `--json` carries them whole."""
-    return ", ".join(printable(name) for name in names)
+    return ", ".join(map(printable, names))
 
 
 def _harvest(reconciled: Reconciliation, store: Store) -> str | None:
     """What `index._harvestable` declined to persist, named where a person will read it."""
     if not reconciled.refused_harvest:
         return None
-    names = _named(reconciled.refused_harvest)
+    names = _printed(reconciled.refused_harvest)
     return _NOT_HARVESTED.format(names=names, index=store.path / INDEX_NAME)
 
 
@@ -181,10 +182,10 @@ def _publish(reconciled: Reconciliation, store: Store) -> str | None:
     index = store.path / INDEX_NAME
     said = []
     if reconciled.refused_publish:
-        said.append(_NOT_PUBLISHED.format(names=_named(reconciled.refused_publish), index=index))
+        said.append(_NOT_PUBLISHED.format(names=_printed(reconciled.refused_publish), index=index))
     if reconciled.refused_extra:
         said.append(
-            _EXTRA_NOT_PUBLISHED.format(names=_named(reconciled.refused_extra), index=index)
+            _EXTRA_NOT_PUBLISHED.format(names=_printed(reconciled.refused_extra), index=index)
         )
     return "; ".join(said) or None
 
@@ -226,7 +227,7 @@ def _findings(report: IndexCheck, config: Config, store: Store) -> list[str]:
                 count=len(report.unreadable),
                 # Store-relative, which is what `memory refs` names too: the absolute prefix is
                 # this machine's and never inside the path grammar.
-                paths=_named(
+                paths=_printed(
                     [Path(p).relative_to(store.path).as_posix() for p in report.unreadable]
                 ),
             )
@@ -389,28 +390,28 @@ def run_doctor_bundles(args: argparse.Namespace) -> Result:
 #
 # The reasons are built out of `memory.groups` entries and name paths, so they are
 # repository-authored text and reach a reader the way `_no_store`'s reason does: inside
-# `trust.wrap`, with the region markers that say the text is data.
+# `trust.wrap`, with the region markers that say the text is data. So the line above the region
+# counts and names no group: escaping bounds a name's bytes, not its meaning, and a group named as
+# a sentence would otherwise reach an agent as prose outside the markers.
 _UNAVAILABLE_GROUPS = (
-    "{count} configured group(s) could not be resolved ({names}), so the walk read a subset and "
+    "{count} configured group(s) could not be resolved, so the walk read a subset and "
     "no answer from it means anything; the reasons below are repository-authored text, shown as "
     "data"
 )
 
 
 def _unavailable(unavailable: dict[str, str]) -> Refusal:
-    names = sorted(unavailable)
-    # Each name through `quoted`, the head's and the reasons' alike: `memory.groups` is
-    # repository-written and bounded by no grammar, and `trust.wrap` delimits text for the model
-    # without escaping a byte for the terminal. The store's reasons quote it the same way.
-    reasons = "\n".join(f"{quoted(group)}: {unavailable[group]}" for group in names)
-    head = _UNAVAILABLE_GROUPS.format(count=len(unavailable), names=", ".join(map(quoted, names)))
+    # Each name through `quoted`: `memory.groups` is repository-written and bounded by no
+    # grammar, and `trust.wrap` delimits text for the model without escaping a byte for the
+    # terminal. The store's own reasons quote the group the same way.
+    reasons = "\n".join(f"{quoted(group)}: {unavailable[group]}" for group in sorted(unavailable))
+    head = _UNAVAILABLE_GROUPS.format(count=len(unavailable))
     return Refusal(f"{head}\n{trust.wrap(reasons, trust.new_nonce())}")
 
 
 def run_refs(args: argparse.Namespace) -> Result:
     from dataclasses import asdict
 
-    from keelline.findings import labels
     from keelline.memory.refs import check_refs
 
     store, config = _store(args)

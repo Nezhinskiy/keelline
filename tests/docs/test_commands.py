@@ -10,6 +10,8 @@ import pytest
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.docs.trail import END_MARKER, MARKER
 from keelline.findings import Finding
+from keelline.printed import UNPRINTABLE
+from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
 
 CONFIG = """
 [keelline]
@@ -143,7 +145,8 @@ def test_docs_trail_never_prints_a_crafted_document_name_raw(
     # A document's file name is the repository's, and `_interpolable` refuses a line break in it
     # but not an escape sequence, which the undeclared-state report then printed to the terminal.
     # `--json` still names it. Mutation: join `undeclared` unbounded in `run_docs_trail` — this
-    # reddens.
+    # reddens. (A line break in the name is refused before this report, so the name carries the
+    # escape alone.)
     root, common = project(tmp_path)
     roadmap = root / "docs" / "roadmap.md"
     (root / "docs" / "plans" / "2026-01-01-x.md").write_text("# p\n", encoding="utf-8")
@@ -153,9 +156,10 @@ def test_docs_trail_never_prints_a_crafted_document_name_raw(
     (root / "docs" / "plans" / crafted).write_text("# p\n", encoding="utf-8")
     capsys.readouterr()
     assert invoke(["docs", "trail", *common]) == 1
-    out = capsys.readouterr().out
-    assert "1 document(s) entered the trail" in out
-    assert "\x1b" not in out
+    captured = capsys.readouterr()
+    assert "1 document(s) entered the trail" in captured.out
+    assert captured.out.rstrip("\n").endswith(UNPRINTABLE)
+    assert_never_raw(captured.out, captured.err)
     roadmap.write_text(listed, encoding="utf-8")
     assert invoke(["docs", "trail", "--json", *common]) == 1
     assert json.loads(capsys.readouterr().out)["undeclared"] == [f"plans/{crafted}"]
@@ -170,12 +174,13 @@ def test_docs_trail_never_prints_a_crafted_trail_toml_key_raw(
     root, common = project(tmp_path)
     (root / "docs" / "plans" / "2026-01-01-x.md").write_text("# p\n", encoding="utf-8")
     (root / "docs" / "trail.toml").write_text(
-        '[states]\n"plans/gone\\n::error::forged\\u001b[2J.md" = "planned"\n', encoding="utf-8"
+        f'[states]\n"plans/{CRAFTED_TOML}.md" = "planned"\n', encoding="utf-8"
     )
     assert invoke(["docs", "trail", *common]) == 1
-    err = capsys.readouterr().err
-    assert "no longer exist" in err
-    assert "\x1b" not in err and "\n::error::" not in err
+    captured = capsys.readouterr()
+    assert "no longer exist" in captured.err
+    assert_never_raw(captured.out, captured.err)
+    assert repr(f"plans/{CRAFTED}.md") in captured.err
 
 
 @pytest.mark.parametrize("route", ["a trail.toml label", "a document filename"])

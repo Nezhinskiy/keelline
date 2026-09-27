@@ -1726,9 +1726,9 @@ reddens = [
 name = "a non-UTF-8 document reads as an internal error again"
 file = "src/keelline/docs/hygiene.py"
 before = '''    except UnicodeDecodeError as error:
-        raise Failure(f"{where}: is not valid UTF-8 ({error.reason})") from None'''
+        raise Failure(f"{shown}: is not valid UTF-8 ({error.reason})") from None'''
 after = '''    except RecursionError as error:
-        raise Failure(f"{where}: is not valid UTF-8 ({error})") from None'''
+        raise Failure(f"{shown}: is not valid UTF-8 ({error})") from None'''
 reddens = [
   "tests/docs/test_hygiene.py::test_a_non_utf8_document_is_the_projects_file_being_wrong_not_an_internal_error",
   "tests/docs/test_commands.py::test_a_non_utf8_roadmap_or_plan_exits_1_through_the_frame_and_never_2",
@@ -8843,125 +8843,6 @@ reddens = [
   "tests/scripts/test_mutation_oracle.py::test_every_run_keeps_its_temporary_files_to_itself",
 ]
 
-# A finding's path, a document's name and a note's name are the repository's, and a summary line
-# printed each raw: a line break and `::error::` forged a workflow command in CI, an escape
-# sequence drove the terminal. `printable` is the one bound, and each printer calls it.
-[[mutation]]
-name = "a path outside the grammar prints raw again"
-file = "src/keelline/findings.py"
-before = "    return path if PATH_VALUE.match(path) else UNPRINTABLE"
-after = "    return path"
-reddens = [
-  "tests/test_findings.py::test_a_path_outside_the_grammar_never_reaches_a_label_raw",
-  "tests/ledger/test_commands.py::test_check_never_prints_a_crafted_entry_file_name_raw",
-]
-
-[[mutation]]
-name = "a finding's label prints its path unbounded again"
-file = "src/keelline/findings.py"
-before = "        where = printable(self.path) if self.path else \"-\""
-after = "        where = self.path or \"-\""
-reddens = [
-  "tests/test_findings.py::test_a_path_outside_the_grammar_never_reaches_a_label_raw",
-  "tests/ledger/test_commands.py::test_check_never_prints_a_crafted_entry_file_name_raw",
-]
-
-[[mutation]]
-name = "the undeclared-document report prints a crafted name raw again"
-file = "src/keelline/docs/commands.py"
-before = "printable(row) for row in undeclared"
-after = "row for row in undeclared"
-reddens = [
-  "tests/docs/test_commands.py::test_docs_trail_never_prints_a_crafted_document_name_raw",
-]
-
-[[mutation]]
-name = "a stale trail.toml key reaches the refusal unescaped again"
-file = "src/keelline/docs/trail.py"
-before = "\", \".join(map(quoted, stale))"
-after = "\", \".join(stale)"
-reddens = [
-  "tests/docs/test_commands.py::test_docs_trail_never_prints_a_crafted_trail_toml_key_raw",
-]
-
-[[mutation]]
-name = "memory index names a refused or unreadable note raw again"
-file = "src/keelline/memory/commands.py"
-before = "    return \", \".join(printable(name) for name in names)"
-after = "    return \", \".join(names)"
-reddens = [
-  "tests/memory/test_commands.py::test_an_unparseable_note_with_a_crafted_name_is_counted_and_never_printed_raw",
-  "tests/memory/test_commands.py::test_a_refused_note_or_pointer_is_named_without_its_crafted_bytes",
-]
-
-# The refusals carry no `--json` payload, so a crafted name is escaped there rather than withheld.
-[[mutation]]
-name = "a refusal names a path outside the grammar unescaped again"
-file = "src/keelline/findings.py"
-before = "    return path if PATH_VALUE.match(path) else repr(path)"
-after = "    return path"
-reddens = [
-  "tests/docs/test_plans.py::test_a_crafted_plan_name_reaches_the_refusal_escaped_never_raw",
-  "tests/memory/test_refs.py::test_a_note_that_stops_decoding_is_named_escaped_never_raw",
-  "tests/ledger/test_commands.py::test_index_names_a_crafted_entry_it_cannot_parse_escaped_never_raw",
-]
-
-[[mutation]]
-name = "plan check names an unreadable plan unescaped again"
-file = "src/keelline/docs/plans.py"
-before = "read_document(path, quoted(where))"
-after = "read_document(path, where)"
-reddens = [
-  "tests/docs/test_plans.py::test_a_crafted_plan_name_reaches_the_refusal_escaped_never_raw",
-]
-
-[[mutation]]
-name = "a ledger refusal names its entry file unescaped again"
-file = "src/keelline/ledger/entries.py"
-before = "    return quoted(path.as_posix())"
-after = "    return path.as_posix()"
-reddens = [
-  "tests/ledger/test_commands.py::test_index_names_a_crafted_entry_it_cannot_parse_escaped_never_raw",
-]
-
-[[mutation]]
-name = "bugs renumber lists a file it could not sweep raw again"
-file = "src/keelline/ledger/commands.py"
-before = "printable(u.split(':', 1)[0])"
-after = "u.split(':', 1)[0]"
-reddens = [
-  "tests/ledger/test_commands.py::test_renumber_never_prints_a_crafted_name_it_could_not_sweep_raw",
-]
-
-[[mutation]]
-name = "memory refs names a note that stopped decoding unescaped again"
-file = "src/keelline/memory/refs.py"
-before = "{quoted(note.path.name)}"
-after = "{note.path.name}"
-reddens = [
-  "tests/memory/test_refs.py::test_a_note_that_stops_decoding_is_named_escaped_never_raw",
-]
-
-# A `memory.groups` name is repository-written and bounded by no grammar, and the refusal that
-# names an unresolved group printed it raw, in its head line and in the store's reason alike.
-[[mutation]]
-name = "memory refs names an unresolved group unescaped in its head line again"
-file = "src/keelline/memory/commands.py"
-before = "names=\", \".join(map(quoted, names))"
-after = "names=\", \".join(names)"
-reddens = [
-  "tests/memory/test_refs.py::test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw",
-]
-
-[[mutation]]
-name = "the store names a missing group unescaped in its reason again"
-file = "src/keelline/memory/store.py"
-before = "f\"{quoted(group)} is not in the store\""
-after = "f\"{group} is not in the store\""
-reddens = [
-  "tests/memory/test_refs.py::test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw",
-]
-
 # The custom gates execute files the pull request can change. Under the default `if: success()`
 # they run only once the judging step passed; `if: always()` would run them after a refusal, in
 # a job whose verdict is already failing, and a step that may run whatever came before it is a
@@ -11095,4 +10976,251 @@ after = '_REFUSED_START = tuple("&*!%@`>?")'
 reddens = [
   "tests/test_workflow_yaml.py::test_a_step_spelled_as_a_flow_mapping_is_refused_rather_than_read",
   "tests/test_workflow_yaml.py::test_a_shape_outside_the_subset_is_refused_naming_its_line[flow-mapping]",
+]
+
+# A name the repository chose — a file name, a note's name, a `memory.groups` entry, a TOML key —
+# printed raw forged a workflow command in CI with a line break and `::error::`, and drove the
+# terminal with an escape sequence. `printed.printable` withholds such a name where `--json`
+# carries it, `printed.quoted` escapes it where a refusal is the only channel, and each entry
+# below pins one bound or one printer that must go through it.
+
+[[mutation]]
+name = "printable passes a name outside the grammar through"
+file = "src/keelline/printed.py"
+before = "    return name if PATH_VALUE.match(name) else withheld"
+after = "    return name"
+reddens = [
+  "tests/test_printed.py::test_a_name_outside_the_grammar_is_withheld_by_printable",
+  "tests/test_findings.py::test_a_path_outside_the_grammar_never_reaches_a_label_raw",
+]
+
+[[mutation]]
+name = "quoted passes a name outside the grammar through"
+file = "src/keelline/printed.py"
+before = "    return name if PATH_VALUE.match(name) else repr(name)"
+after = "    return name"
+reddens = [
+  "tests/test_printed.py::test_a_name_outside_the_grammar_arrives_whole_and_inert_through_quoted",
+  "tests/docs/test_plans.py::test_a_crafted_plan_name_reaches_the_refusal_escaped_never_raw",
+]
+
+[[mutation]]
+name = "quoted withholds the name instead of escaping it"
+file = "src/keelline/printed.py"
+before = "    return name if PATH_VALUE.match(name) else repr(name)"
+after = "    return name if PATH_VALUE.match(name) else UNPRINTABLE"
+reddens = [
+  "tests/test_printed.py::test_a_name_outside_the_grammar_arrives_whole_and_inert_through_quoted",
+  "tests/ledger/test_commands.py::test_index_names_a_crafted_entry_it_cannot_read_escaped_never_raw",
+]
+
+[[mutation]]
+name = "a finding's label prints its path unbounded"
+file = "src/keelline/findings.py"
+before = "        where = printable(self.path, withheld) if self.path else \"-\""
+after = "        where = self.path or \"-\""
+reddens = [
+  "tests/test_findings.py::test_a_path_outside_the_grammar_never_reaches_a_label_raw",
+  "tests/ledger/test_commands.py::test_check_never_prints_a_crafted_entry_file_name_raw",
+]
+
+[[mutation]]
+name = "a finding's label ignores the caller's stand-in"
+file = "src/keelline/findings.py"
+before = "        where = printable(self.path, withheld) if self.path else \"-\""
+after = "        where = printable(self.path) if self.path else \"-\""
+reddens = [
+  "tests/test_findings.py::test_a_caller_without_json_names_its_own_stand_in",
+  "tests/assess/test_assessment.py::test_a_gate_finding_outside_the_path_grammar_is_withheld_without_pointing_at_json",
+]
+
+[[mutation]]
+name = "assess points its own json at --json for a withheld name"
+file = "src/keelline/assess/assessment.py"
+before = "append(finding.labelled(UNNAMED))"
+after = "append(finding.label)"
+reddens = [
+  "tests/assess/test_assessment.py::test_a_gate_finding_outside_the_path_grammar_is_withheld_without_pointing_at_json",
+]
+
+[[mutation]]
+name = "the undeclared-document report prints a crafted name raw"
+file = "src/keelline/docs/commands.py"
+before = "', '.join(map(printable, undeclared))"
+after = "', '.join(undeclared)"
+reddens = [
+  "tests/docs/test_commands.py::test_docs_trail_never_prints_a_crafted_document_name_raw",
+]
+
+[[mutation]]
+name = "a stale trail.toml key reaches the refusal unescaped"
+file = "src/keelline/docs/trail.py"
+before = "\", \".join(map(quoted, stale))"
+after = "\", \".join(stale)"
+reddens = [
+  "tests/docs/test_commands.py::test_docs_trail_never_prints_a_crafted_trail_toml_key_raw",
+]
+
+[[mutation]]
+name = "a document the docs area cannot read is named unescaped"
+file = "src/keelline/docs/hygiene.py"
+before = "    shown = quoted(Path(where).as_posix())"
+after = "    shown = str(where)"
+reddens = [
+  "tests/docs/test_plans.py::test_a_crafted_plan_name_reaches_the_refusal_escaped_never_raw",
+]
+
+[[mutation]]
+name = "a ledger refusal names its entry file unescaped"
+file = "src/keelline/ledger/entries.py"
+before = "    return quoted(path.as_posix())"
+after = "    return path.as_posix()"
+reddens = [
+  "tests/ledger/test_commands.py::test_index_names_a_crafted_entry_it_cannot_read_escaped_never_raw",
+]
+
+[[mutation]]
+name = "a ledger entry that is not UTF-8 is named unescaped"
+file = "src/keelline/ledger/entries.py"
+before = "raise LedgerError(f\"{_where(where)}: is not valid UTF-8 ({error.reason})\") from error"
+after = "raise LedgerError(f\"{where}: is not valid UTF-8 ({error.reason})\") from error"
+reddens = [
+  "tests/ledger/test_commands.py::test_index_names_a_crafted_entry_it_cannot_read_escaped_never_raw",
+]
+
+[[mutation]]
+name = "a ledger entry's unknown key refusal names the file unescaped"
+file = "src/keelline/ledger/entries.py"
+before = "raise LedgerError(f\"{_where(path)}:{number}: unknown frontmatter key `{key}`\")"
+after = "raise LedgerError(f\"{path}:{number}: unknown frontmatter key `{key}`\")"
+reddens = [
+  "tests/ledger/test_commands.py::test_index_names_a_crafted_entry_it_cannot_read_escaped_never_raw",
+]
+
+[[mutation]]
+name = "bugs renumber lists a file it could not sweep raw"
+file = "src/keelline/ledger/commands.py"
+before = "printable(u.split(':', 1)[0])"
+after = "u.split(':', 1)[0]"
+reddens = [
+  "tests/ledger/test_commands.py::test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite",
+]
+
+[[mutation]]
+name = "memory joins the names it held back raw"
+file = "src/keelline/memory/commands.py"
+before = "    return \", \".join(map(printable, names))"
+after = "    return \", \".join(names)"
+reddens = [
+  "tests/memory/test_commands.py::test_an_unparseable_note_with_a_crafted_name_is_counted_and_never_printed_raw",
+  "tests/memory/test_commands.py::test_a_refused_note_or_pointer_is_named_without_its_crafted_bytes",
+  "tests/memory/test_commands.py::test_a_note_refused_a_harvested_line_is_named_without_its_crafted_bytes",
+]
+
+[[mutation]]
+name = "memory index names the harvest's refusals raw"
+file = "src/keelline/memory/commands.py"
+before = "    names = _printed(reconciled.refused_harvest)"
+after = "    names = \", \".join(reconciled.refused_harvest)"
+reddens = [
+  "tests/memory/test_commands.py::test_a_note_refused_a_harvested_line_is_named_without_its_crafted_bytes",
+]
+
+[[mutation]]
+name = "memory index names the publish refusals raw"
+file = "src/keelline/memory/commands.py"
+before = "_NOT_PUBLISHED.format(names=_printed(reconciled.refused_publish), index=index)"
+after = "_NOT_PUBLISHED.format(names=\", \".join(reconciled.refused_publish), index=index)"
+reddens = [
+  "tests/memory/test_commands.py::test_a_refused_note_or_pointer_is_named_without_its_crafted_bytes",
+]
+
+[[mutation]]
+name = "memory index names the refused pointers raw"
+file = "src/keelline/memory/commands.py"
+before = "_EXTRA_NOT_PUBLISHED.format(names=_printed(reconciled.refused_extra), index=index)"
+after = "_EXTRA_NOT_PUBLISHED.format(names=\", \".join(reconciled.refused_extra), index=index)"
+reddens = [
+  "tests/memory/test_commands.py::test_a_refused_note_or_pointer_is_named_without_its_crafted_bytes",
+]
+
+[[mutation]]
+name = "memory index names an unreadable note by its absolute path"
+file = "src/keelline/memory/commands.py"
+before = "[Path(p).relative_to(store.path).as_posix() for p in report.unreadable]"
+after = "list(report.unreadable)"
+reddens = [
+  "tests/memory/test_commands.py::test_an_unparseable_note_with_a_crafted_name_is_counted_and_never_printed_raw",
+]
+
+[[mutation]]
+name = "memory refs names a note that stopped decoding unescaped"
+file = "src/keelline/memory/refs.py"
+before = "{quoted(note.path.name)}"
+after = "{note.path.name}"
+reddens = [
+  "tests/memory/test_refs.py::test_a_note_that_stops_decoding_is_named_escaped_never_raw",
+]
+
+[[mutation]]
+name = "the unresolved-groups line names the groups outside the data region"
+file = "src/keelline/memory/commands.py"
+before = "    \"{count} configured group(s) could not be resolved, so the walk read a subset and \""
+after = "    \"{count} configured group(s) could not be resolved ({names}), so the walk read a subset and \""
+reddens = [
+  "tests/memory/test_refs.py::test_the_unresolved_groups_line_names_no_group_outside_the_data_region",
+]
+
+[[mutation]]
+name = "the unresolved-groups reasons name each group unescaped"
+file = "src/keelline/memory/commands.py"
+before = "f\"{quoted(group)}: {unavailable[group]}\""
+after = "f\"{group}: {unavailable[group]}\""
+reddens = [
+  "tests/memory/test_refs.py::test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw",
+]
+
+[[mutation]]
+name = "the store names a missing group unescaped in its reason"
+file = "src/keelline/memory/store.py"
+before = "f\"{quoted(group)} is not in the store\""
+after = "f\"{group} is not in the store\""
+reddens = [
+  "tests/memory/test_refs.py::test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw",
+]
+
+[[mutation]]
+name = "the store names a linked group with no overlay unescaped"
+file = "src/keelline/memory/store.py"
+before = "f\"{quoted(group)} is a link and no overlay is recorded\""
+after = "f\"{group} is a link and no overlay is recorded\""
+reddens = [
+  "tests/memory/test_refs.py::test_a_linked_group_with_no_overlay_is_named_escaped_never_raw",
+]
+
+[[mutation]]
+name = "the store names a group linking outside the share unescaped"
+file = "src/keelline/memory/store.py"
+before = "f\"{quoted(group)} links outside this project's share of the overlay \""
+after = "f\"{group} links outside this project's share of the overlay \""
+reddens = [
+  "tests/memory/test_commands.py::test_a_group_linking_outside_the_share_is_named_escaped_never_raw",
+]
+
+[[mutation]]
+name = "a store with no resolving group names each group unescaped"
+file = "src/keelline/memory/store.py"
+before = "\"; \".join(f\"{quoted(k)}: {v}\" for k, v in unavailable.items())"
+after = "\"; \".join(f\"{k}: {v}\" for k, v in unavailable.items())"
+reddens = [
+  "tests/memory/test_refs.py::test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw",
+]
+
+[[mutation]]
+name = "contained names the symlinked ancestor unescaped"
+file = "src/keelline/config/paths.py"
+before = "passes through a symlink at {str(ancestor)!r}"
+after = "passes through a symlink at {ancestor}"
+reddens = [
+  "tests/config/test_paths.py::test_a_crafted_symlink_on_the_way_is_named_escaped_never_raw",
 ]

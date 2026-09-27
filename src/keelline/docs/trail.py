@@ -23,9 +23,10 @@ from keelline.config.paths import contained
 from keelline.docs.hygiene import TRAIL_MARKER, TRAIL_MARKER_LINE, read_document
 from keelline.docs.themes import ThemePattern, compile_theme
 from keelline.errors import Failure
-from keelline.findings import Finding, quoted
+from keelline.findings import Finding
 from keelline.fsops import utf_8_name
 from keelline.gitenv import NO_ANSWER, git_run, in_work_tree
+from keelline.printed import quoted
 
 if TYPE_CHECKING:
     from keelline.config.schema import Config

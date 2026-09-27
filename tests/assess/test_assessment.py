@@ -10,14 +10,17 @@ from pathlib import Path
 from keelline.assess.assessment import (
     FORMAT,
     NOT_IGNORED,
+    UNNAMED,
+    _gate_items,
     assess,
     document,
     ignored,
     render,
     write,
 )
-from keelline.assess.gates import BUILTIN
+from keelline.assess.gates import BUILTIN, GateResult
 from keelline.attach.api import IGNORE_BODY
+from keelline.findings import Finding
 from keelline.project.api import ASSESSMENT
 from tests.assess.smoke import BASE, smoke_repo
 from tests.cli import cli
@@ -108,3 +111,15 @@ def test_an_inventory_git_does_not_ignore_is_named_in_the_summary(tmp_path: Path
     assert summaries["bare"].splitlines()[-1] == NOT_IGNORED
     assert ignored(kept) is True
     assert NOT_IGNORED not in summaries["kept"]
+
+
+def test_a_gate_finding_outside_the_path_grammar_is_withheld_without_pointing_at_json() -> None:
+    # A gate's labels go into `assess --json` and the inventory file the adoption skill has the
+    # model read, so a name outside the path grammar is withheld there as on a summary line —
+    # but "see --json" would point at the very text the reader holds, so the stand-in is assess's
+    # own. Mutation: build the item's `where` from `finding.label` — this reddens.
+    docs = next(gate for gate in BUILTIN if gate.name == "docs")
+    result = GateResult("docs", (Finding("dead-link", "docs/My Plan.md", 3, "d"),))
+    (only,) = _gate_items(docs, result)
+    assert only.where == (f"{UNNAMED}:3 [dead-link]",)
+    assert "--json" not in UNNAMED

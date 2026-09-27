@@ -473,8 +473,11 @@ def test_a_refusal_reason_carries_the_repositorys_own_text(tmp_path: Path) -> No
     (hostile / "docs" / "memory").mkdir(parents=True)
     reason = refusal_reason(hostile, config)
     assert reason is not None
-    assert payload in reason, "the message is built out of the raw `memory.groups` entry"
-    assert "\n" in reason, "and a TOML multi-line string carries its newlines through"
+    assert payload in reason, "the message is built out of the `memory.groups` entry"
+    # A TOML multi-line string carries its newlines into the entry, and the reason names the
+    # entry through `quoted`: the prose arrives whole, and no line of it stands on its own.
+    assert "\n" not in reason
+    assert repr(f"developer\n\n{payload}") in reason
 
 
 def test_store_unavailable_carries_the_repositorys_own_text(tmp_path: Path) -> None:

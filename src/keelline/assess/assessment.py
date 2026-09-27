@@ -82,11 +82,18 @@ class Assessment:
         return tuple(g.name for g in self.gates if g.failing)
 
 
+# What a gate finding's path outside the path grammar reads as in an item's `where`. Items reach
+# `assess --json` and the inventory file a model reads, so the name is withheld there as on a
+# summary line; this stand-in, unlike the summary line's, points at no `--json`, because the
+# reader already holds it.
+UNNAMED = "<a name outside the path grammar>"
+
+
 def _gate_items(gate: Gate, result: GateResult) -> Iterator[Item]:
     """One item per rule the gate's findings carry, in first-seen order, at `warning`."""
     by_rule: dict[str, list[str]] = {}
     for finding in result.findings:
-        by_rule.setdefault(finding.rule, []).append(finding.label)
+        by_rule.setdefault(finding.rule, []).append(finding.labelled(UNNAMED))
     for rule, labels in by_rule.items():
         yield item(gate.name, rule, gate.principle, Severity.WARNING, gate.remedy, labels)
 

@@ -57,8 +57,8 @@ from keelline.config.machine import machine_config_path
 from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
 from keelline.errors import Failure
-from keelline.findings import quoted
 from keelline.gitenv import git_run
+from keelline.printed import quoted
 
 LOCAL_STORE = Path(".keelline") / "local" / "memory"
 # The overlay's per-project directory, named once. It was a bare literal at the two call
@@ -452,7 +452,10 @@ def _resolve_at(
         return None, f"{base} does not exist; run `keelline attach`"
     groups, unavailable = _group_targets(base, config, overlay if mode == "overlay" else None)
     if not groups:
-        reason = "; ".join(f"{k}: {v}" for k, v in unavailable.items()) or "the store has no groups"
+        reason = (
+            "; ".join(f"{quoted(k)}: {v}" for k, v in unavailable.items())
+            or "the store has no groups"
+        )
         return None, reason
     return Store(base, mode, root, groups, unavailable, machine), None
 

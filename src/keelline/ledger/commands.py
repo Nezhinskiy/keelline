@@ -8,8 +8,9 @@ from dataclasses import asdict
 from keelline import fsops
 from keelline.areas import SubParsers
 from keelline.command import CHECK_HELP, common_flags, root_and_config
-from keelline.findings import labels, listed, printable
+from keelline.findings import labels, listed
 from keelline.ledger.entries import SEVERITIES
+from keelline.printed import printable
 from keelline.result import Result
 
 _OK = "OK: bug ledger entries, index freshness, and identifier references"

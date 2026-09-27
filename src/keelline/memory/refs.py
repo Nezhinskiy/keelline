@@ -24,11 +24,12 @@ from pathlib import Path, PurePosixPath
 
 from keelline.config.schema import Config
 from keelline.errors import Failure
-from keelline.findings import Finding, quoted
+from keelline.findings import Finding
 from keelline.gitenv import git_run
 from keelline.guards.api import contained_roots
 from keelline.memory.notes import Note, Walk, walk
 from keelline.memory.store import Store, overlay_root, permitted_roots
+from keelline.printed import quoted
 from keelline.prose import blank_fences, path_references
 
 # `[[name]]` addresses a note by its stem. Owned here because a wiki-link is the memory area's
