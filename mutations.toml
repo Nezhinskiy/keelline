@@ -9111,7 +9111,7 @@ file = "scripts/mutation_oracle.py"
 before = "                    _stop_runs()\n"
 after = "                    pass\n"
 reddens = [
-  "tests/scripts/test_mutation_oracle.py::test_a_terminate_mid_run_ends_it_promptly_and_leaves_no_checkout",
+  "tests/scripts/test_mutation_oracle.py::test_a_terminate_mid_run_ends_the_pytest_in_flight_and_leaves_no_checkout",
 ]
 
 # Jobs run pytest side by side, and pytest's default base directory is shared by all of them and

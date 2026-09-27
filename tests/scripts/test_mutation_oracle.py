@@ -627,86 +627,133 @@ def test_every_run_keeps_its_temporary_files_to_itself(
     assert Path(module.TEMPDIR).resolve() in where.parents, where
 
 
-def test_a_stop_ends_the_pytest_in_flight_and_starts_no_other(tmp_path: Path) -> None:
+# How long a fixture pytest below holds its run open before it gives up and finishes. Never a
+# verdict: the stop tests judge by whether the held run *finished* — it writes a marker when it
+# does — and a stopped run never does, however long the stop took to arrive. Only a mutated run,
+# whose stop does nothing, waits this out, so it is also what one of those costs the oracle.
+HELD_RUN_SECONDS = 30
+# A pytest that writes `ORACLE_HOLDING`, holds its run open until the release file named by
+# `ORACLE_RELEASE` appears or `HELD_RUN_SECONDS` pass, and then writes `ORACLE_FINISHED`. On the
+# first run only when `ORACLE_PROBE` is set: the terminate test's mutated run then waits once,
+# not twice.
+HELD = (
+    "import os\n"
+    "import time\n"
+    "from pathlib import Path\n"
+    "\n"
+    "\n"
+    "def hold() -> None:\n"
+    "    probe = os.environ.get('ORACLE_PROBE')\n"
+    "    if probe is not None:\n"
+    "        if Path(probe).exists():\n"
+    "            return\n"
+    "        Path(probe).write_text('ran', encoding='utf-8')\n"
+    "    Path(os.environ['ORACLE_HOLDING']).write_text('holding', encoding='utf-8')\n"
+    f"    deadline = time.monotonic() + {HELD_RUN_SECONDS}\n"
+    "    while not Path(os.environ['ORACLE_RELEASE']).exists() and time.monotonic() < deadline:\n"
+    "        time.sleep(0.05)\n"
+    "    Path(os.environ['ORACLE_FINISHED']).write_text('finished', encoding='utf-8')\n"
+)
+
+
+def _held_run_markers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, Path]:
+    """The marker a held run writes once it holds, the release file it waits for, and the
+    marker it writes once it finishes."""
+    holding, release, finished = (tmp_path / name for name in ("holding", "release", "finished"))
+    monkeypatch.setenv("ORACLE_HOLDING", str(holding))
+    monkeypatch.setenv("ORACLE_RELEASE", str(release))
+    monkeypatch.setenv("ORACLE_FINISHED", str(finished))
+    return holding, release, finished
+
+
+def _wait_until_holding(holding: Path) -> None:
+    """Until the held run is inside its test, past pytest's own start. A precondition, not a
+    verdict: a stop sent before then ends a run that had not reached the test at all, and proves
+    nothing about one that had. The caller asserts the marker, so a run that never holds is
+    reported as such, whatever the time it took."""
+    deadline = time.monotonic() + 120
+    while not holding.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+
+
+def test_a_stop_ends_the_pytest_in_flight_and_starts_no_other(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # A job's pytest runs in a worker thread, where no signal reaches it. Without `_stop_runs`
     # a terminate waited for every in-flight entry to finish both of its runs before the
     # checkouts could be removed — long enough for a process manager's grace period to end in
     # a `SIGKILL` that leaks them all. The sequential oracle never had this: `subprocess.run`
     # killed its child as the `SystemExit` passed through it.
     #
-    # Mutations (declared): the terminate dropped -> the thread is still waiting on a pytest
-    # that sleeps a minute, and the first assertion reddens; the refusal dropped -> the second
-    # `_run` starts pytest, and `pytest.raises` reddens.
+    # Judged by what the held run did, never by a clock: it writes its marker only if it ran to
+    # its end, and a stopped run cannot. This used to be a ten-second join, which load can spend.
+    #
+    # Mutations (declared): the terminate dropped -> the held run waits out `HELD_RUN_SECONDS`,
+    # finishes, and the marker assertion reddens; the refusal dropped -> the second `_run`
+    # starts pytest, and `pytest.raises` reddens.
     module = oracle(root=tmp_path)
-    (tmp_path / "test_slow.py").write_text(
-        "import time\n\n\ndef test_slow() -> None:\n    time.sleep(60)\n\n\n"
+    holding, release, finished = _held_run_markers(tmp_path, monkeypatch)
+    (tmp_path / "test_held.py").write_text(
+        HELD + "\n\ndef test_held() -> None:\n    hold()\n\n\n"
         "def test_quick() -> None:\n    pass\n",
         encoding="utf-8",
     )
     waiting = threading.Thread(
-        target=module._run, args=(("test_slow.py::test_slow",), tmp_path), daemon=True
+        target=module._run, args=(("test_held.py::test_held",), tmp_path), daemon=True
     )
     waiting.start()
     try:
-        deadline = time.monotonic() + 30
-        while not module._live and time.monotonic() < deadline:
-            time.sleep(0.05)
-        assert module._live, "the slow run never started"
+        _wait_until_holding(holding)
+        assert holding.exists() and module._live, "the held run never started"
         module._stop_runs()
-        waiting.join(timeout=10)
-        assert not waiting.is_alive(), "a stop left a pytest run going"
+        waiting.join()
+        assert not finished.exists(), "a stop let the pytest in flight run to its end"
         with pytest.raises(module.Stopped):
-            module._run(("test_slow.py::test_quick",), tmp_path)
+            module._run(("test_held.py::test_quick",), tmp_path)
     finally:
-        # Under a mutation the sleeping pytest outlives the assertion; end it here so the
-        # oracle's mutated run costs the ten-second bound, not the whole minute.
-        for child in list(module._live):
-            child.kill()
+        release.write_text("", encoding="utf-8")
 
 
 @needs_git
-def test_a_terminate_mid_run_ends_it_promptly_and_leaves_no_checkout(
+def test_a_terminate_mid_run_ends_the_pytest_in_flight_and_leaves_no_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The stop wiring end to end, which the test above does not reach: that one calls
     # `_stop_runs` itself, so `_prove`'s own arm could stop calling it and nothing would notice.
     # A real `SIGTERM`, sent once a job's pytest is running, becomes `SystemExit` in the main
-    # thread; the arm must end that pytest — it sleeps for half a minute — and the checkouts must
-    # be gone when `main` returns. A terminate that waited for the entry instead is the one a
+    # thread; the arm must end that pytest — it holds its run open — and the checkouts must be
+    # gone when `main` returns. A terminate that waited for the entry instead is the one a
     # process manager's grace period ends in a `SIGKILL`, leaking every checkout.
     #
-    # Mutation (declared): the arm stops calling `_stop_runs` -> the job waits out the sleeping
-    # pytest and the time bound reddens. The fixture sleeps on its first run only, so that
-    # mutated run costs one sleep rather than the clean run's and the mutated run's both.
+    # Judged by what the held run did, never by a clock: it writes its marker only if it ran to
+    # its end. This used to assert that `main` returned within twenty seconds, and at a load
+    # average of 13 to 17 a clean run took 23.6.
+    #
+    # Mutation (declared): the arm stops calling `_stop_runs` -> the job waits out the held run,
+    # which finishes, and the marker assertion reddens. The fixture holds its first run only, so
+    # that mutated run costs one `HELD_RUN_SECONDS` rather than the clean run's and the mutated
+    # run's both.
     root = tmp_path / "repo"
     root.mkdir()
     _repo_with_guard(root)
     _recommit(
         root,
         {
-            "tests/test_guard.py": "import os\n"
-            "import time\n"
-            "from pathlib import Path\n"
-            "\n"
-            "from pkg.guard import GUARD\n"
+            "tests/test_guard.py": HELD + "\n\nfrom pkg.guard import GUARD\n"
             "\n"
             "\n"
             "def test_the_guard_holds() -> None:\n"
-            "    first = Path(os.environ['ORACLE_PROBE'])\n"
-            "    if not first.exists():\n"
-            "        first.write_text('ran', encoding='utf-8')\n"
-            "        time.sleep(30)\n"
+            "    hold()\n"
             "    assert GUARD\n",
         },
     )
     module = oracle(root=root)
     module.__dict__["DECLARATION"] = root / "mutations.toml"
     monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
+    holding, release, finished = _held_run_markers(tmp_path, monkeypatch)
 
     def terminate_once_pytest_runs() -> None:
-        deadline = time.monotonic() + 60
-        while not module._live and time.monotonic() < deadline:
-            time.sleep(0.05)
+        _wait_until_holding(holding)
         # Only while a run is live, which is only inside `scratch_checkout`, where the handler
         # that turns the signal into `SystemExit` is installed; outside it this would end the
         # test process.
@@ -714,10 +761,13 @@ def test_a_terminate_mid_run_ends_it_promptly_and_leaves_no_checkout(
             os.kill(os.getpid(), signal.SIGTERM)
 
     threading.Thread(target=terminate_once_pytest_runs, daemon=True).start()
-    started = time.monotonic()
-    with pytest.raises(SystemExit):
-        module.main([])
-    assert time.monotonic() - started < 20, "the terminate waited for the entry to finish"
+    try:
+        with pytest.raises(SystemExit):
+            module.main([])
+    finally:
+        release.write_text("", encoding="utf-8")
+    assert holding.exists(), "the held run never started"
+    assert not finished.exists(), "the terminate waited for the pytest in flight to finish"
     assert not module._live
     left = [
         path for path in Path(module.TEMPDIR).glob(f"{module.SCRATCH_PREFIX}*") if path.is_dir()
