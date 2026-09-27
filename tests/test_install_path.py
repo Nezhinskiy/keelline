@@ -43,6 +43,7 @@ from keelline.config.loader import CONFIG_FILE, load
 from keelline.doctor.api import OK, RED, SKIP, run_checks
 from keelline.memory.api import DELIMITER, PROJECTS, harness_memory_path, markers
 from keelline.runner import Completed
+from tests.floor import developer_free_environ
 from tests.gitfixture import git
 from tests.snapshot import (
     assert_snapshot_changed,
@@ -199,11 +200,7 @@ def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.Complet
     refusal separately). Nothing here reads the developer's own `~`: `HOME` is the scratch
     home and every harness variable is dropped.
     """
-    env = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith(("CLAUDE_", "PLUGIN_", "KEELLINE_", "XDG_"))
-    }
+    env = developer_free_environ()
     env["HOME"] = str(walk.home)
     env["PATH"] = f"{walk.bin}{os.pathsep}{env.get('PATH', '')}"
     env["CLAUDE_PLUGIN_ROOT"] = str(ROOT)
@@ -413,11 +410,7 @@ def _session(
     (§5.4) and nothing a session can name. `HOME` above is what keeps that inside the scratch
     tree, and a caller that wants the hook path to see a machine file puts one there.
     """
-    env = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith(("CLAUDE_", "PLUGIN_", "KEELLINE_", "XDG_"))
-    }
+    env = developer_free_environ()
     env["CLAUDE_PLUGIN_ROOT"] = str(ROOT)
     env["CLAUDE_PROJECT_DIR"] = str(walk.root)
     env["CLAUDE_PLUGIN_DATA"] = str(walk.data)
@@ -479,11 +472,7 @@ def test_the_machine_file_is_the_only_thing_that_says_where_the_overlay_is(
     # store without the machine file would pass that test for the wrong reason.
     walk = _install_path(tmp_path)
     assert str(walk.overlay) in walk.machine.read_text(encoding="utf-8")
-    env = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith(("CLAUDE_", "PLUGIN_", "KEELLINE_", "XDG_"))
-    }
+    env = developer_free_environ()
     env["CLAUDE_PLUGIN_ROOT"] = str(ROOT)
     env["CLAUDE_PROJECT_DIR"] = str(walk.root)
     env["HOME"] = str(walk.home)

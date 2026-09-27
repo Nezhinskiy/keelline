@@ -20,6 +20,7 @@ from keelline.doctor.api import OK, RED, SKIP, WARN, Check
 from keelline.doctor.commands import summarise
 from keelline.findings import LISTED_LIMIT
 from tests.doctor.test_checks import _initialised
+from tests.floor import is_developers
 
 
 @pytest.fixture(autouse=True)
@@ -41,8 +42,11 @@ def _nothing_of_the_developers_own(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     their interpreters, not about the argparse wiring this file is for. What the two checks do
     with a plugin root is `tests/doctor/test_checks.py`'s.
     """
+    # `is_developers` keeps the suite's floor under the product's `git` bounds, which is the test
+    # runner's rather than the developer's: `doctor` runs its `git` in this process, and without
+    # the floor a loaded machine could run a five-second `rev-parse` out.
     for name in list(os.environ):
-        if name.startswith(("CLAUDE_", "PLUGIN_", "KEELLINE_", "XDG_")):
+        if is_developers(name):
             monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setattr(checks, "_own_root", lambda: None)

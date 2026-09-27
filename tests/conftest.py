@@ -28,20 +28,15 @@ from pathlib import Path
 import pytest
 
 from keelline import gitenv
-
-# The least bound every `git` the product runs in this process is given (`gitenv.git_run`),
-# whatever bound its caller asked for. The product's own bounds are sized for a machine doing
-# one thing; under a full `-n auto` run beside other sessions' work a five-second `rev-parse`
-# and a two-second `status` ran out, the caller read that as no answer, and the test failed for
-# the machine's load rather than for the code — and a verdict decided by load is one the oracle
-# reads as a caught mutation. A test about a bound running out sets the floor back to zero and
-# passes its own small bound.
-SUITE_GIT_FLOOR_SECONDS = 60.0
+from tests.floor import SUITE_GIT_FLOOR_SECONDS
 
 
 @pytest.fixture(autouse=True)
 def _git_outlasts_the_machines_load(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(gitenv, "BOUND_FLOOR_SECONDS", SUITE_GIT_FLOOR_SECONDS)
+    # The floor under every `git` the product runs, in this process and in every `keelline` a
+    # test starts (`tests/floor.py` says why it is an environment variable). A test about a bound
+    # running out removes it and passes a small bound of its own.
+    monkeypatch.setenv(gitenv.FLOOR_VARIABLE, str(SUITE_GIT_FLOOR_SECONDS))
 
 
 @pytest.fixture(autouse=True)

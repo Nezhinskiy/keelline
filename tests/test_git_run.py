@@ -227,9 +227,9 @@ def test_a_git_past_its_time_limit_is_minus_one(
 ) -> None:
     # The third cause `-1` still carries, and the one the callers' safeguards are kept for: a
     # `git` that hangs is no answer, whatever it would have said. The stand-in on `PATH` sleeps
-    # past a bound far below it. The suite's floor is set back to the product's zero, or the
-    # bound this test is about would be lifted past the sleep.
-    monkeypatch.setattr(gitenv, "BOUND_FLOOR_SECONDS", 0)
+    # past a bound far below it. The suite's floor is removed, back to the product's zero, or
+    # the bound this test is about would be lifted past the sleep.
+    monkeypatch.delenv(gitenv.FLOOR_VARIABLE)
     _a_git_that_sleeps(tmp_path, monkeypatch, 5)
     assert git_run(tmp_path, "rev-parse", timeout=0.2) == (-1, "")
 
@@ -240,34 +240,66 @@ def test_the_suite_floor_outlasts_a_bound_its_caller_asked_for(
     # `tests/conftest.py` lifts every `git_run` bound to its floor, so a loaded machine cannot
     # run a caller's two- or five-second bound out and turn a test red for the load. A `git` that
     # answers after half a second, under a bound a fifth of that, still answers here. Mutation
-    # (advisory): `timeout=max(timeout, BOUND_FLOOR_SECONDS)` back to `timeout=timeout` — the
-    # floor is never applied, the call runs out, and this reddens.
+    # (oracle): "the git runner ignores the floor a test runner sets" — the variable is never
+    # read, the call runs out, and this reddens.
     _a_git_that_sleeps(tmp_path, monkeypatch, 0.5)
     assert git_run(tmp_path, "rev-parse", timeout=0.1) == (0, "")
 
 
 def test_the_product_ships_with_no_floor_under_its_bounds() -> None:
-    # Read in a fresh interpreter, because the suite has already raised the value this process
-    # sees, and as an import of the product leaves it: a reading of the source's annotated
-    # assignment alone missed a plain `BOUND_FLOOR_SECONDS = 60` below it, which is the value
-    # every caller then gets. A floor above zero in the product would widen every bound a caller
-    # chose, the session-start sync's two seconds among them, whose handler shares a ten-second
-    # entry. Mutations (oracle): "the product ships a floor under every git bound" and "a second
-    # assignment ships a floor under every git bound" -> this reddens.
+    # Read in a fresh interpreter with the suite's variable gone, as an import of the product
+    # leaves it, because the suite has raised the floor this process sees. A floor above zero in
+    # the product would widen every bound a caller chose, the session-start sync's two seconds
+    # among them, whose handler shares a ten-second entry. Mutation (oracle): "the product ships
+    # a floor under every git bound" -> this reddens.
+    env = {key: value for key, value in os.environ.items() if key != gitenv.FLOOR_VARIABLE}
     shipped = subprocess.run(
-        [
-            sys.executable,
-            "-P",
-            "-c",
-            "from keelline import gitenv; print(gitenv.BOUND_FLOOR_SECONDS)",
-        ],
+        [sys.executable, "-P", "-c", "from keelline import gitenv; print(gitenv.bound_floor())"],
         capture_output=True,
         text=True,
         check=False,
-        env={**os.environ, "PYTHONPATH": str(SRC)},
+        env={**env, "PYTHONPATH": str(SRC)},
     )
     assert shipped.returncode == 0, shipped.stderr
     assert float(shipped.stdout) == 0, shipped.stdout
+
+
+def test_the_floor_variable_never_shortens_a_bound(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The variable can only raise: a value below the caller's bound leaves that bound as it
+    # was. A `git` that answers after 0.3 s, under a caller's minute and a floor of 0.05,
+    # answers; the minute is there so no load on the machine can decide the case. Mutation
+    # (oracle): "the floor replaces the caller's bound instead of raising it" -> this reddens.
+    monkeypatch.setenv(gitenv.FLOOR_VARIABLE, "0.05")
+    _a_git_that_sleeps(tmp_path, monkeypatch, 0.3)
+    assert git_run(tmp_path, "rev-parse", timeout=60) == (0, "")
+
+
+@pytest.mark.parametrize("value", ["", "sixty", "nan", "-inf", "-5", "0"])
+def test_a_floor_variable_that_is_no_positive_number_raises_nothing(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    # Not a number, or not above zero: no floor at all, as if the variable were unset. `nan`
+    # compares false with everything, so a check spelled `asked <= 0` would let it through as
+    # the floor, and `max` would then answer by argument order. Mutation (oracle): "a floor
+    # variable that is not a number is honoured" -> the `nan` row reddens.
+    monkeypatch.setenv(gitenv.FLOOR_VARIABLE, value)
+    assert gitenv.bound_floor() == 0
+
+
+@pytest.mark.parametrize("value", ["1e300", "inf"])
+def test_the_floor_variable_is_capped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    # Uncapped, a floor of `1e300` or `inf` would reach `subprocess.run` as a timeout it cannot
+    # represent, which raises `OverflowError` — not one of the three things `git_run` reads as no
+    # answer — out of every caller. Capped, the call is simply given ten minutes. Mutation
+    # (oracle): "the floor variable is honoured without its ceiling" -> both rows redden.
+    monkeypatch.setenv(gitenv.FLOOR_VARIABLE, value)
+    assert gitenv.bound_floor() == gitenv.FLOOR_CEILING_SECONDS
+    _a_git_that_sleeps(tmp_path, monkeypatch, 0)
+    assert git_run(tmp_path, "rev-parse") == (0, "")
 
 
 # Every named bound a product `git` runs under. The suite's floor lifts each one past git's
