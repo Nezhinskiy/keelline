@@ -42,7 +42,7 @@ from keelline.config.schema import (
     Project,
 )
 from keelline.errors import Failure
-from keelline.findings import listed
+from keelline.findings import LISTED_LIMIT, listed
 from keelline.presets import load_preset
 
 CONFIG_FILE = "keelline.toml"
@@ -210,8 +210,14 @@ def _named(unknown: list[str], noun: str) -> str:
     """
     named = [name for name in unknown if SECTION_NAME.match(name)]
     unnamed = len(unknown) - len(named)
-    # The named ones capped like every list of names on a line: a file may carry any number.
-    parts = [listed(named)] if named else []
+    # The named ones capped at `LISTED_LIMIT` like every list of names on a line, since a file
+    # may carry any number, and the plain rest counted as plain: one count per kind, so the two
+    # counts never run together as "and 3 more, 1 more".
+    shown = named[:LISTED_LIMIT]
+    held = len(named) - len(shown)
+    parts = [", ".join(shown)] if shown else []
+    if held:
+        parts = [f"{parts[0]} and {held} more plain name(s)"]
     if unnamed:
         # The noun agrees with the count, for the reason the verb already did: one unnamed key
         # produced "1 more that is not plain key names", which is the common case of this arm.
@@ -220,7 +226,7 @@ def _named(unknown: list[str], noun: str) -> str:
         # read "unknown section(s): 3 more that are not plain section names" — more than nothing.
         more = "more " if named else ""
         parts.append(f"{unnamed} {more}that {tail}")
-    return ", ".join(parts)
+    return ("; " if held else ", ").join(parts)
 
 
 def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:

@@ -11535,10 +11535,19 @@ reddens = [
 [[mutation]]
 name = "a duplicate identifier names every file that claims it"
 file = "src/keelline/ledger/check.py"
-before = "            joined = listed([str(h.path) for h in holders])"
-after = "            joined = \", \".join(str(h.path) for h in holders)"
+before = "            joined = listed([str(h.path) for h in first])"
+after = "            joined = \", \".join(str(h.path) for h in first)"
 reddens = [
   "tests/ledger/test_check.py::test_a_duplicate_identifier_names_at_most_the_listed_limit_of_its_files",
+]
+
+[[mutation]]
+name = "a duplicate identifier names its holders in path order"
+file = "src/keelline/ledger/check.py"
+before = "            first = sorted(holders, key=lambda h: h.path.stem != identifier)"
+after = "            first = holders"
+reddens = [
+  "tests/ledger/test_check.py::test_a_duplicate_identifier_names_its_own_file_first_whatever_the_sort",
 ]
 
 [[mutation]]
@@ -11580,8 +11589,8 @@ reddens = [
 [[mutation]]
 name = "an unknown-key refusal names every plain key"
 file = "src/keelline/config/loader.py"
-before = "    parts = [listed(named)] if named else []"
-after = "    parts = list(named)"
+before = "    shown = named[:LISTED_LIMIT]"
+after = "    shown = named"
 reddens = [
   "tests/config/test_loader.py::test_unknown_keys_are_named_at_most_to_the_listed_limit",
 ]

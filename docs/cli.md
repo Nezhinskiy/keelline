@@ -565,7 +565,8 @@ attribution is undetermined and the command says so, counting them and naming up
 rather than extract the one git would pick alone. Merge the base into the change, which makes
 its tip the one merge base, or pass `--base` naming the commit you mean. A shallow clone is
 undetermined too, since the commit `HEAD` forked from can be cut off there and an older one stand
-in for it, and so is a clone git cannot say is shallow or not. All of it is decided before anything runs.
+in for it, and so is a clone git cannot say is shallow or not. All of it is decided before
+anything runs.
 
 `--base` defaults to `refs/remotes/origin/<[project] base_branch>`, named in full so that no tag of
 the short spelling stands in for it; pass it to compare against another ref.
@@ -1011,8 +1012,8 @@ Run locally on a branch `keelline upgrade` made, a moved `[ci] ref` is refused u
 `--workflow-sha` with the commit the new `uses:` line names; with it, the run answers what CI will.
 
 **Printed.** `config: …` first when the configuration check runs: how many keys changed, how many
-were refused and up to eight of their names, or that the base has no `keelline.toml` at this path. Then one line
-per gate: `<name>: enforcing, N finding(s)`, `<name>: advisory, N finding(s)`, or `could not run`
+were refused and up to eight of their names, or that the base has no `keelline.toml` at this
+path. Then one line per gate: `<name>: enforcing, N finding(s)`, `<name>: advisory, N finding(s)`, or `could not run`
 in place of the count, or `not run: the run had already failed` for a custom gate not started
 once the run had failed; and, after the gates that ran, `<name>: advisory, not run until the base
 has this command` (or `enforcing`) for each custom gate whose command the base does not have. A run
@@ -1099,8 +1100,8 @@ Runs gates strictly on the tree as it is, and enforces those that pass by adding
 `[keelline] enforced`. With no `GATE`, it runs every configured gate that does not enforce yet,
 enforces each one that passes, names the rest with their finding counts, and exits 1 if any
 failed; the line names up to eight gates in each of its two lists and counts the rest, and
-`--json` carries every one. With names, they pass together or nothing is written, and a named gate that already
-enforces is refused rather than skipped. Once every configured gate enforces, the state becomes
+`--json` carries every one. With names, they pass together or nothing is written, and a named
+gate that already enforces is refused rather than skipped. Once every configured gate enforces, the state becomes
 `installed` and `enforced` is emptied: under `installed` an empty list means every configured
 gate, so a gate the project adds later enforces from its first run — for a custom gate, the
 first run after it lands on the base branch, since `keelline gate` runs none before. An
@@ -1173,9 +1174,12 @@ filenames are skipped. In an overlay store, a note in a cross-project group that
 into a project-scoped note is an `audience` finding. Exits `1` listing `note:line [rule]`; the
 targets are in `--json`. A note that exists and would not parse is counted on the line and
 named in `--json`, and is exit `1` too: an unread note is not a clean note. Refuses (`2`) when a
-configured group could not be resolved, naming each group and carrying the resolver's own reason
-for it inside the delimited region that marks repository-authored text as data — because a walk
-over a subset that reports nothing stale is worse than no guard. Where *no* store resolves at
+configured group could not be resolved, counting them on a line that names none, then naming
+every group with the resolver's own reason for it, one per line, inside the delimited region that
+marks repository-authored text as data — the one list of names not capped at eight, since the
+region is data rather than a line, and on the path a model reads the harness keeps at most
+`[native_caps] hook_output_chars` of it — because a walk over a subset that reports nothing stale
+is worse than no guard. Where *no* store resolves at
 all, the exit is `1`, with the number of configured groups and the reasons for the first eight
 of them in sorted order, a group longer than 120 characters named by its first 120 and its
 length: that comes from the resolver every `memory` command shares, so part of the store being
@@ -1261,7 +1265,7 @@ keys that are Keelline's to rewrite: `[keelline] version`, `state` and `enforced
 (`1`) naming the file. A repository that already carries `.keelline/manifest.json` is refused
 (`2`): re-running `init` is `keelline upgrade`. `keelline uninstall` later keeps a
 `keelline.toml` you wrote, the version line included. When that file configures
-`[gates.custom]`, a `note:` names those gates, five at most and then a count, and says that
+`[gates.custom]`, a `note:` names those gates, up to eight and then a count, and says that
 `keelline assess`, `keelline gate` and `keelline adopt promote` run their commands: in a clone,
 those are commands the clone wrote, and the dry run you read before `--yes` says so. The
 commands themselves never print.

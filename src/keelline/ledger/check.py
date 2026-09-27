@@ -307,8 +307,10 @@ def problems(root: Path, config: Config, base: str = "") -> list[Finding]:
     for identifier, holders in sorted(by_id.items()):
         if len(holders) > 1:
             # Capped, and nothing is lost from `--json`: only one holder's file name can be the
-            # identifier, so every other one has an `id-mismatch` finding naming it.
-            joined = listed([str(h.path) for h in holders])
+            # identifier, and every other one has an `id-mismatch` finding naming it, so that
+            # one is named first, inside the cap whatever the sort puts after it.
+            first = sorted(holders, key=lambda h: h.path.stem != identifier)
+            joined = listed([str(h.path) for h in first])
             found.append(
                 Finding(
                     "duplicate-id",

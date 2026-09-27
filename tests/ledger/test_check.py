@@ -701,3 +701,22 @@ def test_a_duplicate_identifier_names_at_most_the_listed_limit_of_its_files(
     ]
     mismatched = {p.path for p in found if p.rule == "id-mismatch"}
     assert mismatched == {f"docs/bugs/{name}.md" for name in names[1:]}
+
+
+def test_a_duplicate_identifier_names_its_own_file_first_whatever_the_sort(
+    tmp_path: Path,
+) -> None:
+    # The one holder with no `id-mismatch` finding is the file named after the identifier, so
+    # the capped detail names it first: otherwise, sorted last past the cap, it was named nowhere
+    # in `--json`. Every other holder is named by a finding of its own. Mutation (oracle): "a
+    # duplicate identifier names its holders in path order" -> this reddens.
+    root, config = project(tmp_path)
+    names = [f"BR-{n:03}" for n in range(1, LISTED_LIMIT + 4)]
+    ledger(root, config, dict.fromkeys(names, entry(len(names))))
+    found = problems(root, config)
+    shown = ", ".join(f"docs/bugs/{name}.md" for name in [names[-1], *names[: LISTED_LIMIT - 1]])
+    assert [p.detail for p in found if p.rule == "duplicate-id"] == [
+        f"{names[-1]} is claimed by more than one file: {shown}, and 3 more"
+    ]
+    mismatched = {p.path for p in found if p.rule == "id-mismatch"}
+    assert mismatched == {f"docs/bugs/{name}.md" for name in names[:-1]}

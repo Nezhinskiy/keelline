@@ -742,9 +742,9 @@ def test_the_gates_a_project_runs_are_named_at_most_to_the_listed_limit(tmp_path
 
 def test_unknown_keys_are_named_at_most_to_the_listed_limit(tmp_path: Path) -> None:
     # A `keelline.toml` may carry any number of unknown keys, so the plain-named ones are capped
-    # like every list of names on a line: the first `LISTED_LIMIT`, then a count, then the count
-    # of the ones outside the grammar as before. Mutation (oracle): "an unknown-key refusal names
-    # every plain key" -> this reddens.
+    # like every list of names on a line: the first `LISTED_LIMIT` and a count of the plain rest,
+    # then the count of the ones outside the grammar as before, one count per kind. Mutation
+    # (oracle): "an unknown-key refusal names every plain key" -> this reddens.
     keys = [f"key_{chr(ord('a') + n)}" for n in range(LISTED_LIMIT + 3)]
     body = "".join(f"{key} = 1\n" for key in keys)
     write(tmp_path, MINIMAL + f'\n[paths]\n{body}"not plain" = 1\n')
@@ -752,5 +752,6 @@ def test_unknown_keys_are_named_at_most_to_the_listed_limit(tmp_path: Path) -> N
         load(tmp_path, machine=tmp_path / "no-machine.toml")
     shown = ", ".join(keys[:LISTED_LIMIT])
     assert str(caught.value) == (
-        f"[paths] has unknown key(s): {shown}, and 3 more, 1 more that is not a plain key name"
+        f"[paths] has unknown key(s): {shown} and 3 more plain name(s); "
+        "1 more that is not a plain key name"
     )
