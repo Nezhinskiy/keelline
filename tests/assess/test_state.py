@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from keelline.assess.commands import BASE_NOT_THERE, NOT_RUN, WAITING
-from keelline.assess.report import FINDINGS_ELSEWHERE
+from keelline.assess.report import BUILTIN_FINDINGS_ELSEWHERE, FINDINGS_ELSEWHERE
 from keelline.assess.state import NO_SUCH_PLAN, begin, promote
 from keelline.config.loader import CONFIG_FILE, load, preset_defaults
 from keelline.config.owned import OwnedKeyError
@@ -573,8 +573,11 @@ def test_builtin_runs_no_custom_gate_and_promotes_the_built_ins_alone(tmp_path: 
 def test_adopt_promote_builtin_names_the_custom_gates_it_did_not_run(tmp_path: Path) -> None:
     # The command says which gates it left out and why, lists them apart in `--json`, and exits
     # 1, since they stay advisory; the note says what running them takes, so the person who
-    # declined decides again rather than the command. Mutation (advisory): the `skipped` names
-    # left out of the advisory list -> the command exits 0 and reddens.
+    # declined decides again rather than the command. The closing line names `assess --builtin
+    # --json`: it is relayed as what to run next, and a plain `assess` would run the commands the
+    # person declined. Mutation (advisory): the `skipped` names left out of the advisory list ->
+    # the command exits 0 and reddens. Mutation (oracle): "adopt promote --builtin hands on a
+    # command that runs the custom gates" -> the closing line is the plain one and this reddens.
     root, _ = _project(tmp_path)
     base = _with_marker_gate(root)
     code, out, err = cli(root, tmp_path, "adopt", "promote", "--builtin", "--base", base)
@@ -583,7 +586,7 @@ def test_adopt_promote_builtin_names_the_custom_gates_it_did_not_run(tmp_path: P
         f"promoted: {', '.join(BUILTIN_GATES)}; still advisory: {MARKER} (not run, as --builtin "
         "asked); state adopting",
         NOT_RUN,
-        FINDINGS_ELSEWHERE,
+        BUILTIN_FINDINGS_ELSEWHERE,
     ]
     assert not (root / MARKER).exists()
     code, out, _ = cli(root, tmp_path, "adopt", "promote", "--builtin", "--base", base, "--json")

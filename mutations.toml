@@ -10553,6 +10553,24 @@ reddens = [
 ]
 
 [[mutation]]
+name = "adopt promote --builtin hands on a command that runs the custom gates"
+file = "src/keelline/assess/commands.py"
+before = "        lines.append(BUILTIN_FINDINGS_ELSEWHERE if args.builtin else FINDINGS_ELSEWHERE)"
+after = "        lines.append(FINDINGS_ELSEWHERE)"
+reddens = [
+  "tests/assess/test_state.py::test_adopt_promote_builtin_names_the_custom_gates_it_did_not_run",
+]
+
+[[mutation]]
+name = "gate --builtin hands on a command that runs the custom gates"
+file = "src/keelline/assess/commands.py"
+before = '        lines.append(BUILTIN_FINDINGS_ELSEWHERE if args.part == "builtin" else FINDINGS_ELSEWHERE)'
+after = "        lines.append(FINDINGS_ELSEWHERE)"
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_failing_run_ends_by_saying_where_the_findings_are",
+]
+
+[[mutation]]
 name = "a named custom gate --builtin did not run holds nothing back"
 file = "src/keelline/assess/state.py"
 before = "    if (names and (len(promoted) < len(results) or waiting or skipped)) or not promoted:"

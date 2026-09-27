@@ -6,8 +6,9 @@ its command, since that is when `keelline gate` starts running it; until then it
 is named as not on the base.
 `keelline adopt promote --builtin` runs the built-in gates and none of the commands
 `[gates.custom]` names, so a clone whose commands you have not agreed to run can still be
-adopted: its custom gates are named as not run and stay advisory. The `init` skill uses it when
-you decline to run them.
+adopted: its custom gates are named as not run and stay advisory, and the line saying where the
+findings are names `keelline assess --builtin --json`. The `init` skill uses it when you decline
+to run them.
 `begin` refuses a plan whose row in the roadmap's trail declares no state, which a first listing
 would otherwise record as delivered, and tells a missing plan apart from a misnamed one. When a
 gate stays advisory, `promote` ends by saying where its findings are, and says when the base

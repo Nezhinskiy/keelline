@@ -129,6 +129,7 @@ def run_gate(args: argparse.Namespace) -> Result:
     from keelline.assess import rule
     from keelline.assess.gates import GateContext, run_gates
     from keelline.assess.report import (
+        BUILTIN_FINDINGS_ELSEWHERE,
         FINDINGS_ELSEWHERE,
         NOT_ON_BASE,
         GateRun,
@@ -230,7 +231,7 @@ def run_gate(args: argparse.Namespace) -> Result:
     if gate_run.exit_code and any(result.failing for result in results):
         # Only on a run that fails: an advisory gate's findings are the ordinary state of an
         # adoption, and its line already counts them.
-        lines.append(FINDINGS_ELSEWHERE)
+        lines.append(BUILTIN_FINDINGS_ELSEWHERE if args.part == "builtin" else FINDINGS_ELSEWHERE)
     if args.annotate:
         lines += workflow_commands(gate_run)
     return Result("\n".join(lines), data, exit_code=gate_run.exit_code)
@@ -267,7 +268,11 @@ def run_adopt_begin(args: argparse.Namespace) -> Result:
 
 
 def run_adopt_promote(args: argparse.Namespace) -> Result:
-    from keelline.assess.report import FINDINGS_ELSEWHERE, findings_text
+    from keelline.assess.report import (
+        BUILTIN_FINDINGS_ELSEWHERE,
+        FINDINGS_ELSEWHERE,
+        findings_text,
+    )
     from keelline.assess.state import promote
     from keelline.config.layout import local_base
 
@@ -291,7 +296,7 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
             lines.append(WAITING)
         if transition.skipped:
             lines.append(NOT_RUN)
-        lines.append(FINDINGS_ELSEWHERE)
+        lines.append(BUILTIN_FINDINGS_ELSEWHERE if args.builtin else FINDINGS_ELSEWHERE)
     data = _transition(transition)
     return Result("\n".join(lines), data, exit_code=1 if advisory else 0)
 

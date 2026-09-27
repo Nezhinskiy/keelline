@@ -16,7 +16,12 @@ import pytest
 
 import keelline
 from keelline.assess import rule
-from keelline.assess.report import BOOTSTRAP, FINDINGS_ELSEWHERE, NOT_ON_BASE
+from keelline.assess.report import (
+    BOOTSTRAP,
+    BUILTIN_FINDINGS_ELSEWHERE,
+    FINDINGS_ELSEWHERE,
+    NOT_ON_BASE,
+)
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import CONFIG_FILE
 from tests.assess.baserepo import AGENTS, clone, commit
@@ -454,13 +459,19 @@ def test_the_enforced_gate_fails_on_its_findings(tmp_path: Path) -> None:
 
 def test_a_failing_run_ends_by_saying_where_the_findings_are(tmp_path: Path) -> None:
     # The printed lines are counts, and a first-time user had no pointer to the findings behind
-    # them. One fixed line, and only on a run with a failing gate. Mutation (by hand): the line
-    # dropped -> the last line is the gate's.
+    # them. One fixed line, and only on a run with a failing gate; under `--builtin` it names
+    # `assess --builtin --json`, so the command it hands on runs no custom gate either. Mutation
+    # (by hand): the line dropped -> the last line is the gate's. Mutation (oracle): "gate
+    # --builtin hands on a command that runs the custom gates" -> the `--builtin` run ends with
+    # the plain line and this reddens.
     project = clone(tmp_path, BASE)
     _change(project, BASE, agents=OVER_BUDGET)
     code, out, _ = cli(project, tmp_path, "gate", "--only", "docs")
     assert code == 1
     assert out.splitlines() == ["docs: enforcing, 2 finding(s)", FINDINGS_ELSEWHERE]
+    code, out, _ = cli(project, tmp_path, "gate", "--builtin", "--only", "docs")
+    assert code == 1
+    assert out.splitlines()[-2:] == ["docs: enforcing, 2 finding(s)", BUILTIN_FINDINGS_ELSEWHERE]
     _change(project, BASE, agents=AGENTS)
     code, out, _ = cli(project, tmp_path, "gate", "--only", "docs")
     assert (code, out.splitlines()) == (0, ["docs: enforcing, 0 finding(s)"])

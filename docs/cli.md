@@ -898,7 +898,8 @@ per gate: `<name>: enforcing, N finding(s)`, `<name>: advisory, N finding(s)`, o
 in place of the count, and, after the gates that ran, `<name>: advisory, not run until the base
 has this command` (or `enforcing`) for each custom gate whose command the base does not have. A run
 that fails with a gate failing ends with one `details:` line saying
-where the findings are: `keelline assess --json`, or the gate's own command. Key names and gate
+where the findings are: `keelline assess --json` (`keelline assess --builtin --json` under
+`--builtin`), or the gate's own command. Key names and gate
 names print; values from `keelline.toml` and a finding's detail never do.
 
 **`--annotate`** also prints GitHub workflow commands, which the platform shows as annotations:
@@ -1014,7 +1015,8 @@ as `keelline assess` defines it, `enforcing` when this run promoted it), `promot
 which maps each gate that ran and did not pass to its finding count, `unanswered`, the gates that
 could not run, `not_on_base`, the custom gates not run because the base does not have their
 command, and `skipped`, the custom gates `--builtin` did not run. When a gate stays advisory, the summary ends with a line saying where its findings are
-(`keelline assess --json`, or the gate's own command), and, when `plan`, `commit` or `bugs`
+(`keelline assess --json`, or `keelline assess --builtin --json` under `--builtin`, or the
+gate's own command), and, when `plan`, `commit` or `bugs`
 could not run and the base is not in the checkout, a `note:` saying so and naming `--base` with
 the project's base branch, since a gate that could not run for want of the base says nothing
 about the tree.
