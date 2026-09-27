@@ -1,16 +1,16 @@
-"""Shipped code and documents cite what a reader here can open, and nothing else.
+"""Code, tests and documents cite what a reader here can open, and nothing else.
 
 The design these modules were built against lives in a private repository. A `§9.1` or a
 `(D7)` in a docstring therefore points a reader at a page they cannot open: it looks like a
-reference and carries none of the content. Seventy-four files under `src/` alone did it before this
-gate, beside `docs/cli.md`, the preset and the hook wrapper.
-The rule is to say what the section says, in a few words, or to cite an anchor that exists in
-this repository — `docs/cli.md#…`, `CONTRIBUTING.md`, or a principle of
-`docs/methodology/principles.md` by its number.
+reference and carries none of the content. Seventy-four files under `src/` did it before this
+gate, eighty-two under `tests/`, and the mutation register, the scripts, `docs/cli.md`, the
+preset and the hook wrapper besides. The rule is to say what the section says, in a few words,
+or to cite an anchor that exists in this repository — `docs/cli.md#…`, `CONTRIBUTING.md`, or a
+principle of `docs/methodology/principles.md` by its number.
 
 **`docs/plans/` is exempt, and on purpose.** A plan is a historical record of work argued from
 the design, and it keeps the ids it argued with; `CONTRIBUTING.md` says its references cannot
-be followed from here. Everything else a user installs or reads is walked.
+be followed from here. Everything else a user installs or a contributor reads is walked.
 
 The arms are deliberately wider than "a parenthesised id". The ids were written bare as often
 as in brackets — `D7: a cap, not a config key`, `DP3 makes it trusted by construction`, `C5's
@@ -26,13 +26,19 @@ from pathlib import Path
 
 from tests.test_neutral import ROOT, tracked_files
 
-# What ships or is read as documentation: the package, the plugin's own trees and the two
-# top-level documents a contributor is sent to. `tests/` and `scripts/` are the maintainers'
-# and are not walked; `.github/` is left to the reviewer, because `RELEASING.md §3` in a
-# workflow comment is a public anchor that the section arm below cannot tell from a private one.
-SCOPE = ("src", "skills", "docs", "hooks", "agents")
-TOP_LEVEL = ("README.md", "CONTRIBUTING.md")
-EXEMPT = ("docs/plans",)
+# What ships, what is read as documentation, and what a contributor reads beside it: the
+# package, the plugin's own trees, the suite and its scripts, the mutation register and the
+# top-level documents a contributor is sent to. The maintainers' files are walked too because
+# they are as public as the package, and a citation in a test's docstring is as unreadable as
+# one in a module's. `.github/` is left to the reviewer: its comments say what a step does, and
+# nothing there is prose a reader is sent to. This file is exempt because its planted examples
+# are citations on purpose.
+SCOPE = ("src", "skills", "docs", "hooks", "agents", "tests", "scripts")
+TOP_LEVEL = ("README.md", "CONTRIBUTING.md", "RELEASING.md", "mutations.toml")
+EXEMPT = ("docs/plans", "tests/test_public_anchors.py")
+
+# The trees that are code rather than documents, where the plans' bookkeeping arm applies.
+CODE = ("src", "tests", "scripts", "mutations.toml")
 
 # Each arm is named so a hit says what it is.
 CITATIONS = (
@@ -52,10 +58,15 @@ CITATIONS = (
 )
 
 # The plans' own bookkeeping, which means nothing once the code has shipped: the wave a line
-# landed in, the task that wrote it, the review round that changed it. A module says what it
-# does and why; when it did it is git's. Held to the package only, because a document may
-# legitimately talk about a task or a round in its own sense.
-PACKAGE_ONLY = (("plan vocabulary", re.compile(r"\b[Ww]ave[- ]\d|\bTask \d|\b[Ff]ix round")),)
+# landed in, the task that wrote it, the review round that changed it and the finding by its
+# number in that round. Code says what it does and why; when it did it is git's. Held to the
+# code, because a document may legitimately talk about a task or a round in its own sense.
+CODE_ONLY = (
+    (
+        "plan vocabulary",
+        re.compile(r"\b[Ww]ave[- ]\d|\b[Tt]his wave\b|\bTask \d|\b[Ff]ix round|\b[Ff]inding \d"),
+    ),
+)
 
 
 def in_scope(path: Path) -> bool:
@@ -65,12 +76,12 @@ def in_scope(path: Path) -> bool:
     return relative in TOP_LEVEL or relative.split("/", 1)[0] in SCOPE
 
 
-def citations(text: str, *, package: bool = False) -> list[tuple[int, str, str]]:
+def citations(text: str, *, code: bool = False) -> list[tuple[int, str, str]]:
     """Every private citation in the text, as `(line number, arm name, matched text)`.
 
-    `package` adds the arms held to `src/` alone.
+    `code` adds the arms held to the code trees alone.
     """
-    arms = CITATIONS + PACKAGE_ONLY if package else CITATIONS
+    arms = CITATIONS + CODE_ONLY if code else CITATIONS
     found: list[tuple[int, str, str]] = []
     for number, line in enumerate(text.splitlines(), start=1):
         for name, pattern in arms:
@@ -79,8 +90,8 @@ def citations(text: str, *, package: bool = False) -> list[tuple[int, str, str]]
 
 
 def file_citations(relative: str, text: str) -> list[tuple[int, str, str]]:
-    """`citations` for the tracked file at `relative`, with the package-only arms under `src/`."""
-    return citations(text, package=relative.startswith("src/"))
+    """`citations` for the tracked file at `relative`, with the code-only arms in the code."""
+    return citations(text, code=relative.split("/", 1)[0] in CODE)
 
 
 def walked() -> list[Path]:
@@ -122,28 +133,35 @@ def test_the_citation_gate_discriminates() -> None:
 
 
 def test_the_plan_vocabulary_gate_discriminates() -> None:
-    # The package-only arm: each planted line is refused inside `src/` and passes outside it,
-    # which is the whole difference the `package` flag makes. The negatives are the words these
-    # modules use in their own sense — a background task, a round trip, a wave of retries.
+    # The code-only arm: each planted line is refused in the code and passes in a document,
+    # which is the whole difference the `code` flag makes. The negatives are the words these
+    # modules use in their own sense — a background task, a round trip, a wave of retries, what
+    # a check finds.
     for planted in (
         "the wave-3 memory engine",
         "landed in wave 4",
         "Task 12 wrote this guard",
         "Fix round 2 moved the check",
         "the second fix round",
+        "Review round 1, finding 5.",
+        "this wave's first report",
     ):
-        assert citations(planted, package=True), planted
+        assert citations(planted, code=True), planted
         assert citations(planted) == [], planted
-    # And the walk applies the arm by where a file lives: inside the package and nowhere else.
-    assert file_citations("src/keelline/runner.py", "the wave-4 lane")
-    assert file_citations("docs/cli.md", "the wave-4 lane") == []
+    # And the walk applies the arm by where a file lives: in the code and nowhere else.
+    for code in ("src/keelline/runner.py", "tests/test_cli.py", "scripts/x.py", "mutations.toml"):
+        assert file_citations(code, "the wave-4 lane"), code
+    for document in ("docs/cli.md", "README.md", "RELEASING.md", "skills/README.md"):
+        assert file_citations(document, "the wave-4 lane") == [], document
     for clean in (
         "a task the hook runs in the background",
         "one round trip to git",
         "a wave of retries",
         "fix the round-trip",
+        "one finding per line",
+        "a microwave 3 times",
     ):
-        assert citations(clean, package=True) == [], clean
+        assert citations(clean, code=True) == [], clean
 
 
 def test_the_citation_walk_reads_what_ships_and_skips_the_plans() -> None:
@@ -160,11 +178,17 @@ def test_the_citation_walk_reads_what_ships_and_skips_the_plans() -> None:
         "skills/README.md",
         "hooks/run-hook.sh",
         "agents/code-navigator.md",
+        "RELEASING.md",
+        "mutations.toml",
+        "tests/test_cli.py",
+        "tests/fixtures/hostile-project/keelline.toml",
+        "scripts/mutation_oracle.py",
     ):
         assert wanted in names, wanted
     plans = [p for p in tracked_files() if p.relative_to(ROOT).as_posix().startswith("docs/plans/")]
     assert plans
     assert not names.intersection(p.relative_to(ROOT).as_posix() for p in plans)
+    assert "tests/test_public_anchors.py" not in names
 
 
 def test_no_shipped_file_cites_the_private_design() -> None:

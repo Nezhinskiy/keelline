@@ -1117,9 +1117,9 @@ reddens = [
   "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
 ]
 
-# Most of the ids were written bare — `D7: a cap`, `C5's exit 2`, `the argument P10 makes` — and
-# only the bracketed arm would be left to catch them. Narrowed to the two-letter prefixes, the
-# gate goes on refusing `(D7)` and lets the commoner spelling back in.
+# Most of the ids were written bare, a one-letter prefix and a number at the head of a clause,
+# and only the bracketed arm would be left to catch them. Narrowed to the two-letter prefixes,
+# the gate goes on refusing a bracketed id and lets the commoner spelling back in.
 [[mutation]]
 name = "the public-anchor gate sees only the two-letter decision ids"
 file = "tests/test_public_anchors.py"
@@ -1129,7 +1129,7 @@ reddens = [
   "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
 ]
 
-# `RD<n>` is the one two-letter prefix that no other arm reaches when it is written bare: the
+# `RD` and a number is the one two-letter prefix that no other arm reaches when it is written bare: the
 # one-letter arm needs a word boundary before the `D`, and the bracketed arm needs brackets.
 [[mutation]]
 name = "the public-anchor gate forgets the RD prefix"
@@ -1157,39 +1157,61 @@ reddens = [
 [[mutation]]
 name = "the public-anchor walk forgets the package"
 file = "tests/test_public_anchors.py"
-before = 'SCOPE = ("src", "skills", "docs", "hooks", "agents")'
-after = 'SCOPE = ("skills", "docs", "hooks", "agents")'
+before = 'SCOPE = ("src", "skills", "docs", "hooks", "agents", "tests", "scripts")'
+after = 'SCOPE = ("skills", "docs", "hooks", "agents", "tests", "scripts")'
 reddens = [
   "tests/test_public_anchors.py::test_the_citation_walk_reads_what_ships_and_skips_the_plans",
 ]
 
-# The package-only arm: the wave, task and review round a line came from. Gone quiet, the
-# thirty-one lines of plan bookkeeping this change took out of `src/` can come back unremarked.
+# The walk's reach into the maintainers' files: drop `tests` and the suite's docstrings, which
+# carried most of the citations left after the package, go unread again.
+[[mutation]]
+name = "the public-anchor walk forgets the suite"
+file = "tests/test_public_anchors.py"
+before = 'SCOPE = ("src", "skills", "docs", "hooks", "agents", "tests", "scripts")'
+after = 'SCOPE = ("src", "skills", "docs", "hooks", "agents", "scripts")'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_walk_reads_what_ships_and_skips_the_plans",
+]
+
+# And its own exemption: the guard's planted examples are citations on purpose, and a walk that
+# read them would be red for ever, which is how a gate gets switched off.
+[[mutation]]
+name = "the public-anchor walk reads its own planted examples"
+file = "tests/test_public_anchors.py"
+before = 'EXEMPT = ("docs/plans", "tests/test_public_anchors.py")'
+after = 'EXEMPT = ("docs/plans",)'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_walk_reads_what_ships_and_skips_the_plans",
+]
+
+# The code-only arm: the wave, task, review round and numbered finding a line came from. Gone
+# quiet, the plan bookkeeping this change took out of the code can come back unremarked.
 [[mutation]]
 name = "the public-anchor gate stops seeing plan vocabulary"
 file = "tests/test_public_anchors.py"
-before = 'PACKAGE_ONLY = (("plan vocabulary", re.compile(r"\b[Ww]ave[- ]\d|\bTask \d|\b[Ff]ix round")),)'
-after = 'PACKAGE_ONLY = (("plan vocabulary", re.compile(r"\b[Ww]ave[- ]\d(?!)")),)'
+before = '''        re.compile(r"\b[Ww]ave[- ]\d|\b[Tt]his wave\b|\bTask \d|\b[Ff]ix round|\b[Ff]inding \d"),'''
+after = '''        re.compile(r"\b[Ww]ave[- ]\d(?!)"),'''
 reddens = [
   "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
 ]
 
-# Where the arm applies, both ways: never under `src/` and the arm reads nothing; everywhere and
-# a document talking about a task in its own sense is refused.
+# Where the arm applies, both ways: nowhere and the arm reads nothing; everywhere and a document
+# talking about a task in its own sense is refused.
 [[mutation]]
-name = "the public-anchor walk never applies the package-only arms"
+name = "the public-anchor walk never applies the code-only arms"
 file = "tests/test_public_anchors.py"
-before = '    return citations(text, package=relative.startswith("src/"))'
-after = '    return citations(text, package=False)'
+before = '    return citations(text, code=relative.split("/", 1)[0] in CODE)'
+after = '    return citations(text, code=False)'
 reddens = [
   "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
 ]
 
 [[mutation]]
-name = "the public-anchor walk applies the package-only arms to every tree"
+name = "the public-anchor walk applies the code-only arms to every tree"
 file = "tests/test_public_anchors.py"
-before = '    return citations(text, package=relative.startswith("src/"))'
-after = '    return citations(text, package=True)'
+before = '    return citations(text, code=relative.split("/", 1)[0] in CODE)'
+after = '    return citations(text, code=True)'
 reddens = [
   "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
 ]
