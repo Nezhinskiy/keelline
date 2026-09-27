@@ -58,6 +58,7 @@ from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
 from keelline.errors import Failure
 from keelline.gitenv import git_run
+from keelline.printed import quoted
 
 LOCAL_STORE = Path(".keelline") / "local" / "memory"
 # The overlay's per-project directory, named once. It was a bare literal at the two call
@@ -385,16 +386,16 @@ def _group_targets(
             unavailable[group] = str(exc)
             continue
         if not target.exists():
-            unavailable[group] = f"{group} is not in the store"
+            unavailable[group] = f"{quoted(group)} is not in the store"
             continue
         if target.is_symlink():
             if overlay is None:
-                unavailable[group] = f"{group} is a link and no overlay is recorded"
+                unavailable[group] = f"{quoted(group)} is a link and no overlay is recorded"
                 continue
             allowed = permitted_roots(overlay, config.project.name)
             if not any(_inside(target, permitted) for permitted in allowed):
                 unavailable[group] = (
-                    f"{group} links outside this project's share of the overlay "
+                    f"{quoted(group)} links outside this project's share of the overlay "
                     f"({', '.join(str(p) for p in allowed)})"
                 )
                 continue
@@ -451,7 +452,10 @@ def _resolve_at(
         return None, f"{base} does not exist; run `keelline attach`"
     groups, unavailable = _group_targets(base, config, overlay if mode == "overlay" else None)
     if not groups:
-        reason = "; ".join(f"{k}: {v}" for k, v in unavailable.items()) or "the store has no groups"
+        reason = (
+            "; ".join(f"{quoted(k)}: {v}" for k, v in unavailable.items())
+            or "the store has no groups"
+        )
         return None, reason
     return Store(base, mode, root, groups, unavailable, machine), None
 

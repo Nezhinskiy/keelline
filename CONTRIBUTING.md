@@ -49,6 +49,13 @@ a lane that puts files into a repository.
 putting such a string into a `Result.summary`, a `HookResult.context` or an exception message,
 wrap it.
 
+The wrap is for the model and escapes no byte, and the same string also reaches a terminal and a
+CI runner, where a line break followed by `::error::` is a workflow command and an escape
+sequence drives the screen. So a name the repository chose — a file name, a note's name, a
+`memory.groups` entry, a TOML key — is printed through `keelline.printed`: `printable` where the
+command's `--json` carries the name, and `quoted` in a refusal, where the message is the only
+place the name appears.
+
 ## Areas
 
 An area is a subpackage of `src/keelline/` that the CLI frame and the hook registry discover by

@@ -29,6 +29,7 @@ from keelline.gitenv import git_run
 from keelline.guards.api import contained_roots
 from keelline.memory.notes import Note, Walk, walk
 from keelline.memory.store import Store, overlay_root, permitted_roots
+from keelline.printed import quoted
 from keelline.prose import blank_fences, path_references
 
 # `[[name]]` addresses a note by its stem. Owned here because a wiki-link is the memory area's
@@ -113,7 +114,7 @@ def _lines(note: Note) -> list[tuple[int, str]]:
     try:
         text = note.path.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
-        raise Failure(f"{note.path.name} is not valid UTF-8 ({exc.reason})") from None
+        raise Failure(f"{quoted(note.path.name)} is not valid UTF-8 ({exc.reason})") from None
     return list(enumerate(blank_fences(text).splitlines(), start=1))
 
 

@@ -10,6 +10,7 @@ from keelline.areas import SubParsers
 from keelline.command import CHECK_HELP, common_flags, root_and_config
 from keelline.findings import labels, listed
 from keelline.ledger.entries import SEVERITIES
+from keelline.printed import printable
 from keelline.result import Result
 
 _OK = "OK: bug ledger entries, index freshness, and identifier references"
@@ -95,7 +96,7 @@ def run_bugs_renumber(args: argparse.Namespace) -> Result:
         return Result(
             f"FAIL: {args.old} moved to {args.new}, but {len(result.unswept)} file(s) still "
             f"reference {args.old} and must be fixed by hand "
-            f"({listed([u.split(':', 1)[0] for u in result.unswept])}); "
+            f"({listed([printable(u.split(':', 1)[0]) for u in result.unswept])}); "
             f"a void pointer remains at {void}",
             data,
             exit_code=1,

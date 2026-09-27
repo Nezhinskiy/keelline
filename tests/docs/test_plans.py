@@ -26,6 +26,7 @@ from keelline.docs.plans import (
 from keelline.errors import Failure, Refusal
 from keelline.gitenv import NO_ANSWER, git_run
 from tests.cli import cli
+from tests.crafted import CRAFTED, assert_never_raw
 from tests.gitfixture import git, plant_path
 
 CONFIG = """
@@ -392,6 +393,21 @@ def test_a_plan_that_is_not_utf8_is_a_failure_not_an_internal_error(tmp_path: Pa
     path.write_bytes(b"**Scope:** iff x.\n\ncaf\xe9\n")
     with pytest.raises(Failure, match="is not valid UTF-8"):
         lint(root, config, plans=[path])
+
+
+def test_a_crafted_plan_name_reaches_the_refusal_escaped_never_raw(tmp_path: Path) -> None:
+    # `plan check` runs in CI and names the plan it could not read; the name is the pull
+    # request's, and a line break and `::error::` in it forged a workflow command on the runner.
+    # The refusal is the only place the name appears, so it is escaped rather than withheld.
+    # Mutation: format `where` unquoted in `hygiene.read_document` — this reddens.
+    root, config = project(tmp_path)
+    name = f"2026-01-01-{CRAFTED}.md"
+    path = root / "docs" / "plans" / name
+    path.write_bytes(b"**Scope:** iff x.\n\ncaf\xe9\n")
+    with pytest.raises(Failure, match="is not valid UTF-8") as raised:
+        lint(root, config, plans=[path])
+    assert_never_raw(str(raised.value))
+    assert repr(f"docs/plans/{name}") in str(raised.value)
 
 
 def test_a_path_claim_outside_the_root_is_never_settled_against_this_disk(tmp_path: Path) -> None:

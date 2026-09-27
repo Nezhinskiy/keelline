@@ -69,7 +69,9 @@ def contained(
         if ancestor == root:
             break
         if ancestor.is_symlink() and not (allow_final_symlink and ancestor == target):
-            raise PathEscape(f"{relative!r} passes through a symlink at {ancestor}")
+            # Both quoted: in a checkout the ancestor's name is the repository's, and a caller may
+            # show this refusal to a terminal or a CI runner.
+            raise PathEscape(f"{relative!r} passes through a symlink at {str(ancestor)!r}")
     # Defence in depth. The guards above refuse every escape a path string can express — the
     # empty path, an absolute path, any `..` component, and a symlink at any level between the
     # root and the target — so the comparison below is the net under them rather than the

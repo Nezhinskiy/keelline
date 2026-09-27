@@ -10,6 +10,7 @@ from urllib.parse import unquote
 from keelline.config.paths import contained
 from keelline.errors import Failure
 from keelline.findings import Finding
+from keelline.printed import quoted
 from keelline.prose import blank_fences, resolves_within
 
 if TYPE_CHECKING:
@@ -48,14 +49,17 @@ def read_document(path: Path, where: str | Path) -> str:
     offending byte, and the byte came out of the file.
 
     `where` is how this area's findings already name the file, so the message names the
-    configured path rather than an absolute one under a runner's scratch directory.
+    configured path rather than an absolute one under a runner's scratch directory. It goes
+    through `quoted` here rather than at each caller: a plan's name is the pull request's, and
+    `plan check` prints this refusal in CI, so no caller may forget the bound.
     """
+    shown = quoted(Path(where).as_posix())
     try:
         return path.read_text(encoding="utf-8")
     except UnicodeDecodeError as error:
-        raise Failure(f"{where}: is not valid UTF-8 ({error.reason})") from None
+        raise Failure(f"{shown}: is not valid UTF-8 ({error.reason})") from None
     except OSError as error:
-        raise Failure(f"{where}: could not be read ({error.strerror or error})") from None
+        raise Failure(f"{shown}: could not be read ({error.strerror or error})") from None
 
 
 def section_lines(text: str, heading: str) -> int | None:
