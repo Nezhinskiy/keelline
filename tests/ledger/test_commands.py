@@ -298,12 +298,13 @@ def test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite(
     assert f"({named})" in line and "docs/bugs/BR-001.md" in line
     assert_never_raw(line, captured.err)
     assert "\n" not in line
-    assert data["unswept"][0].startswith(f"src/{directory}/a.py:")
-    # Beside the strings, one object per file: the path whole, whatever it holds, where
-    # splitting a `"path: reason"` string at `": "` cut `src/a: b/a.py` to `src/a`.
-    assert data["unswept_files"] == [
+    # One object per file, the path whole whatever it holds: a `"path: reason"` string cannot be
+    # split back, since a path may itself hold `": "`. Mutation: carry `"path: reason"` strings
+    # under `unswept` in `run_bugs_renumber` — every case reddens.
+    assert data["unswept"] == [
         {"path": f"src/{directory}/a.py", "reason": f"could not be written ({DENIED})"}
     ]
+    assert "unswept_files" not in data
 
 
 def test_renumber_names_a_file_it_could_not_read_without_this_machine_s_paths(
@@ -329,8 +330,7 @@ def test_renumber_names_a_file_it_could_not_read_without_this_machine_s_paths(
     out = capsys.readouterr().out
     data = json.loads(out)
     reason = f"could not be read to check for BR-001 ({DENIED})"
-    assert data["unswept_files"] == [{"path": "src/a: b/locked.py", "reason": reason}]
-    assert data["unswept"] == [f"src/a: b/locked.py: {reason}"]
+    assert data["unswept"] == [{"path": "src/a: b/locked.py", "reason": reason}]
     assert tmp_path.name not in out
 
 

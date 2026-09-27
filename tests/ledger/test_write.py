@@ -506,7 +506,6 @@ def test_renumber_reports_a_file_it_could_not_write_back(tmp_path: Path) -> None
         sealed.chmod(0o755)
     assert [u.path for u in result.unswept] == ["src/sealed/a.py"]
     assert result.unswept[0].reason.startswith("could not be written")
-    assert str(result.unswept[0]).startswith("src/sealed/a.py: could not be written")
     assert (sealed / "a.py").read_text(encoding="utf-8") == "# BR-001\n"
 
 

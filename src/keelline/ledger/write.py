@@ -90,19 +90,15 @@ class Filed:
 
 @dataclass(frozen=True)
 class Unswept:
-    """A file the sweep could not rewrite: its repo-relative path and why.
+    """A file the sweep could not rewrite: its repo-relative path and why, the two fields
+    `--json`'s `unswept` carries per file.
 
-    Two fields and not one `"path: reason"` string, because a path may hold a colon: the command
-    rebuilt the path by splitting that string at the first one, and `docs/a:b.md` was named as
-    `docs/a`. `str()` is the joined form `--json`'s `unswept` carries; `unswept_files` carries
-    the two fields. The reason names no path of its own (`scan.said`), so the path here is the
-    only one either form holds."""
+    Two fields and never one `"path: reason"` string, because a path may itself hold `": "`, so
+    no reader could split such a string back into the two. The reason names no absolute path
+    (`scan.said`); a refusal of Keelline's own may repeat the root-relative path."""
 
     path: str
     reason: str
-
-    def __str__(self) -> str:
-        return f"{self.path}: {self.reason}"
 
 
 @dataclass(frozen=True)

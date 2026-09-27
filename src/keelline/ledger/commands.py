@@ -91,15 +91,13 @@ def run_bugs_renumber(args: argparse.Namespace) -> Result:
     root, config = root_and_config(args)
     result = renumber(root, config, args.old, args.new)
     void = result.void.relative_to(root).as_posix()
-    # `unswept` keeps its documented shape, one `"path: reason"` string per file, and
-    # `unswept_files` carries each as `{path, reason}`, since a path may hold `": "` and no
-    # consumer can split the string back. The line names each file by its own field too.
+    # Each file as `{path, reason}`, and the line names each by its `path`: a path may hold
+    # `": "`, so a `"path: reason"` string could not be split back into the two.
     data = {
         "old": args.old,
         "new": args.new,
         "void": void,
-        "unswept": [str(u) for u in result.unswept],
-        "unswept_files": [asdict(u) for u in result.unswept],
+        "unswept": [asdict(u) for u in result.unswept],
     }
     if result.unswept:
         return Result(

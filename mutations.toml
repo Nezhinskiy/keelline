@@ -11390,7 +11390,7 @@ reddens = [
 name = "bugs renumber names a file by its message cut at the first colon"
 file = "src/keelline/ledger/commands.py"
 before = "printable(u.path)"
-after = "printable(str(u).split(':', 1)[0])"
+after = "printable(f\"{u.path}: {u.reason}\".split(':', 1)[0])"
 reddens = [
   "tests/ledger/test_commands.py::test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite[colon]",
 ]
@@ -11466,10 +11466,10 @@ reddens = [
 ]
 
 [[mutation]]
-name = "bugs renumber carries no file as a path and a reason"
+name = "bugs renumber carries each file as a path: reason string again"
 file = "src/keelline/ledger/commands.py"
-before = "\"unswept_files\": [asdict(u) for u in result.unswept],"
-after = "\"unswept_files\": [],"
+before = "\"unswept\": [asdict(u) for u in result.unswept],"
+after = "\"unswept\": [f\"{u.path}: {u.reason}\" for u in result.unswept],"
 reddens = [
   "tests/ledger/test_commands.py::test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite[colon]",
   "tests/ledger/test_commands.py::test_renumber_names_a_file_it_could_not_read_without_this_machine_s_paths",

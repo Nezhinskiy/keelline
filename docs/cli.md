@@ -702,11 +702,10 @@ resolving to the pointer rather than to nothing. Rejects an occupied `NEW` or a 
 (`1`) and raises the index refusals of `bugs index` (`2`) before touching anything. A file the sweep
 could not read or write is listed and the command exits `1` naming it, because once the pointer
 exists a stale mention in that file looks intentional to `bugs check` forever. The line counts
-them and names up to eight; `--json` carries every one twice: under `unswept`, each a
-`"path: reason"` string, and under `unswept_files`, each an object with `path` and `reason`. Read
-`unswept_files` to take a path apart from its reason, since a path may itself hold `": "`. The path
-is relative to the root, and the reason is the error in words, naming no path of its own. The
-moved entry's own body is the operator's to rewrite and is not swept.
+them and names up to eight; `--json`'s `unswept` carries every one, each an object with `path`
+and `reason`. The path is relative to the root, and the reason is the error in words, naming no
+absolute path; a refusal of Keelline's own may repeat the root-relative path. The moved entry's
+own body is the operator's to rewrite and is not swept.
 
 **Writes** the two entry files, every rewritten file, and `<paths.bug_index>`.
 
