@@ -2418,6 +2418,7 @@ as the check is required on the gate branch only.
 | `path` | `"."` | the project root inside the caller's checkout, for a monorepo or a fixture. A **plain relative path** — letters, digits, `.`, `_`, `-` and `/`, with no `..` component — and anything else is refused before a gate runs, because the value reaches the run's own outputs, and those carry the base commit the gates' configuration is read from. A root any component of which is a symbolic link in the checkout is refused too |
 | `python-version` | `"3.13"` | the interpreter Keelline runs on; 3.11 is the floor |
 | `only` | `""` | the checks to run, space-separated: `config` and any configured gate name. Empty runs the configuration check and every configured gate, and the configuration check runs whatever this names |
+| `timeout-minutes` | `15` | the job's time limit, a whole number of minutes from 5 to 60; any other value fails the job in its first step, before anything is checked out |
 
 The caller's job needs `contents: read`. That is the default, so the lines above are enough —
 but a caller that sets `permissions:` at workflow level replaces the default rather than adding
@@ -2438,8 +2439,27 @@ appends its results to the job summary. No resolver and no build backend; the ne
 checkouts, whatever `setup-python` fetches when the runner has no matching interpreter cached,
 and, on a pull request that moves `[ci] ref`, one listing of Keelline's public release tags.
 It is one job because a job is billed by the whole minute: a push costs one runner-minute, not
-one per gate. Its check, in the caller `init` writes, is `check / gates`. The job is cancelled
-after 15 minutes; a custom gate that needs longer belongs in a workflow of your own.
+one per gate. Its check, in the caller `init` writes, is `check / gates`.
+
+**The time limit is bounded, and running out still fails.** The job is cancelled after
+`timeout-minutes`, 15 unless the caller passes another. The caller `init` writes passes none; a
+project whose own gates need longer adds one line under its `with:`:
+
+```yaml
+    with:
+      base: main
+      timeout-minutes: 30
+```
+
+The range is fixed at 5 to 60, in this file and not in yours. 5 is the least a healthy run
+needs — two full-depth checkouts, an interpreter and two gate runs on a runner that has cached
+nothing — and 60 is the most a pull request can spend of your runner time per push. The caller
+file is pull-request content, so that line is one a pull request can edit, and this is exactly
+what it can move: the limit, anywhere from 5 to 60. It cannot remove the limit, raise it past
+60, or turn running out into a pass: a job that runs out of time is cancelled, and a required
+check that was cancelled has not passed; and a value outside the range — a fraction included — fails the
+job in its first step rather than being quietly replaced. Under the settings below, a change to
+that line needs a code owner's review like any other change to `.github/`.
 
 **Your own gates run on a bare runner.** The second step has the runner image and the
 interpreter `python-version` names, and nothing of your project's: a custom gate that needs
