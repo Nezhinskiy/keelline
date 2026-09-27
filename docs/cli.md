@@ -2599,8 +2599,12 @@ tag there is no commit to name, so `init` reports the workflow skipped with the 
 nothing into `.github/`, and `keelline upgrade` renders it once a release matches. `@v1` is the
 documented opt-in for a project that would rather track the major, written by hand;
 `keelline upgrade` then moves `[keelline] version` alone and leaves the ref and that file as they
-are. `smoke-release.yml` in this repository runs both moving forms on demand, so that they are
-known to work — it is not a form this reference tells you to write.
+are. The alias exists from `1.0.0` on: a `0.x` minor may break what the one before it did, so
+there is no `v0` to track, a `0.x` project pins the commit, and until the first `1.x` release
+`keelline doctor` reports `v1` red, as a tag the public repository does not carry.
+`smoke-release.yml` in this repository runs the `owner/repo/…@ref` form on demand, at `@dev` and
+at the latest release's tag, so that the branch and tag forms are known to work — it is not a form
+this reference tells you to write.
 
 **What proves it.** `tests/test_fixtures.py` and `tests/test_check_workflow.py` run the job's
 three scripts, extracted from this file, against real clones: a `base:` naming a branch the

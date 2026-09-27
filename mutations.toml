@@ -11840,3 +11840,14 @@ after = "            files = listed(list(unseen.files))"
 reddens = [
   "tests/assess/test_tracked.py::test_a_link_target_outside_the_path_grammar_is_withheld_where_it_is_named",
 ]
+
+# RELEASING.md's last step dispatches the release smoke at every release, and a job naming a tag
+# that does not exist fails the whole dispatch before any job runs: during `0.x` that is `v1`.
+[[mutation]]
+name = "the release smoke calls the alias a 0.x release does not have"
+file = ".github/workflows/smoke-release.yml"
+before = "    uses: Nezhinskiy/keelline/.github/workflows/check.yml@v0.1.0"
+after = "    uses: Nezhinskiy/keelline/.github/workflows/check.yml@v1"
+reddens = [
+  "tests/test_fixtures.py::test_the_release_smoke_calls_the_release_this_tree_carries",
+]

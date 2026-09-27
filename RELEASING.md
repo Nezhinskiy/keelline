@@ -10,7 +10,8 @@ assembles `CHANGELOG.md` from the `changelog.d/` fragments → the `vX.Y.Z` tag 
 Release, attached to `vX.Y.Z` only and never to the floating `v1`, which immutable releases
 would freeze → `keelline overlay publish-template`, which renders `templates/overlay/` and
 pushes it to the template repository from your own authenticated checkout, so the public
-repository's CI holds no credential that can write a second repository → the `v1` alias moves.
+repository's CI holds no credential that can write a second repository → from `1.0.0` on, the
+`v1` alias moves → the cross-repository smoke runs at the new tag.
 
 ## 1. The sources
 
@@ -58,10 +59,11 @@ step 7's sentence true.
    claude plugin tag --dry-run .
    ```
 
-2. **Decide the version.** This is a judgement, not a command: `v1.0.0` is the intended
-   first public release and the tree currently says `0.1.0` and "Development Status :: 3 -
-   Alpha". Every mechanism in this file works with whatever number you pick — the gate compares
-   the tag to the sources rather than to a number it knows, and the alias is the major.
+2. **Decide the version.** This is a judgement, not a command. The first release is `0.1.0`,
+   an alpha, and the tree already says so, with "Development Status :: 3 - Alpha". Every
+   mechanism in this file works with whatever number you pick — the gate compares the tag to
+   the sources rather than to a number it knows — except the alias, which is the major and
+   exists from `1.0.0` on (step 9).
 
 3. **Set it in the four places you edit by hand**, then let the lockfile follow:
    `pyproject.toml`, `src/keelline/__init__.py`, and both plugin manifests.
@@ -74,6 +76,11 @@ step 7's sentence true.
    That is four of the six sources; `uv.lock` is the fifth and `uv sync` above writes it.
    `CHANGELOG.md` is the sixth and is still behind here; a pending fragment is what lets it
    lag, and step 4 catches it up.
+
+   **And the release smoke's tag, which a test holds.** `.github/workflows/smoke-release.yml`
+   calls `check.yml@vX.Y.Z`, written out, because `uses:` takes no expression; set it to the
+   new version here. `tests/test_fixtures.py` fails until it names the version the tree carries,
+   and the release workflow runs the suite on the tag.
 
    **And the two example configurations, which are on no gate at all.** `README.md`'s and
    `docs/cli.md`'s example `keelline.toml` blocks both carry `version = "0.1.0"`; after the
@@ -164,13 +171,24 @@ step 7's sentence true.
    Without `--yes` nothing outward-facing happens: it renders, asks `gh` what is there, and
    reports what it would create, mark and push.
 
-9. **Move the alias** — for a `1.x` release; the alias is the major.
+9. **Move the alias — from `1.0.0` on; a `0.x` release moves none.** The alias is the major:
+   a project that writes `@v1` takes every release the alias moves to. Under semantic
+   versioning a `0.x` minor may break what the one before it did, so a `v0` alias would hand
+   every project on it breaking changes unannounced, and `keelline doctor` knows `v1` and no
+   other alias. So a `0.x` project pins the commit `keelline init` writes, and this step starts
+   at the first `1.x` release:
 
    ```bash
    git tag -f v1 vX.Y.Z && git push -f origin v1
+   git ls-remote origin refs/tags/v1 refs/tags/vX.Y.Z   # both lines name one commit
    ```
 
-10. **Run the cross-repository smoke at the alias.**
+   The alias resolves as any tag does, which step 10 proves for the release tag itself; what
+   is left to check is that it names the release, and the listing above is that check.
+
+10. **Run the cross-repository smoke at the release tag**, at every release. It calls
+    `check.yml` at `@dev` and at the `vX.Y.Z` step 3 wrote into `smoke-release.yml`, which
+    resolves only now that the tag is pushed.
 
     ```bash
     gh workflow run smoke-release.yml
@@ -215,8 +233,8 @@ reads back with zero rules fails whatever the variable says. Set it only after t
 and its reviewer exist.
 
 **Tag protection.** A repository ruleset over `refs/tags/v*.*.*` and `refs/tags/keelline--v*`
-with `deletion` and `update` rules, so a semver tag is immutable while the `v1` alias — which
-matches neither pattern — can still move:
+with `deletion` and `update` rules, so a semver tag is immutable while the `v1` alias, once a
+`1.x` release creates it — it matches neither pattern — can still move:
 
 ```bash
 gh api -X POST repos/Nezhinskiy/keelline/rulesets --input - <<'JSON'
