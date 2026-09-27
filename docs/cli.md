@@ -767,8 +767,10 @@ differ between `HEAD` and any commit `git merge-base --all REF HEAD` names, `REF
 and `keelline gate`, so a tag called `origin/<branch>` cannot stand in for it. Every merge base,
 not the one `REF...HEAD` diffs against: a history the change shapes itself can give it several,
 and the one git picks alone can already hold an old plan the change puts back, which merging the
-change then puts back on the base unlinted. A plan that differs from any of them is linted, so on
-such a history a plan the base changed since one of them is linted too. Five rules, each from a
+change then puts back on the base unlinted. A plan is linted when it differs from any of them and
+from `REF` itself: one whose copy in `HEAD` is `REF`'s own is not the change's, since merging the
+change leaves it as it is, and without that a branch stacked on another would answer for a plan
+the base gained before the stack merged the base in. Five rules, each from a
 retrospective: every backticked path resolves unless the line says `(create)` or declares it
 on a `Create:`/`Test:` line; no step is phrased as already knowing its answer (`confirm that
 nothing …`, `verify no …`, `check that it does not …`); a `**Scope:**` line with content is

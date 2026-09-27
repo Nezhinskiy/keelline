@@ -165,7 +165,7 @@ def _merge_base(root: Path, base: str) -> str:
     """
     code, out = git_run(root, "rev-parse", "--is-shallow-repository")
     if code != 0:
-        cause = NO_ANSWER if code == -1 else f"git exited {code}"
+        cause = NO_ANSWER if code == -1 else f"git exited {code}; is --root inside a checkout?"
         raise Failure(
             f"the attribution is undetermined: whether this clone is shallow is unknown "
             f"({cause}), and in a shallow clone the merge-base git sees can be an older commit"

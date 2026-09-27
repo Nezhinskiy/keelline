@@ -375,6 +375,47 @@ def test_a_plan_is_linted_whichever_of_several_merge_bases_git_would_pick(tmp_pa
 
 
 @needs_git
+def test_a_plan_the_base_already_holds_as_the_change_does_is_not_the_change_s(
+    tmp_path: Path,
+) -> None:
+    # A branch stacked on another, which merged `main` after `main` gained a plan with a
+    # finding, and then `main` merged the branch below it: the two merge bases are the commit
+    # the stack merged and the lower branch's tip, and against the second that plan differs.
+    # The stack never touched it, and merging the stack changes nothing about it, because its
+    # copy is the base's own. A plan is the change's only where it differs from the base too.
+    # Mutation (declared): the base comparison dropped -> the base's plan is linted here and
+    # its finding fails a change that never touched it.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    _at(root, 1, "commit", "-q", "-m", "seed")
+    git(root, "checkout", "-q", "-b", "lower")
+    (root / "lower.txt").write_text("lower\n", encoding="utf-8")
+    git(root, "add", "-A")
+    _at(root, 2, "commit", "-q", "-m", "the lower branch")
+    git(root, "checkout", "-q", "main")
+    plan(root, "a plan the base took with no Scope line\n")
+    git(root, "add", "-A")
+    _at(root, 3, "commit", "-q", "-m", "a plan on the base")
+    git(root, "checkout", "-q", "-b", "stacked", "lower")
+    _at(root, 4, "merge", "-q", "--no-ff", "--no-edit", "main")
+    (root / "stacked.txt").write_text("stacked\n", encoding="utf-8")
+    git(root, "add", "-A")
+    _at(root, 5, "commit", "-q", "-m", "the stacked branch")
+    git(root, "checkout", "-q", "main")
+    _at(root, 6, "merge", "-q", "--no-ff", "--no-edit", "lower")
+    base = _at(root, 6, "rev-parse", "HEAD")
+    git(root, "checkout", "-q", "stacked")
+    # The premise: two merge bases, and against one of them the base's plan differs.
+    forks = git(root, "merge-base", "--all", base, "HEAD").split()
+    assert len(forks) == 2
+    assert any(git(root, "diff", "--name-only", fork, "HEAD", "--", "docs/plans") for fork in forks)
+    result = lint(root, config, plans=[], base=base)
+    assert result.linted == []
+    assert result.findings == []
+
+
+@needs_git
 def test_a_shallow_clone_is_a_base_that_will_not_resolve_never_an_older_fork_point(
     tmp_path: Path,
 ) -> None:

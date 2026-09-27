@@ -1928,6 +1928,42 @@ reddens = [
   "tests/docs/test_plans.py::test_a_plan_is_linted_whichever_of_several_merge_bases_git_would_pick",
 ]
 
+# Without `--all`, `merge-base` answers the one git picks, and the union is over that one alone.
+[[mutation]]
+name = "plan asks git for one merge base"
+file = "src/keelline/docs/plans.py"
+before = """    code, out = git_run(root, "merge-base", "--all", base, "HEAD")"""
+after = """    code, out = git_run(root, "merge-base", base, "HEAD")"""
+reddens = [
+  "tests/docs/test_plans.py::test_a_plan_is_linted_whichever_of_several_merge_bases_git_would_pick",
+]
+
+# A plan whose copy in HEAD is the base's own is not the change's: merging leaves it as it is.
+# Without the base comparison a branch stacked on another answers for a plan the base gained
+# before the stack merged the base in, and fails on a file it never touched.
+[[mutation]]
+name = "plan lints a plan the base already holds as the change does"
+file = "src/keelline/docs/plans.py"
+before = "    found &= _changed(root, base, relative, base)"
+after = "    found |= set()"
+reddens = [
+  "tests/docs/test_plans.py::test_a_plan_the_base_already_holds_as_the_change_does_is_not_the_change_s",
+]
+
+# A diff git did not answer lists no plan, and no plan listed is an OK over nothing.
+[[mutation]]
+name = "plan reads a diff git did not answer as no plan changed"
+file = "src/keelline/docs/plans.py"
+before = """    if code != 0:
+        _unresolved(code, base, root)
+    return {name"""
+after = """    if False:
+        _unresolved(code, base, root)
+    return {name"""
+reddens = [
+  "tests/docs/test_plans.py::test_a_diff_git_gave_no_answer_for_is_not_a_shallow_checkout",
+]
+
 # In a shallow clone the fork point can be cut off and an older commit stand in for it, one that
 # holds an old plan the change puts back.
 [[mutation]]
@@ -4700,6 +4736,16 @@ name = "attribute extracts the one merge-base git would pick among several"
 file = "src/keelline/guards/attribute.py"
 before = "    if len(forks) > 1:"
 after = "    if False:"
+reddens = [
+  "tests/guards/test_attribute.py::test_several_merge_bases_leave_the_attribution_undetermined",
+]
+
+# Without `--all`, `merge-base` answers the one git picks, and several are never seen.
+[[mutation]]
+name = "attribute asks git for one merge-base"
+file = "src/keelline/guards/attribute.py"
+before = """    code, out = git_run(root, "merge-base", "--all", "HEAD", base)"""
+after = """    code, out = git_run(root, "merge-base", "HEAD", base)"""
 reddens = [
   "tests/guards/test_attribute.py::test_several_merge_bases_leave_the_attribution_undetermined",
 ]

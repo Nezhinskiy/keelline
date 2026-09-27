@@ -126,10 +126,11 @@ _MARKED_AS_EXPECTATION = re.compile(r"\bexpect(?:s|ed|ation|ations)?\b", re.IGNO
 _SENTENCE_END = re.compile(r"[.!?][)\]\"'`]*\s")
 
 _BASE_UNRESOLVABLE = (
-    "git could not find the commits HEAD forked from `{base}` at under {root} ({cause}), so "
-    "NOTHING was linted and this gate proved nothing. In CI the cause is a checkout too shallow "
-    "to hold them (`fetch-depth: 0`); locally it is a `--base` that names a ref this clone does "
-    "not have, or one that shares no history with HEAD."
+    "the plans HEAD changed since the commits it forked from `{base}` at are not known under "
+    "{root} ({cause}), so NOTHING was linted and this gate proved nothing. In CI the cause is a "
+    "checkout too shallow to hold those commits (`fetch-depth: 0`); locally it is a shallow "
+    "clone, a `--base` that names a ref this clone does not have, or one that shares no history "
+    "with HEAD."
 )
 _SHALLOW = "this clone is shallow, so they can be cut off and an older commit stand in for them"
 _NO_ANSWER = (
@@ -224,8 +225,8 @@ def _fork_points(root: Path, base: str) -> list[str]:
 
 def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path]:
     """Plans this change touches: those that differ between HEAD and any commit it forked from
-    `base` at. `BaseUnresolvable` when those commits cannot be found, and a `Failure` when git
-    gave no answer at all.
+    `base` at, and between HEAD and `base` itself. `BaseUnresolvable` when those commits cannot
+    be found, and a `Failure` when git gave no answer at all.
 
     Read with `-z`, the same way and for the same reason as `unlinted_plans`: without it git
     C-quotes any path holding a space or a non-ASCII byte, splitting on whitespace then tears
@@ -251,11 +252,21 @@ def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path]:
     relative = plans_dir.relative_to(root).as_posix()
     found: set[str] = set()
     for fork in _fork_points(root, base):
-        code, out = git_run(root, "diff", "--name-only", "-z", fork, "HEAD", "--", relative)
-        if code != 0:
-            _unresolved(code, base, root)
-        found.update(name for name in out.split("\0") if name.endswith(".md"))
+        found |= _changed(root, fork, relative, base)
+    # A plan whose copy in HEAD is the base's own is not the change's, whatever a merge base
+    # holds: merging the change leaves it as the base has it. Without this, the union lints on
+    # a branch stacked on another, once the base merged the lower one, a plan the base gained
+    # before the stack merged the base in, and fails the stack on a file it never touched.
+    found &= _changed(root, base, relative, base)
     return [root / name for name in sorted(found)]
+
+
+def _changed(root: Path, since: str, relative: str, base: str) -> set[str]:
+    """The plans under `relative` that differ between `since` and HEAD."""
+    code, out = git_run(root, "diff", "--name-only", "-z", since, "HEAD", "--", relative)
+    if code != 0:
+        _unresolved(code, base, root)
+    return {name for name in out.split("\0") if name.endswith(".md")}
 
 
 def unlinted_plans(root: Path, plans_dir: Path) -> list[Path] | None:
