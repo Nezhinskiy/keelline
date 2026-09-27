@@ -17,6 +17,8 @@ those readers, so a printed line needs one of the two bounds below. Both answer 
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from keelline.config.schema import PATH_VALUE
 
 # What a name outside `PATH_VALUE` prints as on a line whose command carries it in `--json`.
@@ -36,3 +38,20 @@ def quoted(name: str) -> str:
     `repr` escapes every line break and control character, so the name arrives whole, cannot
     start a line and cannot drive a terminal."""
     return name if PATH_VALUE.match(name) else repr(name)
+
+
+# How many characters of a name a refusal prints before it clips the rest to a count. A named cap
+# (CONTRIBUTING.md#named-caps) with no shipped file to agree with: `quoted` escapes a name and does
+# not bound its length, and a TOML key or label is bounded in length by nothing, so one `[states]`
+# key of 200 000 characters made a stderr line of 200 185 bytes. 120 is well past any name an
+# operator would type, and short enough that the start still says which one it is.
+CLIPPED_CHARS = 120
+
+
+def clipped(name: str, show: Callable[[str], str] = quoted) -> str:
+    """`show(name)`, or past `CLIPPED_CHARS` the first characters through `show` and the
+    length: `…(N chars)`. For a refusal, where the name is the only channel and must still be
+    identifiable, and where no bound on its length exists upstream."""
+    if len(name) <= CLIPPED_CHARS:
+        return show(name)
+    return f"{show(name[:CLIPPED_CHARS])}…({len(name)} chars)"

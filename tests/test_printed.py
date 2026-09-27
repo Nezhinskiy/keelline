@@ -6,7 +6,7 @@ import ast
 
 import pytest
 
-from keelline.printed import UNPRINTABLE, printable, quoted
+from keelline.printed import CLIPPED_CHARS, UNPRINTABLE, clipped, printable, quoted
 from tests.crafted import CRAFTED
 
 # Names the path grammar admits: each prints as itself under both bounds, so ordinary output is
@@ -57,4 +57,26 @@ def test_a_name_outside_the_grammar_arrives_whole_and_inert_through_quoted(name:
     # Mutation: return the name unchecked from `quoted`, or return `UNPRINTABLE` — each reddens.
     shown = quoted(name)
     assert ast.literal_eval(shown) == name
+    assert shown.isprintable()
+
+
+def test_a_name_up_to_the_clip_prints_as_its_bound_prints_it() -> None:
+    # At `CLIPPED_CHARS` nothing is cut, so an ordinary name, however long a real one gets,
+    # prints exactly as `quoted` (or the caller's own printer) prints it.
+    name = "a" * CLIPPED_CHARS
+    assert clipped(name) == name
+    assert clipped(f"{CRAFTED}") == quoted(CRAFTED)
+    assert clipped("t0", repr) == "'t0'"
+
+
+@pytest.mark.parametrize("name", ["a" * (CLIPPED_CHARS + 1), "a" * 200_000, CRAFTED * 5_000])
+def test_a_name_past_the_clip_prints_its_first_characters_and_its_length(name: str) -> None:
+    # `quoted` escapes a name and does not bound its length, and a repository-authored key or
+    # label is bounded in length by nothing: one `[states]` key of 200 000 characters printed a
+    # stderr line of 200 185 bytes. Past `CLIPPED_CHARS` the name prints as its first
+    # characters, through the same bound, and its length — still identifiable, and a line of
+    # bounded size. Mutation: never clip in `clipped` — every case reddens.
+    shown = clipped(name)
+    assert shown == f"{quoted(name[:CLIPPED_CHARS])}…({len(name)} chars)"
+    assert len(shown) < 4 * CLIPPED_CHARS + 32
     assert shown.isprintable()

@@ -403,6 +403,10 @@ def _unavailable(unavailable: dict[str, str]) -> Refusal:
     # Each name through `quoted`: `memory.groups` is repository-written and bounded by no
     # grammar, and `trust.wrap` delimits text for the model without escaping a byte for the
     # terminal. The store's own reasons quote the group the same way.
+    #
+    # Not capped, unlike the resolver's one-line reason: this is the data region, one reason per
+    # line, and the line above it counts them. What bounds it on the path a model reads is the
+    # harness, which keeps at most `[native_caps] hook_output_chars` of a hook's output.
     reasons = "\n".join(f"{quoted(group)}: {unavailable[group]}" for group in sorted(unavailable))
     head = _UNAVAILABLE_GROUPS.format(count=len(unavailable))
     return Refusal(f"{head}\n{trust.wrap(reasons, trust.new_nonce())}")

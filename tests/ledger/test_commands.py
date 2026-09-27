@@ -5,6 +5,7 @@ keelline:ledger:fixtures — the identifiers below are sample data, not claims a
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,9 @@ from keelline.findings import Finding
 from keelline.printed import UNPRINTABLE
 from tests.crafted import CRAFTED, assert_never_raw
 from tests.gitfixture import git, needs_git
+
+# What the platform calls a permission refusal, as `OSError.strerror` words it.
+DENIED = os.strerror(errno.EACCES)
 
 CONFIG = """
 [keelline]
@@ -295,6 +299,39 @@ def test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite(
     assert_never_raw(line, captured.err)
     assert "\n" not in line
     assert data["unswept"][0].startswith(f"src/{directory}/a.py:")
+    # Beside the strings, one object per file: the path whole, whatever it holds, where
+    # splitting a `"path: reason"` string at `": "` cut `src/a: b/a.py` to `src/a`.
+    assert data["unswept_files"] == [
+        {"path": f"src/{directory}/a.py", "reason": f"could not be written ({DENIED})"}
+    ]
+
+
+def test_renumber_names_a_file_it_could_not_read_without_this_machine_s_paths(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The reason carried `str(OSError)`, which names the file by its absolute path: the
+    # machine's own directory layout in `--json`, the leak `memory index` stopped for the same
+    # reason. The reason is the error's own words; the path is the field beside it, relative to
+    # the root. Mutation: record `str(error)` in `scan.scannable` — this reddens.
+    if os.geteuid() == 0:
+        pytest.skip("root reads everything")
+    root, common = project(tmp_path)
+    invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
+    capsys.readouterr()
+    locked = root / "src" / "a: b" / "locked.py"
+    locked.parent.mkdir(parents=True)
+    locked.write_text("# BR-001\n", encoding="utf-8")
+    locked.chmod(0)
+    try:
+        assert invoke(["bugs", "renumber", "BR-001", "BR-009", "--json", *common]) == 1
+    finally:
+        locked.chmod(0o644)
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    reason = f"could not be read to check for BR-001 ({DENIED})"
+    assert data["unswept_files"] == [{"path": "src/a: b/locked.py", "reason": reason}]
+    assert data["unswept"] == [f"src/a: b/locked.py: {reason}"]
+    assert tmp_path.name not in out
 
 
 def test_check_answers_with_the_bugs_gate_s_own_function(

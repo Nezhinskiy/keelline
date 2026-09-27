@@ -57,6 +57,7 @@ from keelline.config.machine import machine_config_path
 from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
 from keelline.errors import Failure
+from keelline.findings import listed
 from keelline.gitenv import git_run
 from keelline.printed import quoted
 
@@ -452,11 +453,13 @@ def _resolve_at(
         return None, f"{base} does not exist; run `keelline attach`"
     groups, unavailable = _group_targets(base, config, overlay if mode == "overlay" else None)
     if not groups:
-        reason = (
-            "; ".join(f"{quoted(k)}: {v}" for k, v in unavailable.items())
-            or "the store has no groups"
-        )
-        return None, reason
+        # Counted, and capped at `LISTED_LIMIT` like every list of names: `memory.groups` is
+        # bounded in number by nothing, and this reason reaches a refusal with no `--json`.
+        reasons = [f"{quoted(k)}: {v}" for k, v in unavailable.items()]
+        if not reasons:
+            return None, "the store has no groups"
+        head = f"none of the {len(reasons)} configured group(s) resolved"
+        return None, f"{head}: {listed(reasons)}"
     return Store(base, mode, root, groups, unavailable, machine), None
 
 

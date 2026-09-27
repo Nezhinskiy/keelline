@@ -11254,7 +11254,7 @@ reddens = [
 [[mutation]]
 name = "a stale trail.toml key reaches the refusal unescaped"
 file = "src/keelline/docs/trail.py"
-before = "listed_names([quoted(key) for key in stale])"
+before = "listed_names([clipped(key) for key in stale])"
 after = "listed_names(stale)"
 reddens = [
   "tests/docs/test_commands.py::test_docs_trail_never_prints_a_crafted_trail_toml_key_raw",
@@ -11371,8 +11371,8 @@ reddens = [
 [[mutation]]
 name = "the stale trail.toml key refusal names every key"
 file = "src/keelline/docs/trail.py"
-before = "listed_names([quoted(key) for key in stale])"
-after = "\", \".join(quoted(key) for key in stale)"
+before = "listed_names([clipped(key) for key in stale])"
+after = "\", \".join(clipped(key) for key in stale)"
 reddens = [
   "tests/docs/test_commands.py::test_the_stale_key_refusal_counts_every_key_and_names_at_most_the_listed_limit",
 ]
@@ -11393,6 +11393,86 @@ before = "printable(u.path)"
 after = "printable(str(u).split(':', 1)[0])"
 reddens = [
   "tests/ledger/test_commands.py::test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite[colon]",
+]
+
+# The same bounds, carried to the rest of the class. A name the refusal is the only channel for
+# is clipped to its start and its length when nothing bounds it upstream; the re-run note is said
+# only when keys were left off; a file `bugs renumber` could not sweep is carried in `--json` as a
+# path and a reason, the reason naming no absolute path; and the resolver's reason for a store
+# with no group resolved is counted and capped.
+
+[[mutation]]
+name = "the stale-key refusal says a re-run names the rest at exactly the limit"
+file = "src/keelline/docs/trail.py"
+before = "if len(stale) > LISTED_LIMIT else \"\""
+after = "if len(stale) >= LISTED_LIMIT else \"\""
+reddens = [
+  "tests/docs/test_commands.py::test_stale_keys_up_to_the_limit_are_all_named_with_no_re_run_note[exactly-the-limit]",
+]
+
+[[mutation]]
+name = "clipped never clips"
+file = "src/keelline/printed.py"
+before = "    if len(name) <= CLIPPED_CHARS:"
+after = "    if True:"
+reddens = [
+  "tests/test_printed.py::test_a_name_past_the_clip_prints_its_first_characters_and_its_length",
+  "tests/docs/test_commands.py::test_a_stale_key_of_any_length_prints_clipped_to_its_start_and_its_length",
+]
+
+[[mutation]]
+name = "a stale trail.toml key prints unclipped"
+file = "src/keelline/docs/trail.py"
+before = "listed_names([clipped(key) for key in stale])"
+after = "listed_names([quoted(key) for key in stale])"
+reddens = [
+  "tests/docs/test_commands.py::test_a_stale_key_of_any_length_prints_clipped_to_its_start_and_its_length",
+]
+
+[[mutation]]
+name = "a theme label prints unclipped in its refusal"
+file = "src/keelline/docs/trail.py"
+before = "{clipped(entry['label'], repr)}"
+after = "{entry['label']!r}"
+reddens = [
+  "tests/docs/test_trail.py::test_a_theme_pattern_or_a_theme_count_past_its_bound_fails_in_keelline_s_words",
+]
+
+[[mutation]]
+name = "the scan records a read failure in words that name its absolute path"
+file = "src/keelline/ledger/scan.py"
+before = "    return error.strerror or type(error).__name__"
+after = "    return str(error)"
+reddens = [
+  "tests/ledger/test_commands.py::test_renumber_names_a_file_it_could_not_read_without_this_machine_s_paths",
+]
+
+[[mutation]]
+name = "the sweep records a write failure in the error's own str"
+file = "src/keelline/ledger/write.py"
+before = "f\"could not be written ({said(error)})\""
+after = "f\"could not be written ({error})\""
+reddens = [
+  "tests/ledger/test_commands.py::test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite[plain]",
+]
+
+[[mutation]]
+name = "bugs renumber carries no file as a path and a reason"
+file = "src/keelline/ledger/commands.py"
+before = "\"unswept_files\": [asdict(u) for u in result.unswept],"
+after = "\"unswept_files\": [],"
+reddens = [
+  "tests/ledger/test_commands.py::test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite[colon]",
+  "tests/ledger/test_commands.py::test_renumber_names_a_file_it_could_not_read_without_this_machine_s_paths",
+]
+
+[[mutation]]
+name = "a store with no group resolved names every group"
+file = "src/keelline/memory/store.py"
+before = "return None, f\"{head}: {listed(reasons)}\""
+after = "return None, f\"{head}: {'; '.join(reasons)}\""
+reddens = [
+  "tests/memory/test_refs.py::test_a_store_with_no_group_resolved_counts_them_and_names_at_most_the_listed_limit",
 ]
 
 [[mutation]]
@@ -11452,8 +11532,8 @@ reddens = [
 [[mutation]]
 name = "a store with no resolving group names each group unescaped"
 file = "src/keelline/memory/store.py"
-before = "\"; \".join(f\"{quoted(k)}: {v}\" for k, v in unavailable.items())"
-after = "\"; \".join(f\"{k}: {v}\" for k, v in unavailable.items())"
+before = "reasons = [f\"{quoted(k)}: {v}\" for k, v in unavailable.items()]"
+after = "reasons = [f\"{k}: {v}\" for k, v in unavailable.items()]"
 reddens = [
   "tests/memory/test_refs.py::test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw",
 ]

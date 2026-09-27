@@ -185,6 +185,13 @@ def is_fixture_holder(head: bytes) -> bool:
     return FIXTURE_MARKER.encode("utf-8") in head
 
 
+def said(error: OSError) -> str:
+    """What an `OSError` says about a file, without naming it: `str(error)` carries the path as it
+    was opened — the absolute one, under this machine's own layout — and every report of a
+    scanned file names it beside this, relative to the root."""
+    return error.strerror or type(error).__name__
+
+
 def scannable(root: Path, names: tuple[str, ...]) -> Iterator[Scanned]:
     """Every file under `names` a reference could live in, sorted for determinism.
 
@@ -206,7 +213,8 @@ def scannable(root: Path, names: tuple[str, ...]) -> Iterator[Scanned]:
                 continue
             raw = path.read_bytes()
         except OSError as error:
-            yield Scanned(path, PurePosixPath(path.relative_to(root).as_posix()), None, str(error))
+            relative = PurePosixPath(path.relative_to(root).as_posix())
+            yield Scanned(path, relative, None, said(error))
             continue
         if is_fixture_holder(raw[:FIXTURE_MARKER_WINDOW]):
             continue

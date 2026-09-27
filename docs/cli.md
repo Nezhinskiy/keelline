@@ -702,8 +702,11 @@ resolving to the pointer rather than to nothing. Rejects an occupied `NEW` or a 
 (`1`) and raises the index refusals of `bugs index` (`2`) before touching anything. A file the sweep
 could not read or write is listed and the command exits `1` naming it, because once the pointer
 exists a stale mention in that file looks intentional to `bugs check` forever. The line counts
-them and names up to eight; `--json` carries every one under `unswept`, each a `"path: reason"`
-string. The moved entry's own body is the operator's to rewrite and is not swept.
+them and names up to eight; `--json` carries every one twice: under `unswept`, each a
+`"path: reason"` string, and under `unswept_files`, each an object with `path` and `reason`. Read
+`unswept_files` to take a path apart from its reason, since a path may itself hold `": "`. The path
+is relative to the root, and the reason is the error in words, naming no path of its own. The
+moved entry's own body is the operator's to rewrite and is not swept.
 
 **Writes** the two entry files, every rewritten file, and `<paths.bug_index>`.
 
@@ -736,7 +739,8 @@ not ignore, grouped by the first `[[theme]]` in `trail.toml` (beside the roadmap
 `delivered`. `--check` exits `1` when the listing is stale and writes nothing. Two guards make
 the listing unable to lie by silence: a state naming a document that no longer exists fails
 (`1`) before anything is written, counting every such key and naming up to eight, with a note
-that a re-run after updating those names the rest; and a document that enters the listing
+that a re-run after updating those names the rest (a key longer than 120 characters is named by
+its first 120 and its length); and a document that enters the listing
 without a declared state is written as `delivered` and then reported (`1`), counted and named
 up to eight on the line and every one in `--json`'s `undeclared` — a design is written before
 the thing is built. A listing that named no document before, such as a new project's first,
@@ -753,7 +757,8 @@ the name's length times its own, and a pattern holds at most 256 characters and 
 at most 32 themes, since every name is tried against every theme until one matches. Any other
 syntax — a group, a class, `+`, `?` or `{n}` — is refused rather than read otherwise.
 A `trail.toml` outside its contract fails (`1`): a non-string label, a pattern outside that
-syntax or longer than 256 characters, more than 32 themes, a file that is not valid UTF-8, or a `label` or `[states]` value that is not a single
+syntax or longer than 256 characters (the refusal names the theme by its `label`, a label
+longer than 120 characters by its first 120 and its length), more than 32 themes, a file that is not valid UTF-8, or a `label` or `[states]` value that is not a single
 line or that carries either marker — both are written into the listing verbatim, so one could
 otherwise split the block and push repository prose into the roadmap. A listed document's name
 is held to the same rule, and to one more: a name that is not a single line, carries either
@@ -1169,7 +1174,8 @@ named in `--json`, and is exit `1` too: an unread note is not a clean note. Refu
 configured group could not be resolved, naming each group and carrying the resolver's own reason
 for it inside the delimited region that marks repository-authored text as data — because a walk
 over a subset that reports nothing stale is worse than no guard. Where *no* store resolves at
-all, the exit is `1`: that comes from the resolver every `memory` command shares, so part of the
+all, the exit is `1`, with the number of configured groups and the reasons for up to eight of
+them: that comes from the resolver every `memory` command shares, so part of the
 store being unreadable is a refusal while the whole of it being unreadable is findings. That is
 the wrong way round by the ordering above, it is a known issue in the `memory` area, and until
 it is fixed a caller should gate on a non-zero exit rather than on the number. Write a path that

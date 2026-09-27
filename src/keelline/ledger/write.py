@@ -25,7 +25,7 @@ from keelline.ledger.entries import (
     scalar,
 )
 from keelline.ledger.index import index_path, index_text, refuse_index_overwrite, render_index
-from keelline.ledger.scan import citation_roots, scannable
+from keelline.ledger.scan import citation_roots, said, scannable
 
 if TYPE_CHECKING:
     from keelline.config.schema import Config
@@ -94,7 +94,9 @@ class Unswept:
 
     Two fields and not one `"path: reason"` string, because a path may hold a colon: the command
     rebuilt the path by splitting that string at the first one, and `docs/a:b.md` was named as
-    `docs/a`. `str()` is the joined form `--json`'s `unswept` carries."""
+    `docs/a`. `str()` is the joined form `--json`'s `unswept` carries; `unswept_files` carries
+    the two fields. The reason names no path of its own (`scan.said`), so the path here is the
+    only one either form holds."""
 
     path: str
     reason: str
@@ -358,6 +360,8 @@ def renumber(root: Path, config: Config, old: str, new: str, *, today: str = "")
         try:
             fsops.write_within(root, item.relative.as_posix(), rewritten)
         except OSError as error:
-            unswept.append(Unswept(item.relative.as_posix(), f"could not be written ({error})"))
+            unswept.append(
+                Unswept(item.relative.as_posix(), f"could not be written ({said(error)})")
+            )
     _write_index(root, config)
     return Renumbered(source, unswept)

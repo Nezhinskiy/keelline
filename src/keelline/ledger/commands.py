@@ -91,10 +91,16 @@ def run_bugs_renumber(args: argparse.Namespace) -> Result:
     root, config = root_and_config(args)
     result = renumber(root, config, args.old, args.new)
     void = result.void.relative_to(root).as_posix()
-    # `unswept` keeps its documented shape, one `"path: reason"` string per file; the line names
-    # each file by its own field, never by splitting that string, since a path may hold a colon.
-    unswept = [str(u) for u in result.unswept]
-    data = {"old": args.old, "new": args.new, "void": void, "unswept": unswept}
+    # `unswept` keeps its documented shape, one `"path: reason"` string per file, and
+    # `unswept_files` carries each as `{path, reason}`, since a path may hold `": "` and no
+    # consumer can split the string back. The line names each file by its own field too.
+    data = {
+        "old": args.old,
+        "new": args.new,
+        "void": void,
+        "unswept": [str(u) for u in result.unswept],
+        "unswept_files": [asdict(u) for u in result.unswept],
+    }
     if result.unswept:
         return Result(
             f"FAIL: {args.old} moved to {args.new}, but {len(result.unswept)} file(s) still "
