@@ -111,19 +111,22 @@ def _reads(root: Path, config: Config, gate: Gate) -> list[Path]:
 class _Listing:
     """What git tracks in the work tree the project is in: its top, the project's place below it
     (`""` at the top, else `"proj/"`), every tracked path and every directory above one, each
-    relative to the top, and each of those by its case-folded spelling."""
+    relative to the top, each of those by its case-folded spelling, and every tracked path that
+    differs in the work tree from the index."""
 
     top: Path
     prefix: str
     names: frozenset[str]
     dirs: frozenset[str]
     folded: Mapping[str, str]
+    changed: frozenset[str]
 
 
 def _tracked(root: Path) -> _Listing | None:
     """Every path git tracks in the work tree around `root`, the whole of it and not only under
-    `root`, since a symlink in a project below the top may name a tracked file beside it; `None`
-    when git gives no answer to either question."""
+    `root`, since a symlink in a project below the top may name a tracked file beside it, and
+    which of them differ on disk, since a link is followed as it is on disk and a checkout writes
+    it as git has it; `None` when git gives no answer to any of the three questions."""
     code, out = git_run(
         root, "rev-parse", "--show-toplevel", "--show-prefix", timeout=QUERY_TIMEOUT_SECONDS
     )
@@ -144,7 +147,11 @@ def _tracked(root: Path) -> _Listing | None:
             dirs.add(name[:cut])
             cut = name.rfind("/", 0, cut)
     folded = {path.casefold(): path for path in (*names, *dirs)}
-    return _Listing(top, lines[1], names, frozenset(dirs), folded)
+    code, out = git_run(top, "ls-files", "-z", "--modified", timeout=QUERY_TIMEOUT_SECONDS)
+    if code != 0:
+        return None
+    changed = frozenset(name for name in out.split("\0") if name)
+    return _Listing(top, lines[1], names, frozenset(dirs), folded, changed)
 
 
 def _is_tracked(relative: str, listing: _Listing) -> bool:
@@ -186,21 +193,23 @@ def _not_checked_out(relative: str, listing: _Listing) -> str | None:
     steps back out of the directory reached so far, which is where a symlinked directory led and
     not where the link sits, and every other component must be tracked, and is followed when it
     is a symlink, a directory's included, its target read from the link's own directory. The
-    first component that is untracked ends the walk, and so does a link whose target is absolute,
-    a `..` above the top, or a link past `LINK_HOPS`, since no checkout of the repository has
-    what any of them names. The name is always inside the project: each link followed renames the
+    first component that is untracked ends the walk, and so does a link that differs on disk
+    from the one git has, which a checkout writes instead, a link whose target is absolute, a
+    `..` above the top, or a link past `LINK_HOPS`, since no checkout of the repository has what
+    any of them names. The name is always inside the project: each link followed renames the
     step to the path it leads to, when that climbs nowhere and stays inside the project, and
-    otherwise the last such name stands.
+    otherwise the last such name stands; a link that leads out of the repository is named itself,
+    or, when it is outside the project, the last link inside it that led there.
     """
     prefix = listing.prefix
     todo = deque(_parts(prefix + relative))
     done: list[str] = []
-    named, hops = relative, 0
+    named, leads, hops = relative, relative, 0
     while todo:
         part = todo.popleft()
         if part == os.pardir:
             if not done:
-                return named  # a climb above the work tree's top: no checkout has it
+                return leads  # a climb above the work tree's top: no checkout has it
             done.pop()
             continue
         done.append(part)
@@ -210,12 +219,16 @@ def _not_checked_out(relative: str, listing: _Listing) -> str | None:
         link = listing.top / here
         if not link.is_symlink():
             continue
+        if here in listing.changed:
+            return named  # a link changed on disk: a checkout writes the one git has
+        if here.startswith(prefix):
+            leads = here[len(prefix) :]
         hops += 1
         if hops > LINK_HOPS:
             return named  # a chain longer than the walk follows
         target = os.readlink(link)
         if os.path.isabs(target):
-            return named  # a target that is absolute: no other checkout has it
+            return leads  # a target that is absolute: no other checkout has it
         done.pop()
         todo.extendleft(reversed(_parts(target)))
         step = "/".join([*done, *todo])

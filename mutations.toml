@@ -12144,7 +12144,7 @@ reddens = [
 [[mutation]]
 name = "a climb above the work tree's top reads as one a checkout has"
 file = "src/keelline/assess/tracked.py"
-before = "                return named  # a climb above the work tree's top: no checkout has it"
+before = "                return leads  # a climb above the work tree's top: no checkout has it"
 after = "                return None"
 reddens = [
   "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[out-of-the-project]",
@@ -12175,7 +12175,7 @@ reddens = [
 [[mutation]]
 name = "a link to an absolute target reads as one a checkout has"
 file = "src/keelline/assess/tracked.py"
-before = "            return named  # a target that is absolute: no other checkout has it"
+before = "            return leads  # a target that is absolute: no other checkout has it"
 after = "            return None"
 reddens = [
   "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[absolute]",
@@ -12371,7 +12371,7 @@ before = """    if code != 0:
     names = frozenset("""
 after = """    names = frozenset("""
 reddens = [
-  "tests/assess/test_tracked.py::test_a_listing_git_refuses_after_naming_the_top_is_no_answer",
+  "tests/assess/test_tracked.py::test_a_listing_git_refuses_after_naming_the_top_is_no_answer[--cached]",
 ]
 
 # A gate can answer without reaching a path it reads (the trail gate stops at a missing roadmap),
@@ -12402,4 +12402,50 @@ after = """    except OSError:
 def _case_differs("""
 reddens = [
   "tests/assess/test_tracked.py::test_a_name_that_reaches_no_file_is_never_the_same_file_as_another",
+]
+
+# A link is followed as it is on disk, and a checkout writes it as git has it: a link retargeted on
+# disk and not staged may lead to a tracked file here and to nothing in CI.
+[[mutation]]
+name = "a link changed on disk is followed as it is on disk"
+file = "src/keelline/assess/tracked.py"
+before = "            return named  # a link changed on disk: a checkout writes the one git has"
+after = "            pass"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_link_retargeted_on_disk_and_not_staged_is_named[directory-link]",
+  "tests/assess/test_tracked.py::test_a_link_retargeted_on_disk_and_not_staged_is_named[file-link]",
+]
+
+[[mutation]]
+name = "a listing of changed files git refuses is read as an empty one"
+file = "src/keelline/assess/tracked.py"
+before = """    if code != 0:
+        return None
+    changed = frozenset("""
+after = """    changed = frozenset("""
+reddens = [
+  "tests/assess/test_tracked.py::test_a_listing_git_refuses_after_naming_the_top_is_no_answer[--modified]",
+]
+
+# What to fix is the link that leads out of the repository, so it is named, not the path through
+# it; and only a link inside the project is named, never one beside it.
+[[mutation]]
+name = "a link that leads out is named by the path through it"
+file = "src/keelline/assess/tracked.py"
+before = "            leads = here[len(prefix) :]"
+after = "            pass"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_directory_link_that_leads_out_of_the_repository_is_named_by_the_link[climbs-out]",
+  "tests/assess/test_tracked.py::test_a_directory_link_that_leads_out_of_the_repository_is_named_by_the_link[absolute]",
+]
+
+[[mutation]]
+name = "a link outside the project is named as the link that led out"
+file = "src/keelline/assess/tracked.py"
+before = """        if here.startswith(prefix):
+            leads = here[len(prefix) :]"""
+after = """        if True:
+            leads = here[len(prefix) :]"""
+reddens = [
+  "tests/assess/test_tracked.py::test_a_symlink_below_the_top_that_no_checkout_has_names_the_link[out-through-a-link-beside-the-project]",
 ]

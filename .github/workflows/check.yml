@@ -55,7 +55,7 @@ on:
         type: string
         default: ""
       timeout-minutes:
-        description: "the job's time limit, a whole number of minutes from 5 to 60; any other value fails the job in its first step, and a job that runs out of time is cancelled, which is not a pass"
+        description: "the job's time limit, a whole number of minutes from 5 to 60; any value the runner does not render as a whole number from 5 to 60 fails the job in its first step, and a job that runs out of time is cancelled, which is not a pass"
         type: number
         default: 15
 

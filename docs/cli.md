@@ -854,9 +854,11 @@ of `[gates] builtin`.
   and the file it lands on must be tracked. Where a link leads is judged against the work tree's
   top, since a project below it may link to a tracked file beside it, which every checkout has; a
   link whose target is absolute or climbs out of the repository counts as untracked, since no other
-  checkout has what it names.
-- **The items.** An `untracked` item names the files: the first untracked step on a path, or the
-  link that leads out, and when that step is outside the project, the last link inside it that led
+  checkout has what it names, and so does a link that differs on disk from the one git has — one
+  retargeted and not staged — since a checkout writes git's, which may lead elsewhere.
+- **The items.** An `untracked` item names the files: the first untracked step on a path, a link
+  that differs on disk from git's, or a link that leads out of the repository, a directory's
+  included, and when that step or link is outside the project, the last link inside it that led
   there. A name that differs from the one git tracks only in case — a link to `Notes.md` where git
   tracks `notes.md` — reads the committed file on a filesystem that folds case, as macOS's does by
   default, and nothing in a Linux checkout, so it goes to a `case-differs` item instead, whose
@@ -1185,9 +1187,10 @@ as `keelline assess` defines it, `enforcing` when this run promoted it), `promot
 which maps each gate that ran and did not pass to its finding count, `unanswered`, the gates that
 could not run, `not_on_base`, the custom gates not run because the base does not have their
 command, `skipped`, the custom gates `--builtin` did not run, `untracked`, which maps each gate
-not promoted because it reads files CI's checkout will not have to those files, and
-`case_differs`, which maps each gate not promoted because git tracks a file it reads only under
-a name that differs in case to those files, as read. When a gate stays
+not promoted because it reads files CI's checkout will not have to those files, other than the
+ones below, and `case_differs`, which maps each gate not promoted because git tracks a file it
+reads only under a name that differs in case to those files, as read; a gate whose only such files
+differ in case is under `case_differs` alone. When a gate stays
 advisory, the summary ends with a line saying where its findings are
 (`keelline assess --json`, or `keelline assess --builtin --json` under `--builtin`, or the
 gate's own command), and, when `plan`, `commit` or `bugs`
@@ -2489,7 +2492,7 @@ as the check is required on the gate branch only.
 | `path` | `"."` | the project root inside the caller's checkout, for a monorepo or a fixture. A **plain relative path** — letters, digits, `.`, `_`, `-` and `/`, with no `..` component — and anything else is refused before a gate runs, because the value reaches the run's own outputs, and those carry the base commit the gates' configuration is read from. A root any component of which is a symbolic link in the checkout is refused too |
 | `python-version` | `"3.13"` | the interpreter Keelline runs on; 3.11 is the floor |
 | `only` | `""` | the checks to run, space-separated: `config` and any configured gate name. Empty runs the configuration check and every configured gate, and the configuration check runs whatever this names |
-| `timeout-minutes` | `15` | the job's time limit, a whole number of minutes from 5 to 60; any other value fails the job in its first step, before anything is checked out |
+| `timeout-minutes` | `15` | the job's time limit, a whole number of minutes from 5 to 60; any value the runner does not render as a whole number from 5 to 60 fails the job in its first step, before anything is checked out |
 
 The caller's job needs `contents: read`. That is the default, so the lines above are enough —
 but a caller that sets `permissions:` at workflow level replaces the default rather than adding
@@ -2529,9 +2532,9 @@ pull-request content, so that line is one a pull request can edit, and this is w
 through the input: this job's limit, anywhere from 5 to 60, in every run the pull request starts —
 one per push, and one per edit of its title, description or base. Through the input it cannot
 remove the limit, raise it past 60, or turn running out into a pass: a job that runs out of time is
-cancelled, and a required check that was cancelled has not passed. Any value but a whole number
-from 5 to 60 fails the job in its first step rather than being quietly replaced, and whatever was
-passed, the limit the job runs under stays inside the range.
+cancelled, and a required check that was cancelled has not passed. Any value the runner does not
+render as a whole number from 5 to 60 fails the job in its first step rather than being quietly
+replaced, and whatever was passed, the limit the job runs under stays inside the range.
 
 **What the input does not bound.** The rest of the caller file is pull-request content as well, and
 runs as the pull request wrote it: a matrix around the call runs this job once per leg, each leg

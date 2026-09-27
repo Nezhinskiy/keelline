@@ -256,6 +256,57 @@ def test_a_committed_symlinked_directory_on_a_link_s_way_is_followed(
     assert _items(assessment, UNTRACKED) == ({"docs": (named,)} if named else {})
 
 
+@pytest.mark.parametrize("absolute", [False, True], ids=["climbs-out", "absolute"])
+def test_a_directory_link_that_leads_out_of_the_repository_is_named_by_the_link(
+    tmp_path: Path, absolute: bool
+) -> None:
+    # A committed `alias -> ../outside`, or to an absolute path, leaves the link dangling in every
+    # other checkout. What to fix is the link, so the link is named, and not the path through
+    # it, which names a file nobody could commit. Mutation (declared): a link that leads out is
+    # named by the path through it.
+    root = smoke_repo(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "notes.md").write_text("# outside\n", encoding="utf-8")
+    target = str(outside) if absolute else "../outside"
+    _link_through(root, {"alias": target}, linked="alias/notes.md")
+    assert (root / "alias" / "notes.md").is_file()
+    assert _items(_assess(root, tmp_path), UNTRACKED) == {"docs": ("alias",)}
+
+
+@pytest.mark.parametrize(
+    ("links", "linked", "retarget", "named"),
+    [
+        ({"alias": "private"}, "alias/notes.md", ("alias", "real"), "alias/notes.md"),
+        ({"notes.md": "private/notes.md"}, "notes.md", ("notes.md", "real/notes.md"), "notes.md"),
+    ],
+    ids=["directory-link", "file-link"],
+)
+def test_a_link_retargeted_on_disk_and_not_staged_is_named(
+    tmp_path: Path,
+    links: dict[str, str],
+    linked: str,
+    retarget: tuple[str, str],
+    named: str,
+) -> None:
+    # The link is committed pointing into the ignored `private/`, then pointed on disk at the
+    # tracked `real/` and not staged. The disk's link leads to a tracked file, and a checkout
+    # writes the committed one, which leads nowhere: `missing-link`. So a link git reports as
+    # changed in the work tree is not followed; it is the first step a checkout does not have.
+    # Mutation (declared): a link changed on disk is followed as it is on disk.
+    root = smoke_repo(tmp_path)
+    (root / "real").mkdir()
+    (root / "real" / "notes.md").write_text("# ours\n", encoding="utf-8")
+    _link_through(root, links, ("private/",), linked=linked)
+    path, target = retarget
+    (root / path).unlink()
+    (root / path).symlink_to(target)
+    assert (root / linked).read_text(encoding="utf-8") == "# ours\n"
+    assessment = _assess(root, tmp_path)
+    assert _row(assessment, "docs").reason == UNSEEN_REASON
+    assert _items(assessment, UNTRACKED) == {"docs": (named,)}
+
+
 def test_a_link_chain_longer_than_the_cap_is_named_where_the_walk_stopped(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -328,11 +379,13 @@ def test_a_symlink_to_a_tracked_file_elsewhere_in_the_repository_is_judged(
         ("../../outside.md", (), {}),
         ("../shared/notes.md", ("shared/",), {}),
         ("../shared/onward.md", ("shared/notes.md",), {"onward.md": "notes.md"}),
+        ("../shared/onward.md", (), {"onward.md": "../../outside.md"}),
     ],
     ids=[
         "out-of-the-repository",
         "to-an-ignored-file-beside-the-project",
         "on-through-a-link-beside-the-project",
+        "out-through-a-link-beside-the-project",
     ],
 )
 def test_a_symlink_below_the_top_that_no_checkout_has_names_the_link(
@@ -341,8 +394,9 @@ def test_a_symlink_below_the_top_that_no_checkout_has_names_the_link(
     # The top is where a climb is judged, and nothing else moves: a target above the repository
     # is in no checkout, and one beside the project that git does not track is in none either.
     # Either way the name printed is the link inside the project, never a path outside it, and
-    # that holds when a tracked link beside the project leads on to the untracked file. Mutation
-    # (declared): a step outside the project is named by its own path.
+    # that holds when a tracked link beside the project leads on to the untracked file, or out of
+    # the repository. Mutations (declared): a step outside the project is named by its own path;
+    # a link outside the project is named as the link that led out.
     (tmp_path / "outside.md").write_text("# outside\n", encoding="utf-8")
     project = _project_below_the_top(tmp_path, target, ignored, beside)
     assert (project / "notes.md").exists()
@@ -597,17 +651,19 @@ def test_adopt_promote_s_note_on_a_git_that_gives_no_answer_says_how_to_see_why(
     assert data["untracked"] == {} and data["unanswered"] == ["docs"], data
 
 
+@pytest.mark.parametrize("refused", ["--cached", "--modified"])
 def test_a_listing_git_refuses_after_naming_the_top_is_no_answer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, refused: str
 ) -> None:
     # git can name the work tree's top and then refuse the listing, a timeout or a broken index.
     # An empty listing read in its place would make every file untracked, with a reason saying
-    # git does not track them, which it never said. Mutation (declared): a failed listing is
+    # git does not track them, which it never said; an empty list of changed files would follow
+    # every link as it is on disk. Mutations (declared): a failed listing, of either kind, is
     # read as an empty one.
     root = smoke_repo(tmp_path)
 
     def git_run(cwd: Path, *args: str, timeout: float) -> tuple[int, str]:
-        return (-1, "") if args[0] == "ls-files" else gitenv.git_run(cwd, *args, timeout=timeout)
+        return (-1, "") if refused in args else gitenv.git_run(cwd, *args, timeout=timeout)
 
     monkeypatch.setattr(tracked, "git_run", git_run)
     assessment = _assess(root, tmp_path)
