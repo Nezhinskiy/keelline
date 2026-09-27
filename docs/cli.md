@@ -827,8 +827,9 @@ or ignored — is one those gates read here and CI never sees, and there the gat
 an absent file fails every pull request. The files are `[paths] agents_md` and every file or
 directory its links name, for `docs`, and `[paths] roadmap` and the `trail.toml` beside it, for
 `trail`. A symlink is tracked as the link alone, and a checkout writes the link whether or not what
-it names is there, so a link target that is a symlink is followed, link by link: every link on the
-way and the file it lands on must be tracked. A project below its repository's top may link to a
+it names is there, so each path is walked as the filesystem walks it, one component at a time, and
+every symlink on the way is followed, a symlinked directory's included: every step and the file it
+lands on must be tracked. A project below its repository's top may link to a
 tracked file beside it, which every checkout has, so where a link leads is judged against the work
 tree's top; a link whose target is absolute or climbs out of the repository counts as untracked,
 since no other checkout has what it names. Tracked means in git's index, as `git ls-files` lists

@@ -11742,7 +11742,7 @@ reddens = [
 [[mutation]]
 name = "every file a gate reads reads as tracked"
 file = "src/keelline/assess/tracked.py"
-before = '    return relative in tracked or any(name.startswith(relative + "/") for name in tracked)'
+before = "    return relative in listing.names or relative in listing.dirs"
 after = "    return True"
 reddens = [
   "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[agents-md]",
@@ -11853,8 +11853,8 @@ reddens = [
 ]
 
 # git tracks a symlink as the link alone, and CI checks it out dangling when what it leads to is
-# untracked or outside the repository: a link target read through a tracked symlink is judged by
-# where the link leads, link by link.
+# untracked or outside the repository: a path read through a tracked symlink is judged by where
+# the link leads, walked one component at a time as the filesystem walks it.
 [[mutation]]
 name = "a symlinked link target is judged by the link alone"
 file = "src/keelline/assess/tracked.py"
@@ -11865,27 +11865,143 @@ reddens = [
   "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[through-an-ignored-link]",
 ]
 
-# A link whose target is absolute or climbs out of the work tree names nothing a checkout has, and the
-# name it leads to is outside the repository: the link itself is named, never where it leads.
+# A committed directory symlink on the way to a file is written by every checkout, and the file
+# behind it is tracked at its real path: CI reads through it, so the walk follows it too.
 [[mutation]]
-name = "a link out of the project is followed to its target outside it"
+name = "only the last component of a path is asked whether it is a symlink"
 file = "src/keelline/assess/tracked.py"
-before = "        if os.path.isabs(target) or step == os.pardir or step.startswith(os.pardir + os.sep):"
-after = "        if False:"
+before = "        if not link.is_symlink():"
+after = "        if not link.is_symlink() or todo:"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_committed_symlinked_directory_on_a_link_s_way_is_followed[to-a-tracked-directory]",
+  "tests/assess/test_tracked.py::test_a_committed_symlinked_directory_on_a_link_s_way_is_followed[to-an-ignored-directory]",
+]
+
+# Every exit of the walk but the last is "a checkout would not have this": each must name the
+# path, never answer "tracked".
+[[mutation]]
+name = "a climb above the work tree's top reads as one a checkout has"
+file = "src/keelline/assess/tracked.py"
+before = "                return named  # a climb above the work tree's top: no checkout has it"
+after = "                return None"
 reddens = [
   "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[out-of-the-project]",
+  "tests/assess/test_tracked.py::test_a_symlink_below_the_top_that_no_checkout_has_names_the_link[out-of-the-repository]",
+]
+
+[[mutation]]
+name = "the first untracked step on a path reads as tracked"
+file = "src/keelline/assess/tracked.py"
+before = "            return named  # the first untracked step"
+after = "            return None"
+reddens = [
+  "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[agents-md]",
+  "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[to-an-ignored-file]",
+]
+
+# The cap is the backstop for a walk that ever follows more links than the filesystem did: one
+# that runs out of hops has not reached a tracked file, so it may not answer that it has.
+[[mutation]]
+name = "a link walk that runs out of hops answers tracked"
+file = "src/keelline/assess/tracked.py"
+before = "            return named  # a chain longer than the walk follows"
+after = "            return None"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_link_chain_longer_than_the_cap_is_named_where_the_walk_stopped",
+]
+
+[[mutation]]
+name = "a link to an absolute target reads as one a checkout has"
+file = "src/keelline/assess/tracked.py"
+before = "            return named  # a target that is absolute: no other checkout has it"
+after = "            return None"
+reddens = [
   "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[absolute]",
 ]
 
-# The walk collapses `..` without asking the filesystem, which climbs out of a symlinked directory
-# from where the directory leads: where the two land apart, the walk is no answer about the path.
 [[mutation]]
-name = "the link walk's landing is not compared with the filesystem's"
+name = "a walk that reaches a tracked file names it all the same"
 file = "src/keelline/assess/tracked.py"
-before = "            return None if link.resolve() == (root / relative).resolve() else relative"
-after = "            return None"
+before = """            named = step[len(prefix) :]
+    return None"""
+after = """            named = step[len(prefix) :]
+    return relative"""
 reddens = [
-  "tests/assess/test_tracked.py::test_a_link_walk_that_lands_elsewhere_than_the_filesystem_is_no_answer",
+  "tests/assess/test_tracked.py::test_a_tree_whose_every_read_file_is_tracked_is_judged_as_it_is",
+  "tests/assess/test_tracked.py::test_a_committed_symlinked_directory_on_a_link_s_way_is_followed[to-a-tracked-directory]",
+]
+
+# A link's target is read from the link's own directory, as the filesystem reads it.
+[[mutation]]
+name = "a symlink's target is followed from the link, not from its directory"
+file = "src/keelline/assess/tracked.py"
+before = """        done.pop()
+        todo.extendleft(reversed(_parts(target)))"""
+after = """        todo.extendleft(reversed(_parts(target)))"""
+reddens = [
+  "tests/assess/test_tracked.py::test_a_symlinked_link_target_that_leads_to_a_tracked_file_is_judged",
+]
+
+# `..` climbs out of a symlinked directory from where the directory leads, not from where the link
+# sits: collapsed as text, `sub/../elsewhere.md` is a tracked file the filesystem never reads.
+[[mutation]]
+name = "a link's target is collapsed as text before it is walked"
+file = "src/keelline/assess/tracked.py"
+before = "        todo.extendleft(reversed(_parts(target)))"
+after = "        todo.extendleft(reversed(_parts(os.path.normpath(target))))"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_climb_out_of_a_symlinked_directory_is_walked_as_the_filesystem_walks_it[elsewhere]",
+]
+
+[[mutation]]
+name = "a `..` in a link's target does not step back out of the directory reached"
+file = "src/keelline/assess/tracked.py"
+before = """            done.pop()
+            continue"""
+after = """            continue"""
+reddens = [
+  "tests/assess/test_tracked.py::test_a_symlink_to_a_tracked_file_elsewhere_in_the_repository_is_judged",
+]
+
+# What is named is the file to commit: the untracked file a link leads to, and not the link.
+[[mutation]]
+name = "the untracked file a link leads to is not named, only the link"
+file = "src/keelline/assess/tracked.py"
+before = "            named = step[len(prefix) :]"
+after = "            pass"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[to-an-ignored-file]",
+]
+
+# A step whose path climbs is named by the link that led there: `sub/../notes.md` names nothing a
+# person can commit.
+[[mutation]]
+name = "a step whose path climbs is named by its own path"
+file = "src/keelline/assess/tracked.py"
+before = "        if os.pardir not in todo and step.startswith(prefix):"
+after = "        if step.startswith(prefix):"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_climb_out_of_a_symlinked_directory_is_walked_as_the_filesystem_walks_it[itself]",
+]
+
+# What is printed is inside the project: a step beside it is named by the last link inside it.
+[[mutation]]
+name = "a step outside the project is named by its own path"
+file = "src/keelline/assess/tracked.py"
+before = "        if os.pardir not in todo and step.startswith(prefix):"
+after = "        if os.pardir not in todo:"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_symlink_below_the_top_that_no_checkout_has_names_the_link[on-through-a-link-beside-the-project]",
+]
+
+# A tracked directory is one git lists a file under; the walk asks every directory on its way.
+[[mutation]]
+name = "a directory with a tracked file under it reads as untracked"
+file = "src/keelline/assess/tracked.py"
+before = "    return relative in listing.names or relative in listing.dirs"
+after = "    return relative in listing.names"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_tree_whose_every_read_file_is_tracked_is_judged_as_it_is",
 ]
 
 # Every caller `init` writes passes no time limit, so only the smoke's own call of the reusable
@@ -11904,8 +12020,8 @@ reddens = [
 [[mutation]]
 name = "a climb out of the project reads as a climb out of the repository"
 file = "src/keelline/assess/tracked.py"
-before = "        if os.path.isabs(target) or step == os.pardir or step.startswith(os.pardir + os.sep):"
-after = "        if os.path.isabs(target) or not step.startswith(prefix) or step.startswith(os.pardir):"
+before = "            if not done:"
+after = "            if len(done) <= prefix.count(\"/\"):"
 reddens = [
   "tests/assess/test_tracked.py::test_a_symlink_to_a_tracked_file_elsewhere_in_the_repository_is_judged",
 ]

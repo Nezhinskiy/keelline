@@ -31,6 +31,7 @@ wrote.
 from __future__ import annotations
 
 import os
+from collections import deque
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -103,11 +104,13 @@ def _reads(root: Path, config: Config, gate: str) -> list[Path]:
 @dataclass(frozen=True)
 class _Listing:
     """What git tracks in the work tree the project is in: its top, the project's place below it
-    (`""` at the top, else `"proj/"`), and every tracked path, relative to the top."""
+    (`""` at the top, else `"proj/"`), every tracked path and every directory above one, each
+    relative to the top."""
 
     top: Path
     prefix: str
-    names: set[str]
+    names: frozenset[str]
+    dirs: frozenset[str]
 
 
 def _tracked(root: Path) -> _Listing | None:
@@ -124,47 +127,74 @@ def _tracked(root: Path) -> _Listing | None:
     code, out = git_run(top, "ls-files", "-z", "--cached", timeout=QUERY_TIMEOUT_SECONDS)
     if code != 0:
         return None
-    return _Listing(top, lines[1], {name for name in out.split("\0") if name})
+    names = frozenset(name for name in out.split("\0") if name)
+    # Built once, so the walk asks each step in constant time: it asks every directory on every
+    # path it walks, and the listing is the whole repository's.
+    dirs: set[str] = set()
+    for name in names:
+        cut = name.rfind("/")
+        while cut > 0 and name[:cut] not in dirs:
+            dirs.add(name[:cut])
+            cut = name.rfind("/", 0, cut)
+    return _Listing(top, lines[1], names, frozenset(dirs))
 
 
-def _is_tracked(relative: str, tracked: set[str]) -> bool:
+def _is_tracked(relative: str, listing: _Listing) -> bool:
     """A file is tracked when git lists it; a directory, when git lists a file under it."""
-    return relative in tracked or any(name.startswith(relative + "/") for name in tracked)
+    return relative in listing.names or relative in listing.dirs
 
 
-def _not_checked_out(root: Path, relative: str, listing: _Listing) -> str | None:
+def _parts(path: str) -> list[str]:
+    """`path`'s components, as the filesystem reads them: an empty one or `.` names nothing."""
+    return [part for part in path.split("/") if part not in ("", os.curdir)]
+
+
+def _not_checked_out(relative: str, listing: _Listing) -> str | None:
     """What of `relative` a checkout of the tracked tree would not have, named inside the project,
     or `None` when it would have all of it.
 
     git tracks a symlink as the link alone, and a checkout writes the link whether or not what it
-    names is there, so a tracked link says nothing about what is read through it. Each link on the
-    way is followed, lexically and relative to the link's own directory as the filesystem reads
-    it, in the work tree's own terms: a project below the top may link to a tracked file beside
-    it, which every checkout has. The first step that is untracked is named, and so is a link
-    whose target is absolute or climbs out of the work tree, since no other checkout of the
-    repository has that target. What is named is always inside the project: a step outside it is
-    named by the last link inside it that led there. A component before the last that is itself
-    a symlink needs no walk of its own: git lists nothing under a symlink, so a path through one
-    is already untracked. Last, the walk must land where the filesystem did, or it is not an
-    answer about this path, and the path is named.
+    names is there, so a tracked link says nothing about what is read through it. The path is
+    walked as the filesystem walks it, one component at a time from the work tree's top: `..`
+    steps back out of the directory reached so far, which is where a symlinked directory led and
+    not where the link sits, and every other component must be tracked, and is followed when it
+    is a symlink, a directory's included, its target read from the link's own directory. The
+    first component that is untracked ends the walk, and so does a link whose target is absolute,
+    a `..` above the top, or a link past `LINK_HOPS`, since no checkout of the repository has
+    what any of them names. The name is always inside the project: each link followed renames the
+    step to the path it leads to, when that climbs nowhere and stays inside the project, and
+    otherwise the last such name stands.
     """
     prefix = listing.prefix
-    current = prefix + relative
-    named = relative
-    for _ in range(LINK_HOPS + 1):
-        if current.startswith(prefix):
-            named = current[len(prefix) :]
-        if not _is_tracked(current, listing.names):
-            return named
-        link = listing.top / current
+    todo = deque(_parts(prefix + relative))
+    done: list[str] = []
+    named, hops = relative, 0
+    while todo:
+        part = todo.popleft()
+        if part == os.pardir:
+            if not done:
+                return named  # a climb above the work tree's top: no checkout has it
+            done.pop()
+            continue
+        done.append(part)
+        here = "/".join(done)
+        if not _is_tracked(here, listing):
+            return named  # the first untracked step
+        link = listing.top / here
         if not link.is_symlink():
-            return None if link.resolve() == (root / relative).resolve() else relative
+            continue
+        hops += 1
+        if hops > LINK_HOPS:
+            return named  # a chain longer than the walk follows
         target = os.readlink(link)
-        step = os.path.normpath(os.path.join(os.path.dirname(current), target))
-        if os.path.isabs(target) or step == os.pardir or step.startswith(os.pardir + os.sep):
-            return named
-        current = Path(step).as_posix()
-    return named
+        if os.path.isabs(target):
+            return named  # a target that is absolute: no other checkout has it
+        done.pop()
+        todo.extendleft(reversed(_parts(target)))
+        step = "/".join([*done, *todo])
+        if os.pardir not in todo and step.startswith(prefix):
+            named = step[len(prefix) :]
+    return None
 
 
 def unseen(root: Path, config: Config, names: tuple[str, ...]) -> tuple[Unseen, ...]:
@@ -189,7 +219,7 @@ def unseen(root: Path, config: Config, names: tuple[str, ...]) -> tuple[Unseen, 
             result.append(Unseen(gate, tuple(files), answered=False))
             continue
         missing = tuple(
-            dict.fromkeys(n for f in files if (n := _not_checked_out(root, f, tracked)) is not None)
+            dict.fromkeys(n for f in files if (n := _not_checked_out(f, tracked)) is not None)
         )
         if missing:
             result.append(Unseen(gate, missing, answered=True))

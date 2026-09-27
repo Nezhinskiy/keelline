@@ -78,7 +78,9 @@ def _adopting(root: Path) -> None:
 
 def test_a_tree_whose_every_read_file_is_tracked_is_judged_as_it_is(tmp_path: Path) -> None:
     # The fixture as it is: nothing untracked, so both gates answer and nothing is reported.
-    # Without this the cases below could pass on a check that reports every file.
+    # Without this the cases below could pass on a check that reports every file. Mutations
+    # (declared): a directory with a tracked file under it reads as untracked; a walk that
+    # reaches a tracked file names it all the same.
     assessment = _assess(smoke_repo(tmp_path), tmp_path)
     assert assessment.would_fail == ()
     assert _items(assessment, UNTRACKED) == {}
@@ -149,8 +151,10 @@ def test_a_file_the_always_loaded_document_links_to_is_read_by_the_docs_gate(
     assert _items(assessment, UNTRACKED) == {"docs": ("local-notes.md",)}
 
 
-def _link_through(root: Path, links: dict[str, str], ignored: tuple[str, ...] = ()) -> None:
-    """`AGENTS.md` gains a link to `notes.md`; each of `links` is a symlink, its path to its
+def _link_through(
+    root: Path, links: dict[str, str], ignored: tuple[str, ...] = (), linked: str = "notes.md"
+) -> None:
+    """`AGENTS.md` gains a link to `linked`; each of `links` is a symlink, its path to its
     target as written; `private/notes.md` is a file; every path in `ignored` is kept out of git
     by an ignore rule; and the rest is committed."""
     (root / "private").mkdir(exist_ok=True)
@@ -159,7 +163,7 @@ def _link_through(root: Path, links: dict[str, str], ignored: tuple[str, ...] = 
         (root / path).symlink_to(target)
     (root / ".gitignore").write_text("".join(f"/{p}\n" for p in ignored), encoding="utf-8")
     agents = root / AGENTS
-    agents.write_text(agents.read_text(encoding="utf-8") + "\n[notes](notes.md)\n", "utf-8")
+    agents.write_text(agents.read_text(encoding="utf-8") + f"\n[notes]({linked})\n", "utf-8")
     git(root, "add", "-A")
     git(root, "commit", "-qm", "docs: link the notes through a symlink")
 
@@ -185,8 +189,10 @@ def test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout(
     # is not tracked, or is outside the repository, where no checkout of it has anything: there the
     # link is `missing-link`. So the link being tracked says nothing about what CI reads through
     # it. Each link on the way is followed, and the first that a checkout would not have is
-    # named: the untracked file or link, or the link that leaves the project. Mutation
-    # (declared): a symlinked link target is judged by the link alone.
+    # named: the untracked file or link, or the link that leaves the project. Mutations
+    # (declared): a symlinked link target is judged by the link alone; the untracked file a link
+    # leads to is not named, only the link; a climb above the work tree's top, or a link to an
+    # absolute target, reads as one a checkout has.
     root = smoke_repo(tmp_path)
     if named == "notes.md":
         (root.parent / "outside.md").write_text("# outside\n", encoding="utf-8")
@@ -197,33 +203,84 @@ def test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout(
     assert _items(assessment, UNTRACKED) == {"docs": (named,)}
 
 
-def test_a_link_walk_that_lands_elsewhere_than_the_filesystem_is_no_answer(tmp_path: Path) -> None:
-    # The walk collapses `..` in a link's target without asking the filesystem, which climbs out
-    # of a symlinked directory from where the directory leads. `sub` leads into the ignored
-    # `private/deeper`, so `sub/../elsewhere.md` is `private/elsewhere.md` on disk and in no
-    # checkout, while the walk reads the tracked `elsewhere.md`. Where the two disagree the walk
-    # is not an answer about the path, and the link is named. Mutation (declared): the walk's
-    # landing is not compared with the filesystem's.
+@pytest.mark.parametrize("target", ["elsewhere.md", "notes.md"], ids=["elsewhere", "itself"])
+def test_a_climb_out_of_a_symlinked_directory_is_walked_as_the_filesystem_walks_it(
+    tmp_path: Path, target: str
+) -> None:
+    # The filesystem resolves a path one component at a time, so `..` climbs out of a symlinked
+    # directory from where the directory leads, not from where the link sits. `sub` leads into
+    # the ignored `private/deeper`, so `sub/../<target>` is `private/<target>` on disk and in no
+    # checkout. Collapsed as text, it would be the tracked `elsewhere.md`, or `notes.md` itself,
+    # a link that names itself for as long as the walk has hops to spend. Walked as the
+    # filesystem walks it, it reaches the ignored `private` and the link is named. Mutations
+    # (declared): a link's target is collapsed as text before it is walked; a step whose path
+    # climbs is named by its own path.
     root = smoke_repo(tmp_path)
     (root / "private" / "deeper").mkdir(parents=True)
     (root / "private" / "elsewhere.md").write_text("# mine\n", encoding="utf-8")
     (root / "elsewhere.md").write_text("# ours\n", encoding="utf-8")
-    _link_through(root, {"sub": "private/deeper", "notes.md": "sub/../elsewhere.md"}, ("private/",))
-    assert (root / "notes.md").resolve() == (root / "private" / "elsewhere.md").resolve()
+    _link_through(root, {"sub": "private/deeper", "notes.md": f"sub/../{target}"}, ("private/",))
+    assert (root / "notes.md").resolve() == (root / "private" / target).resolve()
     assessment = _assess(root, tmp_path)
     assert _items(assessment, UNTRACKED) == {"docs": ("notes.md",)}
 
 
-def _project_below_the_top(tmp_path: Path, target: str, ignored: tuple[str, ...] = ()) -> Path:
+@pytest.mark.parametrize(
+    ("ignored", "named"),
+    [((), None), (("private/",), "private/notes.md")],
+    ids=["to-a-tracked-directory", "to-an-ignored-directory"],
+)
+def test_a_committed_symlinked_directory_on_a_link_s_way_is_followed(
+    tmp_path: Path, ignored: tuple[str, ...], named: str | None
+) -> None:
+    # `alias -> private` is committed, and a checkout writes the directory link; the file behind
+    # it is tracked at its real path, so CI reads `alias/notes.md` and passes the link. A
+    # directory link on the way is followed as the last one is, and judged by where it leads:
+    # when that is ignored, the file there is named, which is the file to commit. Mutation
+    # (declared): only the last component of a path is asked whether it is a symlink.
+    root = smoke_repo(tmp_path)
+    _link_through(root, {"alias": "private"}, ignored, linked="alias/notes.md")
+    assert (root / "alias" / "notes.md").is_file()
+    assessment = _assess(root, tmp_path)
+    assert _row(assessment, "docs").answered is (named is None)
+    assert _items(assessment, UNTRACKED) == ({"docs": (named,)} if named else {})
+
+
+def test_a_link_chain_longer_than_the_cap_is_named_where_the_walk_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The walk follows the links the filesystem follows, and it counts them from the work tree's
+    # top where the filesystem counts from `/`, so a path that exists never takes it past
+    # `LINK_HOPS` (40, Linux's own limit; macOS stops at 32). The cap is the backstop for a walk
+    # that ever does, and it must stop without an answer, never with "tracked": so the cap is
+    # lowered here under a chain of two tracked links to a tracked file, and the link it did not
+    # follow is named. With room for both, the same chain is judged. Mutation (declared): the
+    # walk that runs out of hops answers "tracked".
+    root = smoke_repo(tmp_path)
+    _link_through(root, {"notes.md": "mid.md", "mid.md": "private/notes.md"})
+    monkeypatch.setattr(tracked, "LINK_HOPS", 2)
+    assert _items(_assess(root, tmp_path), UNTRACKED) == {}
+    monkeypatch.setattr(tracked, "LINK_HOPS", 1)
+    assessment = _assess(root, tmp_path)
+    assert _row(assessment, "docs").reason == UNSEEN_REASON
+    assert _items(assessment, UNTRACKED) == {"docs": ("mid.md",)}
+
+
+def _project_below_the_top(
+    tmp_path: Path, target: str, ignored: tuple[str, ...] = (), beside: dict[str, str] | None = None
+) -> Path:
     """The smoke fixture as `repo/proj`, a project in a subdirectory of its repository, with
     `repo/shared/notes.md` beside it and `proj/notes.md` a symlink to `target`, linked from the
-    project's `AGENTS.md`; every path in `ignored` is kept out of git by the top's ignore rules.
-    Two commits, as `smoke_repo` makes them, so `BASE` names the first."""
+    project's `AGENTS.md`; each of `beside` is a symlink under `repo/shared/`, its name to its
+    target; every path in `ignored` is kept out of git by the top's ignore rules. Two commits, as
+    `smoke_repo` makes them, so `BASE` names the first."""
     top = tmp_path / "repo"
     project = top / "proj"
     shutil.copytree(FIXTURE, project)
     (top / "shared").mkdir()
     (top / "shared" / "notes.md").write_text("# ours\n", encoding="utf-8")
+    for name, leads in (beside or {}).items():
+        (top / "shared" / name).symlink_to(leads)
     (top / ".gitignore").write_text("".join(f"/{p}\n" for p in ignored), encoding="utf-8")
     held = (project / PLAN).read_bytes()
     (project / PLAN).unlink()
@@ -245,8 +302,9 @@ def test_a_symlink_to_a_tracked_file_elsewhere_in_the_repository_is_judged(
     # A project in a subdirectory of its repository, the shape `path:` and `[project]` roots
     # exist for. `proj/notes.md -> ../shared/notes.md` climbs out of the project and not out of
     # the repository, and every checkout has `shared/notes.md`: CI passes the link. So what is
-    # outside is judged against the work tree's top, not the project's root. Mutation
-    # (declared): a climb out of the project reads as a climb out of the repository.
+    # outside is judged against the work tree's top, not the project's root. Mutations
+    # (declared): a climb out of the project reads as a climb out of the repository; a `..` in a
+    # link's target does not step back out of the directory reached.
     project = _project_below_the_top(tmp_path, "../shared/notes.md")
     assert (project / "notes.md").read_text(encoding="utf-8") == "# ours\n"
     assessment = _assess(project, tmp_path)
@@ -255,18 +313,28 @@ def test_a_symlink_to_a_tracked_file_elsewhere_in_the_repository_is_judged(
 
 
 @pytest.mark.parametrize(
-    ("target", "ignored"),
-    [("../../outside.md", ()), ("../shared/notes.md", ("shared/",))],
-    ids=["out-of-the-repository", "to-an-ignored-file-beside-the-project"],
+    ("target", "ignored", "beside"),
+    [
+        ("../../outside.md", (), {}),
+        ("../shared/notes.md", ("shared/",), {}),
+        ("../shared/onward.md", ("shared/notes.md",), {"onward.md": "notes.md"}),
+    ],
+    ids=[
+        "out-of-the-repository",
+        "to-an-ignored-file-beside-the-project",
+        "on-through-a-link-beside-the-project",
+    ],
 )
 def test_a_symlink_below_the_top_that_no_checkout_has_names_the_link(
-    tmp_path: Path, target: str, ignored: tuple[str, ...]
+    tmp_path: Path, target: str, ignored: tuple[str, ...], beside: dict[str, str]
 ) -> None:
     # The top is where a climb is judged, and nothing else moves: a target above the repository
     # is in no checkout, and one beside the project that git does not track is in none either.
-    # Either way the name printed is the link inside the project, never a path outside it.
+    # Either way the name printed is the link inside the project, never a path outside it, and
+    # that holds when a tracked link beside the project leads on to the untracked file. Mutation
+    # (declared): a step outside the project is named by its own path.
     (tmp_path / "outside.md").write_text("# outside\n", encoding="utf-8")
-    project = _project_below_the_top(tmp_path, target, ignored)
+    project = _project_below_the_top(tmp_path, target, ignored, beside)
     assert (project / "notes.md").exists()
     assessment = _assess(project, tmp_path)
     assert _row(assessment, "docs").reason == UNSEEN_REASON
@@ -276,6 +344,7 @@ def test_a_symlink_below_the_top_that_no_checkout_has_names_the_link(
 def test_a_symlinked_link_target_that_leads_to_a_tracked_file_is_judged(tmp_path: Path) -> None:
     # The legitimate shape, which must not be refused: a committed symlink to a committed file,
     # such as a `current.md` naming this quarter's plan. CI checks out both and the link lands.
+    # Mutation (declared): a symlink's target is followed from the link, not from its directory.
     root = smoke_repo(tmp_path)
     _link_through(root, {"notes.md": "private/notes.md"})
     assessment = _assess(root, tmp_path)
