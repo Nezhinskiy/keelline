@@ -10305,10 +10305,46 @@ reddens = [
 [[mutation]]
 name = "the scope probe never asks past Keelline's workflow"
 file = "src/keelline/assess/probes.py"
-before = "    return Looked(tuple(label for label, owned in probed if not owned))"
+before = "    return Looked(tuple(where), unread)"
 after = "    return Looked()"
 reddens = [
   "tests/assess/test_probes.py::test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_reported",
+]
+
+[[mutation]]
+name = "the scope probe never asks about a workflow the repository has"
+file = "src/keelline/assess/probes.py"
+before = "    unowned = [path for path in asked if not _governed(text, path)]"
+after = "    unowned: list[str] = []"
+reddens = [
+  "tests/assess/test_probes.py::test_a_workflow_the_repository_has_is_reported_where_no_one_owns_it",
+]
+
+[[mutation]]
+name = "the scope probe names an unowned workflow outside the path grammar"
+file = "src/keelline/assess/probes.py"
+before = "    named = [path for path in unowned if PATH_VALUE.match(path)]"
+after = "    named = list(unowned)"
+reddens = [
+  "tests/assess/test_probes.py::test_an_unowned_workflow_outside_the_path_grammar_is_reported_under_the_directory",
+]
+
+[[mutation]]
+name = "the scope probe asks every workflow whatever the bound"
+file = "src/keelline/assess/probes.py"
+before = '    asked = existing.where[: SCOPE_PAIRS_MAX // (text.count("\n") + 1)]'
+after = "    asked = existing.where"
+reddens = [
+  "tests/assess/test_probes.py::test_workflows_past_the_pair_bound_are_could_not_look_and_never_owned",
+]
+
+[[mutation]]
+name = "the scope probe reads a workflows directory it could not list as nothing unowned"
+file = "src/keelline/assess/probes.py"
+before = "    unread = existing.unread or (() if asked == existing.where else (_WORKFLOWS,))"
+after = "    unread = () if asked == existing.where else (_WORKFLOWS,)"
+reddens = [
+  "tests/assess/test_probes.py::test_a_workflows_directory_scope_cannot_read_is_could_not_look",
 ]
 
 [[mutation]]

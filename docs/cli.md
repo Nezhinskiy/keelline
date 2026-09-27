@@ -743,7 +743,7 @@ when it has a finding or could not run. A row names no finding: `assess` lists t
 | `foreign-hooks` | the committed hook settings of each harness `[keelline] agents` selects | advice | 5 | a hook entry without Keelline's marker |
 | `foreign-workflows` | `.github/workflows/*.yml` and `*.yaml` | advice | — | any workflow but Keelline's own caller |
 | `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | warning | 7 | the line that governs Keelline's caller workflow names no owner, or there is no file; not judged under `[ci] mode = "none"` |
-| `codeowners-scope` | the same file | warning | 7 | the caller workflow is owned, but a workflow a pull request could add — asked at a name no project gives one, as `.yml` and as `.yaml`, so `keelline*` or `*.yml` alone does not own it — or the code-owners file itself is not; a `/.github/` rule in a file kept at `.github/CODEOWNERS` owns both. `where` names `.github/workflows/`, the file, or both. Silent where `codeowners` reports; not judged under `[ci] mode = "none"` |
+| `codeowners-scope` | the same file, and `.github/workflows/*.yml` and `*.yaml` | warning | 7 | the caller workflow is owned, but a workflow a pull request could add — asked at a name no project gives one, as `.yml` and as `.yaml`, so `keelline*` or `*.yml` alone does not own it — a workflow the repository already has, or the code-owners file itself is not; a `/.github/` rule in a file kept at `.github/CODEOWNERS` owns all three, until a later line with no owner takes a file back out of it. `where` names `.github/workflows/`, each unowned workflow whose path is inside the plain-path grammar (any other is counted under `.github/workflows/`), and the file. Past 250,000 code-owners lines times workflows, the workflows not yet asked are `could-not-look`. Silent where `codeowners` reports; not judged under `[ci] mode = "none"` |
 | `commit-types` | the subjects of the last 100 commits, merges excluded | advice | — | a subject whose type is not in `[commit_messages] types`; `where` names commits |
 | `profile` | the configured profile's checks | the check's own | — | each failed check, counted once; a profile this Keelline does not ship is one `profile-not-shipped` warning |
 
@@ -2335,7 +2335,8 @@ gates still run and still report but cannot stop a pull request that edits its o
 - **CODEOWNERS covering `/.github/`, with review from code owners required**, so a change to
   the caller needs someone other than its author. GitHub reads the rules from the base
   branch's copy; keep the file at `.github/CODEOWNERS`, where its own `/.github/` rule covers it
-  (`keelline assess` warns, `codeowners-scope`, when a line owns only the caller);
+  (`keelline assess` warns, `codeowners-scope`, when a line owns only the caller, or when a
+  later line with no owner takes a workflow back out of the `/.github/` rule);
 - **"Dismiss stale pull request approvals when new commits are pushed"**, or **"Require
   approval of the most recent reviewable push"**, so an approval of an innocuous `.github/` edit
   does not carry over to a later commit that repoints `uses:`;

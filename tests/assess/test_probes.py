@@ -708,6 +708,112 @@ def test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_report
     assert [(i.rule, i.severity, i.principle, i.where) for i in items] == expected
 
 
+@pytest.mark.parametrize(
+    ("codeowners", "unowned"),
+    [
+        ("/.github/ @owner\n", ()),
+        ("/.github/ @owner\n/.github/workflows/ci.yml\n", (".github/workflows/ci.yml",)),
+        ("* @owner\n.github/workflows/ci.yml\n", (".github/workflows/ci.yml",)),
+        ("/.github/ @owner\n*.yaml\n", (OWNED_WORKFLOWS, ".github/workflows/lint.yaml")),
+        (
+            "/.github/ @owner\n/.github/workflows/*\n/.github/workflows/keelline.yml @owner\n",
+            (OWNED_WORKFLOWS, ".github/workflows/ci.yml", ".github/workflows/lint.yaml"),
+        ),
+        ("/.github/ @owner\n/.github/workflows/ci.yml\n/.github/workflows/ci.yml @owner\n", ()),
+        ("/.github/ @owner\n/.github/workflows/ci.yml bad\n", ()),
+    ],
+    ids=[
+        "every-workflow-owned",
+        "a-later-line-without-an-owner",
+        "everything-then-one-workflow-without-one",
+        "an-extension-without-an-owner",
+        "every-workflow-without-one",
+        "an-owner-restored-by-a-later-line",
+        "an-owner-github-cannot-read-decides-nothing",
+    ],
+)
+def test_a_workflow_the_repository_has_is_reported_where_no_one_owns_it(
+    tmp_path: Path, codeowners: str, unowned: tuple[str, ...]
+) -> None:
+    # GitHub reads the last matching line, and a pattern with no owner leaves the file unowned:
+    # `/.github/ @owner` then `/.github/workflows/ci.yml` owns Keelline's workflow and every
+    # workflow a pull request could add, while `ci.yml` itself is owned by no one. A pull request
+    # can edit that workflow and name a job like the required check with no code-owner review,
+    # and the scope probe asked only about two names no project uses. Mutation (oracle): "the
+    # scope probe never asks about a workflow the repository has" -> each case naming a file is
+    # clean and reddens.
+    root = _repo(tmp_path)
+    for name in ("keelline.yml", "ci.yml", "lint.yaml"):
+        _write(root, f".github/workflows/{name}", "on: push\n")
+    _write(root, ".github/CODEOWNERS", codeowners)
+    items = _items(root, tmp_path, "codeowners-scope")
+    expected = [("codeowners-scope", Severity.WARNING, 7, unowned)] if unowned else []
+    assert [(i.rule, i.severity, i.principle, i.where) for i in items] == expected
+
+
+def test_an_unowned_workflow_outside_the_path_grammar_is_reported_under_the_directory(
+    tmp_path: Path,
+) -> None:
+    # A workflow's name is the repository's, and `where` names a path only inside the grammar a
+    # path may print in: one outside it is reported under `.github/workflows/`, once, and never
+    # quoted. The owner-less lines leave Keelline's workflow and the probed names owned, so the
+    # directory label here comes from the two unprintable names alone. Mutation (oracle): "every
+    # unowned workflow is named whatever its name" -> the raw names land in `where` and this
+    # reddens.
+    root = _repo(tmp_path)
+    for name in ("keelline.yml", "x b.yml", "y‮z.yml", "ok.yml"):
+        _write(root, f".github/workflows/{name}", "on: push\n")
+    _write(
+        root,
+        ".github/CODEOWNERS",
+        "/.github/ @owner\n"
+        "/.github/workflows/x*\n/.github/workflows/y*\n/.github/workflows/ok.yml\n",
+    )
+    assert _shapes(_items(root, tmp_path, "codeowners-scope")) == [
+        ("codeowners-scope", (OWNED_WORKFLOWS, ".github/workflows/ok.yml")),
+    ]
+
+
+def test_workflows_past_the_pair_bound_are_could_not_look_and_never_owned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Each existing workflow is read against every line of the code-owners file, and both counts
+    # are the repository's: a 3 MB file of wildcard lines took 0.87 s per workflow, so a clone
+    # with a thousand workflows held `keelline assess` for a quarter of an hour. Past
+    # `SCOPE_PAIRS_MAX` the workflows not asked are could not look: here the file is three lines
+    # and the bound allows two workflows, so `ci.yml` and `lint.yaml` are asked and `zz.yml` is
+    # not. Mutation (oracle): "the scope probe asks every workflow whatever the bound" -> `zz.yml`
+    # is named, nothing is could not look, and this reddens.
+    monkeypatch.setattr(probes, "SCOPE_PAIRS_MAX", 7)
+    root = _repo(tmp_path)
+    for name in ("keelline.yml", "ci.yml", "lint.yaml", "zz.yml"):
+        _write(root, f".github/workflows/{name}", "on: push\n")
+    _write(
+        root,
+        ".github/CODEOWNERS",
+        "/.github/ @owner\n/.github/workflows/*.yml\n/.github/workflows/keelline.yml @owner",
+    )
+    assert _shapes(_items(root, tmp_path, "codeowners-scope")) == [
+        ("codeowners-scope", (OWNED_WORKFLOWS, ".github/workflows/ci.yml")),
+        (COULD_NOT_LOOK, (".github/workflows",)),
+    ]
+
+
+def test_a_workflows_directory_scope_cannot_read_is_could_not_look(tmp_path: Path) -> None:
+    # With the code-owners file readable and the workflows listed through a link, the scope probe
+    # has not seen which workflows exist, and "nothing unowned" would be a guess. Mutation
+    # (oracle): the listing's `unread` dropped -> the probe is silent and this reddens.
+    root = _repo(tmp_path)
+    outside = tmp_path / "outside"
+    _write(outside, "ci.yml", "on: push\n")
+    (root / ".github").mkdir()
+    (root / ".github/workflows").symlink_to(outside, target_is_directory=True)
+    _write(root, ".github/CODEOWNERS", "/.github/ @owner\n")
+    assert _shapes(_items(root, tmp_path, "codeowners-scope")) == [
+        (COULD_NOT_LOOK, (".github/workflows",))
+    ]
+
+
 def test_commit_subjects_outside_the_vocabulary_are_counted_by_sha(tmp_path: Path) -> None:
     # Each subject carries a byte `str.splitlines` breaks on and git keeps; only NUL delimits.
     # Mutation (advisory): `fields = out.split("\0")` becomes

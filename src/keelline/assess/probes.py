@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING
 
 from keelline.assess.model import Item, item
 from keelline.config.paths import PathEscape, contained
+from keelline.config.schema import PATH_VALUE
 from keelline.findings import Severity
 from keelline.gitenv import QUERY_TIMEOUT_SECONDS, git_run
 from keelline.guards.api import contained_roots
@@ -217,6 +218,11 @@ _OWNER = re.compile(
     r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+"
 )
 
+# The most code-owners lines times existing workflows `codeowners-scope` reads. Both counts are
+# the repository's and each pair is one match of a few microseconds: a 3 MB file of wildcard
+# lines took 0.87 s per workflow. Past it the workflows not asked are could not look, never owned.
+SCOPE_PAIRS_MAX = 250_000
+
 # GitHub does not load a code-owners file of 3 MB or more. Decimal megabytes: of the two
 # readings it is the smaller bound, so a file between them is read as unowned, the side that
 # warns.
@@ -360,13 +366,17 @@ def _codeowners(context: ProbeContext) -> Looked:
 
 def _codeowners_scope(context: ProbeContext) -> Looked:
     """Where Keelline's workflow is owned, what else under `.github/` is not: a workflow a pull
-    request adds, probed at a name no project gives one under both `.yml` and `.yaml`, and the
-    code-owners file itself.
+    request adds, probed at a name no project gives one under both `.yml` and `.yaml`; every
+    workflow the repository already has; and the code-owners file itself.
 
     A line owning only `keelline.yml` makes `codeowners` clean while a pull request can still add
     a workflow with a job named like the required check, which GitHub accepts; only a rule as
-    wide as `/.github/` closes that. Silent wherever `codeowners` itself reports — no file, the
-    workflow unowned, a file it could not read — so one gap is one warning.
+    wide as `/.github/` closes that. A later line with no owner takes an existing workflow back
+    out of it, and a pull request can edit that one to the same end, so each is named: in
+    `where` when its path is inside `PATH_VALUE`, and otherwise under `.github/workflows/`, since
+    the name is the repository's. Silent wherever `codeowners` itself reports — no file, the
+    workflow unowned, a file it could not read — so one gap is one warning; a workflows directory
+    it could not list, and the workflows past `SCOPE_PAIRS_MAX`, are could not look.
     """
     from keelline.project.api import CI_WORKFLOW
 
@@ -376,9 +386,17 @@ def _codeowners_scope(context: ProbeContext) -> Looked:
     if isinstance(found, Looked) or not _governed(found[1], CI_WORKFLOW):
         return Looked()
     relative, text = found
-    workflows = all(_governed(text, path) for path in _ANY_WORKFLOWS)
-    probed = ((_UNOWNED, workflows), (relative, _governed(text, relative)))
-    return Looked(tuple(label for label, owned in probed if not owned))
+    existing = _foreign_workflows(context)
+    asked = existing.where[: SCOPE_PAIRS_MAX // (text.count("\n") + 1)]
+    unread = existing.unread or (() if asked == existing.where else (_WORKFLOWS,))
+    unowned = [path for path in asked if not _governed(text, path)]
+    named = [path for path in unowned if PATH_VALUE.match(path)]
+    added = all(_governed(text, path) for path in _ANY_WORKFLOWS)
+    where = [] if added and len(named) == len(unowned) else [_UNOWNED]
+    where += named
+    if not _governed(text, relative):
+        where.append(relative)
+    return Looked(tuple(where), unread)
 
 
 def _commit_types(context: ProbeContext) -> Looked:
@@ -453,9 +471,9 @@ PROBES: tuple[Probe, ...] = (
         "codeowners-scope",
         7,
         Severity.WARNING,
-        "widen the CODEOWNERS line that owns Keelline's workflow to /.github/, and keep the file "
-        "at .github/CODEOWNERS: a pull request can otherwise add a workflow whose job is named "
-        "like the required check",
+        "widen the CODEOWNERS line that owns Keelline's workflow to /.github/, keep the file at "
+        ".github/CODEOWNERS, and give an owner to each later line naming a workflow: a pull "
+        "request can otherwise add or edit a workflow whose job is named like the required check",
         _codeowners_scope,
     ),
     Probe(
