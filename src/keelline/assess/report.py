@@ -35,6 +35,7 @@ from keelline.assess.gates import ALREADY_FAILED, GateResult
 from keelline.assess.rule import ConfigVerdict, Verdict
 from keelline.config.loader import CONFIG_FILE
 from keelline.config.schema import PATH_VALUE
+from keelline.findings import listed
 
 ANNOTATION_CAP = 10
 
@@ -174,7 +175,8 @@ def config_line(verdict: ConfigVerdict) -> str:
         return f"config: {UNCHANGED}"
     refused = [c.key for c in verdict.changes if c.verdict is Verdict.REFUSED]
     line = f"config: {len(verdict.changes)} change(s), {len(refused)} refused"
-    return line + (f": {', '.join(refused)}" if refused else "")
+    # Capped: a custom gate's key is the repository's to add, and the summary's table names each.
+    return line + (f": {listed(refused)}" if refused else "")
 
 
 def _outcome(result: GateResult, enforcing: bool) -> str:

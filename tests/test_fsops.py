@@ -461,3 +461,20 @@ def test_a_name_is_utf_8_by_its_bytes_on_disk_not_by_its_str() -> None:
     # second assertion reddens.
     assert fsops.utf_8_name(os.fsdecode(b"2026-04-04-caf\xc3\xa9.md"))
     assert not fsops.utf_8_name(os.fsdecode(b"2026-04-04-caf\xe9.md"))
+
+
+def test_an_error_is_said_in_its_words_never_with_the_path_it_was_opened_by() -> None:
+    # `str(OSError)` carries the file the call opened, by the path it was given — the absolute
+    # one under this machine's layout — so an error is said by its `strerror` alone. Keelline's
+    # own path refusal, `UnsafePath`, carries no errno and names the path relative to the root,
+    # so it is said whole rather than as its class's name. Mutation: drop the fall-back to
+    # `str(error)` in `said` — the second assertion reddens.
+    assert fsops.said(PermissionError(13, "Permission denied", "/machine/checkout/src/a.py")) == (
+        "Permission denied"
+    )
+    refusal = "'src/x/a.py': 'x' is a symlink or not a directory"
+    assert fsops.said(UnsafePath(refusal)) == refusal
+    # Any other error with no file name is said as its class's name, never by its message, which
+    # may carry a path: whole is for `UnsafePath` alone, by its type. Mutation: decide by
+    # `error.filename is None` in `said` — this reddens.
+    assert fsops.said(OSError("/machine/checkout/src/a.py: refused")) == "OSError"

@@ -43,7 +43,7 @@ from keelline.assess.tracked import as_ci_sees, unseen_items
 from keelline.config.layout import local_base
 from keelline.config.loader import load
 from keelline.errors import Refusal
-from keelline.findings import Severity
+from keelline.findings import Severity, listed
 from keelline.fsops import UnsafePath, write_within
 from keelline.gitenv import git_run
 from keelline.project.api import ASSESSMENT
@@ -195,8 +195,8 @@ def render(assessment: Assessment) -> str:
             f"{'yes' if g.failing else 'no'} |"
         )
     if assessment.skipped:
-        # Gate names, which the loader holds to a grammar.
-        lines += ["", SKIPPED.format(names=", ".join(assessment.skipped))]
+        # Gate names, which the loader holds to a grammar, capped: `skipped` carries every one.
+        lines += ["", SKIPPED.format(names=listed(list(assessment.skipped)))]
     if assessment.items:
         lines += ["", "| from | rule | severity | count | remedy |", "|---|---|---|---|---|"]
         lines += [

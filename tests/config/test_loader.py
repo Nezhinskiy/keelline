@@ -26,6 +26,7 @@ from keelline.config.schema import (
     Config,
     CustomGate,
 )
+from keelline.findings import LISTED_LIMIT
 
 HEAD = '[keelline]\nversion = "0.1.0"\npreset = "recommended"\n'
 MINIMAL = HEAD + '\n[project]\nname = "sample"\n'
@@ -720,3 +721,37 @@ def test_the_branch_grammar_is_spelled_once() -> None:
         if spelling in path.read_text(encoding="utf-8")
     )
     assert spelled == ["config/schema.py"]
+
+
+def test_the_gates_a_project_runs_are_named_at_most_to_the_listed_limit(tmp_path: Path) -> None:
+    # Custom gates are the repository's to add, so the refusal's list of the gates the project
+    # runs is bounded in number by nothing: it names the first `LISTED_LIMIT` and counts the
+    # rest. Mutation (oracle): "the enforced-gate refusal names every gate the project runs" ->
+    # this reddens.
+    custom = [f"g{n:02}" for n in range(LISTED_LIMIT)]
+    tables = "".join(f'\n[gates.custom.{name}]\nrun = ["true"]\n' for name in custom)
+    with pytest.raises(ConfigError) as caught:
+        _gated(tmp_path, 'state = "adopting"\nenforced = ["absent"]\n', tables)
+    runs = [*BUILTIN_GATES, *custom]
+    shown = ", ".join(runs[:LISTED_LIMIT])
+    assert str(caught.value) == (
+        "[keelline] enforced names 1 gate(s) this project does not run; the gates it runs are "
+        f"{shown}, and {len(runs) - LISTED_LIMIT} more"
+    )
+
+
+def test_unknown_keys_are_named_at_most_to_the_listed_limit(tmp_path: Path) -> None:
+    # A `keelline.toml` may carry any number of unknown keys, so the plain-named ones are capped
+    # like every list of names on a line: the first `LISTED_LIMIT` and a count of the plain rest,
+    # then the count of the ones outside the grammar as before, one count per kind. Mutation
+    # (oracle): "an unknown-key refusal names every plain key" -> this reddens.
+    keys = [f"key_{chr(ord('a') + n)}" for n in range(LISTED_LIMIT + 3)]
+    body = "".join(f"{key} = 1\n" for key in keys)
+    write(tmp_path, MINIMAL + f'\n[paths]\n{body}"not plain" = 1\n')
+    with pytest.raises(ConfigError) as caught:
+        load(tmp_path, machine=tmp_path / "no-machine.toml")
+    shown = ", ".join(keys[:LISTED_LIMIT])
+    assert str(caught.value) == (
+        f"[paths] has unknown key(s): {shown} and 3 more plain name(s); "
+        "1 more that is not a plain key name"
+    )

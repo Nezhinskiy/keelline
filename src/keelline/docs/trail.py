@@ -23,10 +23,10 @@ from keelline.config.paths import contained
 from keelline.docs.hygiene import TRAIL_MARKER, TRAIL_MARKER_LINE, read_document
 from keelline.docs.themes import ThemePattern, compile_theme
 from keelline.errors import Failure
-from keelline.findings import Finding
+from keelline.findings import LISTED_LIMIT, Finding, listed
 from keelline.fsops import utf_8_name
 from keelline.gitenv import NO_ANSWER, git_run, in_work_tree
-from keelline.printed import quoted
+from keelline.printed import clipped
 
 if TYPE_CHECKING:
     from keelline.config.schema import Config
@@ -172,7 +172,9 @@ def read_trail(path: Path) -> Trail:
         except ValueError as refused:
             # The rule and not the pattern: the pattern is the repository's own text, and the
             # rule is what fixes it. `compile_theme` raises only its own fixed sentences.
-            raise Failure(f"{path}: theme {entry['label']!r}: {refused}") from None
+            # The label through `quoted`, as every repository-chosen name in a refusal, and
+            # clipped, since nothing bounds its length.
+            raise Failure(f"{path}: theme {clipped(entry['label'])}: {refused}") from None
     states = raw.get("states", {})
     if not isinstance(states, dict) or not all(
         isinstance(k, str) and isinstance(v, str) for k, v in states.items()
@@ -278,7 +280,7 @@ def render_listing(root: Path, config: Config, trail: Trail) -> str:
     paths = [path for _, _, path in documents]
     skip = _ignored(root, paths) | _untracked(root, paths)
     buckets: dict[str, list[tuple[str, str]]] = {}
-    listed: set[str] = set()
+    named: set[str] = set()
     for row, link, path in documents:
         if path in skip:
             continue
@@ -288,20 +290,30 @@ def render_listing(root: Path, config: Config, trail: Trail) -> str:
         # configured `specs`/`plans` path, and that path is repository-authored as well.
         if not (_interpolable(row) and _interpolable(link) and utf_8_name(path.name)):
             raise Failure(_UNLISTABLE.format(row=row, roadmap=config.paths.roadmap, marker=MARKER))
-        listed.add(row)
+        named.add(row)
         buckets.setdefault(theme_of(path.name, trail), []).append((row, link))
     # A rename or deletion must not silently downgrade a state to the default. Without this, a
     # renamed design would reappear as `delivered` — asserting in the roadmap that unimplemented
     # work has shipped, which is the exact failure this listing exists to prevent, and `--check`
     # would stay green because the file is still self-consistent.
-    stale = sorted(set(trail.states) - listed)
+    stale = sorted(set(trail.states) - named)
     if stale:
-        # Through `quoted`: a `[states]` key is arbitrary TOML from a committed file, line breaks
-        # and escape sequences included, and this message is the only place the operator learns
-        # which key to fix, so it is escaped, not withheld.
+        # Through `quoted`, by way of `clipped`: a `[states]` key is arbitrary TOML from a
+        # committed file, line breaks and escape sequences included, and this message is the only
+        # place the operator learns which key to fix, so it is escaped, not withheld — and
+        # clipped, since nothing bounds one key's length.
+        #
+        # And capped at `LISTED_LIMIT`, though this message is the only channel: a `Failure` has
+        # no `--json` behind it. Uncapped, a map declaring many states named every one of them
+        # after a `plans` move, on the one line `docs trail --check` prints in CI. Nothing is
+        # lost by the cap: the count is every key, the named ones are the first in sorted order,
+        # and the rest are keys in the operator's own `trail.toml`, which a re-run after updating
+        # these names in turn.
+        rest = "; re-run after updating these to name the rest" if len(stale) > LISTED_LIMIT else ""
         raise Failure(
-            f"{TRAIL_FILE} names documents that no longer exist (renamed, deleted, or now "
-            "gitignored); update the map before regenerating: " + ", ".join(map(quoted, stale))
+            f"{TRAIL_FILE} names {len(stale)} document(s) that no longer exist (renamed, deleted, "
+            "or now gitignored); update the map before regenerating: "
+            f"{listed([clipped(key) for key in stale])}{rest}"
         )
     lines: list[str] = []
     total = pending = 0

@@ -17,6 +17,7 @@ from keelline.assess.report import (
     NOT_ON_BASE,
     UNCHANGED,
     GateRun,
+    config_line,
     gate_line,
     gate_row,
     summary,
@@ -24,7 +25,7 @@ from keelline.assess.report import (
 )
 from keelline.assess.rule import Change, ConfigVerdict, Verdict
 from keelline.config.loader import preset_defaults
-from keelline.findings import Finding
+from keelline.findings import LISTED_LIMIT, Finding
 
 
 def _run(
@@ -210,3 +211,21 @@ def test_a_gate_not_started_after_the_run_failed_says_so_everywhere_a_gate_print
     }
     assert summary(run).splitlines()[3] == f"| lint | advisory | not run | {ALREADY_FAILED} |"
     assert workflow_commands(run)[1] == f"::warning::lint: {STOPPED}"
+
+
+def test_the_config_line_names_at_most_the_listed_limit_of_refused_keys() -> None:
+    # A custom gate's key is the repository's to add, so the refused keys are bounded in number
+    # by nothing; the line counts every one and names the first `LISTED_LIMIT`, and the job
+    # summary's table below it carries each key's verdict. Mutation (oracle): "the config line
+    # names every refused key" -> this reddens.
+    keys = [f"gates.custom.g{n:02}" for n in range(LISTED_LIMIT + 3)]
+    verdict = ConfigVerdict(
+        "installed",
+        tuple(Change(key, Verdict.REFUSED) for key in keys),
+        preset_defaults("widget"),
+        frozenset(),
+    )
+    named = ", ".join(keys[:LISTED_LIMIT])
+    assert config_line(verdict) == (
+        f"config: {len(keys)} change(s), {len(keys)} refused: {named}, and 3 more"
+    )

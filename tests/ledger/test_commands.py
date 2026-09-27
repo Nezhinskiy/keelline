@@ -5,6 +5,7 @@ keelline:ledger:fixtures — the identifiers below are sample data, not claims a
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,9 @@ from keelline.findings import Finding
 from keelline.printed import UNPRINTABLE
 from tests.crafted import CRAFTED, assert_never_raw
 from tests.gitfixture import git, needs_git
+
+# What the platform calls a permission refusal, as `OSError.strerror` words it.
+DENIED = os.strerror(errno.EACCES)
 
 CONFIG = """
 [keelline]
@@ -260,8 +264,8 @@ def test_index_writes_nothing_when_it_is_already_current(
 
 @pytest.mark.parametrize(
     ("directory", "named"),
-    [("sealed", "src/sealed/a.py"), (CRAFTED, UNPRINTABLE)],
-    ids=["plain", "crafted"],
+    [("sealed", "src/sealed/a.py"), (CRAFTED, UNPRINTABLE), ("a:b", UNPRINTABLE)],
+    ids=["plain", "crafted", "colon"],
 )
 def test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], directory: str, named: str
@@ -270,7 +274,10 @@ def test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite(
     # intentional to `bugs check` forever, so the move is reported as incomplete. The file is
     # named, and a name the tree chose outside the path grammar is withheld on the line and kept
     # in `--json`. Mutation: list the unswept names unbounded in `run_bugs_renumber` — the
-    # crafted case reddens.
+    # crafted case reddens. The name on the line is the file the sweep reported, not a prefix of
+    # its message: rebuilt by splitting `"path: reason"` at the first colon, `src/a:b/a.py`
+    # printed as `src/a`, a directory the operator would look in for nothing. Mutation: split the
+    # message again in `run_bugs_renumber` — the colon case reddens.
     if os.geteuid() == 0:
         pytest.skip("root writes everywhere")
     root, common = project(tmp_path)
@@ -291,7 +298,40 @@ def test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite(
     assert f"({named})" in line and "docs/bugs/BR-001.md" in line
     assert_never_raw(line, captured.err)
     assert "\n" not in line
-    assert data["unswept"][0].startswith(f"src/{directory}/a.py:")
+    # One object per file, the path whole whatever it holds: a `"path: reason"` string cannot be
+    # split back, since a path may itself hold `": "`. Mutation: carry `"path: reason"` strings
+    # under `unswept` in `run_bugs_renumber` — every case reddens.
+    assert data["unswept"] == [
+        {"path": f"src/{directory}/a.py", "reason": f"could not be written ({DENIED})"}
+    ]
+    assert "unswept_files" not in data
+
+
+def test_renumber_names_a_file_it_could_not_read_without_this_machine_s_paths(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The reason carried `str(OSError)`, which names the file by its absolute path: the
+    # machine's own directory layout in `--json`, the leak `memory index` stopped for the same
+    # reason. The reason is the error's own words; the path is the field beside it, relative to
+    # the root. Mutation: record `str(error)` in `scan.scannable` — this reddens.
+    if os.geteuid() == 0:
+        pytest.skip("root reads everything")
+    root, common = project(tmp_path)
+    invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
+    capsys.readouterr()
+    locked = root / "src" / "a: b" / "locked.py"
+    locked.parent.mkdir(parents=True)
+    locked.write_text("# BR-001\n", encoding="utf-8")
+    locked.chmod(0)
+    try:
+        assert invoke(["bugs", "renumber", "BR-001", "BR-009", "--json", *common]) == 1
+    finally:
+        locked.chmod(0o644)
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    reason = f"could not be read to check for BR-001 ({DENIED})"
+    assert data["unswept"] == [{"path": "src/a: b/locked.py", "reason": reason}]
+    assert tmp_path.name not in out
 
 
 def test_check_answers_with_the_bugs_gate_s_own_function(

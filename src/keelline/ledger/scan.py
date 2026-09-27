@@ -26,6 +26,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from keelline.config.paths import PathEscape, contained
+from keelline.fsops import said
 from keelline.gitenv import QUERY_TIMEOUT_SECONDS, git_run
 from keelline.guards.api import contained_roots
 from keelline.identifiers import identifiers
@@ -201,12 +202,13 @@ def scannable(root: Path, names: tuple[str, ...]) -> Iterator[Scanned]:
     for path in sorted(candidates):
         if path.suffix in BINARY_SUFFIXES:
             continue
+        relative = PurePosixPath(path.relative_to(root).as_posix())
         try:
             if not stat.S_ISREG(path.lstat().st_mode):
                 continue
             raw = path.read_bytes()
         except OSError as error:
-            yield Scanned(path, PurePosixPath(path.relative_to(root).as_posix()), None, str(error))
+            yield Scanned(path, relative, None, said(error))
             continue
         if is_fixture_holder(raw[:FIXTURE_MARKER_WINDOW]):
             continue
@@ -214,7 +216,7 @@ def scannable(root: Path, names: tuple[str, ...]) -> Iterator[Scanned]:
             text: str | None = raw.decode("utf-8")
         except UnicodeDecodeError:
             text = None
-        yield Scanned(path, PurePosixPath(path.relative_to(root).as_posix()), text, None)
+        yield Scanned(path, relative, text, None)
 
 
 def citation_pattern(config: Config) -> re.Pattern[str]:

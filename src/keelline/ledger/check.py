@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from keelline.errors import Failure, Refusal
-from keelline.findings import Finding
+from keelline.findings import Finding, listed
 from keelline.gitenv import ForkUnknown, fork_points, git_run
 from keelline.identifiers import identifiers
 from keelline.ledger.entries import (
@@ -306,7 +306,11 @@ def problems(root: Path, config: Config, base: str = "") -> list[Finding]:
         by_id[entry.id].append(entry)
     for identifier, holders in sorted(by_id.items()):
         if len(holders) > 1:
-            joined = ", ".join(str(h.path) for h in holders)
+            # Capped, and nothing is lost from `--json`: only one holder's file name can be the
+            # identifier, and every other one has an `id-mismatch` finding naming it, so that
+            # one is named first, inside the cap whatever the sort puts after it.
+            first = sorted(holders, key=lambda h: h.path.stem != identifier)
+            joined = listed([str(h.path) for h in first])
             found.append(
                 Finding(
                     "duplicate-id",

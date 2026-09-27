@@ -22,6 +22,7 @@ import pytest
 
 from keelline import gitenv
 from keelline.errors import Failure
+from keelline.findings import LISTED_LIMIT
 from keelline.gitenv import GIT_TIMEOUT_SECONDS, NO_ANSWER, SHALLOW, git_run
 from keelline.guards.attribute import VERDICTS, attribute
 from keelline.runner import NOT_FOUND, TIMED_OUT, Completed
@@ -509,3 +510,19 @@ def test_an_archive_git_gave_no_answer_for_is_a_failure_and_not_an_exit_code(
     with pytest.raises(Failure, match=re.escape(f"{NO_ANSWER}, so `git archive")) as caught:
         attribute(root, command="true", base="main", runner=_Coded({}))
     assert "exited" not in str(caught.value)
+
+
+def test_many_merge_bases_are_counted_and_named_at_most_to_the_listed_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The merge bases are the history's, bounded in number by nothing: the refusal counts every
+    # one and names the first `LISTED_LIMIT`. Git is not asked, since only the message is under
+    # test. Mutation (oracle): "the attribution names every merge base" -> this reddens.
+    forks = [f"{n:040x}" for n in range(LISTED_LIMIT + 3)]
+    monkeypatch.setattr("keelline.guards.attribute.fork_points", lambda *_: forks)
+    runner = _Coded({})
+    with pytest.raises(Failure) as caught:
+        attribute(tmp_path, command="true", base="main", runner=runner)
+    shown = ", ".join(forks[:LISTED_LIMIT])
+    assert f"have {len(forks)} merge bases ({shown}, and 3 more), each" in str(caught.value)
+    assert runner.calls == []
