@@ -22,6 +22,7 @@ from keelline.config.loader import toml_position
 from keelline.config.paths import contained
 from keelline.docs.hygiene import TRAIL_MARKER, TRAIL_MARKER_LINE, read_document
 from keelline.errors import Failure
+from keelline.findings import quoted
 from keelline.gitenv import git_run
 
 if TYPE_CHECKING:
@@ -245,9 +246,12 @@ def render_listing(root: Path, config: Config, trail: Trail) -> str:
     # would stay green because the file is still self-consistent.
     stale = sorted(set(trail.states) - listed)
     if stale:
+        # Through `quoted`: a `[states]` key is arbitrary TOML from a committed file, line breaks
+        # and escape sequences included, and this message is the only place the operator learns
+        # which key to fix, so it is escaped, not withheld.
         raise Failure(
             f"{TRAIL_FILE} names documents that no longer exist (renamed, deleted, or now "
-            "gitignored); update the map before regenerating: " + ", ".join(stale)
+            "gitignored); update the map before regenerating: " + ", ".join(map(quoted, stale))
         )
     lines: list[str] = []
     total = pending = 0

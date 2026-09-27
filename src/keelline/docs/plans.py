@@ -76,7 +76,7 @@ from typing import TYPE_CHECKING
 from keelline.config.paths import contained
 from keelline.docs.hygiene import read_document
 from keelline.errors import Failure, Refusal
-from keelline.findings import Finding
+from keelline.findings import Finding, quoted
 from keelline.gitenv import git_run
 from keelline.identifiers import identifiers
 from keelline.prose import blank_fences, path_references, resolves_within
@@ -291,7 +291,8 @@ def asserted_outcomes(prose: str) -> list[int]:
 def _lint_one(path: Path, where: str, root: Path, *, fixes: re.Pattern[str]) -> list[Finding]:
     """Every finding one plan carries, with the line numbers of the file as it is on disk."""
     # Fenced code is not plan prose: its fixtures name deliberately fake paths.
-    prose = blank_fences(read_document(path, where))
+    # The name is the pull request's, and the refusal is printed by the CI gate.
+    prose = blank_fences(read_document(path, quoted(where)))
     found: list[Finding] = []
     # Per plan, not per line: these are properties of the document, not of one line in it.
     if not _SCOPE_LINE.search(prose):

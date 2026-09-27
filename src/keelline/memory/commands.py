@@ -24,6 +24,7 @@ from keelline.command import CHECK_HELP, common_flags
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
+from keelline.findings import printable
 from keelline.hooks.api import detect_harness
 from keelline.memory import trust
 from keelline.memory.bundles import Bundle, fit, render
@@ -160,11 +161,18 @@ def _with(summary: str, note: str | None) -> str:
     return summary if note is None else f"{summary}; {note}"
 
 
+def _named(names: list[str]) -> str:
+    """Names the store or `keelline.toml` supplied, joined for a summary line. Each is a file
+    name or a `name:` a repository can commit, escape sequences included, so each goes through
+    `printable`; `--json` carries them whole."""
+    return ", ".join(printable(name) for name in names)
+
+
 def _harvest(reconciled: Reconciliation, store: Store) -> str | None:
     """What `index._harvestable` declined to persist, named where a person will read it."""
     if not reconciled.refused_harvest:
         return None
-    names = ", ".join(reconciled.refused_harvest)
+    names = _named(reconciled.refused_harvest)
     return _NOT_HARVESTED.format(names=names, index=store.path / INDEX_NAME)
 
 
@@ -173,10 +181,10 @@ def _publish(reconciled: Reconciliation, store: Store) -> str | None:
     index = store.path / INDEX_NAME
     said = []
     if reconciled.refused_publish:
-        said.append(_NOT_PUBLISHED.format(names=", ".join(reconciled.refused_publish), index=index))
+        said.append(_NOT_PUBLISHED.format(names=_named(reconciled.refused_publish), index=index))
     if reconciled.refused_extra:
         said.append(
-            _EXTRA_NOT_PUBLISHED.format(names=", ".join(reconciled.refused_extra), index=index)
+            _EXTRA_NOT_PUBLISHED.format(names=_named(reconciled.refused_extra), index=index)
         )
     return "; ".join(said) or None
 
@@ -191,7 +199,7 @@ _UNREADABLE_NOTES = (
 )
 
 
-def _findings(report: IndexCheck, config: Config) -> list[str]:
+def _findings(report: IndexCheck, config: Config, store: Store) -> list[str]:
     """Everything `memory index` must both say out loud and exit non-zero for.
 
     One list, read by the summary and by the exit code, because the two disagreed: the summary
@@ -215,7 +223,12 @@ def _findings(report: IndexCheck, config: Config) -> list[str]:
     if report.unreadable:
         found.append(
             _UNREADABLE_NOTES.format(
-                count=len(report.unreadable), paths=", ".join(report.unreadable)
+                count=len(report.unreadable),
+                # Store-relative, which is what `memory refs` names too: the absolute prefix is
+                # this machine's and never inside the path grammar.
+                paths=_named(
+                    [Path(p).relative_to(store.path).as_posix() for p in report.unreadable]
+                ),
             )
         )
     return found
@@ -227,7 +240,7 @@ def run_index(args: argparse.Namespace) -> Result:
     before = trust.snapshot(store, config)
     reconciled = reconcile(store, config, write=not args.check)
     report = check_index(store, config, reconciled)
-    findings = _findings(report, config)
+    findings = _findings(report, config, store)
     if args.check:
         if report.drifted:
             findings.insert(0, "the index is out of date; run `keelline memory index`")

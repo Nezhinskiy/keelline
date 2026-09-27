@@ -100,6 +100,72 @@ def test_check_reports_problems_on_one_line_and_lists_them_in_json(
     assert "BR-404" in data["findings"][0]["detail"]
 
 
+def test_check_never_prints_a_crafted_entry_file_name_raw(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The entry's file name is the repository's, and `bugs check` runs in CI: a name holding a
+    # line break and `::error::` forged a workflow command on the runner, and an escape sequence
+    # reached the terminal. The name still reaches `--json`, which escapes it. Mutation: print
+    # `self.path` in `Finding.label` — this reddens.
+    root, common = project(tmp_path)
+    invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
+    capsys.readouterr()
+    entry = next((root / "docs" / "bugs").glob("BR-*.md"))
+    crafted = "BR-001-x\n::error::forged\x1b[2J.md"
+    entry.rename(entry.with_name(crafted))
+    assert invoke(["bugs", "check", *common]) == 1
+    out = capsys.readouterr().out
+    assert "[id-mismatch]" in out
+    assert "\x1b" not in out and "::error::" not in out and out.count("\n") == 1
+    assert invoke(["bugs", "check", "--json", *common]) == 1
+    paths = [p["path"] for p in json.loads(capsys.readouterr().out)["findings"]]
+    assert f"docs/bugs/{crafted}" in paths
+
+
+def test_index_names_a_crafted_entry_it_cannot_parse_escaped_never_raw(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `bugs index` refuses an entry it cannot parse and names the file, whose name the
+    # repository chose. Mutation: return the path unquoted from `entries._named` — this
+    # reddens.
+    root, common = project(tmp_path)
+    invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
+    capsys.readouterr()
+    (root / "docs" / "bugs" / "BR-002-x\n::error::forged\x1b[2J.md").write_text(
+        "no frontmatter\n", encoding="utf-8"
+    )
+    assert invoke(["bugs", "index", *common]) == 1
+    err = capsys.readouterr().err
+    assert "no `---` frontmatter block" in err
+    assert "\x1b" not in err and "\n::error::" not in err
+
+
+def test_renumber_never_prints_a_crafted_name_it_could_not_sweep_raw(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The sweep reports each file it could not rewrite by name, and the tree named it. `--json`
+    # still carries it. Mutation: list the unswept names unbounded in `run_bugs_renumber` —
+    # this reddens.
+    import os
+
+    if os.geteuid() == 0:
+        pytest.skip("root writes everywhere")
+    root, common = project(tmp_path)
+    invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
+    capsys.readouterr()
+    sealed = root / "src" / "sealed\x1b[2J"
+    sealed.mkdir()
+    (sealed / "a.py").write_text("# BR-001\n", encoding="utf-8")
+    sealed.chmod(0o555)
+    try:
+        assert invoke(["bugs", "renumber", "BR-001", "BR-009", *common]) == 1
+    finally:
+        sealed.chmod(0o755)
+    line = capsys.readouterr().out
+    assert line.startswith("FAIL: BR-001 moved to BR-009, but 1 file(s) still reference BR-001")
+    assert "\x1b" not in line and line.count("\n") == 1
+
+
 def test_check_passes_a_clean_ledger(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _root, common = project(tmp_path)
     invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])

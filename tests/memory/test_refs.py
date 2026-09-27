@@ -12,8 +12,10 @@ from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Failure
 from keelline.memory.api import resolve, walk
+from keelline.memory.notes import read_note
 from keelline.memory.refs import (
     _ignored,
+    _lines,
     audience_violations,
     check_refs,
     source_roots,
@@ -294,3 +296,19 @@ def test_a_note_that_stops_decoding_after_the_walk_is_a_failure_not_an_internal_
     (root / "notes" / "developer" / "a.md").write_bytes(b"caf\xe9\n")
     with pytest.raises(Failure, match="not valid UTF-8"):
         unresolved(root, config, store, walked)
+
+
+def test_a_note_that_stops_decoding_is_named_escaped_never_raw(tmp_path: Path) -> None:
+    # `_lines` re-reads a note `read_note` already decoded, so a file rewritten in between fails
+    # here, and the refusal names the file — whose name the store's owner, or in in-repo mode
+    # the repository, chose. Mutation: format `note.path.name` unquoted in `_lines` — this
+    # reddens.
+    root, _config = project(tmp_path)
+    path = note(root, "developer", "x", "body\n").rename(
+        root / "notes" / "developer" / "x\n::error::forged\x1b[2J.md"
+    )
+    parsed = read_note(path)
+    path.write_bytes(b"caf\xe9\n")
+    with pytest.raises(Failure, match="is not valid UTF-8") as raised:
+        _lines(parsed)
+    assert "\x1b" not in str(raised.value) and "\n" not in str(raised.value)

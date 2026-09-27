@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 from keelline.config.paths import contained
 from keelline.errors import Failure
+from keelline.findings import quoted
 from keelline.identifiers import Identifiers, identifiers
 
 if TYPE_CHECKING:
@@ -55,6 +56,13 @@ class LedgerError(Failure):
     """
 
 
+def _named(path: Path) -> str:
+    """The entry's path as every `LedgerError` names it. The file name is the repository's, so
+    it goes through `quoted`: a crafted one arrives escaped, never as a line break or an escape
+    sequence on the operator's terminal."""
+    return quoted(path.as_posix())
+
+
 @dataclass(frozen=True)
 class Entry:
     id: str
@@ -80,10 +88,10 @@ def _unquote(raw: str, *, key: str, where: Path) -> str:
     """Return the string a frontmatter value denotes, or raise."""
     if not raw.startswith('"'):
         if _NEEDS_QUOTING.search(raw):
-            raise LedgerError(f"{where}: `{key}` needs double quotes around {raw!r}")
+            raise LedgerError(f"{_named(where)}: `{key}` needs double quotes around {raw!r}")
         return raw.strip()
     if len(raw) < 2 or not raw.endswith('"'):
-        raise LedgerError(f"{where}: `{key}` has an unterminated quoted value")
+        raise LedgerError(f"{_named(where)}: `{key}` has an unterminated quoted value")
     body = raw[1 : len(raw) - 1]
     # The final `"` closes the value only when the backslash run before it is even, since `\\`
     # is itself an escape. Testing the last two characters instead rejects this tool's own
@@ -91,7 +99,7 @@ def _unquote(raw: str, *, key: str, where: Path) -> str:
     # very file the renderer just wrote, and one such title would break every pass over the
     # whole ledger until a human found it.
     if (len(body) - len(body.rstrip("\\"))) % 2:
-        raise LedgerError(f"{where}: `{key}` has an unterminated quoted value")
+        raise LedgerError(f"{_named(where)}: `{key}` has an unterminated quoted value")
     out: list[str] = []
     index = 0
     while index < len(body):
@@ -102,7 +110,9 @@ def _unquote(raw: str, *, key: str, where: Path) -> str:
             continue
         following = body[index + 1 : index + 2]
         if following not in ('"', "\\"):
-            raise LedgerError(f"{where}: `{key}` uses an unsupported escape `\\{following}`")
+            raise LedgerError(
+                f"{_named(where)}: `{key}` uses an unsupported escape `\\{following}`"
+            )
         out.append(following)
         index += 2
     return "".join(out)
@@ -119,12 +129,14 @@ def _require_iso_date(value: str, *, where: Path) -> str:
     field this guard is meant to be the authority on.
     """
     if not _ISO_DATE.match(value):
-        raise LedgerError(f"{where}: `found` must be an ISO date (YYYY-MM-DD), got {value!r}")
+        raise LedgerError(
+            f"{_named(where)}: `found` must be an ISO date (YYYY-MM-DD), got {value!r}"
+        )
     try:
         date.fromisoformat(value)
     except ValueError as error:
         raise LedgerError(
-            f"{where}: `found` names a date that does not exist: {value!r}"
+            f"{_named(where)}: `found` names a date that does not exist: {value!r}"
         ) from error
     return value
 
@@ -134,13 +146,13 @@ def _parse_related(raw: str, *, where: Path, ids: Identifiers) -> tuple[str, ...
         return ()
     if not (raw.startswith("[") and raw.endswith("]")):
         raise LedgerError(
-            f"{where}: `related` must be an inline list like `[{ids.shape}, {ids.shape}]`"
+            f"{_named(where)}: `related` must be an inline list like `[{ids.shape}, {ids.shape}]`"
         )
     items = [item.strip() for item in raw[1:-1].split(",") if item.strip()]
     for item in items:
         if not ids.is_identifier(item):
             raise LedgerError(
-                f"{where}: `related` names {item!r}, which is not a {ids.prefix} identifier"
+                f"{_named(where)}: `related` names {item!r}, which is not a {ids.prefix} identifier"
             )
     return tuple(items)
 
@@ -155,40 +167,42 @@ def parse_entry(text: str, *, path: Path, ids: Identifiers) -> Entry:
     """
     match = _FRONTMATTER.match(text)
     if match is None:
-        raise LedgerError(f"{path}: no `---` frontmatter block at the top of the file")
+        raise LedgerError(f"{_named(path)}: no `---` frontmatter block at the top of the file")
     fields: dict[str, str] = {}
     for number, line in enumerate(match.group(1).splitlines(), start=2):
         if not line.strip():
             continue
         if line[:1] in (" ", "\t"):
-            raise LedgerError(f"{path}:{number}: nested frontmatter is not supported")
+            raise LedgerError(f"{_named(path)}:{number}: nested frontmatter is not supported")
         key_value = _KEY_VALUE.match(line)
         if key_value is None:
-            raise LedgerError(f"{path}:{number}: expected `key: value`, got {line!r}")
+            raise LedgerError(f"{_named(path)}:{number}: expected `key: value`, got {line!r}")
         key, raw = key_value.group(1), key_value.group(2).strip()
         if key not in KEYS:
-            raise LedgerError(f"{path}:{number}: unknown frontmatter key `{key}`")
+            raise LedgerError(f"{_named(path)}:{number}: unknown frontmatter key `{key}`")
         if key in fields:
-            raise LedgerError(f"{path}:{number}: duplicate key `{key}`")
+            raise LedgerError(f"{_named(path)}:{number}: duplicate key `{key}`")
         fields[key] = raw
 
     for key in REQUIRED_KEYS:
         if not fields.get(key):
-            raise LedgerError(f"{path}: missing required frontmatter key `{key}`")
+            raise LedgerError(f"{_named(path)}: missing required frontmatter key `{key}`")
     identifier = _unquote(fields["id"], key="id", where=path)
     if not ids.is_identifier(identifier):
-        raise LedgerError(f"{path}: `id` must look like {ids.shape}, got {identifier!r}")
+        raise LedgerError(f"{_named(path)}: `id` must look like {ids.shape}, got {identifier!r}")
     status = _unquote(fields["status"], key="status", where=path)
     if status not in STATUSES:
-        raise LedgerError(f"{path}: `status` must be one of {', '.join(STATUSES)}, got {status!r}")
+        raise LedgerError(
+            f"{_named(path)}: `status` must be one of {', '.join(STATUSES)}, got {status!r}"
+        )
     if status != "void":
         for key in REQUIRED_UNLESS_VOID:
             if not fields.get(key):
-                raise LedgerError(f"{path}: missing required frontmatter key `{key}`")
+                raise LedgerError(f"{_named(path)}: missing required frontmatter key `{key}`")
     severity = _unquote(fields.get("severity", ""), key="severity", where=path)
     if severity and severity not in SEVERITIES:
         raise LedgerError(
-            f"{path}: `severity` must be one of {', '.join(SEVERITIES)}, got {severity!r}"
+            f"{_named(path)}: `severity` must be one of {', '.join(SEVERITIES)}, got {severity!r}"
         )
     found = _require_iso_date(_unquote(fields["found"], key="found", where=path), where=path)
 
@@ -222,9 +236,11 @@ def read_ledger_text(path: Path, *, where: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
     except UnicodeDecodeError as error:
-        raise LedgerError(f"{where}: is not valid UTF-8 ({error.reason})") from error
+        raise LedgerError(f"{_named(where)}: is not valid UTF-8 ({error.reason})") from error
     except OSError as error:
-        raise LedgerError(f"{where}: could not be read ({error.strerror or error})") from error
+        raise LedgerError(
+            f"{_named(where)}: could not be read ({error.strerror or error})"
+        ) from error
 
 
 def bugs_dir(root: Path, config: Config) -> Path:

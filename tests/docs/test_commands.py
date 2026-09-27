@@ -136,6 +136,47 @@ def test_docs_trail_writes_the_listing_and_check_reports_staleness(
     assert invoke(["docs", "trail", "--check", *common]) == 0
 
 
+def test_docs_trail_never_prints_a_crafted_document_name_raw(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A document's file name is the repository's, and `_interpolable` refuses a line break in it
+    # but not an escape sequence, which the undeclared-state report then printed to the terminal.
+    # `--json` still names it. Mutation: join `undeclared` unbounded in `run_docs_trail` — this
+    # reddens.
+    root, common = project(tmp_path)
+    roadmap = root / "docs" / "roadmap.md"
+    (root / "docs" / "plans" / "2026-01-01-x.md").write_text("# p\n", encoding="utf-8")
+    assert invoke(["docs", "trail", *common]) == 0
+    listed = roadmap.read_text(encoding="utf-8")
+    crafted = "2026-02-02-y\x1b[2J.md"
+    (root / "docs" / "plans" / crafted).write_text("# p\n", encoding="utf-8")
+    capsys.readouterr()
+    assert invoke(["docs", "trail", *common]) == 1
+    out = capsys.readouterr().out
+    assert "1 document(s) entered the trail" in out
+    assert "\x1b" not in out
+    roadmap.write_text(listed, encoding="utf-8")
+    assert invoke(["docs", "trail", "--json", *common]) == 1
+    assert json.loads(capsys.readouterr().out)["undeclared"] == [f"plans/{crafted}"]
+
+
+def test_docs_trail_never_prints_a_crafted_trail_toml_key_raw(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A `[states]` key naming no document is reported as stale, and `trail.toml` is committed:
+    # the key is arbitrary quoted TOML, line break and escape included, and reached stderr raw.
+    # Mutation: join `stale` unbounded in `render_listing` — this reddens.
+    root, common = project(tmp_path)
+    (root / "docs" / "plans" / "2026-01-01-x.md").write_text("# p\n", encoding="utf-8")
+    (root / "docs" / "trail.toml").write_text(
+        '[states]\n"plans/gone\\n::error::forged\\u001b[2J.md" = "planned"\n', encoding="utf-8"
+    )
+    assert invoke(["docs", "trail", *common]) == 1
+    err = capsys.readouterr().err
+    assert "no longer exist" in err
+    assert "\x1b" not in err and "\n::error::" not in err
+
+
 @pytest.mark.parametrize("route", ["a trail.toml label", "a document filename"])
 def test_no_repository_authored_value_can_grow_the_roadmap(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], route: str

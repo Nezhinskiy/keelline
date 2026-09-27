@@ -288,6 +288,21 @@ def test_a_plan_that_is_not_utf8_is_a_failure_not_an_internal_error(tmp_path: Pa
         lint(root, config, plans=[path])
 
 
+def test_a_crafted_plan_name_reaches_the_refusal_escaped_never_raw(tmp_path: Path) -> None:
+    # `plan check` runs in CI and names the plan it could not read; the name is the pull
+    # request's, and a line break and `::error::` in it forged a workflow command on the runner.
+    # The refusal is the only place the name appears, so it is escaped rather than withheld.
+    # Mutation: pass `where` to `read_document` unquoted in `_lint_one` — this reddens.
+    root, config = project(tmp_path)
+    path = root / "docs" / "plans" / "2026-01-01-x\n::error::forged\x1b[2J.md"
+    path.write_bytes(b"**Scope:** iff x.\n\ncaf\xe9\n")
+    with pytest.raises(Failure, match="is not valid UTF-8") as raised:
+        lint(root, config, plans=[path])
+    message = str(raised.value)
+    assert "\x1b" not in message and "\n" not in message
+    assert "2026-01-01-x\\n::error::forged\\x1b[2J.md" in message
+
+
 def test_a_path_claim_outside_the_root_is_never_settled_against_this_disk(tmp_path: Path) -> None:
     # The verdict must not depend on the developer's filesystem. Before, `/abs/x.md` that
     # happened to exist locally passed the lint and did not exist in CI, while the same claim

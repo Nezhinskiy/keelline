@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from keelline.findings import LISTED_LIMIT, Finding, labels, listed
+from keelline.findings import LISTED_LIMIT, UNPRINTABLE, Finding, labels, listed
 
 
 def test_a_label_is_the_path_the_line_and_the_rule_and_never_the_detail() -> None:
@@ -28,3 +28,19 @@ def test_labels_renders_findings_through_the_same_cap() -> None:
     assert labels(findings).startswith("p0.md:0 [r], ") and labels(findings).endswith(
         ", and 1 more"
     )
+
+
+# A name a repository can commit: a line break, a line the Actions runner reads as a workflow
+# command, and a terminal escape that clears the screen.
+CRAFTED = "docs/x\n::error::forged\x1b[2J.md"
+
+
+def test_a_path_outside_the_grammar_never_reaches_a_label_raw() -> None:
+    # The label is printed on stdout by `bugs check`, `docs check`, `plan check` and
+    # `memory refs`, and in CI a line that starts `::error::` is an instruction to the runner.
+    # Mutation: return the path unchecked from `printable`, or print `self.path` in `label` —
+    # either reddens.
+    label = Finding("dead-link", CRAFTED, 3, "d").label
+    assert "\n" not in label and "\x1b" not in label and "::error::" not in label
+    assert label == f"{UNPRINTABLE}:3 [dead-link]"
+    assert labels([Finding("dead-link", CRAFTED, None, "d")]) == f"{UNPRINTABLE} [dead-link]"

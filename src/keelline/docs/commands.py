@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from keelline import fsops
 from keelline.areas import SubParsers
 from keelline.command import CHECK_HELP, common_flags, root_and_config
-from keelline.findings import labels
+from keelline.findings import labels, printable
 from keelline.result import Result
 
 if TYPE_CHECKING:
@@ -100,7 +100,7 @@ def run_docs_trail(args: argparse.Namespace) -> Result:
         return Result(
             f"{summary}; {len(undeclared)} document(s) entered the trail with no declared state "
             f"and were listed as delivered — add each to trail.toml and re-run: "
-            f"{', '.join(undeclared)}",
+            f"{', '.join(printable(row) for row in undeclared)}",
             data,
             exit_code=1,
         )

@@ -24,7 +24,7 @@ from pathlib import Path, PurePosixPath
 
 from keelline.config.schema import Config
 from keelline.errors import Failure
-from keelline.findings import Finding
+from keelline.findings import Finding, quoted
 from keelline.gitenv import git_run
 from keelline.guards.api import contained_roots
 from keelline.memory.notes import Note, Walk, walk
@@ -113,7 +113,7 @@ def _lines(note: Note) -> list[tuple[int, str]]:
     try:
         text = note.path.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
-        raise Failure(f"{note.path.name} is not valid UTF-8 ({exc.reason})") from None
+        raise Failure(f"{quoted(note.path.name)} is not valid UTF-8 ({exc.reason})") from None
     return list(enumerate(blank_fences(text).splitlines(), start=1))
 
 

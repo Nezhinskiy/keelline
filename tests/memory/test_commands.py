@@ -513,6 +513,43 @@ def test_a_repository_committed_group_is_not_published_into_the_shared_overlay_i
     assert "malicious" in capsys.readouterr().out
 
 
+@needs_git
+def test_a_refused_note_or_pointer_is_named_without_its_crafted_bytes(
+    overlay_project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The two refusals above name what they held back, and both names are the repository's: a
+    # committed note's file name (its `name:` when it has none) and a `memory.index_extra`
+    # entry, which `_extra` checks for line breaks and link syntax but not for an escape
+    # sequence. Both reached the terminal raw. `--json` still names them. Mutation: drop
+    # `printable` from `_named` — this reddens.
+    config = overlay_project / "keelline.toml"
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        .replace('groups = ["developer"]', 'groups = ["developer", "project-stable"]')
+        .replace("index_extra = []", 'index_extra = ["docs/x\\u001b[2J.md"]'),
+        encoding="utf-8",
+    )
+    committed = overlay_project / "docs" / "memory" / "project-stable"
+    committed.mkdir(parents=True)
+    crafted = "evil\x1b[2J"
+    (committed / f"{crafted}.md").write_text(
+        '---\ndescription: "d"\nindex: "line"\nmetadata:\n  type: project\n---\n\nBody.\n',
+        encoding="utf-8",
+    )
+    share = overlay_project.parent / "overlay" / "projects" / "widget" / "memory" / "MEMORY.md"
+    share.write_text("# shared index\n", encoding="utf-8")
+    (overlay_project / "docs" / "memory" / "MEMORY.md").symlink_to(share)
+
+    assert invoke(["memory", "index", *common(overlay_project)]) == 0
+    out = capsys.readouterr().out
+    assert "took no line" in out and "took no pointer" in out
+    assert "\x1b" not in out
+    assert invoke(["memory", "index", "--check", "--json", *common(overlay_project)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["refused_publish"] == [crafted]
+    assert payload["refused_extra"] == ["docs/x\x1b[2J.md"]
+
+
 def test_editing_index_extra_alone_cannot_slip_a_pointer_past_the_trust_record(
     project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -556,6 +593,28 @@ def test_a_note_the_store_cannot_parse_is_counted_and_fails_the_check(
     assert "broken.md" in capsys.readouterr().out
     assert invoke(["memory", "index", "--check", *common(project)]) == 1
     assert "broken.md" in capsys.readouterr().out
+
+
+def test_an_unparseable_note_with_a_crafted_name_is_counted_and_never_printed_raw(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The file name is whatever the store holds, and in-repo mode that is a committed file: a
+    # line break and `::error::` forged a workflow command in CI, an escape sequence reached the
+    # terminal. `--json` still carries the path. Mutation: drop `printable` from `_named` — this
+    # reddens.
+    notes = project / ".keelline" / "local" / "memory" / "developer"
+    crafted = "broken\n::error::forged\x1b[2J.md"
+    (notes / crafted).write_text("no frontmatter at all\n", encoding="utf-8")
+    assert invoke(["memory", "index", "--check", *common(project)]) == 1
+    out = capsys.readouterr().out
+    assert "1 file(s) in the store cannot be read as a note" in out
+    assert "\x1b" not in out and "\n::error::" not in out
+    assert invoke(["memory", "index", "--check", "--json", *common(project)]) == 1
+    assert json.loads(capsys.readouterr().out)["unreadable"][0].endswith(crafted)
+    # A name inside the grammar is still named, so the ordinary case keeps its pointer.
+    (notes / crafted).rename(notes / "broken.md")
+    assert invoke(["memory", "index", "--check", *common(project)]) == 1
+    assert "developer/broken.md" in capsys.readouterr().out
 
 
 def test_the_check_summary_never_says_current_while_the_exit_code_says_otherwise(

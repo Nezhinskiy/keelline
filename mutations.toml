@@ -7607,3 +7607,102 @@ after = ""
 reddens = [
   "tests/scripts/test_mutation_oracle.py::test_every_run_keeps_its_temporary_files_to_itself",
 ]
+
+# A finding's path, a document's name and a note's name are the repository's, and a summary line
+# printed each raw: a line break and `::error::` forged a workflow command in CI, an escape
+# sequence drove the terminal. `printable` is the one bound, and each printer calls it.
+[[mutation]]
+name = "a path outside the grammar prints raw again"
+file = "src/keelline/findings.py"
+before = "    return path if PATH_VALUE.match(path) else UNPRINTABLE"
+after = "    return path"
+reddens = [
+  "tests/test_findings.py::test_a_path_outside_the_grammar_never_reaches_a_label_raw",
+  "tests/ledger/test_commands.py::test_check_never_prints_a_crafted_entry_file_name_raw",
+]
+
+[[mutation]]
+name = "a finding's label prints its path unbounded again"
+file = "src/keelline/findings.py"
+before = "        where = printable(self.path) if self.path else \"-\""
+after = "        where = self.path or \"-\""
+reddens = [
+  "tests/test_findings.py::test_a_path_outside_the_grammar_never_reaches_a_label_raw",
+  "tests/ledger/test_commands.py::test_check_never_prints_a_crafted_entry_file_name_raw",
+]
+
+[[mutation]]
+name = "the undeclared-document report prints a crafted name raw again"
+file = "src/keelline/docs/commands.py"
+before = "printable(row) for row in undeclared"
+after = "row for row in undeclared"
+reddens = [
+  "tests/docs/test_commands.py::test_docs_trail_never_prints_a_crafted_document_name_raw",
+]
+
+[[mutation]]
+name = "a stale trail.toml key reaches the refusal unescaped again"
+file = "src/keelline/docs/trail.py"
+before = "\", \".join(map(quoted, stale))"
+after = "\", \".join(stale)"
+reddens = [
+  "tests/docs/test_commands.py::test_docs_trail_never_prints_a_crafted_trail_toml_key_raw",
+]
+
+[[mutation]]
+name = "memory index names a refused or unreadable note raw again"
+file = "src/keelline/memory/commands.py"
+before = "    return \", \".join(printable(name) for name in names)"
+after = "    return \", \".join(names)"
+reddens = [
+  "tests/memory/test_commands.py::test_an_unparseable_note_with_a_crafted_name_is_counted_and_never_printed_raw",
+  "tests/memory/test_commands.py::test_a_refused_note_or_pointer_is_named_without_its_crafted_bytes",
+]
+
+# The refusals carry no `--json` payload, so a crafted name is escaped there rather than withheld.
+[[mutation]]
+name = "a refusal names a path outside the grammar unescaped again"
+file = "src/keelline/findings.py"
+before = "    return path if PATH_VALUE.match(path) else repr(path)"
+after = "    return path"
+reddens = [
+  "tests/docs/test_plans.py::test_a_crafted_plan_name_reaches_the_refusal_escaped_never_raw",
+  "tests/memory/test_refs.py::test_a_note_that_stops_decoding_is_named_escaped_never_raw",
+  "tests/ledger/test_commands.py::test_index_names_a_crafted_entry_it_cannot_parse_escaped_never_raw",
+]
+
+[[mutation]]
+name = "plan check names an unreadable plan unescaped again"
+file = "src/keelline/docs/plans.py"
+before = "read_document(path, quoted(where))"
+after = "read_document(path, where)"
+reddens = [
+  "tests/docs/test_plans.py::test_a_crafted_plan_name_reaches_the_refusal_escaped_never_raw",
+]
+
+[[mutation]]
+name = "a ledger refusal names its entry file unescaped again"
+file = "src/keelline/ledger/entries.py"
+before = "    return quoted(path.as_posix())"
+after = "    return path.as_posix()"
+reddens = [
+  "tests/ledger/test_commands.py::test_index_names_a_crafted_entry_it_cannot_parse_escaped_never_raw",
+]
+
+[[mutation]]
+name = "bugs renumber lists a file it could not sweep raw again"
+file = "src/keelline/ledger/commands.py"
+before = "printable(u.split(':', 1)[0])"
+after = "u.split(':', 1)[0]"
+reddens = [
+  "tests/ledger/test_commands.py::test_renumber_never_prints_a_crafted_name_it_could_not_sweep_raw",
+]
+
+[[mutation]]
+name = "memory refs names a note that stopped decoding unescaped again"
+file = "src/keelline/memory/refs.py"
+before = "{quoted(note.path.name)}"
+after = "{note.path.name}"
+reddens = [
+  "tests/memory/test_refs.py::test_a_note_that_stops_decoding_is_named_escaped_never_raw",
+]
