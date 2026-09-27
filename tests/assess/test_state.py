@@ -540,12 +540,13 @@ def test_a_custom_gate_the_base_runs_another_command_for_waits_and_the_command_s
 
 def test_builtin_runs_no_custom_gate_and_promotes_the_built_ins_alone(tmp_path: Path) -> None:
     # In a clone, `origin/<base>` is the clone author's, so a base that has a custom gate's
-    # command is no brake: after the person declined the clone's commands, `adopt promote` ran
-    # them anyway. `builtin` runs none, and a custom gate it did not run is never promoted: named
-    # beside a built-in it holds the whole promotion back, and with no names every built-in that
-    # passes is promoted and the custom gate stays advisory. Mutations (oracle): "adopt promote
-    # --builtin still runs the custom gates" -> the marker is written and the gate promoted;
-    # "a named custom gate --builtin did not run holds nothing back" -> `docs` is written alone.
+    # command is no brake: without `builtin`, `adopt promote` runs the clone's commands whatever
+    # the person answered. `builtin` runs none, and a custom gate it did not run is never
+    # promoted: named beside a built-in it holds the whole promotion back, and with no names
+    # every built-in that passes is promoted and the custom gate stays advisory. Mutations
+    # (oracle): "adopt promote --builtin still runs the custom gates" -> the marker is written
+    # and the gate promoted; "a named custom gate --builtin did not run holds nothing back" ->
+    # `docs` is written alone.
     root, _ = _project(tmp_path)
     base = _with_marker_gate(root)
     before = _document(root)

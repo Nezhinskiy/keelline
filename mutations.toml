@@ -10039,7 +10039,8 @@ after = '            themes.append((entry["label"], re.compile(entry["pattern"])
 reddens = ["tests/docs/test_themes.py::test_a_pattern_re_would_backtrack_on_for_hours_answers_at_once"]
 
 # The matcher cannot backtrack, but a match costs the name's length times the pattern's and every
-# name is tried against every theme: a 244 KB pattern took 3.9 s per file name.
+# name is tried against every theme, so an unbounded pattern could hold the gate for seconds per
+# name.
 [[mutation]]
 name = "a theme pattern of any length is compiled"
 file = "src/keelline/docs/themes.py"
@@ -10541,7 +10542,8 @@ reddens = [
 ]
 
 # In a clone the base is the clone author's, so a base that has a custom gate's command is no
-# brake on running it: after a no to the clone's commands, `adopt promote` ran them anyway.
+# brake on running it: without `--builtin`, `adopt promote` runs the clone's commands whatever the
+# person answered.
 [[mutation]]
 name = "adopt promote --builtin still runs the custom gates"
 file = "src/keelline/assess/state.py"

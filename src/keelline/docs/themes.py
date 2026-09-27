@@ -1,9 +1,9 @@
 """A `trail.toml` theme's `pattern`: the part of regular-expression syntax a filename filter needs,
 matched without backtracking.
 
-A theme's `pattern` is repository-authored and was compiled with `re`, whose backtracking a
-pattern such as `(a+)+$` turns exponential on a name of forty characters: `keelline docs trail`,
-the `trail` gate and `keelline assess` then never finished. The language kept here is a subset of
+A theme's `pattern` is repository-authored, and `re`'s backtracking turns a pattern such as
+`(a+)+$` exponential on a name of forty characters, so under `re` `keelline docs trail`, the
+`trail` gate and `keelline assess` would never finish. The language kept here is a subset of
 the regular expressions such files already hold, with the meaning `re.search` gives them on a
 name of one line: literal text, `.` for any one character, `.*` for any run of them, `|`
 between alternatives, `^` and `$` at an alternative's two ends, and `\\` before a punctuation
@@ -19,11 +19,11 @@ Placing each piece at its leftmost fit after the one before leaves the longest r
 after it, so the leftmost fit is the only placement worth trying, and a match is one left-to-right
 pass: at most the name's length times the pattern's, whatever either holds.
 
-**Why a pattern has a length bound.** That product is still the repository's to choose: a
-244 KB pattern of long alternatives took 3.9 s per file name, and a `trail.toml` of such patterns
-held the `trail` gate past its job's time limit. `PATTERN_MAX_CHARS` bounds each pattern, and
-`docs.trail` bounds how many themes a file may hold, since every name is tried against every
-theme until one matches.
+**Why a pattern has a length bound.** That product is still the repository's to choose: a match
+costs up to the name's length times the pattern's, so an unbounded pattern could hold the `trail`
+gate for seconds per name, and a `trail.toml` of such patterns past its job's time limit.
+`PATTERN_MAX_CHARS` bounds each pattern, and `docs.trail` bounds how many themes a file may hold,
+since every name is tried against every theme until one matches.
 """
 
 from __future__ import annotations

@@ -579,9 +579,9 @@ def test_a_theme_pattern_or_a_theme_count_past_its_bound_fails_in_keelline_s_wor
     tmp_path: Path,
 ) -> None:
     # The matcher cannot backtrack, but a match still costs the name's length times the
-    # pattern's, and every name is tried against every theme until one matches: a 244 KB pattern
-    # took 3.9 s per file name, and 2,000 themes of 121 characters cost as much, so a
-    # `trail.toml` of either held the `trail` gate past its job's time limit. At each bound the
+    # pattern's, and every name is tried against every theme until one matches, so a `trail.toml`
+    # of unbounded patterns, or of thousands of themes, could hold the `trail` gate for seconds
+    # per name and past its job's time limit. At each bound the
     # file loads; one past it fails as the other refused shapes do, naming the bound and never
     # the pattern. Mutations (oracle): "a theme pattern of any length is compiled" -> the long
     # pattern loads and this reddens; "a trail.toml of any number of themes is read" -> the
