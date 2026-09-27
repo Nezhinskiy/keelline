@@ -4353,10 +4353,10 @@ name = "attribute lets an undecodable merge-base diagnostic escape as a tracebac
 file = "src/keelline/guards/attribute.py"
 before = """    except UnicodeDecodeError:
         raise Failure(
-            f"`git merge-base HEAD {base}` printed output this process cannot decode, so there \""""
+            f"`git merge-base HEAD {shown}` printed output this process cannot decode, so there \""""
 after = """    except ZeroDivisionError:
         raise Failure(
-            f"`git merge-base HEAD {base}` printed output this process cannot decode, so there \""""
+            f"`git merge-base HEAD {shown}` printed output this process cannot decode, so there \""""
 reddens = [
   "tests/guards/test_attribute.py::test_git_output_this_process_cannot_decode_is_a_failure_and_not_a_traceback[merge-base]",
 ]
@@ -4749,7 +4749,7 @@ name = "the undecodable merge-base falls through to the unlaunchable-git sentenc
 file = "src/keelline/guards/attribute.py"
 before = """
         raise Failure(
-            f"`git merge-base HEAD {base}` printed output this process cannot decode, so there "
+            f"`git merge-base HEAD {shown}` printed output this process cannot decode, so there "
             f"is no merge-base to compare against"
         ) from None"""
 after = '        code, merge_base = -1, ""'
