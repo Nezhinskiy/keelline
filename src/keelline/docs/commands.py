@@ -110,11 +110,11 @@ def run_docs_trail(args: argparse.Namespace) -> Result:
         else f"{config.paths.roadmap} trail listing is current"
     )
     if undeclared:
+        # Capped, and the count is every one: `--json`'s `undeclared` names them all.
         return Result(
             f"{summary}; {len(undeclared)} document(s) entered the trail with no declared state "
-            f"and were listed as delivered — add each to trail.toml and re-run: "
-            # Capped, and the count above is every one: `--json`'s `undeclared` names them all.
-            f"{listed([printable(row) for row in undeclared])}",
+            "and were listed as delivered — add each to trail.toml and re-run: "
+            + listed([printable(row) for row in undeclared]),
             data,
             exit_code=1,
         )

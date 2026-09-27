@@ -62,11 +62,10 @@ def test_a_name_outside_the_grammar_arrives_whole_and_inert_through_quoted(name:
 
 def test_a_name_up_to_the_clip_prints_as_its_bound_prints_it() -> None:
     # At `CLIPPED_CHARS` nothing is cut, so an ordinary name, however long a real one gets,
-    # prints exactly as `quoted` (or the caller's own printer) prints it.
+    # prints exactly as `quoted` prints it.
     name = "a" * CLIPPED_CHARS
     assert clipped(name) == name
-    assert clipped(f"{CRAFTED}") == quoted(CRAFTED)
-    assert clipped("t0", repr) == "'t0'"
+    assert clipped(CRAFTED) == quoted(CRAFTED)
 
 
 @pytest.mark.parametrize("name", ["a" * (CLIPPED_CHARS + 1), "a" * 200_000, CRAFTED * 5_000])

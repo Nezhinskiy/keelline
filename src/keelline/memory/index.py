@@ -524,8 +524,8 @@ def check_index(store: Store, config: Config, reconciled: Reconciliation) -> Ind
         over_budget=len(text.split()) > config.budgets.effective("memory_index_words"),
         over_caps=caps,
         provisional=list(reconciled.provisional),
-        # Store-relative, which is what the summary line and `memory refs` name too: the
-        # absolute prefix is this machine's, so `--json` named one file two ways in one answer.
+        # Store-relative, as the summary line and `memory refs` name it: one file has one name
+        # in one answer, and the absolute prefix is this machine's, not the store's.
         unreadable=[path.relative_to(store.path).as_posix() for path, _ in reconciled.unreadable],
     )
 

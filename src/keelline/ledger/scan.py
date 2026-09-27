@@ -202,12 +202,12 @@ def scannable(root: Path, names: tuple[str, ...]) -> Iterator[Scanned]:
     for path in sorted(candidates):
         if path.suffix in BINARY_SUFFIXES:
             continue
+        relative = PurePosixPath(path.relative_to(root).as_posix())
         try:
             if not stat.S_ISREG(path.lstat().st_mode):
                 continue
             raw = path.read_bytes()
         except OSError as error:
-            relative = PurePosixPath(path.relative_to(root).as_posix())
             yield Scanned(path, relative, None, said(error))
             continue
         if is_fixture_holder(raw[:FIXTURE_MARKER_WINDOW]):
@@ -216,7 +216,7 @@ def scannable(root: Path, names: tuple[str, ...]) -> Iterator[Scanned]:
             text: str | None = raw.decode("utf-8")
         except UnicodeDecodeError:
             text = None
-        yield Scanned(path, PurePosixPath(path.relative_to(root).as_posix()), text, None)
+        yield Scanned(path, relative, text, None)
 
 
 def citation_pattern(config: Config) -> re.Pattern[str]:

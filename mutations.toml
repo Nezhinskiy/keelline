@@ -1889,7 +1889,7 @@ reddens = ["tests/docs/test_prose.py::test_typescript_and_toml_count_as_files_th
 [[mutation]]
 name = "a state naming a vanished document defaults instead of aborting"
 file = "src/keelline/docs/trail.py"
-before = '    stale = sorted(set(trail.states) - listed)'
+before = '    stale = sorted(set(trail.states) - named)'
 after = '    stale: list[str] = []'
 reddens = ["tests/docs/test_trail.py::test_a_state_naming_a_vanished_document_aborts_instead_of_defaulting"]
 
@@ -11254,8 +11254,8 @@ reddens = [
 [[mutation]]
 name = "a stale trail.toml key reaches the refusal unescaped"
 file = "src/keelline/docs/trail.py"
-before = "listed_names([clipped(key) for key in stale])"
-after = "listed_names(stale)"
+before = "listed([clipped(key) for key in stale])"
+after = "listed(stale)"
 reddens = [
   "tests/docs/test_commands.py::test_docs_trail_never_prints_a_crafted_trail_toml_key_raw",
 ]
@@ -11371,7 +11371,7 @@ reddens = [
 [[mutation]]
 name = "the stale trail.toml key refusal names every key"
 file = "src/keelline/docs/trail.py"
-before = "listed_names([clipped(key) for key in stale])"
+before = "listed([clipped(key) for key in stale])"
 after = "\", \".join(clipped(key) for key in stale)"
 reddens = [
   "tests/docs/test_commands.py::test_the_stale_key_refusal_counts_every_key_and_names_at_most_the_listed_limit",
@@ -11423,8 +11423,8 @@ reddens = [
 [[mutation]]
 name = "a stale trail.toml key prints unclipped"
 file = "src/keelline/docs/trail.py"
-before = "listed_names([clipped(key) for key in stale])"
-after = "listed_names([repr(key) for key in stale])"
+before = "listed([clipped(key) for key in stale])"
+after = "listed([repr(key) for key in stale])"
 reddens = [
   "tests/docs/test_commands.py::test_a_stale_key_of_any_length_prints_clipped_to_its_start_and_its_length",
 ]
@@ -11432,8 +11432,8 @@ reddens = [
 [[mutation]]
 name = "a theme label prints unclipped in its refusal"
 file = "src/keelline/docs/trail.py"
-before = "{clipped(entry['label'], repr)}"
-after = "{entry['label']!r}"
+before = "{clipped(entry['label'])}"
+after = "{clipped(entry['label'][:120]) + entry['label'][120:]}"
 reddens = [
   "tests/docs/test_trail.py::test_a_theme_pattern_or_a_theme_count_past_its_bound_fails_in_keelline_s_words",
 ]

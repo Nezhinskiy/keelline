@@ -4,7 +4,7 @@ A repository chooses its own file names, note names, `memory.groups` entries and
 any of them may hold a line break followed by `::error::…`, which a GitHub Actions runner reads
 from a job's output as a workflow command, or an escape sequence, which drives the reader's
 terminal. `trust.wrap` marks such text as data for a model and escapes no byte for either of
-those readers, so a printed line needs one of the two bounds below. Both answer from
+those readers, so a printed name needs one of the two bounds below on its content. Both answer from
 `PATH_VALUE`, the one grammar a path may print in: ASCII letters, digits, `.`, `_` and `-` in
 `/`-separated segments. A name inside it prints as itself, so ordinary output is unchanged.
 
@@ -13,11 +13,13 @@ those readers, so a printed line needs one of the two bounds below. Both answer 
   carry readable prose.
 - `quoted` escapes a name outside the grammar with `repr`. It is for a refusal, which has no
   `--json` behind it, where withholding the name would leave the operator nothing to rename.
+
+A third bound is on a name's length rather than its content: `clipped` prints a name through
+`quoted` and, past `CLIPPED_CHARS`, only its start and its length. It is for a refusal naming
+something nothing upstream bounds in length, a TOML key, a label or a group.
 """
 
 from __future__ import annotations
-
-from collections.abc import Callable
 
 from keelline.config.schema import PATH_VALUE
 
@@ -50,10 +52,10 @@ def quoted(name: str) -> str:
 CLIPPED_CHARS = 120
 
 
-def clipped(name: str, show: Callable[[str], str] = quoted) -> str:
-    """`show(name)`, or past `CLIPPED_CHARS` the first characters through `show` and the
+def clipped(name: str) -> str:
+    """`quoted(name)`, or past `CLIPPED_CHARS` the first characters through `quoted` and the
     length: `…(N chars)`. For a refusal, where the name is the only channel and must still be
     identifiable, and where no bound on its length exists upstream."""
     if len(name) <= CLIPPED_CHARS:
-        return show(name)
-    return f"{show(name[:CLIPPED_CHARS])}…({len(name)} chars)"
+        return quoted(name)
+    return f"{quoted(name[:CLIPPED_CHARS])}…({len(name)} chars)"

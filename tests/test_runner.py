@@ -100,11 +100,13 @@ def test_a_caller_that_asks_for_a_narrower_bound_gets_it(tmp_path: Path) -> None
     is a keyword on the factory rather than a second module constant: the protocol is untouched
     and no stub in the suite grows a parameter it would ignore.
 
-    Judged by what the subprocess did rather than by the wall, because the claim is that it is
-    really cut off: under a one-second bound, a command that would write a marker after five
-    seconds answers `TIMED_OUT` and never writes it, and the sentence it carries names the bound
-    that was applied and not the module's. This used to assert the run took under five seconds,
-    a margin load can spend.
+    Judged by what the subprocess did rather than by the wall: under a one-second bound, a
+    command that would write a marker after five seconds answers `TIMED_OUT`, the marker is not
+    there when the runner returns, and the sentence it carries names the bound that was applied
+    and not the module's. The marker proves the call returned before the command's end, which is
+    what a clock used to prove with a margin load can spend. That it never gets written later
+    rests on `subprocess.run(timeout=)`, which kills `sh` before it reaches `: > finished`; the
+    `sleep` it started outlives the test by about four seconds, writing nothing.
 
     Mutation (oracle entry "the runner ignores the bound its caller asked for"): `timeout=bound`
     back to `timeout=NETWORK_TIMEOUT_SECONDS`. Measured: the command runs to completion and the
