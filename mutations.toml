@@ -11816,8 +11816,8 @@ reddens = [
 [[mutation]]
 name = "adopt promote's note on an untracked file is not printed"
 file = "src/keelline/assess/commands.py"
-before = "            lines.append(UNTRACKED_NOTE.format(gate=unseen.gate, files=files, remedy=remedy))"
-after = "            pass"
+before = "                lines.append(UNTRACKED_NOTE.format(gate=unseen.gate, files=files, remedy=remedy))"
+after = "                pass"
 reddens = [
   "tests/assess/test_tracked.py::test_adopt_promote_s_refusal_says_to_track_the_file_and_names_it",
 ]
@@ -11826,8 +11826,8 @@ reddens = [
 [[mutation]]
 name = "an untracked item names a link target outside the path grammar"
 file = "src/keelline/assess/tracked.py"
-before = "            [printable(f, withheld) for f in u.files],"
-after = "            list(u.files),"
+before = "                [printable(f, withheld) for f in files],"
+after = "                list(files),"
 reddens = [
   "tests/assess/test_tracked.py::test_a_link_target_outside_the_path_grammar_is_withheld_where_it_is_named",
 ]
@@ -11835,8 +11835,8 @@ reddens = [
 [[mutation]]
 name = "adopt promote's note names a link target outside the path grammar"
 file = "src/keelline/assess/commands.py"
-before = "            files = listed([printable(name) for name in unseen.files])"
-after = "            files = listed(list(unseen.files))"
+before = "                files = listed([printable(name) for name in unseen.files])"
+after = "                files = listed(list(unseen.files))"
 reddens = [
   "tests/assess/test_tracked.py::test_a_link_target_outside_the_path_grammar_is_withheld_where_it_is_named",
 ]
@@ -12046,4 +12046,45 @@ after = "        None,"
 reddens = [
   "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[roadmap]",
   "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[trail-toml]",
+]
+
+# A name that differs from the tracked one only in case is the same file on a filesystem that folds
+# case and no file in a Linux checkout. The file is committed, so the remedy is to spell the name
+# as git does, and the test holds on both filesystems: where case is kept apart, a second name for
+# the same file stands in for the fold.
+[[mutation]]
+name = "a name git tracks in another case reads as untracked"
+file = "src/keelline/assess/tracked.py"
+before = "    return _same_file(listing.top / here, listing.top / spelled)"
+after = "    return False"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_link_that_differs_from_the_tracked_file_only_in_case_says_so",
+  "tests/assess/test_tracked.py::test_adopt_promote_s_note_on_a_case_difference_says_to_spell_it_as_git_does",
+]
+
+[[mutation]]
+name = "a name git tracks in another case is reported as untracked as well"
+file = "src/keelline/assess/tracked.py"
+before = "            untracked = tuple(n for n in missing if n not in cased)"
+after = "            untracked = missing"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_link_that_differs_from_the_tracked_file_only_in_case_says_so",
+]
+
+[[mutation]]
+name = "adopt promote's note on a case difference is not printed"
+file = "src/keelline/assess/commands.py"
+before = "                lines.append(CASE_NOTE.format(gate=unseen.gate, files=cased, remedy=CASE_REMEDY))"
+after = "                pass"
+reddens = [
+  "tests/assess/test_tracked.py::test_adopt_promote_s_note_on_a_case_difference_says_to_spell_it_as_git_does",
+]
+
+[[mutation]]
+name = "adopt promote's --json leaves out the files git tracks in another case"
+file = "src/keelline/assess/commands.py"
+before = '        "case_differs": {u.gate: list(u.case_differs) for u in transition.unseen if u.case_differs},'
+after = '        "case_differs": {},'
+reddens = [
+  "tests/assess/test_tracked.py::test_adopt_promote_s_note_on_a_case_difference_says_to_spell_it_as_git_does",
 ]

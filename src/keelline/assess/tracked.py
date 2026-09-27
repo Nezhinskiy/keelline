@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import os
 from collections import deque
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -48,6 +49,7 @@ if TYPE_CHECKING:
     from keelline.config.schema import Config
 
 UNTRACKED = "untracked"
+CASE_DIFFERS = "case-differs"
 # The most links followed from one path the gates read. A named cap (CONTRIBUTING.md#named-caps),
 # bounding a walk over links the repository wrote; no shipped file sets it. 40 is Linux's own
 # limit on the links one lookup follows (macOS stops at 32), so a chain the filesystem follows is
@@ -58,8 +60,8 @@ UNASKED = "could-not-look"
 # files are in the item beside it.
 UNSEEN_REASON = (
     "could not judge this tree as CI will: it reads a file CI's checkout will not have, one "
-    "git does not track or a symlink that leads out of the repository; `keelline assess --json` "
-    "names it"
+    "git does not track under that name or a symlink that leads out of the repository; "
+    "`keelline assess --json` names it"
 )
 UNASKED_REASON = (
     "could not judge this tree as CI will: git gave no answer to whether it tracks the files "
@@ -73,6 +75,14 @@ REMEDY = (
     "tracked file in the repository; to keep them out of git, take {gate} out of [gates] "
     "builtin instead"
 )
+# A name that differs from the tracked one only in case is the same file on a filesystem that
+# folds case, such as macOS's default, and no file at all in a Linux checkout: the file is
+# committed, so "commit it" would be advice nobody can take.
+CASE_REMEDY = (
+    "git tracks each file named under a name that differs from it only in case, which this "
+    "filesystem ignores and CI's checkout does not: spell the link, or the [paths] value, as "
+    "`git ls-files` lists the file, or rename the file in git with `git mv`"
+)
 UNASKED_REMEDY = (
     "run `git ls-files` here to see why git gives no answer; a git that timed out may answer "
     "once the repository is idle"
@@ -81,12 +91,14 @@ UNASKED_REMEDY = (
 
 @dataclass(frozen=True)
 class Unseen:
-    """A gate that reads files CI cannot be shown to see: the files, and whether git answered
-    the question at all (when it did not, `files` are every file the gate reads)."""
+    """A gate that reads files CI cannot be shown to see: the files, whether git answered the
+    question at all (when it did not, `files` are every file the gate reads), and the files git
+    tracks only under a name that differs in case."""
 
     gate: str
     files: tuple[str, ...]  # project-relative, as found on disk
     git_answered: bool
+    case_differs: tuple[str, ...] = ()  # project-relative, as read; none of them in `files`
 
 
 def _reads(root: Path, config: Config, gate: Gate) -> list[Path]:
@@ -99,12 +111,13 @@ def _reads(root: Path, config: Config, gate: Gate) -> list[Path]:
 class _Listing:
     """What git tracks in the work tree the project is in: its top, the project's place below it
     (`""` at the top, else `"proj/"`), every tracked path and every directory above one, each
-    relative to the top."""
+    relative to the top, and each of those by its case-folded spelling."""
 
     top: Path
     prefix: str
     names: frozenset[str]
     dirs: frozenset[str]
+    folded: Mapping[str, str]
 
 
 def _tracked(root: Path) -> _Listing | None:
@@ -130,12 +143,32 @@ def _tracked(root: Path) -> _Listing | None:
         while cut > 0 and name[:cut] not in dirs:
             dirs.add(name[:cut])
             cut = name.rfind("/", 0, cut)
-    return _Listing(top, lines[1], names, frozenset(dirs))
+    folded = {path.casefold(): path for path in (*names, *dirs)}
+    return _Listing(top, lines[1], names, frozenset(dirs), folded)
 
 
 def _is_tracked(relative: str, listing: _Listing) -> bool:
     """A file is tracked when git lists it; a directory, when git lists a file under it."""
     return relative in listing.names or relative in listing.dirs
+
+
+def _same_file(one: Path, other: Path) -> bool:
+    """Whether the two names reach one file here; a name that reaches none reaches no other."""
+    try:
+        return os.path.samefile(one, other)
+    except OSError:
+        return False
+
+
+def _case_differs(named: str, listing: _Listing) -> bool:
+    """Whether git tracks `named` only under a spelling that differs in case, and here that
+    spelling is the same file: a filesystem that folds case read one for the other. Where the
+    two are different files, the one read is simply untracked."""
+    here = listing.prefix + named
+    spelled = listing.folded.get(here.casefold())
+    if spelled is None or spelled == here:
+        return False
+    return _same_file(listing.top / here, listing.top / spelled)
 
 
 def _parts(path: str) -> list[str]:
@@ -216,7 +249,9 @@ def unseen(root: Path, config: Config, gates: tuple[Gate, ...]) -> tuple[Unseen,
             dict.fromkeys(n for f in files if (n := _not_checked_out(f, tracked)) is not None)
         )
         if missing:
-            result.append(Unseen(name, missing, git_answered=True))
+            cased = tuple(n for n in missing if _case_differs(n, tracked))
+            untracked = tuple(n for n in missing if n not in cased)
+            result.append(Unseen(name, untracked, git_answered=True, case_differs=cased))
     return tuple(result)
 
 
@@ -242,16 +277,29 @@ def as_ci_sees(
 
 
 def unseen_items(found: tuple[Unseen, ...], withheld: str) -> list[Item]:
-    """One inventory item per gate: the files, each a label inside the path grammar or
-    `withheld`."""
-    return [
-        item(
-            u.gate,
-            UNTRACKED if u.git_answered else UNASKED,
-            None,
-            Severity.WARNING,
-            REMEDY.format(gate=u.gate) if u.git_answered else UNASKED_REMEDY,
-            [printable(f, withheld) for f in u.files],
+    """The inventory items for each gate: the untracked files, and apart from them the files git
+    tracks under another case, or every file when git gave no answer; each a label inside the
+    path grammar or `withheld`."""
+    items: list[Item] = []
+    for u in found:
+        rows = (
+            [
+                (UNTRACKED, REMEDY.format(gate=u.gate), u.files),
+                (CASE_DIFFERS, CASE_REMEDY, u.case_differs),
+            ]
+            if u.git_answered
+            else [(UNASKED, UNASKED_REMEDY, u.files)]
         )
-        for u in found
-    ]
+        items += [
+            item(
+                u.gate,
+                rule,
+                None,
+                Severity.WARNING,
+                remedy,
+                [printable(f, withheld) for f in files],
+            )
+            for rule, remedy, files in rows
+            if files
+        ]
+    return items

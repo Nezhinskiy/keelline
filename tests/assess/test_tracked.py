@@ -10,6 +10,7 @@ and every gate passes, and takes one file out of git's index while leaving it on
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -19,7 +20,14 @@ from keelline.assess import tracked
 from keelline.assess.assessment import UNNAMED, Assessment, assess, document, render
 from keelline.assess.gates import GateResult
 from keelline.assess.state import promote
-from keelline.assess.tracked import UNASKED, UNASKED_REASON, UNSEEN_REASON, UNTRACKED
+from keelline.assess.tracked import (
+    CASE_DIFFERS,
+    CASE_REMEDY,
+    UNASKED,
+    UNASKED_REASON,
+    UNSEEN_REASON,
+    UNTRACKED,
+)
 from keelline.config.loader import load
 from keelline.printed import UNPRINTABLE
 from tests.assess.smoke import BASE, FIXTURE, PLAN, smoke_repo
@@ -370,6 +378,76 @@ def test_a_link_target_outside_the_path_grammar_is_withheld_where_it_is_named(
     code, out, _ = cli(root, tmp_path, "adopt", "promote", "docs", "--base", _sha(root, BASE))
     assert code == 1, out
     assert "a note.md" not in out and UNPRINTABLE in out, out
+
+
+def _link_in_another_case(root: Path) -> None:
+    """`notes.md` committed, and `AGENTS.md` linking it as `Notes.md`; on a filesystem that keeps
+    case apart, `Notes.md` is made a second name for the same file, which is what a filesystem
+    that folds case, such as macOS's default, reads the link as."""
+    (root / "notes.md").write_text("# ours\n", encoding="utf-8")
+    agents = root / AGENTS
+    agents.write_text(agents.read_text(encoding="utf-8") + "\n[notes](Notes.md)\n", "utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "docs: link the notes in another case")
+    if not (root / "Notes.md").exists():
+        os.link(root / "notes.md", root / "Notes.md")
+
+
+def test_a_link_that_differs_from_the_tracked_file_only_in_case_says_so(tmp_path: Path) -> None:
+    # On a filesystem that folds case the link reads the committed `notes.md`, and in a Linux
+    # checkout it reads nothing: `missing-link`. So the gate could not judge the tree as CI will,
+    # and the file is committed, so the remedy is to spell the link as git does, not to commit
+    # it. The same file under both names stands in for a folding filesystem where case is kept
+    # apart, so this holds on Linux as on macOS. Mutation (declared): a name git tracks in
+    # another case reads as untracked.
+    root = smoke_repo(tmp_path)
+    _link_in_another_case(root)
+    assessment = _assess(root, tmp_path)
+    assert _row(assessment, "docs").reason == UNSEEN_REASON
+    assert _items(assessment, UNTRACKED) == {}
+    assert _items(assessment, CASE_DIFFERS) == {"docs": ("Notes.md",)}
+    remedy = next(i.remedy for i in assessment.items if i.rule == CASE_DIFFERS)
+    assert remedy == CASE_REMEDY and "only in case" in remedy, remedy
+
+
+def test_adopt_promote_s_note_on_a_case_difference_says_to_spell_it_as_git_does(
+    tmp_path: Path,
+) -> None:
+    # The note is the item's remedy, and names the file as read; `--json` carries it apart from
+    # the untracked files. Mutation (declared): the note is not printed.
+    root = smoke_repo(tmp_path)
+    _adopting(root)
+    _link_in_another_case(root)
+    base = _sha(root, "HEAD~1")
+    code, out, _ = cli(root, tmp_path, "adopt", "promote", "docs", "--base", base)
+    assert code == 1, out
+    note = next(line for line in out.splitlines() if line.startswith("note: docs reads"))
+    assert note.startswith("note: docs reads Notes.md, which git tracks only under a name"), note
+    assert note.endswith(CASE_REMEDY), note
+    code, out, _ = cli(root, tmp_path, "adopt", "promote", "docs", "--base", base, "--json")
+    data = json.loads(out)
+    assert data["case_differs"] == {"docs": ["Notes.md"]} and data["untracked"] == {}, data
+
+
+def test_a_different_file_whose_name_differs_only_in_case_is_untracked(tmp_path: Path) -> None:
+    # Where case is kept apart, `Notes.md` beside a committed `notes.md` can be a file of its own,
+    # and then it is simply untracked: spelling the link as git does would point it at another
+    # file. No mutation is declared for this: the case exists only on a filesystem that keeps
+    # case apart, and every declared entry must hold on macOS's folding one as on Linux.
+    root = smoke_repo(tmp_path)
+    (root / "notes.md").write_text("# ours\n", encoding="utf-8")
+    if (root / "NOTES.md").exists():
+        pytest.skip("this filesystem folds case, so the two names cannot be two files")
+    git(root, "add", "notes.md")
+    git(root, "commit", "-qm", "docs: the notes")
+    (root / "Notes.md").write_text("# mine\n", encoding="utf-8")
+    agents = root / AGENTS
+    agents.write_text(agents.read_text(encoding="utf-8") + "\n[notes](Notes.md)\n", "utf-8")
+    git(root, "add", AGENTS)
+    git(root, "commit", "-qm", "docs: link a local file")
+    assessment = _assess(root, tmp_path)
+    assert _items(assessment, UNTRACKED) == {"docs": ("Notes.md",)}
+    assert _items(assessment, CASE_DIFFERS) == {}
 
 
 def test_an_untracked_roadmap_leaves_the_docs_gate_judged(tmp_path: Path) -> None:

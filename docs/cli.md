@@ -838,7 +838,12 @@ change that promotes the gate. When one of them is on disk and untracked, `asses
 as could not run, its `reason` saying it could not judge the tree as CI will, and adds an
 `untracked` item naming the files — the first untracked step on a link's way, or the link that
 leads out, and when that step is outside the project, the last link inside it that led there — each
-inside the path grammar or withheld; the gate counts as one that would fail. Inside a git work
+inside the path grammar or withheld; the gate counts as one that would fail. A name that differs
+from the one git tracks only in case — a link to `Notes.md` where git tracks `notes.md` — reads
+the committed file on a filesystem that folds case, as macOS's does by default, and nothing in a
+Linux checkout: its gate could not run the same way, and the name goes to a `case-differs` item
+instead, whose remedy is to spell it as `git ls-files` does, since the file is committed. Where
+case is kept apart and the two names are two files, the one read is simply untracked. Inside a git work
 tree, a git that gives no answer about it is never read as tracked: the gate could not run the same
 way, and its item is `could-not-look`. Outside a work tree nothing is asked, since there is no
 index to ask and no checkout for CI to take, and both gates judge the files as they are, as `docs
@@ -1147,8 +1152,9 @@ would fail the gate on every pull request (*The `docs` and `trail` gates judge t
 under `keelline assess`). It could not run, is named `(could not run)`, and a `note:` for it names
 the files, each inside the path grammar or withheld, and says to commit them — an ignored one needs
 its ignore rule removed, or `git add -f` — and to point a symlink it names at a tracked file in the
-repository, or to keep them out of git and take the gate out of `[gates] builtin`; one git gave no
-answer about is named with a `note:` saying so.
+repository, or to keep them out of git and take the gate out of `[gates] builtin`. A file git
+tracks only under a name that differs in case gets a `note:` of its own, saying to spell it as
+`git ls-files` does; one git gave no answer about is named with a `note:` saying so.
 
 `--builtin` runs the built-in gates and no custom gate, as `keelline assess --builtin` does: for
 a clone whose commands you have not agreed to run, where the base is the clone author's and its
@@ -1161,8 +1167,10 @@ back as a gate not on the base does.
 as `keelline assess` defines it, `enforcing` when this run promoted it), `promoted`, `failing`,
 which maps each gate that ran and did not pass to its finding count, `unanswered`, the gates that
 could not run, `not_on_base`, the custom gates not run because the base does not have their
-command, `skipped`, the custom gates `--builtin` did not run, and `untracked`, which maps each gate
-not promoted because it reads files CI's checkout will not have to those files. When a gate stays
+command, `skipped`, the custom gates `--builtin` did not run, `untracked`, which maps each gate
+not promoted because it reads files CI's checkout will not have to those files, and
+`case_differs`, which maps each gate not promoted because git tracks a file it reads only under
+a name that differs in case to those files, as read. When a gate stays
 advisory, the summary ends with a line saying where its findings are
 (`keelline assess --json`, or `keelline assess --builtin --json` under `--builtin`, or the
 gate's own command), and, when `plan`, `commit` or `bugs`
