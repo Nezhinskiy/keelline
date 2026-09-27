@@ -42,6 +42,7 @@ from keelline.config.schema import (
     Project,
 )
 from keelline.errors import Failure
+from keelline.findings import listed
 from keelline.presets import load_preset
 
 CONFIG_FILE = "keelline.toml"
@@ -209,7 +210,8 @@ def _named(unknown: list[str], noun: str) -> str:
     """
     named = [name for name in unknown if SECTION_NAME.match(name)]
     unnamed = len(unknown) - len(named)
-    parts = list(named)
+    # The named ones capped like every list of names on a line: a file may carry any number.
+    parts = [listed(named)] if named else []
     if unnamed:
         # The noun agrees with the count, for the reason the verb already did: one unnamed key
         # produced "1 more that is not plain key names", which is the common case of this arm.
@@ -367,7 +369,8 @@ def _enforcement(config: Config) -> Config:
     names = config.gate_names
     unknown = [name for name in keelline.enforced if name not in names]
     if unknown:
-        known = ", ".join(names) or "none"
+        # Capped: custom gates are the repository's to add, so the list is bounded by nothing.
+        known = listed(list(names)) or "none"
         raise ConfigError(GATES_UNKNOWN.format(count=len(unknown), known=known))
     if len(set(keelline.enforced)) != len(keelline.enforced):
         raise ConfigError(GATES_TWICE)

@@ -17,11 +17,12 @@ import pytest
 
 from keelline.assess.commands import BASE_NOT_THERE, NOT_RUN, WAITING
 from keelline.assess.report import BUILTIN_FINDINGS_ELSEWHERE, FINDINGS_ELSEWHERE
-from keelline.assess.state import NO_SUCH_PLAN, begin, promote
+from keelline.assess.state import NO_SUCH_PLAN, Transition, begin, promote
 from keelline.config.loader import CONFIG_FILE, load, preset_defaults
 from keelline.config.owned import OwnedKeyError
 from keelline.config.schema import BUILTIN_GATES, Config
 from keelline.errors import Failure, Refusal
+from keelline.findings import LISTED_LIMIT
 from keelline.project.templates import CONFIG_ARTIFACT
 from keelline.project.upgrade import upgrade
 from keelline.scaffold import Manifest, ManifestError, digest
@@ -771,3 +772,29 @@ def test_uninstall_after_a_promotion_takes_keelline_toml_back(tmp_path: Path) ->
     code, _, err = cli(root, tmp_path, "uninstall")
     assert code == 0, err
     assert not (root / CONFIG_FILE).exists()
+
+
+@needs_git
+def test_adopt_promote_names_at_most_the_listed_limit_in_each_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Custom gates are the repository's to add, so both lists on the line are bounded in number
+    # by nothing: each names the first `LISTED_LIMIT` and counts the rest, and `--json` carries
+    # every name. The transition is given, since only the line is under test. Mutation (oracle):
+    # "adopt promote names every gate it promoted" or "... every gate still advisory" -> this
+    # reddens.
+    root, base = _project(tmp_path)
+    promoted = tuple(f"p{n:02}" for n in range(LISTED_LIMIT + 3))
+    skipped = tuple(f"s{n:02}" for n in range(LISTED_LIMIT + 2))
+    given = Transition("adopting", "adopting", promoted=promoted, skipped=skipped)
+    monkeypatch.setattr("keelline.assess.state.promote", lambda *_, **__: given)
+    code, out, err = cli(root, tmp_path, "adopt", "promote", "--builtin", "--base", base)
+    assert code == 1, err
+    advisory = ", ".join(f"{name} (not run, as --builtin asked)" for name in skipped[:LISTED_LIMIT])
+    assert out.splitlines()[0] == (
+        f"promoted: {', '.join(promoted[:LISTED_LIMIT])}, and 3 more; "
+        f"still advisory: {advisory}, and 2 more; state adopting"
+    )
+    code, out, _ = cli(root, tmp_path, "adopt", "promote", "--builtin", "--base", base, "--json")
+    printed = json.loads(out)
+    assert (printed["promoted"], printed["skipped"]) == (list(promoted), list(skipped))

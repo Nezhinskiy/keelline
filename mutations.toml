@@ -11484,6 +11484,99 @@ reddens = [
   "tests/memory/test_refs.py::test_a_store_with_no_group_resolved_counts_them_and_names_at_most_the_listed_limit",
 ]
 
+# The same cap on the rest of the class: every list of names the repository or its history
+# bounds in number by nothing, on a summary line or in a refusal, takes `findings.listed`.
+
+[[mutation]]
+name = "init's custom-gate note keeps a limit of its own"
+file = "src/keelline/project/commands.py"
+before = "        names = listed(list(report.custom_gates))"
+after = "        names = listed(list(report.custom_gates[:5]))"
+reddens = [
+  "tests/project/test_command.py::test_past_the_listed_limit_the_custom_gate_note_counts_the_rest[exactly-the-limit]",
+]
+
+[[mutation]]
+name = "the config line names every refused key"
+file = "src/keelline/assess/report.py"
+before = "    return line + (f\": {listed(refused)}\" if refused else \"\")"
+after = "    return line + (f\": {', '.join(refused)}\" if refused else \"\")"
+reddens = [
+  "tests/assess/test_report.py::test_the_config_line_names_at_most_the_listed_limit_of_refused_keys",
+]
+
+[[mutation]]
+name = "a duplicate identifier names every file that claims it"
+file = "src/keelline/ledger/check.py"
+before = "            joined = listed([str(h.path) for h in holders])"
+after = "            joined = \", \".join(str(h.path) for h in holders)"
+reddens = [
+  "tests/ledger/test_check.py::test_a_duplicate_identifier_names_at_most_the_listed_limit_of_its_files",
+]
+
+[[mutation]]
+name = "assess names every custom gate --builtin left out"
+file = "src/keelline/assess/assessment.py"
+before = "SKIPPED.format(names=listed(list(assessment.skipped)))"
+after = "SKIPPED.format(names=\", \".join(assessment.skipped))"
+reddens = [
+  "tests/assess/test_assessment.py::test_the_custom_gates_builtin_left_out_are_named_at_most_to_the_listed_limit",
+]
+
+[[mutation]]
+name = "adopt promote names every gate it promoted"
+file = "src/keelline/assess/commands.py"
+before = "{listed(list(transition.promoted)) or 'nothing'}"
+after = "{', '.join(transition.promoted) or 'nothing'}"
+reddens = [
+  "tests/assess/test_state.py::test_adopt_promote_names_at_most_the_listed_limit_in_each_list",
+]
+
+[[mutation]]
+name = "adopt promote names every gate still advisory"
+file = "src/keelline/assess/commands.py"
+before = "        parts.append(f\"still advisory: {listed(advisory)}\")"
+after = "        parts.append(f\"still advisory: {', '.join(advisory)}\")"
+reddens = [
+  "tests/assess/test_state.py::test_adopt_promote_names_at_most_the_listed_limit_in_each_list",
+]
+
+[[mutation]]
+name = "the enforced-gate refusal names every gate the project runs"
+file = "src/keelline/config/loader.py"
+before = "        known = listed(list(names)) or \"none\""
+after = "        known = \", \".join(names) or \"none\""
+reddens = [
+  "tests/config/test_loader.py::test_the_gates_a_project_runs_are_named_at_most_to_the_listed_limit",
+]
+
+[[mutation]]
+name = "an unknown-key refusal names every plain key"
+file = "src/keelline/config/loader.py"
+before = "    parts = [listed(named)] if named else []"
+after = "    parts = list(named)"
+reddens = [
+  "tests/config/test_loader.py::test_unknown_keys_are_named_at_most_to_the_listed_limit",
+]
+
+[[mutation]]
+name = "commit check names every offence"
+file = "src/keelline/guards/commands.py"
+before = "    items = listed("
+after = "    items = \", \".join("
+reddens = [
+  "tests/guards/test_commands.py::test_commit_check_names_at_most_the_listed_limit_of_offences",
+]
+
+[[mutation]]
+name = "the attribution names every merge base"
+file = "src/keelline/guards/attribute.py"
+before = "f\"({listed(forks)}), each"
+after = "f\"({', '.join(forks)}), each"
+reddens = [
+  "tests/guards/test_attribute.py::test_many_merge_bases_are_counted_and_named_at_most_to_the_listed_limit",
+]
+
 [[mutation]]
 name = "memory refs names a note that stopped decoding unescaped"
 file = "src/keelline/memory/refs.py"

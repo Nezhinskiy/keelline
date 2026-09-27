@@ -471,8 +471,9 @@ two paragraphs — and it ends at the first paragraph holding any body line. Bod
 judged, and a person whose name happens to be a vendor word is not a violation.
 `[commit_messages] attribution_check = false` stops the rules being applied: no message is ever
 a violation, but the range must still be readable, because the report says how many messages it
-read. Exits `1` naming each offence as `sha line N [label]` — never the text, which is the
-repository's — and `2` when git cannot read the range or the range looks like an option.
+read. Exits `1` naming up to eight offences as `sha line N [label]` and counting the rest —
+never the text, which is the repository's; `--json`'s `violations` carries every one — and `2`
+when git cannot read the range or the range looks like an option.
 
 **Writes** nothing. `keelline gate`'s `commit` gate, which the reusable workflow runs, reads the
 range from the base to `HEAD` through this same check.
@@ -560,11 +561,11 @@ Run one failing command three times and say what the three exit codes mean. The 
 That merge base has to be one commit. When `git merge-base --all REF HEAD` names several — a
 history the change merged into from both sides of a base merge has them — each is as much
 "before this change" as the others and a failure can pass on one and fail on another, so the
-attribution is undetermined and the command says so, naming them all, rather than extract the one
-git would pick alone. Merge the base into the change, which makes its tip the one merge base, or
-pass `--base` naming the commit you mean. A shallow clone is undetermined too, since the commit
-`HEAD` forked from can be cut off there and an older one stand in for it, and so is a clone git
-cannot say is shallow or not. All of it is decided before anything runs.
+attribution is undetermined and the command says so, counting them and naming up to eight,
+rather than extract the one git would pick alone. Merge the base into the change, which makes
+its tip the one merge base, or pass `--base` naming the commit you mean. A shallow clone is
+undetermined too, since the commit `HEAD` forked from can be cut off there and an older one stand
+in for it, and so is a clone git cannot say is shallow or not. All of it is decided before anything runs.
 
 `--base` defaults to `refs/remotes/origin/<[project] base_branch>`, named in full so that no tag of
 the short spelling stands in for it; pass it to compare against another ref.
@@ -813,8 +814,9 @@ clone runs the commands that clone configured, as running its test suite would. 
 probes below, which read files and the git index and never run a tool or reach the network.
 
 `--builtin` runs the built-in gates and the probes and no custom gate: for a clone whose
-commands you have not agreed to run. The summary names the custom gates it left out, which count
-toward no total, and the inventory lists them under `skipped`.
+commands you have not agreed to run. The summary names up to eight of the custom gates it left
+out and counts the rest, which count toward no total, and the inventory lists every one under
+`skipped`.
 
 `REF` is the revision `plan` and `commit` compare against, and the one `bugs` compares the ledger
 with where `HEAD` forked from it (whether it carried one when the tree has none, and which entries
@@ -1009,7 +1011,7 @@ Run locally on a branch `keelline upgrade` made, a moved `[ci] ref` is refused u
 `--workflow-sha` with the commit the new `uses:` line names; with it, the run answers what CI will.
 
 **Printed.** `config: …` first when the configuration check runs: how many keys changed, how many
-were refused and their names, or that the base has no `keelline.toml` at this path. Then one line
+were refused and up to eight of their names, or that the base has no `keelline.toml` at this path. Then one line
 per gate: `<name>: enforcing, N finding(s)`, `<name>: advisory, N finding(s)`, or `could not run`
 in place of the count, or `not run: the run had already failed` for a custom gate not started
 once the run had failed; and, after the gates that ran, `<name>: advisory, not run until the base
@@ -1096,7 +1098,8 @@ the manifest's record of it when that record still describes the file. `--json` 
 Runs gates strictly on the tree as it is, and enforces those that pass by adding them to
 `[keelline] enforced`. With no `GATE`, it runs every configured gate that does not enforce yet,
 enforces each one that passes, names the rest with their finding counts, and exits 1 if any
-failed. With names, they pass together or nothing is written, and a named gate that already
+failed; the line names up to eight gates in each of its two lists and counts the rest, and
+`--json` carries every one. With names, they pass together or nothing is written, and a named gate that already
 enforces is refused rather than skipped. Once every configured gate enforces, the state becomes
 `installed` and `enforced` is emptied: under `installed` an empty list means every configured
 gate, so a gate the project adds later enforces from its first run — for a custom gate, the
