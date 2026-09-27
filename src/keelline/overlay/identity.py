@@ -91,7 +91,7 @@ def overlay_fault(root: Path) -> str | None:
             return f"{root} does not carry the overlay layout ({relative} is missing)"
         try:
             document = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return f"{root} carries a {relative} that cannot be read as JSON"
         if not isinstance(document, dict) or not _claims(document.get("name"), expected):
             return (

@@ -14,7 +14,7 @@ and a plan made without the first passed every test but one command's.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence, Set
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from keelline.config.schema import Config
@@ -92,6 +92,13 @@ def refuse_local_root_only(config: Config) -> None:
         raise Refusal(LOCAL_ROOT_ONLY.format(names=" and ".join(named)))
 
 
+# Fixed text. Raised as a `RuntimeError` rather than a Keelline error: only a command written out of
+# order reaches it, and no repository byte can.
+REPLAN_FIRST = (
+    "Passes.replan runs only after predict on the same Passes: predict is where the ignore "
+    "guard is asked about what a command will write"
+)
+
 # The kinds that live inside a file somebody else owns.
 IN_FILE = frozenset({Kind.MANAGED_REGION, Kind.KEYED_ENTRIES})
 
@@ -139,9 +146,10 @@ class Passes:
     `unknown_harnesses` are what the build said about this configuration. Every plan is made
     with the ownership relation bound (`templates.Owners`), so no ledger entry under one id
     reaches another artifact's copy kept out of git in any command's plan; `predict` also asks
-    the ignore guard (`ignored.refuse_ignored`) about everything it planned. A command that
-    plans through this cannot leave either guard behind, which is what the next one to plan the
-    footprint needs.
+    the ignore guard (`ignored.refuse_ignored`) about everything it planned, and `replan` refuses
+    to run on a `Passes` that `predict` has not, so every plan a command applies was predicted.
+    A command that plans through this cannot leave either guard behind, which is what the next
+    one to plan the footprint needs.
     """
 
     root: Path
@@ -153,6 +161,9 @@ class Passes:
     unknown_harnesses: int
     owners: Owners
     removing: bool
+    # Set once `predict`'s ignore guard has passed; out of `__init__`, `__repr__`, `__eq__` and
+    # `__hash__`, so a predicted `Passes` compares and hashes as it did before.
+    _predicted: bool = field(default=False, init=False, repr=False, compare=False)
 
     def predict(self, *passes: tuple[Sequence[Template], Sequence[str]]) -> tuple[Plan, ...]:
         """Each `(templates, force)` planned, then refused as a whole when git ignores an
@@ -163,13 +174,26 @@ class Passes:
         later passes re-plan the same templates at the same targets (`replan`), so these plans
         name every file the run can touch, and its refusal comes before any of them.
         """
-        plans = tuple(self.replan(templates, force=force) for templates, force in passes)
+        plans = tuple(self._plan(templates, force=force) for templates, force in passes)
         refuse_ignored(self.root, self.config, *plans, removing=self.removing)
+        # Only after the guard passed, so a `predict` it refused leaves `replan` shut. `Passes`
+        # is frozen, hence `object.__setattr__`.
+        object.__setattr__(self, "_predicted", True)
         return plans
 
     def replan(self, templates: Sequence[Template], *, force: Sequence[str] = ()) -> Plan:
         """`templates` planned against the tree as it is now: after an earlier pass of the run
-        wrote, what `predict` already asked the ignore guard about."""
+        wrote, what `predict` already asked the ignore guard about.
+
+        Before `predict` has run on this `Passes` it raises `RuntimeError(REPLAN_FIRST)`: a plan
+        made here asks no guard, so it is sound only for what a prediction already covered.
+        """
+        if not self._predicted:
+            raise RuntimeError(REPLAN_FIRST)
+        return self._plan(templates, force=force)
+
+    def _plan(self, templates: Sequence[Template], *, force: Sequence[str]) -> Plan:
+        """The engine's plan with the ownership relation bound; the one call to it."""
         return plan(self.root, self.config, templates, force=force, owners=self.owners)
 
     def left_copies(self, template: Template, digests: LocalDigests) -> tuple[str, ...]:

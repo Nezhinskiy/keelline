@@ -8,18 +8,20 @@ from __future__ import annotations
 import os
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Refusal
+from keelline.gitenv import NO_ANSWER, git_run
 from keelline.ledger.check import EVIDENCE_LABEL, problems
 from keelline.ledger.entries import LedgerError, load_entries
 from keelline.ledger.index import render_index
 from keelline.ledger.scan import FIXTURE_MARKER
 from keelline.ledger.write import file_entry, next_identifier, renumber
-from tests.gitfixture import git
+from tests.gitfixture import git, plant_path
 
 CONFIG = """
 [keelline]
@@ -174,6 +176,119 @@ def test_next_identifier_sees_entries_on_other_branches(tmp_path: Path) -> None:
 
 
 @needs_git
+def test_a_name_that_is_not_utf_8_in_history_does_not_hide_every_other_ref(tmp_path: Path) -> None:
+    # Reproduced in review: with `core.quotePath=false`, `git log --name-only` prints a name in
+    # the ledger's history raw, and when `git_run` read an answer that was not UTF-8 as no
+    # answer, the allocator took that for an empty history — handing out BR-002, which `other`
+    # holds, with no word. Two things now hold it, each on its own: the log is asked with
+    # quoting forced on, so such a name comes back escaped, and `git_run` decodes raw bytes
+    # losslessly anyway. Measured: either one removed alone leaves this green, so neither has an
+    # oracle entry of its own; removing both reddens it on the identifier.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "config", "core.quotePath", "false")
+    seed(root, config, 1)
+    commit_all(root)
+    git(root, "checkout", "-qb", "other")
+    (root / config.paths.bugs / "BR-005.md").write_text(entry(5), encoding="utf-8")
+    commit_all(root, "five")
+    git(root, "checkout", "-q", "main")
+    plant_path(root, f"{config.paths.bugs}/caf".encode() + b"\xe9.txt")
+    # Not `commit_all`: `add -A` would stage the planted name's removal, as no such file exists.
+    git(root, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "planted")
+    allocation = next_identifier(root, config, fetch=False)
+    assert allocation.identifier == "BR-006"
+    assert allocation.warning is None
+
+
+@needs_git
+@pytest.mark.parametrize("code", [-1, 128])
+def test_a_history_git_gave_no_answer_for_is_named_and_not_read_as_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: int
+) -> None:
+    # A timeout (30 s over `log --all`) or a `git` that cannot run left every other ref's
+    # entries uncounted with no word, and so did a log that failed inside a repository. The
+    # working tree still counts; the warning says what did not. Outside a repository there is
+    # no history to miss, which the next case pins. Mutation (declared): the warning arm never
+    # taken — the warning is `None` and this reddens.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    seed(root, config, 1)
+    from keelline.ledger import write as module
+
+    real = git_run
+
+    def failing(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        if "log" in args:
+            return code, ""
+        return real(where, *args, **kwargs)
+
+    monkeypatch.setattr(module, "git_run", failing)
+    allocation = next_identifier(root, config, fetch=False)
+    assert allocation.identifier == "BR-002"
+    assert allocation.warning is not None
+    assert "history" in allocation.warning and "collide" in allocation.warning
+    if code == -1:
+        assert NO_ANSWER in allocation.warning
+
+
+@needs_git
+@pytest.mark.parametrize("git_runs", [True, False], ids=["git", "no-git"])
+def test_outside_a_repository_there_is_no_history_to_warn_about(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, git_runs: bool
+) -> None:
+    # `git log` exits 128 outside a work tree, and a `git` that cannot run answers `-1`; neither
+    # is a missed history where no `.git` exists: `bugs new` in a directory git does not know
+    # stays one line. Mutation (advisory): warn on every failed log without reading the disk —
+    # both cases redden.
+    root, config = project(tmp_path)
+    if not git_runs:
+        monkeypatch.setenv("PATH", str(tmp_path / "no-git-here"))
+    assert next_identifier(root, config, fetch=False).warning is None
+
+
+@needs_git
+def test_a_repository_git_refuses_to_read_is_not_mistaken_for_no_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Found in review: the allocator asked `rev-parse --is-inside-work-tree` whether a failed log
+    # meant "no repository", and git refuses that question the same way it refused the log — a
+    # checkout it judges of dubious ownership (a bind mount under another uid in a container or
+    # CI), a linked worktree whose gitdir is gone. BR-005 on `other` went uncounted with no word.
+    # "No repository" is read off the disk now, where a `.git` entry is. The wrapper makes git
+    # judge the checkout foreign, as `safe.directory` would. It reads neither the system nor the
+    # global configuration: a machine whose either file sets `safe.directory = *` trusts every
+    # checkout, and git then answers the log this case needs refused. Mutation (declared): the
+    # disk check replaced by the `rev-parse` question again — the warning is `None` and this
+    # reddens.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    seed(root, config, 1)
+    commit_all(root)
+    git(root, "checkout", "-qb", "other")
+    (root / config.paths.bugs / "BR-005.md").write_text(entry(5), encoding="utf-8")
+    commit_all(root, "five")
+    git(root, "checkout", "-q", "main")
+    real = shutil.which("git")
+    assert real is not None
+    wrappers = tmp_path / "bin"
+    wrappers.mkdir()
+    wrapper = wrappers / "git"
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        f"GIT_TEST_ASSUME_DIFFERENT_OWNER=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL={os.devnull} "
+        f'exec "{real}" "$@"\n',
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{wrappers}{os.pathsep}{os.environ['PATH']}")
+    allocation = next_identifier(root, config, fetch=False)
+    assert allocation.identifier == "BR-002"
+    assert allocation.warning is not None
+    assert "git log exited 128" in allocation.warning
+
+
+@needs_git
 def test_the_allocator_reads_the_git_source_with_the_shared_digit_rule(tmp_path: Path) -> None:
     # The `git log` reader used to respell the digit rule inline as `(\d{3,})` instead of
     # taking `DIGITS` from `keelline.identifiers`, which owns it. A third spelling is one the
@@ -199,14 +314,32 @@ def test_a_failed_fetch_is_reported_not_raised(
     root, config = project(tmp_path)
     from keelline.ledger import write as module
 
-    def failing(root: Path, *args: str, **kwargs: object) -> tuple[int, str]:
-        assert args[0] == "fetch"
-        return 128, ""
+    real = git_run
+
+    def failing(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        # Only the fetch fails; the history the allocator reads next is the real one.
+        if args[0] == "fetch":
+            return 128, ""
+        return real(where, *args, **kwargs)
 
     monkeypatch.setattr(module, "git_run", failing)
     allocation = next_identifier(root, config, fetch=True)
     assert allocation.identifier == "BR-001"
     assert allocation.warning is not None and "fetch" in allocation.warning
+
+
+def test_a_fetch_that_gave_no_answer_names_every_cause_and_not_only_two(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `-1` is every cause `NO_ANSWER` names, and the warning words it with that clause rather
+    # than with one cause of its own choosing. Mutation (advisory): word `-1` as "could not run
+    # or timed out" again — this reddens.
+    root, config = project(tmp_path)
+    from keelline.ledger import write as module
+
+    monkeypatch.setattr(module, "git_run", lambda *a, **k: (-1, ""))
+    warning = next_identifier(root, config, fetch=True).warning
+    assert warning is not None and NO_ANSWER in warning
 
 
 def test_renumber_moves_the_entry_rewrites_every_reference_and_leaves_a_void_pointer(

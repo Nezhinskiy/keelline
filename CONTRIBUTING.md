@@ -54,12 +54,17 @@ wrap it.
 An area is a subpackage of `src/keelline/` that the CLI frame and the hook registry discover by
 name — there is no shared registry to edit.
 
-Today the discovered ones are `attach`, `docs`, `doctor`, `guards`, `hooks`, `ledger`,
-`memory`, `overlay`, `project`, `release` and `setup`. Three arrived with the install path:
-`overlay` renders and upgrades the private overlay, `attach` binds a repository to one and
+Today the discovered ones are `assess`, `attach`, `docs`, `doctor`, `guards`, `hooks`,
+`ledger`, `memory`, `overlay`, `project`, `release` and `setup`. Three arrived with the install
+path: `overlay` renders and upgrades the private overlay, `attach` binds a repository to one and
 unbinds it again, and `doctor` reports on what every other area left behind and repairs none
-of it. `project` is the eleventh: it holds the shipped project templates and `init`, the
-command that writes a repository's footprint from them.
+of it. `project` holds the shipped project templates and `init`, the command that writes a
+repository's footprint from them, and `assess` runs the gates and the inventory over a
+repository as it is, judges a change's `keelline.toml` against what its base branch enforces
+(`keelline gate`), and moves `[keelline] state` and `enforced` as a project promotes its gates
+(`keelline adopt begin` and `keelline adopt promote`). `assess` publishes no `api.py`: nothing
+under `src/` or `scripts/` outside it imports it, and tests reach its modules directly, as they
+do every area's.
 (`config`, `presets`, `profiles`, `scaffold` and `templates` are subpackages and not areas, and
 `harnesses` is a module — nothing discovers them, because they carry neither a `commands.py`
 nor a `hooks.py`.)
@@ -127,7 +132,13 @@ a time in a checkout no other job touches, with as many jobs as the process has 
 unless `--jobs` says otherwise. So a test that a `reddens` names runs beside other tests in
 other processes and must be safe to — no shared path outside `tmp_path`, no wall-clock bound
 that load could break. A test that fails under contention fails on the mutated run for a reason
-that is not the mutation, and that reads as *caught*.
+that is not the mutation, and that reads as *caught*. The product's own bounds on `git` are one
+such clock, so `tests/conftest.py` lifts every `git_run` bound to a floor of its own; a test
+about a bound running out sets `gitenv.BOUND_FLOOR_SECONDS` back to zero and passes a small
+bound of its own, as `tests/test_git_run.py` does. A `keelline` the suite starts as a separate
+process runs without the floor. The floor also hides a bound shrunk below git's own latency, so
+that file holds every bound a `git_run` call passes to at least a second, and a bound you add is
+a row in its table.
 
 ```toml
 [[mutation]]

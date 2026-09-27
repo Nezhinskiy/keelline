@@ -625,6 +625,32 @@ def test_a_range_git_cannot_read_is_a_refusal_not_a_finding(tmp_path: Path) -> N
         commits_in(root, "no-such-ref..HEAD")
 
 
+@needs_git
+def test_a_message_git_prints_in_bytes_that_are_not_text_is_a_refusal_not_a_traceback(
+    tmp_path: Path,
+) -> None:
+    # A commit object carries its own `encoding` header, and git re-encodes a message to UTF-8
+    # on output only from an encoding it knows. One naming none it knows prints the body raw,
+    # and `text=True` decoded it strictly: `UnicodeDecodeError`, a `ValueError`, escaped as an
+    # internal error — from a commit anyone can push in a pull request. A refusal like the
+    # other ways the log fails, and it quotes none of the message. Mutation (declared): drop
+    # the `UnicodeDecodeError` arm — the error escapes and this reddens.
+    root = repo(tmp_path)
+    tree = git(root, "rev-parse", "HEAD^{tree}").strip()
+    parent = git(root, "rev-parse", "HEAD").strip()
+    raw = tmp_path / "commit-object"
+    raw.write_bytes(
+        f"tree {tree}\nparent {parent}\n".encode()
+        + b"author t <t@example.com> 1 +0000\ncommitter t <t@example.com> 1 +0000\n"
+        + b"encoding x-no-such-encoding\n\nfix: caf\xe9\n"
+    )
+    crafted = git(root, "hash-object", "-t", "commit", "-w", str(raw)).strip()
+    git(root, "update-ref", "refs/heads/main", crafted)
+    with pytest.raises(Refusal, match="not UTF-8 text") as caught:
+        commits_in(root, "base..HEAD")
+    assert "caf" not in str(caught.value)
+
+
 @pytest.mark.parametrize(
     "failure", [OSError("git is not on PATH"), subprocess.TimeoutExpired("git", 60)]
 )
@@ -656,20 +682,23 @@ def test_the_log_is_bounded_scrubbed_and_terminated(monkeypatch: pytest.MonkeyPa
     seen: dict[str, object] = {}
     argv_seen: list[str] = []
 
-    def fake(argv: list[str], **kwargs: object) -> sp.CompletedProcess[str]:
+    def fake(argv: list[str], **kwargs: object) -> sp.CompletedProcess[bytes]:
         seen.update(kwargs)
         argv_seen.extend(argv)
-        return sp.CompletedProcess(argv, 0, stdout="", stderr="")
+        return sp.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
 
     # A `GIT_DIR` the session happens to carry makes git answer for a different repository
     # than the one the range is about; `scrubbed_env` is what drops it.
     monkeypatch.setenv("GIT_DIR", "/elsewhere/.git")
     monkeypatch.setattr(sp, "run", fake)
+    # The bound is read below `git_run`, where the suite's floor has already lifted it: at the
+    # product's zero, or a dropped `timeout=` would reach `fake` as the floor and pass.
+    monkeypatch.setattr(gitenv, "BOUND_FLOOR_SECONDS", 0)
     assert commits_in(Path("/nowhere"), "a..b") == []
 
-    # `seen["timeout"] == LOG_TIMEOUT_SECONDS` alone is the lane memory's "expectation read
-    # from the subject": both sides move together, so it survives every edit to the constant
-    # and reddens only when `timeout=` is dropped entirely. The fixed literal is its pair.
+    # `seen["timeout"] == LOG_TIMEOUT_SECONDS` alone is an expectation read from the subject
+    # under test: both sides move together, so it survives every edit to the constant and
+    # reddens only when `timeout=` is dropped entirely. The fixed literal is its pair.
     assert seen["timeout"] == LOG_TIMEOUT_SECONDS
     assert LOG_TIMEOUT_SECONDS == 60
 

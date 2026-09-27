@@ -394,8 +394,9 @@ def warm_cache(tree: Path) -> Path:
         subprocess.run(
             [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"],
             cwd=tree,
+            # Captured and never decoded, as `_run`'s output is: what this leaves behind is the
+            # cache, and a byte no codec reads in the collection's output killed the oracle.
             capture_output=True,
-            text=True,
             timeout=300,
             check=False,
             env=_environment(tree, cache, writes_bytecode=True),
@@ -451,9 +452,11 @@ def _run(targets: tuple[str, ...], cwd: Path, *, cache: Path | None = None) -> O
                     *targets,
                 ],
                 cwd=cwd,
+                # Captured to keep it off the terminal and never decoded: the verdict is the exit
+                # code and the junit report, and a failing test's diff can carry a byte no codec
+                # reads — a strict decode then killed the run on a mutation it had caught.
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
                 env=_environment(cwd, cache or Path(scratch), writes_bytecode=False),
             )
             _live.add(child)
@@ -475,7 +478,7 @@ class Stopped(RuntimeError):
     """`_run` was asked to start pytest after `_stop_runs`; the entry it was for is abandoned."""
 
 
-_live: set[subprocess.Popen[str]] = set()
+_live: set[subprocess.Popen[bytes]] = set()
 _living = threading.Lock()
 _stopping = threading.Event()
 

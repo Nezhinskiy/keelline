@@ -112,8 +112,8 @@ from typing import Any
 from keelline import REPOSITORY_URL, __version__, fsops
 from keelline.config.paths import PathEscape, contained
 from keelline.errors import Failure, Refusal
-from keelline.fsops import UnsafePath
-from keelline.gitenv import git_run
+from keelline.fsops import UnsafePath, utf_8_name
+from keelline.gitenv import NO_ANSWER, answer_lines, git_run, in_work_tree
 from keelline.overlay.api import (
     create,
     init_instance,
@@ -267,6 +267,8 @@ def _read_document(path: Path) -> tuple[dict[str, Any], str]:
         return {}, ""
     except OSError as exc:
         raise Failure(f"{path} cannot be read: {exc}") from exc
+    except UnicodeDecodeError:
+        raise Failure(f"{path} is not UTF-8 text") from None
     if not text.strip():
         return {}, text
     try:
@@ -537,15 +539,54 @@ def _nearest_directory(path: Path) -> Path:
     return path
 
 
-def _ask(start: Path, *args: str, refusal: str) -> list[str] | None:
+_SILENT_IN_A_CHECKOUT = (
+    "`git` gave no answer asked from {start}, which is inside a checkout — {no_answer} — so no "
+    "overlay root can be shown to lie outside every checkout of the project. The overlay root is "
+    "the machine's trust anchor, and a question git did not answer is not taken as a yes; check "
+    "that `git` runs here and answers `git status` within a few seconds, then run this again"
+)
+_REFUSED_IN_A_CHECKOUT = (
+    "`git` refused to describe the repository {start} is in, which is inside a checkout — one "
+    "another user owns that `safe.directory` does not admit, or a `.git` it cannot read — so no "
+    "overlay root can be shown to lie outside every checkout of the project. The overlay root is "
+    "the machine's trust anchor, and a question git did not answer is not taken as a yes; check "
+    "that `git status` runs there, then run this again"
+)
+# git's exit when it will not describe the repository it found: a checkout of dubious ownership,
+# an unreadable `.git`, a worktree whose git directory is gone, and, asked with `_EXPLICIT_BARE`,
+# a bare-shaped directory. Only the last is an answer, which is why a keyed question is asked
+# again without the key before its 128 counts.
+_GIT_REFUSED = 128
+
+
+def _ask(start: Path, *args: str, keyed: bool = False) -> list[str] | None:
     """git's answer to `args` asked from `start`, one line per entry, or `None` when it gave
-    none. `gitenv.git_run` decodes with `text=True`, so bytes outside the locale's encoding
-    raise; that is not an answer either, and `refusal` is what it becomes."""
-    try:
-        code, out = git_run(start, *args)
-    except UnicodeDecodeError as exc:
-        raise Refusal(refusal) from exc
-    lines = out.splitlines()
+    none. `gitenv.git_run` decodes losslessly, so a path in bytes that are not UTF-8 is part of
+    the answer and compares equal to itself.
+
+    **A git that said nothing is not a git that said "no repository" where a checkout could
+    be.** `git_run`'s `-1` — git could not be run or ran past its time limit — read as `None`
+    here, and every caller reads `None` as a directory git does not count as a checkout: a git
+    that timed out on `rev-parse` let the main checkout of the project be recorded from one of
+    its worktrees. Whether `start` could be inside a checkout is read off the disk
+    (`gitenv.in_work_tree`), because the question cannot go to the git that just failed to
+    answer it. Where it could, the silence refuses; where no `.git` is at or above `start`,
+    there is no checkout for git to have named, and it is `None` as before.
+
+    **Nor is a git that refused the repository it found.** Exit 128 inside a checkout is git
+    saying there is a repository it will not describe — another user's, under `safe.directory`,
+    or one whose `.git` it cannot read — and read as `None` it let the path arm stand alone, as
+    `-1` did. It refuses too, except for a `keyed` question, asked with `_EXPLICIT_BARE`, whose
+    128 can be git declining a bare-shaped directory: its caller asks again without the key.
+    """
+    code, out = git_run(start, *args)
+    if code == -1 and in_work_tree(start):
+        raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=start, no_answer=NO_ANSWER))
+    if code == _GIT_REFUSED and not keyed and in_work_tree(start):
+        raise Refusal(_REFUSED_IN_A_CHECKOUT.format(start=start))
+    # Split where git ended each line: `splitlines()` also broke a path at a `\r` it holds, and
+    # recorded `…/wt` among the checkouts for a worktree at `…/wt\rx` (`gitenv.answer_lines`).
+    lines = answer_lines(out)
     return lines if code == 0 and lines else None
 
 
@@ -559,24 +600,24 @@ def _repository(project_root: Path) -> _Repository | None:
     and was recorded. `git worktree list` is the repository's own record of its checkouts, which
     a clone cannot commit into.
 
-    **`None` means git gave no answer, with the key or without it**: `--root` is in no
-    repository, `git` is not installed or timed out, `safe.directory` refuses a repository
-    another user owns, or its `.git` is unreadable. `git_run` drops stderr, so these are not told
-    apart, and only the path arms stand. None of them is something a repository can commit.
-    Every other way of not answering refuses: an answer that says `--root` is not inside a work
-    tree (a root inside a bare-shaped directory has no checkout of its own to compare against),
-    an answer git gives only without the key, and a listing that fails, is empty or cannot be
-    decoded.
+    **`None` means git gave no answer where no `.git` is at or above `--root`**: it is in no
+    repository, or git could not be run or timed out there. Only the path arm stands, and
+    neither is something a repository can commit. Every other way of not answering refuses:
+    git that could not be run, timed out, or refused the repository it found (`safe.directory`,
+    an unreadable `.git`) inside a checkout (`_ask`), an answer that says `--root`
+    is not inside a work tree (a root inside a bare-shaped directory has no checkout of its own
+    to compare against), an answer git gives only without the key, and a listing that fails or
+    is empty.
     """
     start = _nearest_directory(project_root)
     unlisted = _UNLISTED.format(root=project_root)
-    answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT, refusal=unlisted)
+    answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT, keyed=True)
     retried = False
     if answer is None:
         # git 2.38 and later refuse an implicit bare repository outright. Asked again without
         # the key only to tell that apart from "no repository at all".
         retried = True
-        answer = _ask(start, *_COMMON_AND_CHECKOUT, refusal=unlisted)
+        answer = _ask(start, *_COMMON_AND_CHECKOUT)
         if answer is None:
             return None
     if len(answer) != 2:
@@ -590,7 +631,7 @@ def _repository(project_root: Path) -> _Repository | None:
         )
     if retried:
         raise Refusal(unlisted)
-    listing = _ask(start, *_EXPLICIT_BARE, "worktree", "list", "--porcelain", refusal=unlisted)
+    listing = _ask(start, *_EXPLICIT_BARE, "worktree", "list", "--porcelain", keyed=True)
     # Prunable entries included: a checkout whose directory is gone costs nothing to refuse.
     checkouts = tuple(
         Path(line[len("worktree ") :]) for line in listing or () if line.startswith("worktree ")
@@ -610,7 +651,8 @@ def _candidate_repository(candidate: Path) -> Path | None:
     which does not record where the checkout is — so from a linked worktree the main checkout
     was on no list. Asked from the candidate's side, git finds it through the checkout's `.git`.
     The candidate's bytes can try to make this answer wrong, and whatever they make it say they
-    cannot remove a refusal the listing makes.
+    cannot remove a refusal the listing makes. Nor can a git that says nothing: on the walk, as
+    everywhere `_ask` is used, that is a refusal inside a checkout and not a step past it.
 
     **Only an answer from inside a work tree is the candidate's.** On a git that ignores
     `safe.bareRepository`, a bare-shaped `ov/` answers for itself, and its committed `config` or
@@ -624,13 +666,12 @@ def _candidate_repository(candidate: Path) -> Path | None:
     `create:` destination does not yet.
     """
     start = _nearest_directory(candidate)
-    refusal = (
-        f"`git` answered about {candidate} in bytes it cannot decode, so it cannot be shown to "
-        f"lie outside every checkout of the project; the overlay root is the machine's trust "
-        f"anchor, and a question git did not answer is not taken as a yes"
-    )
     while True:
-        answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT, refusal=refusal)
+        answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT, keyed=True)
+        if answer is None and in_work_tree(start):
+            # A bare-shaped directory, which git declines under the key and describes without
+            # it, or a repository git refuses either way, which `_ask` refuses.
+            _ask(start, *_COMMON_AND_CHECKOUT)
         if answer is not None and len(answer) == 2 and answer[1] == "true":
             return Path(answer[0])
         if start == start.parent:
@@ -673,11 +714,13 @@ def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
 
     **What it does not cover, stated rather than implied.** When `git` gives no answer for the
     project root, the `git` arms are silent and only the path arm stands — `_repository` says
-    which answers those are. And what the whole check bounds is a repository *shipping* a tree:
-    committed contents reach that repository's own checkouts and nowhere else, so refusing all
-    of them removes the case a clone can stage. It is not a claim that no other directory on the
-    machine can hold the same bytes — a separate `git clone` of the same remote has its own
-    common directory and passes — only that the owner, and not the clone, put it there.
+    which answers those are. A common directory whose path is not UTF-8 is an answer like any
+    other: `git_run` decodes it losslessly, so two checkouts of one repository still compare
+    equal. And what the whole check bounds is a repository *shipping* a tree: committed contents
+    reach that repository's own checkouts and nowhere else, so refusing all of them removes the
+    case a clone can stage. It is not a claim that no other directory on the machine can hold the
+    same bytes — a separate `git clone` of the same remote has its own common directory and
+    passes — only that the owner, and not the clone, put it there.
     """
     resolved_candidate = candidate.resolve()
     resolved_project = project_root.resolve()
@@ -720,6 +763,19 @@ class _Overlay:
     create: tuple[str, str] | None
 
 
+def _recordable(root: Path) -> None:
+    """Refuse an overlay root the machine file cannot hold: it is UTF-8 TOML, and a path the
+    disk holds in other bytes — a directory named in latin-1, on Linux — reaches Python with
+    surrogate escapes and raised `UnicodeEncodeError` at the last write, after the machine
+    file's other tables and the settings file were written. Asked with the tree checks, above
+    every write."""
+    if not utf_8_name(str(root)):
+        raise Refusal(
+            f"{root} is not UTF-8 text, so the machine configuration, a UTF-8 file, cannot record "
+            f"it as the overlay root; keep the overlay under a path that is"
+        )
+
+
 def _requested_overlay(
     overlay: str | None, *, home: Path, project_root: Path, yes: bool
 ) -> _Overlay | None:
@@ -759,8 +815,10 @@ def _requested_overlay(
         # both without creating anything, which is the whole point of asking here.
         destination, account = target_root(home, owner, name)
         _outside_the_project(destination, project_root=project_root)
+        _recordable(destination)
         return _Overlay(root=destination, create=(account, name))
     candidate = Path(overlay).expanduser().resolve()
+    _recordable(candidate)
     require_overlay(candidate, because=_RECORDING)
     _outside_the_project(candidate, project_root=project_root)
     return _Overlay(root=candidate, create=None)

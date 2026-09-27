@@ -19,7 +19,9 @@ and it is worse here than in production: these calls are `init`, `add` and `comm
 redirected fixture does not read the wrong repository, it *writes* to it. `GIT_CONFIG_GLOBAL`
 and `GIT_CONFIG_SYSTEM` go to `os.devnull` for the reason `tests/memory/test_store.py` gave in
 prose: `commit.gpgsign`, `core.hooksPath` and `init.templateDir` can each hang or fail a commit
-that has nothing to do with the code under test.
+that has nothing to do with the code under test. `GIT_CONFIG_NOSYSTEM` is set beside them
+because on macOS the second is not enough: Apple's git also reads a gitconfig inside Xcode that
+no path variable replaces, and that file names the default branch.
 
 **`PATH` is passed through rather than pinned**, for the reason `keelline.gitenv`'s module
 docstring gives about production: the machine owner's own `git` is the one that must answer,
@@ -100,6 +102,10 @@ def env(home: Path, **extra: str) -> dict[str, str]:
             "HOME": str(home),
             "GIT_CONFIG_GLOBAL": os.devnull,
             "GIT_CONFIG_SYSTEM": os.devnull,
+            # Apple's git reads one more file, below the system one, that `GIT_CONFIG_SYSTEM`
+            # does not replace and this does: it sets `init.defaultBranch = main`, which no CI
+            # runner has, so an `init` without `-b` made `main` on a Mac and `master` in CI.
+            "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_TERMINAL_PROMPT": "0",
             "GIT_AUTHOR_NAME": "t",
             "GIT_AUTHOR_EMAIL": "t@example.com",
@@ -141,3 +147,17 @@ def git(root: Path, *args: str, home: Path | None = None, **extra: str) -> str:
     done = run_git(root, *args, home=home, **extra)
     done.check_returncode()
     return done.stdout
+
+
+def plant_path(root: Path, raw: bytes, content: str = "planted\n") -> None:
+    """Stage a blob at the path `raw`, as bytes, whether or not this disk could hold that name.
+
+    `update-index --cacheinfo` takes the name as it is given, so a path that is not UTF-8 —
+    which APFS refuses to create — reaches the index on every platform, and every `git` that
+    prints the index or a commit of it prints those bytes. The blob's source is written inside
+    `.git`, so the working tree gains nothing.
+    """
+    source = root / ".git" / "planted-blob"
+    source.write_text(content, encoding="utf-8")
+    blob = git(root, "hash-object", "-w", str(source)).strip()
+    git(root, "update-index", "--add", "--cacheinfo", f"100644,{blob},{os.fsdecode(raw)}")

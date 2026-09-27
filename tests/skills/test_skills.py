@@ -41,6 +41,7 @@ TOOL_NAMES = (
     "LSP",
     "NotebookEdit",
     "TodoWrite",
+    "request_user_input",
 )
 _TOOL = re.compile(r"\b(?:" + "|".join(TOOL_NAMES) + r")\b")
 # Commands the wrapper skills describe against C5 before the command exists, keyed to the
@@ -225,3 +226,47 @@ def test_the_agent_file_carries_its_frontmatter_and_names_no_product() -> None:
     fields, body = split(AGENTS / "code-navigator.md")
     assert fields["name"] == "code-navigator" and "tools" in fields
     assert "if one is installed" in body  # the capability, not the product (Premise 14)
+
+
+def test_the_init_skill_asks_before_it_runs_a_kept_file_s_custom_gates() -> None:
+    # `init` adopts a clone's `keelline.toml`, and the adoption's first command, `keelline
+    # assess`, runs every command its `[gates.custom]` names. `init` says so in a note, and the
+    # skill names that note by its words and asks before the first `keelline assess`. Mutation
+    # (by hand): the step's question removed -> the ask no longer comes first and this reddens.
+    from keelline.project.commands import CUSTOM_GATES
+
+    text = (SKILLS / "init" / "references" / "adoption.md").read_text(encoding="utf-8")
+    adoption = " ".join(text.split())
+    lead = CUSTOM_GATES.split("{count}", 1)[0].strip()
+    first_run = adoption.index("run `keelline assess`")
+    assert adoption.index(lead) < adoption.index("explicit yes") < first_run
+    # A no still produces an assessment, through the flag that runs none of those commands:
+    # before it, the only way to honour a no was to stop. Mutation (by hand): the no's command
+    # back to plain `keelline assess` -> this reddens.
+    assert "`keelline assess --builtin` on a no" in adoption[first_run:]
+    # Without the note there is nothing to ask, and the assessment still runs: that run was the
+    # tail of the if-sentence, where an agent reading "if" could skip it. It is its own branch,
+    # and the relay follows both. Mutation (by hand): the `Otherwise` branch deleted -> reddens.
+    otherwise = adoption.index("- Otherwise, run `keelline assess`.")
+    assert first_run < otherwise < adoption.index("Either way, relay the summary")
+
+
+def test_the_init_skill_keeps_a_no_to_the_clone_s_commands_through_the_whole_adoption() -> None:
+    # After a no, the first step assessed with `--builtin`, and the closing message then handed
+    # over `keelline adopt promote`, which runs every custom gate the clone configures: in a
+    # clone the base is the clone author's, so its having the command is no brake. Every command
+    # the skill names that runs gates is named with `--builtin` for a no as well. Mutation
+    # (oracle): the closing step's `--builtin` dropped -> `adopt promote` has no such form and
+    # this reddens.
+    text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (SKILLS / "init" / "SKILL.md", *(SKILLS / "init" / "references").glob("*.md"))
+    )
+    words = " ".join(text.split())
+    named = [
+        c for c in ("keelline assess", "keelline adopt promote", "keelline gate") if c in words
+    ]
+    assert named == ["keelline assess", "keelline adopt promote"]
+    for command in named:
+        assert f"`{command} --builtin`" in words, command
+    assert "A no holds for the whole adoption" in words

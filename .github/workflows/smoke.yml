@@ -132,14 +132,15 @@ jobs:
     # The same guard `installed-plugin` carries: a fork inherits the schedule, and only this
     # repository runs either job weekly.
     if: github.event_name != 'schedule' || github.repository == 'Nezhinskiy/keelline'
-    # The `./` call form. What this exercises against the FIXTURE is `docs check` and `bugs
-    # check`; `commit check`, `plan check` and `docs trail` read git, and the fixture is a
+    # The `./` call form. What this exercises against the FIXTURE is `keelline gate`'s
+    # configuration check — the fixture's `keelline.toml` judged against the base branch's copy —
+    # and the `docs` and `bugs` gates; `commit`, `plan` and `trail` read git, and the fixture is a
     # directory inside Keelline's own repository here, so those three answer for Keelline's
-    # commits and plans — which is a real check of the workflow's plumbing and not a check
-    # of the fixture. The fixture-as-repository run is `installed-plugin`'s `doctor` step
-    # and `tests/test_fixtures.py`. The `owner/repo@ref` forms live in smoke-release.yml:
-    # a reusable-workflow ref is resolved when the run is created, `uses:` takes no
-    # expression, and neither `@dev` nor `@v1` resolves from a wave branch.
+    # commits and plans — which is a real check of the workflow's plumbing and not a check of the
+    # fixture. The fixture-as-repository run is `installed-plugin`'s `doctor` step and
+    # `tests/test_fixtures.py`. The `owner/repo@ref` forms live in smoke-release.yml: a
+    # reusable-workflow ref is resolved when the run is created, `uses:` takes no expression, and
+    # neither `@dev` nor `@v1` names the commit a pull request is testing.
     uses: ./.github/workflows/check.yml
     with:
       path: tests/fixtures/smoke-project

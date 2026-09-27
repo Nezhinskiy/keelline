@@ -434,7 +434,8 @@ def test_test_audit_entrypoints_scans_the_configured_roots(
     # Keelline's own tests with its own `ledger.code_roots` the scanner names six
     # name-collision candidates (measured, and recorded in the command's own comment), so an
     # exit 1 would be red on this repository from the first run, and the schema has no
-    # per-command enable switch to turn it off with. Gating belongs to the `assess` lane.
+    # per-command enable switch to turn it off with. It stays its own advisory command, and
+    # `keelline assess` leaves it out of the inventory until its candidates are triaged.
     # Reddened by giving `run_test_audit`'s findings branch `exit_code=1`; measured, and it
     # reddened this test alone -- so the exit code is pinned, not merely the default.
     root = repo(tmp_path)

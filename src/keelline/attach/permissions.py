@@ -106,6 +106,8 @@ def _read(path: Path) -> str:
         return ""
     except OSError as exc:
         raise Failure(f"{path} cannot be read: {exc}") from exc
+    except UnicodeDecodeError:
+        raise Failure(f"{path} is not UTF-8 text") from None
 
 
 def _allow_rules(path: Path) -> tuple[str, ...]:

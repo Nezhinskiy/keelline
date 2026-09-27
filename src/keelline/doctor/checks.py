@@ -539,6 +539,9 @@ def _wrapper(context: Context) -> Row:
             cwd=context.root,
             capture_output=True,
             text=True,
+            # Read for an ASCII token and never quoted: the wrapper echoes what it was handed, a
+            # project directory in latin-1 bytes included, and strictly that raised and lost it.
+            errors="replace",
             check=False,
             timeout=WRAPPER_TIMEOUT_SECONDS,
             env=env,
@@ -975,7 +978,7 @@ def _hook_entries(context: Context) -> Row:
             continue
         try:
             document = path.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             blind.append(label)
             continue
         try:
@@ -1280,10 +1283,10 @@ def _overlay_requires(context: Context) -> Row:
         # project on a machine that records an overlay must not go red for a requirement it has
         # no relationship with". `memory.mode` is what says whether this repository keeps its
         # notes in the overlay, and red is a statement that *this installation* is wrong -- it
-        # gates the exit code and wave 5's `assess` is planned to gate on it too. The machine
-        # owner is still told, at the level `pre-commit` uses in its analogous machine-scoped
-        # state. `memory.mode` is compared and never printed, exactly as `_attached` compares it
-        # one screen up; the literal is that comparison's second site and not a new vocabulary.
+        # gates the exit code. The machine owner is still told, at the level `pre-commit` uses
+        # in its analogous machine-scoped state. `memory.mode` is compared and never printed,
+        # exactly as `_attached` compares it one screen up; the literal is that comparison's
+        # second site and not a new vocabulary.
         unmet: Status = RED if context.config.memory.mode == "overlay" else WARN
         return Row(
             unmet,
@@ -1644,12 +1647,11 @@ def _guarded(name: str, check: Callable[[Context], Row], context: Context) -> Ch
     one `Ctrl-C` into sixteen red rows and a report, instead of stopping.
 
     **An `OSError` is a `warn` and everything else is a `red`, and the split is the point.**
-    `red` is what gates the exit code, and wave 5's `assess` is planned to gate on it too, so a
-    red row is a statement that this installation is wrong. A file that could not be opened is
-    not that: the directories these checks read live on the machine, not in the installation —
-    an unreadable `${CLAUDE_PLUGIN_DATA}` was measured producing `diagnostics: red` and exit 1
-    with nothing wrong anywhere. Every other exception is a defect in this module and keeps its
-    red, because that is what the row is for.
+    `red` is what gates the exit code, so a red row is a statement that this installation is
+    wrong. A file that could not be opened is not that: the directories these checks read live
+    on the machine, not in the installation — an unreadable `${CLAUDE_PLUGIN_DATA}` was measured
+    producing `diagnostics: red` and exit 1 with nothing wrong anywhere. Every other exception
+    is a defect in this module and keeps its red, because that is what the row is for.
     """
     try:
         row = check(context)
@@ -1718,7 +1720,11 @@ def run_checks(
     # before a check function runs, so they read the first key out of it rather than repeating
     # the word: a row that disagreed with its key would be a typo nothing could see.
     first, *rest = [name for name, _ in CHECKS]
-    if not (root / CONFIG_FILE).is_file():
+    # Asked of the name before `is_file`, which follows a link: a symlinked `keelline.toml` goes
+    # on to `load`, which refuses it, and is reported as one that does not load whatever it
+    # points at, rather than as no file at all when it points at `/dev/zero`.
+    document = root / CONFIG_FILE
+    if not (document.is_symlink() or document.is_file()):
         return [
             Check(
                 first,
@@ -1756,16 +1762,27 @@ def run_checks(
             ),
             *(Check(name, SKIP, f"{blamed} does not load", "") for name in rest),
         ]
-    except (Failure, Refusal) as exc:
+    except (Failure, Refusal):
         # The message is not quoted: the loader builds it out of the file's own keys and values.
+        # Nor is the class it raised, which is Keelline's vocabulary and not a reason: the row
+        # says the rule in words, and names a command that prints the loader's own message.
+        if document.is_symlink():
+            detail = (
+                f"{CONFIG_FILE} is a symbolic link, which no command follows, so nothing else "
+                f"can be checked against it"
+            )
+            remedy = "replace the link with the real file, then run `keelline doctor` again"
+        else:
+            detail = (
+                f"{CONFIG_FILE} is here and does not load, so nothing else can be checked "
+                f"against it"
+            )
+            remedy = (
+                f"`keelline docs check` prints why; run `keelline doctor` again after fixing "
+                f"{CONFIG_FILE}"
+            )
         return [
-            Check(
-                first,
-                RED,
-                f"{CONFIG_FILE} is here and does not load ({type(exc).__name__}), so nothing "
-                f"else can be checked against it",
-                f"run `keelline doctor` again after fixing {CONFIG_FILE}",
-            ),
+            Check(first, RED, detail, remedy),
             *(Check(name, SKIP, f"{CONFIG_FILE} does not load", "") for name in rest),
         ]
     context = _context(

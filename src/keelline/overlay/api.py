@@ -41,11 +41,12 @@ docstring asks of every other lane.
 wave 4; the floor is one grammar and two readers, and the overlay's sync state is the
 overlay's question, asked where the overlay is owned.
 
-`later` is the same reader asked of two versions, for the `project` area's `upgrade`, which
-refuses to move a project backward, and `doctor`'s `versions` row, which points by direction: one
-comparison, so the two cannot disagree about which way a recorded version lies. `RELEASE` is
-that reader's `X.Y.Z` grammar whole, for `upgrade`, which prints a recorded version back only
-when it is one: a second spelling of the grammar would bound its components differently.
+`later` is the same reader asked of two versions, for the `project` area's `upgrade`, which refuses
+to move a project backward, `doctor`'s `versions` row, which points by direction, and the rule
+`keelline gate` judges an upgrade by, which admits a version only where `upgrade` would move to it:
+one comparison, so the three cannot disagree about which way a recorded version lies. `RELEASE` is
+that reader's `X.Y.Z` grammar whole, for `upgrade`, which prints a recorded version back only when
+it is one: a second spelling of the grammar would bound its components differently.
 """
 
 from keelline.overlay.create import Created, Initialised, create, init_instance, target_root

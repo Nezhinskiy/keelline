@@ -48,8 +48,8 @@ class UnsafeNote(Refusal):
 
 # Byte length of the per-invocation nonce (`secrets.token_hex`): 8 bytes is 64 bits of entropy,
 # enough that no note can predict or reuse it. Fixed by design, not a budget or cap — no shipped
-# config file has any business overriding it (consistent with `_GIT_TIMEOUT_SECONDS` in
-# store.py and `UNRANKED` in notes.py, which name a constant for the same reason).
+# config file has any business overriding it (consistent with `gitenv.GIT_TIMEOUT_SECONDS` and
+# `UNRANKED` in notes.py, which name a constant for the same reason).
 _NONCE_BYTES = 8
 
 
@@ -135,7 +135,11 @@ def _entry(key: str, content: str) -> bytes:
     framing or a canonical JSON manifest would serve as well; this one is the smallest and
     needs the least said about it.
     """
-    return (hashlib.sha256(key.encode("utf-8")).hexdigest() + content).encode("ascii")
+    # `surrogateescape`: a key is a file name, and one the disk holds in bytes that are not UTF-8
+    # arrives with surrogate escapes; strictly it raised out of `store_digest` and took every
+    # trust-dependent path down with it. It hashes as its own bytes, and a valid name as before.
+    key_bytes = key.encode("utf-8", "surrogateescape")
+    return (hashlib.sha256(key_bytes).hexdigest() + content).encode("ascii")
 
 
 # The one entry in the digest that is not a file. A routing key is `<group>/<name>.md` or
@@ -256,9 +260,14 @@ def _recorded(machine: Path | None) -> dict[str, str]:
         raise UnreadableTrustRecord(
             f"{path} cannot be read ({exc}); refusing to answer about trust or to overwrite it"
         ) from exc
+    except UnicodeDecodeError:
+        raise UnreadableTrustRecord(
+            f"{path} is not UTF-8 text; it holds every project's approval on this machine, so "
+            f"nothing here will overwrite it — repair or delete it"
+        ) from None
     try:
         raw = json.loads(text)
-    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+    except json.JSONDecodeError as exc:
         raise UnreadableTrustRecord(
             f"{path} is not valid JSON ({exc}); it holds every project's approval on this "
             f"machine, so nothing here will overwrite it — repair or delete it"

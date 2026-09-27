@@ -63,10 +63,10 @@ def _git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
     nothing — and it is the ordinary "not bound" one rather than a machine fault.
     """
 
-    def refuse(*args: object, **kwargs: object) -> None:
-        raise OSError("git: command not found")
+    def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
+        return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
 
-    monkeypatch.setattr("keelline.memory.store.subprocess.run", refuse)
+    monkeypatch.setattr("keelline.memory.store.git_run", refuse)
 
 
 def _project_and_store(
@@ -414,7 +414,7 @@ def test_a_group_that_is_a_real_directory_is_listed_and_a_link_is_not(tmp_path: 
 def test_an_absent_group_is_not_listed_and_an_escaping_one_is_refused(tmp_path: Path) -> None:
     # A5 of the review: `paths.memory` may itself be a symlink (`validate_paths` allows the
     # final component), and then every group escapes. Swallowing that made two guards silent
-    # at once; raising makes it `attach`'s eighth refusal and the handler's fixed line.
+    # at once; raising makes it `attach`'s tenth refusal and the handler's fixed line.
     root, _ = _project_and_store(tmp_path, recorded=None, origin="x", name="widget")
     machine = _machine(tmp_path, overlay=tmp_path / "overlay")
     assert unlinked_groups(root, load(root, machine=machine)) == ()

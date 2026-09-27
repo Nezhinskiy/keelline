@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import re
 from pathlib import Path
 
@@ -86,9 +87,9 @@ def test_a_boolean_is_matched_as_toml_spells_it(tmp_path: Path) -> None:
 def test_a_file_that_does_not_parse_resolves_to_nothing(tmp_path: Path, text: str) -> None:
     # A repository chooses these bytes. About a kilobyte of nested arrays is enough for
     # `tomllib` to raise `RecursionError` rather than `TOMLDecodeError` (measured on 3.13.0 at a
-    # depth of 500), and a raise here would end the whole evaluation, not one locator. Advisory
-    # output, so the mutation stays here: drop `RecursionError` from `_toml_value`'s `except`
-    # -> `nested-past-the-stack` reddens.
+    # depth of 500), and a raise here would end the whole evaluation, not one locator. Mutations:
+    # drop `RecursionError` from `_toml_document`'s catch (declared) or from `_toml_value`'s
+    # (by hand; advisory output) -> `nested-past-the-stack` reddens.
     check = _check(CheckKind.PRESENT, Locator("a.toml", toml="tool.checker"))
     (tmp_path / "a.toml").write_text(text, encoding="utf-8")
     assert [o.check.id for o in evaluate(_profile(check), tmp_path)] == ["present-check"]
@@ -152,3 +153,37 @@ def test_tracked_says_nothing_outside_a_git_repository(tmp_path: Path) -> None:
     (tmp_path / "lock.txt").write_text("", encoding="utf-8")
     check = _check(CheckKind.TRACKED, Locator("lock.txt"))
     assert evaluate(_profile(check), tmp_path) == []
+
+
+@needs_git
+def test_tracked_names_a_located_file_git_gave_no_answer_for_rather_than_passing_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `git_run`'s `(-1, "")` — git could not be run or ran past its bound — read as "not
+    # untracked" and the check passed without having looked. It is its own answer now: the
+    # outcome names the locator under `unanswered`, and `located` stays what git did say.
+    # Mutation (advisory): `_untracked` answering `False` for `-1` again — no outcome comes back
+    # and this reddens.
+    git(tmp_path, "init", "-q", "-b", "main")
+    (tmp_path / "lock.txt").write_text("", encoding="utf-8")
+    # The package re-exports the function `evaluate` under the submodule's name, so the module
+    # is taken from the import system rather than by attribute.
+    module = importlib.import_module("keelline.profiles.evaluate")
+    monkeypatch.setattr(module, "git_run", lambda *args, **kwargs: (-1, ""))
+    check = _check(CheckKind.TRACKED, Locator("lock.txt"), Locator("other.txt"))
+    outcomes = evaluate(_profile(check), tmp_path)
+    assert [(o.located, o.unanswered) for o in outcomes] == [((), ("lock.txt",))]
+
+
+def test_tracked_names_a_located_file_in_a_repository_git_refuses_rather_than_passing_it(
+    tmp_path: Path,
+) -> None:
+    # A worktree whose git directory is gone: git exits 128 exactly as it does outside a
+    # repository, and "not untracked" passed the check without looking, where every other probe
+    # reports `could-not-look` for the same checkout. Read off the disk, as trail and the ledger
+    # read it. Mutation (declared): `_untracked` answering only `-1` as no answer -> no outcome.
+    (tmp_path / ".git").write_text(f"gitdir: {tmp_path / 'gone'}\n", encoding="utf-8")
+    (tmp_path / "lock.txt").write_text("", encoding="utf-8")
+    check = _check(CheckKind.TRACKED, Locator("lock.txt"))
+    outcomes = evaluate(_profile(check), tmp_path)
+    assert [(o.located, o.unanswered) for o in outcomes] == [((), ("lock.txt",))]

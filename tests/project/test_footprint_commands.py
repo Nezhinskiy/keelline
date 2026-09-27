@@ -209,6 +209,7 @@ def test_uninstall_lists_what_it_leaves_and_exits_zero(tmp_path: Path) -> None:
     assert data["left"] == ["docs/roadmap.md"]
     assert {"dry_run", "footprint", "once", "left", "orphans", "note", "kept_locally"} <= set(data)
     assert data["summary"].splitlines()[0] == "uninstalled:"
+    assert data["kept_config"] is False  # `init` wrote this one, and it goes
 
 
 @needs_git

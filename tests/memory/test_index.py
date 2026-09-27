@@ -275,6 +275,17 @@ def test_check_reports_drift_against_the_file_on_disk(tmp_path: Path) -> None:
     assert check_index(store, config, reconciled).drifted is False
 
 
+def test_an_index_that_is_not_utf8_is_drift_and_not_a_crash(tmp_path: Path) -> None:
+    # It is not what the render writes, whatever else it holds, so `memory index --check` says
+    # to run `keelline memory index`, which replaces it. Mutation (by hand): the read left
+    # unguarded -> this reddens on `UnicodeDecodeError`.
+    store, config = a_store(tmp_path)
+    reconciled = reconcile(store, config, write=False)
+    path = write_index(store, config, render_index(reconciled, config, store))
+    path.write_bytes(b"\xff\xfe# Memory\n")
+    assert check_index(store, config, reconciled).drifted is True
+
+
 def test_check_reports_the_budget_and_the_caps_separately(tmp_path: Path) -> None:
     store, config = a_store(tmp_path)
     result = check_index(store, config, reconcile(store, config, write=False))

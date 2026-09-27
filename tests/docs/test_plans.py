@@ -5,16 +5,28 @@ sample data.
 
 from __future__ import annotations
 
+import json
+import os
+import re
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from keelline.config.loader import load
 from keelline.config.schema import Config
-from keelline.docs.plans import asserted_outcomes, lint
+from keelline.docs.plans import (
+    BaseUnresolvable,
+    asserted_outcomes,
+    lint,
+    plan_gate,
+    touched_plans,
+)
 from keelline.errors import Failure, Refusal
-from tests.gitfixture import git
+from keelline.gitenv import NO_ANSWER, git_run
+from tests.cli import cli
+from tests.gitfixture import git, plant_path
 
 CONFIG = """
 [keelline]
@@ -182,6 +194,31 @@ def test_without_paths_only_the_plans_the_diff_touches_are_linted(tmp_path: Path
 
 
 @needs_git
+def test_a_tag_named_like_the_tracking_branch_does_not_choose_the_default_base(
+    tmp_path: Path,
+) -> None:
+    # git resolves a short `origin/main` through `refs/tags/` first, so a tag of that spelling
+    # on the change's own head made the default base the head, the range empty, and `plan
+    # check` printed OK having linted nothing, while the `plan` gate, which names the base in
+    # full, failed. One spelling of the default now. Mutation (declared): `lint`'s default
+    # spelled `origin/<base_branch>` again -> nothing is linted.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "seed")
+    git(root, "remote", "add", "origin", str(root))
+    git(root, "fetch", "-q", "origin")
+    git(root, "checkout", "-qb", "feature")
+    new = plan(root, "no scope here\n", "2026-01-02-new.md")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "new plan")
+    git(root, "tag", "origin/main", "HEAD")
+    result = lint(root, config, plans=[])
+    assert result.linted == [new]
+    assert [f.rule for f in result.findings] == ["scope-missing"]
+
+
+@needs_git
 def test_a_touched_plan_whose_name_holds_a_space_is_linted_and_does_not_vanish(
     tmp_path: Path,
 ) -> None:
@@ -205,15 +242,84 @@ def test_a_touched_plan_whose_name_holds_a_space_is_linted_and_does_not_vanish(
 
 
 @needs_git
-def test_a_base_that_will_not_resolve_is_a_finding_not_an_ok(tmp_path: Path) -> None:
-    # This gate ran green for its whole life on a shallow checkout that had no base ref.
-    # Mutation: return an empty finding list when `touched_plans` is None — this reddens.
+def test_a_base_that_will_not_resolve_is_raised_never_an_ok(tmp_path: Path) -> None:
+    # This gate ran green for its whole life on a shallow checkout that had no base ref. The
+    # cause is the checkout's, not a plan's, so the lint raises it and the `plan` gate could not
+    # run, as `commit` could not; `plan check` alone prints it as its `base-unresolvable`
+    # finding, exit 1. Mutation (oracle): "an unresolvable base reads as a clean run" -> nothing
+    # is raised and this reddens.
     root, config = project(tmp_path)
     git(root, "init", "-q", "-b", "main")
     git(root, "add", "-A")
     git(root, "commit", "-qm", "seed")
-    result = lint(root, config, plans=[])
-    assert [f.rule for f in result.findings] == ["base-unresolvable"] and result.linted == []
+    with pytest.raises(BaseUnresolvable, match="fetch-depth: 0"):
+        lint(root, config, plans=[])
+    with pytest.raises(BaseUnresolvable):
+        plan_gate(root, config, "refs/remotes/origin/main")
+    code, out, _ = cli(root, tmp_path, "plan", "check", "--json")
+    assert code == 1
+    printed = json.loads(out)
+    assert [f["rule"] for f in printed["findings"]] == ["base-unresolvable"]
+    assert printed["linted"] == []
+
+
+@needs_git
+def test_a_touched_plan_named_in_bytes_that_are_not_utf_8_is_listed_and_linted(
+    tmp_path: Path,
+) -> None:
+    # `diff --name-only -z` prints a committed name raw. Decoded strictly, one latin-1 plan name
+    # raised `UnicodeDecodeError` out of `plan check` and the `plan` gate; read as no answer, it
+    # failed the gate on every run of a repository that holds one, a plan nobody could lint.
+    # Decoded losslessly, the name is the path on disk and the plan is linted like any other.
+    # The name is planted through the index because APFS refuses to create it; where the disk
+    # can hold it (Linux, where CI's oracle runs) the file is written too and its finding is the
+    # proof it was read. Mutation (declared, on `gitenv`): the answer read as no answer again ->
+    # `lint` raises and this reddens.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "seed")
+    raw = b"docs/plans/2026-01-02-caf\xe9.md"
+    plant_path(root, raw, "no scope here\n")
+    git(root, "commit", "-qm", "a plan whose name is not UTF-8")
+    named = root / os.fsdecode(raw)
+    assert touched_plans(root, "HEAD~1", root / "docs" / "plans") == [named]
+    try:
+        named.write_text("no scope here\n", encoding="utf-8")
+    except OSError:  # APFS: `Illegal byte sequence`
+        written = False
+    else:
+        written = True
+    result = lint(root, config, plans=[], base="HEAD~1")
+    assert result.linted == ([named] if written else [])
+    assert [f.rule for f in result.findings] == (["scope-missing"] if written else [])
+
+
+@needs_git
+def test_a_diff_git_gave_no_answer_for_is_not_a_shallow_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `git_run`'s `-1` — git could not be run or ran past its time limit — is not "the base
+    # does not resolve": that finding sends a reader to `fetch-depth: 0` in a clone that holds
+    # every ref, and reads as a finding rather than as a gate that never looked. Still exit 1,
+    # with the cause in words. Mutation (advisory): drop the `code == -1` arm in
+    # `touched_plans` — `BaseUnresolvable` is raised instead of this `Failure` and
+    # this reddens.
+    from keelline.docs import plans as module
+
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "seed")
+    real = git_run
+
+    def unanswered(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        return (-1, "") if args[0] == "diff" else real(where, *args, **kwargs)
+
+    monkeypatch.setattr(module, "git_run", unanswered)
+    with pytest.raises(Failure, match=re.escape(NO_ANSWER)) as caught:
+        lint(root, config, plans=[], base="HEAD")
+    assert "fetch-depth" not in str(caught.value)
 
 
 @needs_git
@@ -222,9 +328,9 @@ def test_an_option_shaped_base_never_reaches_a_git_argv_slot(tmp_path: Path) -> 
     # argv slot ahead of `--`, so `git diff` read it as its own option, wrote the diff to that
     # absolute path — outside `contained()` and outside `fsops` — and exited 0 with empty
     # stdout. `touched_plans` then answered `[]` instead of None, so a committed plan was never
-    # linted and the command printed OK: the exact state `base-unresolvable` exists to prevent,
-    # reached by a typo. Mutation: drop the `base.startswith("-")` refusal in `touched_plans` —
-    # this reddens, on the written file first.
+    # linted and the command printed OK: the exact state raising `BaseUnresolvable` exists to
+    # prevent, reached by a typo. Mutation: drop the `base.startswith("-")` refusal in
+    # `touched_plans` — this reddens, on the written file first.
     root, config = project(tmp_path)
     git(root, "init", "-q", "-b", "main")
     plan(root, "a committed plan with no Scope line, which the gate must not skip\n")

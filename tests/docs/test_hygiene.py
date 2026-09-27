@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
 
 from keelline.config.loader import load
 from keelline.config.schema import Config
-from keelline.docs.hygiene import TRAIL_MARKER, check_budgets, check_links, roadmap_prose
+from keelline.docs.hygiene import (
+    TRAIL_MARKER,
+    check_budgets,
+    check_links,
+    local_markdown_targets,
+    roadmap_prose,
+)
 from keelline.errors import Failure
 from keelline.findings import Finding
 
@@ -193,3 +200,27 @@ def test_a_link_out_of_the_documents_own_directory_but_inside_the_root_still_res
     # point — a link is read from its own document's directory, and only the containment
     # boundary is the root.
     assert [f.detail for f in check_links(root, config)] == ["docs/guide.md", "../src/gone.py"]
+
+
+def test_the_link_reader_reads_the_links_it_always_read() -> None:
+    # The pattern was rewritten to stop backtracking; these are the shapes it has to keep.
+    text = "[a](b.md) ![img](x.png) [x](y.md) and [z](w.md#h) [a](x[1].md)"
+    assert local_markdown_targets(text) == ["b.md", "y.md", "w.md", "x[1].md"]
+
+
+def test_a_text_of_unclosed_links_is_read_in_linear_time() -> None:
+    # `[a](` repeated made every opening bracket scan to the end of the text: quadratic, 0.55 s
+    # at 20,000 characters and four times as long per doubling. Measured as a RATIO against well
+    # formed links of the same length, which run the same reader to the same place, not against
+    # a clock: whatever load inflates one call inflates the other. Measured: 0.4 with the
+    # linear pattern and 200 with the old one. Mutation (declared): the old pattern back ->
+    # this reddens.
+    size = 20_000
+
+    def cpu(text: str) -> float:
+        start = time.process_time()
+        local_markdown_targets(text)
+        return time.process_time() - start
+
+    benign = cpu("[a](b)" * (size // 6))
+    assert cpu("[a](" * (size // 4)) < 20 * max(benign, 0.001)

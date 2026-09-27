@@ -16,10 +16,13 @@ from keelline import __version__
 from keelline.config.machine import machine_config_path
 from keelline.config.paths import contained, validate_paths
 from keelline.config.schema import (
+    BRANCH_NAME,
+    BRANCH_RULE,
     BUILTIN_GATES,
     CI_MODES,
     CONFIG_CHECK,
     MEMORY_MODES,
+    NAME_RULE,
     PROJECT_NAME,
     SECTION_NAME,
     STATES,
@@ -55,6 +58,12 @@ CONFIG_FILE = "keelline.toml"
 # reworded upstream does not move it.
 _TOML_POSITION = re.compile(r"\((?:at line \d+, column \d+|at end of document)\)\Z")
 NO_POSITION = "(at a position tomllib did not report)"
+# `tomllib` reads nested arrays and inline tables by recursion, so a document nested a few
+# thousand levels deep — `a = [[[…]]]` — raises `RecursionError` and not `TOMLDecodeError`.
+# Uncaught, that is an internal error, the class Keelline keeps for its own defects, and in a
+# gate run it ended every gate. Every reader of a document somebody else wrote catches both.
+UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError)
+TOO_DEEP = "(nested deeper than the parser reads)"
 SECTIONS = (
     "keelline",
     "project",
@@ -76,7 +85,7 @@ GATES_BUILTIN_UNKNOWN = (
 GATES_BUILTIN_TWICE = "[gates] builtin names a gate twice"
 GATES_CUSTOM_NAME = (
     "[gates] custom names {count} gate(s) Keelline cannot run under that name: a custom gate's "
-    "name matches {pattern} and is neither a built-in gate's name nor `config`"
+    "name is {rule}, and neither a built-in gate's name nor `config`"
 )
 GATES_CUSTOM_TABLE = "[gates.custom.{name}] must be a table"
 GATES_CUSTOM_EMPTY = "gates.custom.{name}.run must name a command"
@@ -103,6 +112,14 @@ class ConfigError(Failure):
     """A keelline.toml that cannot be trusted as written."""
 
 
+# Fixed text and a path Keelline chose or the owner typed. Not the decoder's message: it is only
+# a byte and an offset, but the one sentence says what to do about every such file.
+NOT_UTF8 = "{path} is not UTF-8 text; Keelline reads it only as UTF-8"
+# The error's class name and not its message, which repeats the path and adds nothing to act on.
+UNREADABLE = "{path} cannot be read ({error})"
+NOT_THERE = "{path} does not exist; run `keelline init` first"
+
+
 class MachineConfigError(ConfigError):
     """The **machine** file could not be read, which is not `keelline.toml`'s doing.
 
@@ -115,7 +132,7 @@ class MachineConfigError(ConfigError):
     """
 
 
-def toml_position(exc: tomllib.TOMLDecodeError) -> str:
+def toml_position(exc: tomllib.TOMLDecodeError | RecursionError) -> str:
     """The `(at line N, column M)` suffix `tomllib` appends, with its message text dropped.
 
     One extractor for every caller in this package that reports a document it did not write,
@@ -125,8 +142,11 @@ def toml_position(exc: tomllib.TOMLDecodeError) -> str:
 
     A suffix this cannot find is reported as absent rather than as the message: a `tomllib` that
     stopped appending a position would otherwise take this guard with it silently, which is the
-    shape every other bounded value in this file refuses.
+    shape every other bounded value in this file refuses. A document nested past the parser's
+    recursion has no position, and says so.
     """
+    if isinstance(exc, RecursionError):
+        return TOO_DEEP
     found = _TOML_POSITION.search(str(exc))
     return found.group(0) if found is not None else NO_POSITION
 
@@ -140,6 +160,19 @@ def _table(raw: dict[str, Any], name: str) -> dict[str, Any]:
 
 def _merged(raw: dict[str, Any], defaults: dict[str, Any], name: str) -> dict[str, Any]:
     return {**defaults.get(name, {}), **_table(raw, name)}
+
+
+def _gate_branch(ci: dict[str, Any], project: Project) -> dict[str, Any]:
+    """`[ci]` with `gate_branch` taken from `[project] base_branch` when the file leaves it out.
+
+    The rendered workflow runs only for pull requests into `gate_branch`, and `assess`, `plan
+    check` and `adopt promote` judge against `base_branch`. A fixed default of `main` made a
+    hand-written file that named `develop` as its base, and said nothing about `[ci]`, render a
+    workflow that never ran for a pull request into `develop` — local runs and CI judging two
+    different branches, with nothing printed. So the preset carries no `gate_branch`: left out,
+    it is the base branch, which the loader has already held to the branch grammar.
+    """
+    return {"gate_branch": project.base_branch, **ci}
 
 
 @cache
@@ -301,8 +334,7 @@ def _gates(raw: dict[str, Any], defaults: dict[str, Any]) -> Gates:
     reserved = (*BUILTIN_GATES, CONFIG_CHECK)
     unusable = [name for name in tables if not PROJECT_NAME.match(name) or name in reserved]
     if unusable:
-        pattern = PROJECT_NAME.pattern
-        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), pattern=pattern))
+        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=NAME_RULE))
     custom: dict[str, CustomGate] = {}
     for name, table in sorted(tables.items()):
         if not isinstance(table, dict):
@@ -328,7 +360,8 @@ def _enforcement(config: Config) -> Config:
 
     Under `installed` the loaded list becomes every configured gate, so `Keelline.enforcing` is
     the list and nothing else, and a gate added to an installed project enforces from the run
-    that adds it.
+    that adds it — for a custom gate under `keelline gate`, from the first run after it lands on
+    the base, since that command runs none before.
     """
     keelline = config.keelline
     names = config.gate_names
@@ -367,7 +400,13 @@ def _personal(machine: Path, preset: dict[str, Any]) -> Personal:
         return _build(Personal, "personal", values)
     try:
         raw = tomllib.loads(machine.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as exc:
+    except UnicodeDecodeError:
+        raise MachineConfigError(NOT_UTF8.format(path=machine)) from None
+    except OSError as exc:
+        raise MachineConfigError(
+            UNREADABLE.format(path=machine, error=type(exc).__name__)
+        ) from None
+    except UNPARSEABLE as exc:
         raise MachineConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None
     try:
         values.update(_table(raw, "personal"))
@@ -383,7 +422,7 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
 
     `interactive` is threaded to `machine_config_path`, and exists because the seam was missing:
     `machine.py`'s docstring says "a caller that knows it is a hook, the MCP server or a
-    `--gate` run says `interactive=False` rather than relying on the terminal check", and the
+    `keelline gate` run says `interactive=False` rather than relying on the terminal check", and the
     one shipped non-interactive caller — `hooks.commands.run_hook` — had no way to say it.
     `load` called `machine_config_path()` with no argument, so the path the docstring singles
     out fell back to the `isatty` sniff. It evaluated `False` in practice, because a hook's
@@ -408,12 +447,15 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
 
     `None` asks for the sniff explicitly, and is what a future diagnostic would pass to say
     what *would* have been honoured.
+
+    **One reader of the file.** Through `read_document`, which goes through `contained()`: a
+    `keelline.toml` that is a symlink is refused by every command, as `keelline gate` has always
+    refused it. Read with a plain `read_text`, a clone's link to `/dev/zero` kept `adopt`, `bugs
+    check` and `plan check` reading until the machine ran out of memory.
     """
-    path = root / CONFIG_FILE
-    try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        raise ConfigError(f"{path} does not exist; run `keelline init` first") from None
+    text = read_document(root)
+    if text is None:
+        raise ConfigError(NOT_THERE.format(path=root / CONFIG_FILE))
     return loads(text, root, machine=machine, interactive=interactive)
 
 
@@ -430,20 +472,32 @@ def read_document(root: Path) -> str | None:
             return stream.read()
     except FileNotFoundError:
         return None
+    except UnicodeDecodeError:
+        raise ConfigError(NOT_UTF8.format(path=CONFIG_FILE)) from None
+    except OSError as exc:
+        raise ConfigError(UNREADABLE.format(path=CONFIG_FILE, error=type(exc).__name__)) from None
 
 
 def loads(
-    text: str, root: Path, *, machine: Path | None = None, interactive: bool | None = False
+    text: str,
+    root: Path,
+    *,
+    machine: Path | None = None,
+    interactive: bool | None = False,
+    label: str | None = None,
 ) -> Config:
     """Build a `Config` from `text` as `keelline.toml`'s contents, without reading a file.
 
     `load` is "read the file, then `loads`"; `init --yes` needs a `Config` for a document it
     has not written to disk yet, so the parse-and-validate half is this function on its own.
+    `label` is what a refusal calls the document when it is not the file at `root`: the base's
+    copy `keelline gate` reads out of git is validated against the tree's disk, and a refusal
+    naming `<root>/keelline.toml` would send its owner to a file with nothing wrong in it.
     """
-    path = root / CONFIG_FILE
+    path = label or root / CONFIG_FILE
     try:
         raw = tomllib.loads(text)
-    except tomllib.TOMLDecodeError as exc:
+    except UNPARSEABLE as exc:
         raise ConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
     unknown = sorted(set(raw) - set(SECTIONS))
     if unknown:
@@ -459,15 +513,19 @@ def loads(
     _enum("keelline", "state", keelline.state, STATES)
     project = _build(Project, "project", _merged(raw, defaults, "project"))
     if not PROJECT_NAME.match(project.name):
-        raise ConfigError(
-            f"project.name must be one lowercase path segment matching {PROJECT_NAME.pattern}"
-        )
+        raise ConfigError(f"project.name must be {NAME_RULE}")
+    for key in ("base_branch", "release_branch"):
+        # Named, never quoted: the value becomes a git ref and reaches output lines, and it is
+        # the text the grammar refused. The grammar is the one the rendered workflow holds
+        # `[ci] gate_branch` to; git could not have such a branch anyway.
+        if not BRANCH_NAME.match(getattr(project, key)):
+            raise ConfigError(f"project.{key} is not a plain branch name: {BRANCH_RULE}")
     paths = _build(Paths, "paths", _merged(raw, defaults, "paths"))
     memory = _deduplicated(_build(Memory, "memory", _merged(raw, defaults, "memory")))
     _enum("memory", "mode", memory.mode, MEMORY_MODES)
     ledger = _build(Ledger, "ledger", _merged(raw, defaults, "ledger"))
     artifacts = _build(Artifacts, "artifacts", _merged(raw, defaults, "artifacts"))
-    ci = _build(Ci, "ci", _merged(raw, defaults, "ci"))
+    ci = _build(Ci, "ci", _gate_branch(_merged(raw, defaults, "ci"), project))
     _enum("ci", "mode", ci.mode, CI_MODES)
     gates = _gates(raw, defaults)
     commit_messages = _build(
@@ -514,16 +572,17 @@ def preset_defaults(project: str, *, preset: str = "recommended") -> Config:
     raw = load_preset(preset)
     defaults = dict(raw.get("defaults", {}))
     head = {**defaults.get("keelline", {}), "preset": preset, "version": __version__}
+    project_config = _build(Project, "project", {**defaults.get("project", {}), "name": project})
     return Config(
         keelline=_build(Keelline, "keelline", head),
-        project=_build(Project, "project", {**defaults.get("project", {}), "name": project}),
+        project=project_config,
         paths=_build(Paths, "paths", defaults.get("paths", {})),
         memory=_build(Memory, "memory", defaults.get("memory", {})),
         budgets=Budgets(preset=dict(raw.get("budgets", {}))),
         native_caps=_build(NativeCaps, "native_caps", dict(raw.get("native_caps", {}))),
         ledger=_build(Ledger, "ledger", defaults.get("ledger", {})),
         artifacts=_build(Artifacts, "artifacts", defaults.get("artifacts", {})),
-        ci=_build(Ci, "ci", defaults.get("ci", {})),
+        ci=_build(Ci, "ci", _gate_branch(dict(defaults.get("ci", {})), project_config)),
         gates=_gates({}, defaults),
         commit_messages=_build(
             CommitMessages, "commit_messages", defaults.get("commit_messages", {})
