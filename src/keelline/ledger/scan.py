@@ -37,9 +37,9 @@ if TYPE_CHECKING:
 # `pyproject.toml` and `.gitignore` each carried a live identifier once, invisible to the scan
 # and unswept by `renumber`, which reported success having rewritten neither.
 TOP_LEVEL = "."
-# A file whose head carries this is a holder of sample identifiers — a test module's fixtures —
-# and is excluded from the mention scan and from the sweep alike (Premise 5). A real reference
-# inside such a file is invisible to the scan; that is the accepted price.
+# A file whose head carries this is a holder of sample identifiers — a test module's fixtures — and
+# is excluded from the mention scan and from the sweep alike. A real reference inside such a file is
+# invisible to the scan; that is the accepted price.
 FIXTURE_MARKER = "keelline:ledger:fixtures"
 # How far into a file the marker is looked for: a module docstring or a header comment. Not a
 # config key — a marker anywhere else is prose about the marker.

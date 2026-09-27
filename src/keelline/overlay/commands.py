@@ -1,4 +1,4 @@
-"""The `overlay` group (§5.2): create an instance, and make it the owner's."""
+"""The `overlay` group: create an instance, and make it the owner's."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from keelline.overlay.create import TEMPLATE_REPOSITORY
 from keelline.result import Result
 from keelline.scaffold import render_report
 
-# Neither source is a default, and that is the point. §6.1 permits the GitHub path only after
+# Neither source is a default, and that is the point. The GitHub path is permitted only after
 # explicit confirmation, and a non-interactive caller — which in this harness is the usual one —
 # can express confirmation only by naming the source. A default would turn an omitted flag into
 # a repository created on somebody's account.
@@ -74,9 +74,9 @@ def run_overlay_upgrade(args: argparse.Namespace) -> Result:
 
     result = upgrade(Path(args.root).resolve(), dry_run=args.dry_run)
     # `scaffold.render_report` and not a second renderer: the report a user approves has to be
-    # the one the same code path then acts on, which is the whole reason C2 splits plan from
-    # apply. The decision list is appended to it rather than folded into it, because it is the
-    # one thing the engine has no verb for.
+    # the one the same code path then acts on, which is the whole reason the scaffold engine
+    # splits plan from apply. The decision list is appended to it rather than folded into it,
+    # because it is the one thing the engine has no verb for.
     report = render_report(result.plan)
     if result.decisions:
         report += (

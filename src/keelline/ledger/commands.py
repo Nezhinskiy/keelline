@@ -1,4 +1,4 @@
-"""The `bugs` group (§5.2): `new`, `index [--check]`, `check`, `renumber OLD NEW`."""
+"""The `bugs` group: `new`, `index [--check]`, `check`, `renumber OLD NEW`."""
 
 from __future__ import annotations
 

@@ -6,7 +6,7 @@ disagree about what an identifier is and no one of them can be corrected alone. 
 every reader and writer asks is what makes a prefix that changes change all of them together,
 and it is why this grammar exists at all rather than as a constant per module. A leaf module:
 the ledger, the plan lint (`Fixes BR-nnn`) and the memory graph (`[[BR-nnn]]`) all read it, and
-none of them may import another's area. The prefix is repository-controlled (§3): it is
+none of them may import another's area. The prefix is repository-controlled (principle 5): it is
 interpolated into patterns and filenames, so it is held to a shape before either happens.
 """
 

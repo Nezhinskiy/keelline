@@ -1,11 +1,10 @@
 """Write TOML tables, escaping every string, refusing everything it cannot represent.
 
 One serialiser and not one per lane. `attach` writes the overlay's `projects/<name>/project.toml`
-and `setup` writes the machine configuration; hand-rolled, that is two writers in two waves with
-no edge between them and no escaping rule — and the value this was written for is a **git remote
-URL**, which the Global Constraints list among repository-authored bytes. A URL carrying a quote
-and a newline closes its own string and writes further keys into a record that decides what
-`attach` trusts.
+and `setup` writes the machine configuration; hand-rolled, that is two writers in two areas with no
+edge between them and no escaping rule — and the value this was written for is a **git remote URL**,
+which is repository-authored (principle 5). A URL carrying a quote and a newline closes its own
+string and writes further keys into a record that decides what `attach` trusts.
 
 A leaf module: it imports `keelline.errors` and nothing else, so either caller reaches it
 without paying for an area.

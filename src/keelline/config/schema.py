@@ -142,7 +142,7 @@ class Memory:
 
 @dataclass(frozen=True)
 class Budgets:
-    """A project may lower a budget below the preset and never raise it (D7)."""
+    """A project may lower a budget below the preset and never raise it."""
 
     NAMES: ClassVar[tuple[str, ...]] = (
         "agents_md_lines",
@@ -174,7 +174,7 @@ class Budgets:
 
 @dataclass(frozen=True)
 class NativeCaps:
-    """Platform limits in their own units; consumers of a bounded thing read them (§9.5)."""
+    """Platform limits in their own units; consumers of a bounded thing read them."""
 
     NAMES: ClassVar[tuple[str, ...]] = (
         "memory_index_lines",
@@ -234,7 +234,7 @@ class CommitMessages:
 
 @dataclass(frozen=True)
 class Personal:
-    """Machine-level parameters (§5.4); never read from a repository."""
+    """Machine-level parameters; never read from a repository."""
 
     reply_language: str
     artifact_language: str

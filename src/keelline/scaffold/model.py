@@ -1,4 +1,4 @@
-"""What a consumer asks for, and what the engine answers (contract C2).
+"""What a consumer asks for, and what the engine answers.
 
 `Template` is a description, not a file: the lanes that own template *content*
 (`templates/`, `overlay/`) build these, and this lane never reads the plugin's own directory.

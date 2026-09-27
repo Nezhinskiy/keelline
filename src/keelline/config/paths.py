@@ -1,4 +1,4 @@
-"""Root containment for the `[paths]` fields, and for nothing else yet (§7.4).
+"""Root containment for the `[paths]` fields, and for nothing else yet.
 
 `validate_paths` iterates `config.paths.as_dict()`, so the guard covers exactly the fields of
 `schema.Paths` and no others. Four path-shaped, repository-writable fields never reach

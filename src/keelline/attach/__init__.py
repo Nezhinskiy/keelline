@@ -1,4 +1,4 @@
-"""Bind a repository to the machine owner's private overlay, and unbind it again (§6.3).
+"""Bind a repository to the machine owner's private overlay, and unbind it again.
 
 An area, discovered by name: `commands.py` gives it the `attach` and `detach` groups and
 `api.py` is what another lane may import. It writes nothing a repository chose — the overlay

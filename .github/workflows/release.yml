@@ -164,7 +164,7 @@ jobs:
           assert match, f"CHANGELOG.md has no section for {version}"
           print(match.group(0).strip())
           PY
-      - name: The GitHub Release, attached to this tag only (§5.9)
+      - name: The GitHub Release, attached to this tag only
         # Never attached to the floating `v1`: GitHub's immutable releases would freeze the
         # alias at whatever it pointed to, and the alias exists to move.
         env:

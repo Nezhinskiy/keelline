@@ -14,7 +14,7 @@ from keelline.hooks.api import EVENTS, Handler, Policy
 
 
 class UnknownHookEvent(Refusal):
-    """A handler registered for an event name §5.3's table does not carry."""
+    """A handler registered for an event name `api.EVENTS` does not carry."""
 
 
 class UnknownHookPolicy(Refusal):

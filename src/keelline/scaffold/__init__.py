@@ -1,4 +1,4 @@
-"""The scaffold engine (contract C2): manifest, regions, keyed entries, plan and apply.
+"""The scaffold engine: manifest, regions, keyed entries, plan and apply.
 
 Everything a consumer lane needs is re-exported here, including the four primitives the later
 lanes reach for directly: `owned_ids` for `doctor`'s provenance list, `mark` for any lane that

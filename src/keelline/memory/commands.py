@@ -1,4 +1,4 @@
-"""The `memory` group (§5.2). Every command takes `--store PATH` (§9.1).
+"""The `memory` group. Every command takes `--store PATH`.
 
 `--store` is an override of *where the notes are*, not of the rules about them: it is held to
 the same target rule as a link the resolver found, so passing a path is not a way around the
@@ -306,16 +306,16 @@ def run_session_context(args: argparse.Namespace) -> Result:
         known = ", ".join(b.value for b in Bundle)
         raise Refusal(f"unknown bundle {args.bundle!r}; known: {known}") from exc
     store, config = _store(args)
-    # §9.5: "On Codex the handler also injects the index, because Codex has no native
-    # auto-memory." Here rather than in `bundles.render`, which is a library function with no
+    # On Codex the index bundle is injected too, because Codex has no native auto-memory to load the
+    # index itself. Here rather than in `bundles.render`, which is a library function with no
     # environment to read; `detect_harness` is the hook area's own answer to the same question.
     #
     # **No payload is passed, so only the environment half of that answer is in play here.**
     # `detect_harness` reads a stdin pair (`model`/`permission_mode`) *when it is handed one*,
     # which the dispatcher does and this call site does not: there is no stdin payload at a
-    # command invocation. What decides it here is `PLUGIN_ROOT` alone — Codex sets it and also
-    # sets `CLAUDE_PLUGIN_ROOT`, so the `CLAUDE_*` names identify nothing (S1) and neither
-    # "claude" nor "unknown" reaches the render.
+    # command invocation. What decides it here is `PLUGIN_ROOT` alone — Codex sets it and, as
+    # measured on a Codex session, also sets `CLAUDE_PLUGIN_ROOT`, so the `CLAUDE_*` names
+    # identify nothing and neither "claude" nor "unknown" reaches the render.
     #
     # **This is the one shipped command whose output depends on the ambient environment**, and
     # it is deliberate rather than incidental: the bundle exists for the harness that has no

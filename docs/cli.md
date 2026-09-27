@@ -1669,14 +1669,13 @@ When `gh repo create` itself fails, the command stops there and reports **its** 
 three, and the failure names the binary rather than sending you to `gh auth status` for a
 repository that was never there. It also names the precondition above — the template repository
 `overlay publish-template` publishes — because that is the usual reason this source cannot
-work. When `gh`
-reports success and the clone brings nothing down, `gh repo view` is asked whether the repository
-exists at all — the answer tells "not created" from "created, and the clone raced its generation"
-— and the clone is retried once, after a ten-second wait when it was the second. **That retry is carried
-on the strength of the design rather than of a measurement:** Findings → S6 did not reproduce
-the race in the one trial it ran, and one clean run cannot rule out an asynchronous generation
-step that sometimes outlasts a clone. If the second attempt is still empty, the command fails
-(`1`) naming both attempts and what GitHub said in between.
+work. When `gh` reports success and the clone brings nothing down, `gh repo view` is asked
+whether the repository exists at all — the answer tells "not created" from "created, and the
+clone raced its generation" — and the clone is retried once, after a ten-second wait when it
+was the second. **That retry is carried on reasoning rather than on a measurement:** the one
+trial run against it did not reproduce the race, and one clean run cannot rule out an
+asynchronous generation step that sometimes outlasts a clone. If the second attempt is still
+empty, the command fails (`1`) naming both attempts and what GitHub said in between.
 
 **Writes** the instance directory and, on `--local`, every file of the template plus
 `.keelline/manifest.json`. Exits `0` on success, `1` when no tree arrived, `2` on a refused name

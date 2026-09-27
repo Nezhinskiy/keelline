@@ -1,10 +1,11 @@
-"""The project footprint as `Template`s (§5.6, §7.2), built from a configuration.
+"""The project footprint as `Template`s, built from a configuration.
 
-Under the module root beside `templates/overlay/` and resolved by `keelline.templates.tree`
-(DC9). The three write-once files are `Kind.ONCE` artifacts in a pass of their own (DC3);
+Under the module root beside `templates/overlay/` and resolved by `keelline.templates.tree`, the
+one resolver both shipped trees go through. The three write-once files are `Kind.ONCE`
+artifacts in a pass of their own, because two artifacts cannot target one file in one pass;
 everything else is the footprint pass. Every target is a `config.paths` value, which the
-loader has bounded to `PATH_VALUE` (P10) and contained; what this module adds is a file name
-under it. A value that reaches a rendered file (`gate_branch` and `ref` into YAML) is quoted or
+loader has bounded to `PATH_VALUE` and contained; what this module adds is a file name under
+it. A value that reaches a rendered file (`gate_branch` and `ref` into YAML) is quoted or
 shape-checked there — `BRANCH_NAME`, `CI_REF` — and a value outside its grammar costs the
 artifact rather than the run.
 
@@ -97,10 +98,10 @@ IGNORE_ARTIFACT = "gitignore"
 # line, for the same reason the branch grammar is applied and with the same provenance: the value is
 # repository-authored — on the adoption path it is whatever `keelline.toml` already carried —
 # and it lands in a YAML file GitHub executes. A full-length sha and nothing else: it is the
-# only immutable reference a reusable workflow can take (D16), it is the only form `doctor`'s
-# `ci-ref` row can resolve against the public repository's tags, and the documented mutable
-# `v1` alias is a file a project writes by hand rather than one `init` renders. The anchor is
-# this constant in the installed package; nothing a repository writes can move it.
+# only immutable reference a reusable workflow can take (principle 9), it is the only form
+# `doctor`'s `ci-ref` row can resolve against the public repository's tags, and the documented
+# mutable `v1` alias is a file a project writes by hand rather than one `init` renders. The
+# anchor is this constant in the installed package; nothing a repository writes can move it.
 CI_REF = re.compile(r"\A[0-9a-f]{40}\Z")
 _SENTINEL = re.compile(r"%%[A-Z_]+%%")
 NO_TAG = (
@@ -143,7 +144,7 @@ BAD_REF = (
     "mutable `v1` alias is documented and is yours to write by hand"
 )
 # Named and never quoted: the value is repository-authored, so the refusal names the key and
-# the grammar and leaves the bytes where they were (DC6).
+# the grammar and leaves the bytes where they were.
 BAD_BRANCH = "[ci] gate_branch is not a plain branch name, so no workflow was rendered around it"
 
 
@@ -517,7 +518,7 @@ def project_templates(
     document: str,
     adopted: bool,
 ) -> Prepared:
-    """The footprint this configuration asks for, split into the engine's two passes (DC3).
+    """The footprint this configuration asks for, split into the engine's two passes.
 
     Nothing here reads the disk for a target: `trail_target` is a location, like every
     `[paths]`-built target, and the engine contains each one when it plans it. So this can be

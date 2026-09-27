@@ -1,4 +1,4 @@
-"""`doctor`: what an installation looks like from the outside (§8.4).
+"""`doctor`: what an installation looks like from the outside.
 
 This area **reports and never repairs.** Every other area in this package writes something;
 this one reads.

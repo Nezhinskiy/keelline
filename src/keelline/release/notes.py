@@ -1,4 +1,4 @@
-"""`release notes`: assemble CHANGELOG.md from `changelog.d/` through towncrier (§5.2, §5.9).
+"""`release notes`: assemble CHANGELOG.md from `changelog.d/` through towncrier.
 
 The command is a wrapper and nothing more: towncrier owns the rendering, `pyproject.toml`'s
 `[tool.towncrier]` owns the format, and this module owns two refusals — the version must be

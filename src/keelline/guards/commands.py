@@ -1,4 +1,4 @@
-"""The `guard`, `commit` and `test` groups (§5.2).
+"""The `guard`, `commit` and `test` groups.
 
 `guard bg-cleanup` is the fail-closed row: it reads one JSON object on stdin — a whole hook
 payload, or a bare `tool_input` — and refuses anything it cannot read with exit 2, because a
@@ -75,11 +75,11 @@ _STRIP_REMEDY = (
     "hook that strips it before the commit exists."
 )
 
-# git's own default for `core.commentChar` (the `prepare-commit-msg` comment block). Not read
-# from the repository's config: a value this module would feed straight into a line-prefix
-# comparison is exactly the kind of config value §3 calls untrusted, and there is no subprocess
-# guard to put around a plain string compare. A repository that changed the default gets no
-# split and therefore no strip on that file — a no-op, not a corruption.
+# git's own default for `core.commentChar` (the `prepare-commit-msg` comment block). Not read from
+# the repository's config: a value this module would feed straight into a line-prefix comparison is
+# exactly the kind of repository-authored value principle 5 calls untrusted, and there is no
+# subprocess guard to put around a plain string compare. A repository that changed the default gets
+# no split and therefore no strip on that file — a no-op, not a corruption.
 _COMMENT_CHAR = "#"
 
 # git's scissors line, matched on `>8` alone and not on the sentence around it. The line git

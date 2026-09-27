@@ -9,7 +9,7 @@ does not import a private module of this area.
 because a return type absent from this list is a value `setup` can hold and cannot declare.
 `attach` reads `common/claude` and `common/codex` inside the layout (`COMMON_CLAUDE`,
 `COMMON_CODEX`). The runner is a leaf (`keelline.runner`), not this area's; it used to be
-published here on behalf of three other areas, which is the shape DC2 ended.
+published here on behalf of three other areas, a shape that moving it into a leaf module ended.
 
 Two names are here with no importer in `src/`, on purpose:
 
@@ -24,12 +24,12 @@ Two names are here with no importer in `src/`, on purpose:
 
 `OVERLAY_FILES` is here for `scripts/check_artifacts.py`, which asks whether a built wheel
 carries every template file and can only answer that against this list. It is the one consumer
-outside `src/`, and the reason this docstring names it is that the wave-3 trim removed the
+outside `src/`, and the reason this docstring names it is that an earlier trim removed the
 export on the strength of "nothing outside this area imports it" while that script, added in the
 same branch, imported it out of `layout` — a sentence and a violation merged green together,
 because `tests/test_areas.py` walked `src/` alone. It walks `scripts/` too now.
 
-**Trimmed, in the wave-3 boundary remediation.** `COMMON` and `COMMON_RULES` had no importer
+**Trimmed, when the area boundaries were drawn tight.** `COMMON` and `COMMON_RULES` had no importer
 anywhere. `CAPABILITY_FILES`, `template_root`, `templates`, `upgrade` and `OverlayUpgrade` had
 none outside this area: `upgrade` is driven by this area's own command module, and the template
 tree was published against a sentence — "the release lane will need the template tree" — about a
@@ -37,9 +37,9 @@ lane that does not exist yet. That lane grows the list when it arrives, which is
 docstring asks of every other lane.
 
 `requires_of`, `satisfies`, `Sync` and `overlay_sync` are published for `doctor` (the
-`overlay-requires` row) and the `attach` area's session-start handler, which arrived with
-wave 4; the floor is one grammar and two readers, and the overlay's sync state is the
-overlay's question, asked where the overlay is owned.
+`overlay-requires` row) and the `attach` area's session-start handler; the floor is one grammar
+and two readers, and the overlay's sync state is the overlay's question, asked where the overlay
+is owned.
 
 `later` is the same reader asked of two versions, for the `project` area's `upgrade`, which refuses
 to move a project backward, `doctor`'s `versions` row, which points by direction, and the rule
