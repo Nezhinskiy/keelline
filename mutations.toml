@@ -11853,7 +11853,7 @@ reddens = [
 ]
 
 # git tracks a symlink as the link alone, and CI checks it out dangling when what it leads to is
-# untracked or outside the project: a link target read through a tracked symlink is judged by
+# untracked or outside the repository: a link target read through a tracked symlink is judged by
 # where the link leads, link by link.
 [[mutation]]
 name = "a symlinked link target is judged by the link alone"
@@ -11865,8 +11865,8 @@ reddens = [
   "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[through-an-ignored-link]",
 ]
 
-# A link whose target is absolute or climbs out of the root names nothing a checkout has, and the
-# name it leads to is outside the project: the link itself is named, never where it leads.
+# A link whose target is absolute or climbs out of the work tree names nothing a checkout has, and the
+# name it leads to is outside the repository: the link itself is named, never where it leads.
 [[mutation]]
 name = "a link out of the project is followed to its target outside it"
 file = "src/keelline/assess/tracked.py"
@@ -11897,4 +11897,15 @@ before = "      timeout-minutes: 25"
 after = "      timeout-minutes: 15"
 reddens = [
   "tests/test_check_workflow.py::test_a_real_run_passes_the_time_limit_a_value_of_its_own",
+]
+
+# A project may sit below its repository's top, and a symlink in it may name a tracked file beside
+# it, which every checkout has: a climb is judged against the work tree's top, not the project.
+[[mutation]]
+name = "a climb out of the project reads as a climb out of the repository"
+file = "src/keelline/assess/tracked.py"
+before = "        if os.path.isabs(target) or step == os.pardir or step.startswith(os.pardir + os.sep):"
+after = "        if os.path.isabs(target) or not step.startswith(prefix) or step.startswith(os.pardir):"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_symlink_to_a_tracked_file_elsewhere_in_the_repository_is_judged",
 ]

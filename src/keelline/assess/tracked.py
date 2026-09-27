@@ -4,8 +4,8 @@ CI checks out what git tracks and nothing else. The `docs` gate reads `[paths] a
 file its links name, and the `trail` gate reads `[paths] roadmap` and the `trail.toml` beside it,
 each at its path. A file that is on disk here and that git does not track, an ignored one included,
 is a file those gates read here and CI never sees, and so is one read through a tracked symlink
-whose target is untracked or outside the project, since git tracks the link alone and the checkout
-leaves it dangling: in CI it is absent, and the gate's own finding for an absent file
+whose target is untracked or outside the repository, since git tracks the link alone and the
+checkout leaves it dangling: in CI it is absent, and the gate's own finding for an absent file
 (`missing-document`, `missing-link`, `roadmap-missing`, or a listing rebuilt without the states)
 fails every pull request. So a verdict taken here would not be CI's verdict, and `keelline assess`
 reports such a gate as unable to judge the tree as CI will, and `keelline adopt promote` never
@@ -57,8 +57,9 @@ UNASKED = "could-not-look"
 # A gate's `reason` when a file it reads is not tracked, or git would not say. Fixed text: the
 # files are in the item beside it.
 UNSEEN_REASON = (
-    "could not judge this tree as CI will: it reads a file CI's checkout will not have, one git "
-    "does not track or a symlink that leads out of the project; `keelline assess --json` names it"
+    "could not judge this tree as CI will: it reads a file CI's checkout will not have, one "
+    "git does not track or a symlink that leads out of the repository; `keelline assess --json` "
+    "names it"
 )
 UNASKED_REASON = (
     "could not judge this tree as CI will: git gave no answer to whether it tracks the files "
@@ -68,8 +69,9 @@ UNASKED_REASON = (
 # `git add` refuses.
 REMEDY = (
     "commit each file named, since CI checks out only what git tracks (one an ignore rule "
-    "matches needs the rule removed, or `git add -f`), and point a symlink named here at a file "
-    "inside the project; to keep them out of git, take {gate} out of [gates] builtin instead"
+    "matches needs the rule removed, or `git add -f`), and point a symlink named here at a "
+    "tracked file in the repository; to keep them out of git, take {gate} out of [gates] "
+    "builtin instead"
 )
 UNASKED_REMEDY = (
     "run `git ls-files` here to see why git gives no answer; a git that timed out may answer "
@@ -98,12 +100,31 @@ def _reads(root: Path, config: Config, gate: str) -> list[Path]:
     return [path for path in wanted if path.exists()]
 
 
-def _tracked(root: Path) -> set[str] | None:
-    """Every path git tracks under `root`, relative to it; `None` when git gives no answer."""
-    code, out = git_run(root, "ls-files", "-z", "--cached", timeout=QUERY_TIMEOUT_SECONDS)
+@dataclass(frozen=True)
+class _Listing:
+    """What git tracks in the work tree the project is in: its top, the project's place below it
+    (`""` at the top, else `"proj/"`), and every tracked path, relative to the top."""
+
+    top: Path
+    prefix: str
+    names: set[str]
+
+
+def _tracked(root: Path) -> _Listing | None:
+    """Every path git tracks in the work tree around `root`, the whole of it and not only under
+    `root`, since a symlink in a project below the top may name a tracked file beside it; `None`
+    when git gives no answer to either question."""
+    code, out = git_run(
+        root, "rev-parse", "--show-toplevel", "--show-prefix", timeout=QUERY_TIMEOUT_SECONDS
+    )
+    lines = out.split("\n")
+    if code != 0 or len(lines) < 2 or not lines[0]:
+        return None
+    top = Path(lines[0])
+    code, out = git_run(top, "ls-files", "-z", "--cached", timeout=QUERY_TIMEOUT_SECONDS)
     if code != 0:
         return None
-    return {name for name in out.split("\0") if name}
+    return _Listing(top, lines[1], {name for name in out.split("\0") if name})
 
 
 def _is_tracked(relative: str, tracked: set[str]) -> bool:
@@ -111,32 +132,39 @@ def _is_tracked(relative: str, tracked: set[str]) -> bool:
     return relative in tracked or any(name.startswith(relative + "/") for name in tracked)
 
 
-def _not_checked_out(root: Path, relative: str, tracked: set[str]) -> str | None:
-    """What of `relative` a checkout of the tracked tree would not have, or `None` when it would
-    have all of it.
+def _not_checked_out(root: Path, relative: str, listing: _Listing) -> str | None:
+    """What of `relative` a checkout of the tracked tree would not have, named inside the project,
+    or `None` when it would have all of it.
 
     git tracks a symlink as the link alone, and a checkout writes the link whether or not what it
     names is there, so a tracked link says nothing about what is read through it. Each link on the
     way is followed, lexically and relative to the link's own directory as the filesystem reads
-    it, and the first step that is untracked is named; so is a link whose target is absolute or
-    climbs out of the root, since no other checkout of the project has that target. A component
-    before the last that is itself a symlink needs no walk of its own: git lists nothing under a
-    symlink, so a path through one is already untracked. Last, the walk must land where the
-    filesystem did, or it is not an answer about this path, and the path is named.
+    it, in the work tree's own terms: a project below the top may link to a tracked file beside
+    it, which every checkout has. The first step that is untracked is named, and so is a link
+    whose target is absolute or climbs out of the work tree, since no other checkout of the
+    repository has that target. What is named is always inside the project: a step outside it is
+    named by the last link inside it that led there. A component before the last that is itself
+    a symlink needs no walk of its own: git lists nothing under a symlink, so a path through one
+    is already untracked. Last, the walk must land where the filesystem did, or it is not an
+    answer about this path, and the path is named.
     """
-    current = relative
+    prefix = listing.prefix
+    current = prefix + relative
+    named = relative
     for _ in range(LINK_HOPS + 1):
-        if not _is_tracked(current, tracked):
-            return current
-        link = root / current
+        if current.startswith(prefix):
+            named = current[len(prefix) :]
+        if not _is_tracked(current, listing.names):
+            return named
+        link = listing.top / current
         if not link.is_symlink():
             return None if link.resolve() == (root / relative).resolve() else relative
         target = os.readlink(link)
         step = os.path.normpath(os.path.join(os.path.dirname(current), target))
         if os.path.isabs(target) or step == os.pardir or step.startswith(os.pardir + os.sep):
-            return current
+            return named
         current = Path(step).as_posix()
-    return current
+    return named
 
 
 def unseen(root: Path, config: Config, names: tuple[str, ...]) -> tuple[Unseen, ...]:

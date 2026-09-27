@@ -22,7 +22,7 @@ from keelline.assess.state import promote
 from keelline.assess.tracked import UNASKED, UNASKED_REASON, UNSEEN_REASON, UNTRACKED
 from keelline.config.loader import load
 from keelline.printed import UNPRINTABLE
-from tests.assess.smoke import BASE, smoke_repo
+from tests.assess.smoke import BASE, FIXTURE, PLAN, smoke_repo
 from tests.cli import cli
 from tests.gitfixture import git, needs_git
 
@@ -182,7 +182,7 @@ def test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout(
     tmp_path: Path, links: dict[str, str], ignored: tuple[str, ...], named: str
 ) -> None:
     # git tracks a symlink as the link alone, and CI checks it out dangling when what it leads to
-    # is not tracked, or is outside the project, where no checkout of it has anything: there the
+    # is not tracked, or is outside the repository, where no checkout of it has anything: there the
     # link is `missing-link`. So the link being tracked says nothing about what CI reads through
     # it. Each link on the way is followed, and the first that a checkout would not have is
     # named: the untracked file or link, or the link that leaves the project. Mutation
@@ -211,6 +211,65 @@ def test_a_link_walk_that_lands_elsewhere_than_the_filesystem_is_no_answer(tmp_p
     _link_through(root, {"sub": "private/deeper", "notes.md": "sub/../elsewhere.md"}, ("private/",))
     assert (root / "notes.md").resolve() == (root / "private" / "elsewhere.md").resolve()
     assessment = _assess(root, tmp_path)
+    assert _items(assessment, UNTRACKED) == {"docs": ("notes.md",)}
+
+
+def _project_below_the_top(tmp_path: Path, target: str, ignored: tuple[str, ...] = ()) -> Path:
+    """The smoke fixture as `repo/proj`, a project in a subdirectory of its repository, with
+    `repo/shared/notes.md` beside it and `proj/notes.md` a symlink to `target`, linked from the
+    project's `AGENTS.md`; every path in `ignored` is kept out of git by the top's ignore rules.
+    Two commits, as `smoke_repo` makes them, so `BASE` names the first."""
+    top = tmp_path / "repo"
+    project = top / "proj"
+    shutil.copytree(FIXTURE, project)
+    (top / "shared").mkdir()
+    (top / "shared" / "notes.md").write_text("# ours\n", encoding="utf-8")
+    (top / ".gitignore").write_text("".join(f"/{p}\n" for p in ignored), encoding="utf-8")
+    held = (project / PLAN).read_bytes()
+    (project / PLAN).unlink()
+    git(top, "init", "-q", "-b", "main")
+    git(top, "add", "-A")
+    git(top, "commit", "-qm", "chore: the fixture below the top")
+    (project / PLAN).write_bytes(held)
+    (project / "notes.md").symlink_to(target)
+    agents = project / AGENTS
+    agents.write_text(agents.read_text(encoding="utf-8") + "\n[notes](notes.md)\n", "utf-8")
+    git(top, "add", "-A")
+    git(top, "commit", "-qm", "docs: link the notes through a symlink")
+    return project
+
+
+def test_a_symlink_to_a_tracked_file_elsewhere_in_the_repository_is_judged(
+    tmp_path: Path,
+) -> None:
+    # A project in a subdirectory of its repository, the shape `path:` and `[project]` roots
+    # exist for. `proj/notes.md -> ../shared/notes.md` climbs out of the project and not out of
+    # the repository, and every checkout has `shared/notes.md`: CI passes the link. So what is
+    # outside is judged against the work tree's top, not the project's root. Mutation
+    # (declared): a climb out of the project reads as a climb out of the repository.
+    project = _project_below_the_top(tmp_path, "../shared/notes.md")
+    assert (project / "notes.md").read_text(encoding="utf-8") == "# ours\n"
+    assessment = _assess(project, tmp_path)
+    assert _row(assessment, "docs").answered
+    assert _items(assessment, UNTRACKED) == {}
+
+
+@pytest.mark.parametrize(
+    ("target", "ignored"),
+    [("../../outside.md", ()), ("../shared/notes.md", ("shared/",))],
+    ids=["out-of-the-repository", "to-an-ignored-file-beside-the-project"],
+)
+def test_a_symlink_below_the_top_that_no_checkout_has_names_the_link(
+    tmp_path: Path, target: str, ignored: tuple[str, ...]
+) -> None:
+    # The top is where a climb is judged, and nothing else moves: a target above the repository
+    # is in no checkout, and one beside the project that git does not track is in none either.
+    # Either way the name printed is the link inside the project, never a path outside it.
+    (tmp_path / "outside.md").write_text("# outside\n", encoding="utf-8")
+    project = _project_below_the_top(tmp_path, target, ignored)
+    assert (project / "notes.md").exists()
+    assessment = _assess(project, tmp_path)
+    assert _row(assessment, "docs").reason == UNSEEN_REASON
     assert _items(assessment, UNTRACKED) == {"docs": ("notes.md",)}
 
 

@@ -4,6 +4,6 @@ on disk but not tracked by git, `keelline assess` now reports that gate as unabl
 tree as CI will, with an `untracked` item naming the files, and `keelline adopt promote` no
 longer enforces it: it would fail every pull request in CI, where the file is absent. A link
 target that is a tracked symlink is followed to what it names, which must be tracked and inside
-the project too, since a checkout leaves the link dangling otherwise. The refusal says to commit
+the repository too, since a checkout leaves the link dangling otherwise. The refusal says to commit
 the file (an ignored one needs its ignore rule removed, or `git add -f`), or to keep it out of
 git and take the gate out of `[gates] builtin`. `keelline gate` itself is unchanged.

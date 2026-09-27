@@ -93,14 +93,14 @@ NOT_RUN = (
     "its command; without --builtin, adopt promote runs the commands [gates.custom] names"
 )
 # A gate `adopt promote` did not enforce because it reads a file CI's checkout will not have: one
-# git does not track, or a symlink leading out of the project. `{files}` are names found on disk,
+# git does not track, or a symlink leading out of the repository. `{files}` are names found on disk,
 # each through `printable`; `--json` carries them whole.
 UNTRACKED_NOTE = (
     "note: {gate} reads {files}, which CI's checkout will not have, so CI would fail {gate} on "
     "every pull request, and {gate} is not enforced. CI checks out only what git tracks: commit "
     "each file named (one an ignore rule matches needs the rule removed, or `git add -f`), and "
-    "point a symlink named here at a file inside the project; or keep them out of git and take "
-    "{gate} out of [gates] builtin"
+    "point a symlink named here at a tracked file in the repository; or keep them out of git "
+    "and take {gate} out of [gates] builtin"
 )
 UNASKED_NOTE = (
     "note: git gave no answer to whether it tracks the files {gate} reads, so {gate} is not "
