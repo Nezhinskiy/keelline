@@ -3,110 +3,148 @@
 The design these modules were built against lives in a private repository. A `§9.1` or a
 `(D7)` in a docstring therefore points a reader at a page they cannot open: it looks like a
 reference and carries none of the content. Seventy-four files under `src/` did it before this
-gate, eighty-two under `tests/`, and the mutation register, the scripts, `docs/cli.md`, the
-preset and the hook wrapper besides. The rule is to say what the section says, in a few words,
-or to cite an anchor that exists in this repository — `docs/cli.md#…`, `CONTRIBUTING.md`, or a
-principle of `docs/methodology/principles.md` by its number.
+gate, eighty-two under `tests/`, and the mutation register, the scripts, the workflows,
+`docs/cli.md`, the preset and the hook wrapper besides. The rule is to say what the section
+says, in a few words, or to cite an anchor that exists in this repository — `docs/cli.md#…`,
+`CONTRIBUTING.md`, or a principle of `docs/methodology/principles.md` by its number.
 
-**`docs/plans/` is exempt, and on purpose.** A plan is a historical record of work argued from
-the design, and it keeps the ids it argued with; `CONTRIBUTING.md` says its references cannot
-be followed from here. Everything else a user installs or a contributor reads is walked.
+**Every tracked file is walked, and the exemptions are named.** `docs/plans/` is a historical
+record of work argued from the design, and it keeps the ids it argued with; `CONTRIBUTING.md`
+says its references cannot be followed from here. This file plants citations on purpose. A
+list of trees to walk would be a list of trees to forget, and the class did arrive in one that
+an earlier list left out.
+
+**A file is read whole, not line by line.** Words are matched across any run of whitespace, so
+a phrase a re-wrap split over two lines — "the Global" at the end of one, "Constraints" at the
+start of the next — is the same phrase to the gate as to a reader.
 
 The arms are deliberately wider than "a parenthesised id". The ids were written bare as often
 as in brackets — `D7: a cap, not a config key`, `DP3 makes it trusted by construction`, `C5's
 exit 2` — and an arm that saw only one spelling would have let most of the class back in. What
-the width costs is a rewrite: a future sentence that needs a bare `D3` or `P1` for some other
-reason says it another way.
+the width costs is a rewrite: an ordinary numbered use — `P95`, `the P1 bug`, `item 1 of the
+tuple` in code — is refused too, and says it another way.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from pathlib import Path
 
 from tests.test_neutral import ROOT, tracked_files
 
-# What ships, what is read as documentation, and what a contributor reads beside it: the
-# package, the plugin's own trees, the suite and its scripts, the mutation register and the
-# top-level documents a contributor is sent to. The maintainers' files are walked too because
-# they are as public as the package, and a citation in a test's docstring is as unreadable as
-# one in a module's. `.github/` is left to the reviewer: its comments say what a step does, and
-# nothing there is prose a reader is sent to. This file is exempt because its planted examples
-# are citations on purpose.
-SCOPE = ("src", "skills", "docs", "hooks", "agents", "tests", "scripts")
-TOP_LEVEL = ("README.md", "CONTRIBUTING.md", "RELEASING.md", "mutations.toml")
+# What is never walked. Everything else git tracks is.
 EXEMPT = ("docs/plans", "tests/test_public_anchors.py")
 
-# The trees that are code rather than documents, where the plans' bookkeeping arm applies. A
-# fixture is a document a test reads, whatever tree it sits in, so it is held as one.
-CODE = ("src", "tests", "scripts", "mutations.toml")
+# Where the plans' bookkeeping arms do not apply: a document may talk about a task or a round in
+# its own sense, and a fixture is a document a test reads, whatever tree it sits in.
+DOCUMENT_SUFFIX = ".md"
 FIXTURES = "tests/fixtures"
 
-# Each arm is named so a hit says what it is.
+# Each arm is named so a hit says what it is. Every arm is matched against the whole text, so
+# a space in a phrase is written `\s+`.
 CITATIONS = (
-    ("design section", re.compile(r"§\s*\d")),
+    ("design section", re.compile(r"§\s*\d+(?:\.\d+)*")),
     # The two-letter prefixes are unambiguous; the one-letter ones are held to the numbers the
-    # design and its plans used, and `C0` stays legal because it is the Unicode name of the
-    # control characters `tomlout` escapes.
-    ("decision id", re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b")),
+    # design and its plans used. `C0` and `C1` stay legal before "control", because those are
+    # the Unicode names of the control classes `tomlout` and the probes escape.
+    (
+        "decision id",
+        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b(?!\s+control)"),
+    ),
     # Whatever prefix a later plan invents, it arrives in brackets at the end of a sentence.
     ("bracketed id", re.compile(r"\([A-Z]{1,2}\d{1,2}(?:,\s*[A-Z]{1,2}\d{1,2})*\)")),
     # The design's measurement log, cited as `Findings → S6`.
     ("design finding", re.compile(r"Findings\s*→")),
     # A plan's own headings, which a module quoted as if the reader had the plan open: "Premise 2
-    # of the lane's plan", "by the Global Constraints' own list". `CONTRIBUTING.md` holds the
-    # rules a contributor can read; a principle holds the argument.
-    ("plan section", re.compile(r"\bPremise \d|Global Constraint")),
+    # of the lane's plan", "by the Global Constraints' own list", in either case.
+    ("plan section", re.compile(r"\bPremise\s+\d+|(?i:\bglobal\s+constraint)")),
 )
 
 # The plans' own bookkeeping, which means nothing once the code has shipped: the wave a line
 # landed in, the task that wrote it, the review round that changed it and the finding or item by
-# its number in that round. Code says what it does and why; when it did it is git's. Held to the
-# code, because a document may legitimately talk about a task or a round in its own sense.
+# its number in that round, and a spike's or a review's `S<n>`. Code says what it does and why;
+# when it did it is git's. The public source list's `[S27]` is bracketed and stays legal.
 CODE_ONLY = (
     (
         "plan vocabulary",
         re.compile(
-            r"\b[Ww]ave[- ]\d|\b[Tt]his wave\b|\bWave [A-Z]\d*\b|\bTask \d|\b[Ff]ix round"
-            r"|\b[Rr]ound \d|\b[Ii]tem \d|\b[Ff]inding \d"
+            r"(?i:\bwave\b)|\bTask\s+\d+|(?i:\bfix\s+round)|(?i:\bround\s+\d+)"
+            r"|(?i:\bitem\s+\d+)|(?i:\bfinding\s+\d+)"
         ),
     ),
+    ("spike id", re.compile(r"(?<!\[)\bS\d{1,2}\b(?!\])")),
+)
+
+# A line's comment leader: Python, TOML, YAML and shell all spell it `#`.
+COMMENT_LEADER = re.compile(r"(?m)^([ \t]*)(#+)")
+
+# What a contributor who trips the gate reads first.
+REMEDY = (
+    "Shipped text cites the private design or the plans' bookkeeping. State the rule in a few "
+    "words, or cite docs/cli.md#…, CONTRIBUTING.md or a principle of "
+    "docs/methodology/principles.md by its number."
 )
 
 
-def in_scope(path: Path) -> bool:
-    relative = path.relative_to(ROOT).as_posix()
-    if any(relative == exempt or relative.startswith(exempt + "/") for exempt in EXEMPT):
-        return False
-    return relative in TOP_LEVEL or relative.split("/", 1)[0] in SCOPE
+def is_document(relative: str) -> bool:
+    return relative.endswith(DOCUMENT_SUFFIX) or relative.startswith(FIXTURES + "/")
 
 
-def citations(text: str, *, code: bool = False) -> list[tuple[int, str, str]]:
-    """Every private citation in the text, as `(line number, arm name, matched text)`.
+def arms_for(relative: str) -> tuple[tuple[str, re.Pattern[str]], ...]:
+    """The arms the file at `relative` is held to: the code-only ones too unless a document."""
+    return CITATIONS if is_document(relative) else CITATIONS + CODE_ONLY
 
-    `code` adds the arms held to the code trees alone.
+
+def citations(
+    text: str, arms: Iterable[tuple[str, re.Pattern[str]]] = CITATIONS
+) -> list[tuple[int, str, str]]:
+    """Every citation in the text, as `(line number, arm name, matched text)`, one per span.
+
+    Two arms that take the same span — `(D7)` is a bracketed id and a decision id — report it
+    once, under the arm that starts first and then under the arm listed first.
     """
-    arms = CITATIONS + CODE_ONLY if code else CITATIONS
+    # A comment's leading `#` becomes spaces of the same width, so a phrase wrapped across two
+    # comment lines is one phrase and every offset, and so every line number, stays where it was.
+    text = COMMENT_LEADER.sub(lambda m: m.group(1) + " " * len(m.group(2)), text)
+    matches = sorted(
+        (match.start(), order, match.end(), name, match.group())
+        for order, (name, pattern) in enumerate(arms)
+        for match in pattern.finditer(text)
+    )
     found: list[tuple[int, str, str]] = []
-    for number, line in enumerate(text.splitlines(), start=1):
-        for name, pattern in arms:
-            found.extend((number, name, match.group()) for match in pattern.finditer(line))
+    covered = -1
+    for start, _, end, name, matched in matches:
+        if start < covered:
+            continue
+        covered = end
+        found.append((text.count("\n", 0, start) + 1, name, " ".join(matched.split())))
     return found
 
 
-def is_code(relative: str) -> bool:
-    if relative.startswith(FIXTURES + "/"):
-        return False
-    return relative.split("/", 1)[0] in CODE
+def is_exempt(relative: str) -> bool:
+    return any(relative == exempt or relative.startswith(exempt + "/") for exempt in EXEMPT)
 
 
-def file_citations(relative: str, text: str) -> list[tuple[int, str, str]]:
-    """`citations` for the tracked file at `relative`, with the code-only arms in the code."""
-    return citations(text, code=is_code(relative))
+def gated_files() -> list[Path]:
+    """Every tracked file but the exemptions."""
+    return [path for path in tracked_files() if not is_exempt(path.relative_to(ROOT).as_posix())]
 
 
-def walked() -> list[Path]:
-    return [path for path in tracked_files() if in_scope(path)]
+def scan(root: Path, paths: Iterable[Path]) -> list[str]:
+    """Every citation in the files, as `path:line: arm 'text'`, the path relative to `root`."""
+    hits: list[str] = []
+    # No `UnicodeDecodeError` handler: the repository ships no binary (`tests/test_neutral.py`
+    # holds that at zero), and a walk that skipped what it could not read would go green by
+    # reading nothing.
+    for path in paths:
+        relative = path.relative_to(root).as_posix()
+        text = path.read_text(encoding="utf-8")
+        hits.extend(
+            f"{relative}:{n}: {arm} {found!r}"
+            for n, arm, found in citations(text, arms_for(relative))
+        )
+    return hits
 
 
 def test_the_citation_gate_discriminates() -> None:
@@ -125,10 +163,14 @@ def test_the_citation_gate_discriminates() -> None:
         "the argument P10 makes",
         "C5's exit 2",
         "(R5, D15)",
+        "(R5, E3)",
         "(E3)",
         "Findings → S6 did not reproduce",
         "the dispatcher banks it (Premise 2)",
         "repository-authored by the Global Constraints' own list",
+        "the global constraints make `gh` a seam",
+        "The Global\nConstraints list it",
+        "under Premise\n12",
     ):
         assert citations(planted), planted
     for clean in (
@@ -136,60 +178,120 @@ def test_the_citation_gate_discriminates() -> None:
         "principle 5 says a repository is untrusted input",
         "see docs/cli.md#keelline-init",
         "Every other C0 control and DEL",
+        "the C1 control range",
         "Python 3.11, 3.12 and 3.13",
         "a sha256 digest, MD5 never",
         "exit code 2 (a refusal)",
+        "a global constant",
     ):
         assert citations(clean) == [], clean
 
 
+def test_a_citation_reports_its_whole_text_once_on_its_own_line() -> None:
+    # One span, one hit, and the number whole: `(D7)` used to report twice and `Task 12` as
+    # `Task 1`, and a phrase split over two lines is reported on the line it starts on.
+    assert citations("(D7)") == [(1, "bracketed id", "(D7)")]
+    assert citations("(DC4, D15)") == [(1, "bracketed id", "(DC4, D15)")]
+    assert citations("x\ny §9.12 z") == [(2, "design section", "§9.12")]
+    arms = arms_for("src/keelline/x.py")
+    assert citations("a\nTask 12, and Finding 14", arms) == [
+        (2, "plan vocabulary", "Task 12"),
+        (2, "plan vocabulary", "Finding 14"),
+    ]
+    assert citations("one\nthe Global\n  Constraints list") == [
+        (2, "plan section", "Global Constraint")
+    ]
+
+
 def test_the_plan_vocabulary_gate_discriminates() -> None:
-    # The code-only arm: each planted line is refused in the code and passes in a document,
-    # which is the whole difference the `code` flag makes. The negatives are the words these
-    # modules use in their own sense — a background task, a round trip, a wave of retries, what
-    # a check finds.
+    # The code-only arms: each planted line is refused in code and passes in a document, which is
+    # the whole difference `arms_for` makes. One spelling per line, so no spelling covers for
+    # another. The negatives are the words these modules use in their own sense — a background
+    # task, a round trip, what a check finds, a public source by its bracketed id.
+    code = arms_for("src/keelline/x.py")
     for planted in (
         "the wave-3 memory engine",
         "landed in wave 4",
+        "this\nwave exists to remove it",
+        "Wave A2's writing commands",
         "Task 12 wrote this guard",
         "Fix round 2 moved the check",
         "the second fix round",
-        "Review round 1, finding 5.",
-        "this wave's first report",
-        "Wave A2's writing commands",
-        "round 1, item 2",
+        "Review round 1.",
+        "the reviewer's item 5",
+        "finding 14 said",
+        "S8 row 2 measured it",
+        "was S3 of the install-path review",
     ):
-        assert citations(planted, code=True), planted
+        assert citations(planted, code), planted
         assert citations(planted) == [], planted
-    # And the walk applies the arm by where a file lives: in the code and nowhere else.
-    for code in ("src/keelline/runner.py", "tests/test_cli.py", "scripts/x.py", "mutations.toml"):
-        assert file_citations(code, "the wave-4 lane"), code
+    for clean in (
+        "a task the hook runs in the background",
+        "one round trip to git",
+        "fix the round-trip",
+        "one finding per line",
+        "a microwave 3 times",
+        "sourced [S12], at the source's own date",
+        "SHA256 and S3TC",
+    ):
+        assert citations(clean, code) == [], clean
+
+
+def test_the_arms_follow_where_a_file_lives() -> None:
+    # Code is held to the bookkeeping arms and a document is not: a `.md` file anywhere, and a
+    # fixture whatever its suffix, because a fixture is a document a test reads.
+    for code in (
+        "src/keelline/runner.py",
+        "tests/test_cli.py",
+        "scripts/x.py",
+        "mutations.toml",
+        ".github/workflows/ci.yml",
+        "hooks/run-hook.sh",
+    ):
+        assert citations("the wave-4 lane", arms_for(code)), code
     for document in (
         "docs/cli.md",
         "README.md",
         "RELEASING.md",
         "skills/README.md",
+        "src/keelline/templates/project/AGENTS.md",
         "tests/fixtures/smoke-project/docs/plans/README.md",
+        "tests/fixtures/hostile-project/keelline.toml",
     ):
-        assert file_citations(document, "the wave-4 lane") == [], document
-    for clean in (
-        "a task the hook runs in the background",
-        "one round trip to git",
-        "a wave of retries",
-        "fix the round-trip",
-        "one finding per line",
-        "a microwave 3 times",
-    ):
-        assert citations(clean, code=True) == [], clean
+        assert citations("the wave-4 lane", arms_for(document)) == [], document
 
 
-def test_the_citation_walk_reads_what_ships_and_skips_the_plans() -> None:
-    # The non-vacuity guard for the walk below: one named file from every tree in scope, and the
-    # exemption shown to be real — a plan is tracked, and it is not walked.
-    names = {path.relative_to(ROOT).as_posix() for path in walked()}
+def test_the_scan_reports_what_it_read_by_path_and_line(tmp_path: Path) -> None:
+    # The loop the gate below runs, on planted files. Reading nothing, or reading and keeping
+    # nothing, leaves the gate green over any tree; this is where either shows.
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.py").write_text("x = 1\n# the Global\n# Constraints\n", encoding="utf-8")
+    (tmp_path / "src" / "b.py").write_text("# the wave-4 lane\n", encoding="utf-8")
+    (tmp_path / "c.md").write_text("the wave-4 lane, and §3\n", encoding="utf-8")
+    paths = sorted(tmp_path.rglob("*.*"))
+    assert scan(tmp_path, paths) == [
+        "c.md:1: design section '§3'",
+        "src/a.py:2: plan section 'Global Constraint'",
+        "src/b.py:1: plan vocabulary 'wave'",
+    ]
+
+
+def test_the_citation_walk_reads_every_tracked_file_but_the_exemptions() -> None:
+    # The non-vacuity guard for the walk below: one named file from every tree, and each
+    # exemption shown to be real — a plan is tracked and not walked, and so is this file.
+    names = {path.relative_to(ROOT).as_posix() for path in gated_files()}
     for wanted in (
         "README.md",
         "CONTRIBUTING.md",
+        "RELEASING.md",
+        "CHANGELOG.md",
+        "SECURITY.md",
+        "pyproject.toml",
+        "mutations.toml",
+        ".claude-plugin/plugin.json",
+        ".codex-plugin/plugin.json",
+        ".github/workflows/ci.yml",
+        "changelog.d/+assess.feature.md",
         "src/keelline/cli.py",
         "src/keelline/presets/recommended.toml",
         "docs/cli.md",
@@ -197,8 +299,6 @@ def test_the_citation_walk_reads_what_ships_and_skips_the_plans() -> None:
         "skills/README.md",
         "hooks/run-hook.sh",
         "agents/code-navigator.md",
-        "RELEASING.md",
-        "mutations.toml",
         "tests/test_cli.py",
         "tests/fixtures/hostile-project/keelline.toml",
         "scripts/mutation_oracle.py",
@@ -210,16 +310,8 @@ def test_the_citation_walk_reads_what_ships_and_skips_the_plans() -> None:
     assert "tests/test_public_anchors.py" not in names
 
 
-def test_no_shipped_file_cites_the_private_design() -> None:
+def test_no_tracked_file_cites_the_private_design() -> None:
     # One test over the whole walk rather than one per file, so a regression reads as a list of
     # `path:line` a contributor can work through instead of a wall of parametrised cases.
-    hits: list[str] = []
-    # No `UnicodeDecodeError` handler: nothing in scope is binary, and a walk that skipped what it
-    # could not read would go green by reading nothing.
-    for path in walked():
-        text = path.read_text(encoding="utf-8")
-        relative = path.relative_to(ROOT).as_posix()
-        hits.extend(
-            f"{relative}:{n}: {arm} {found!r}" for n, arm, found in file_citations(relative, text)
-        )
-    assert hits == [], "\n".join(hits)
+    hits = scan(ROOT, gated_files())
+    assert hits == [], "\n".join([REMEDY, *hits])

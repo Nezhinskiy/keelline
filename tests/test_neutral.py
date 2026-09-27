@@ -281,12 +281,15 @@ def walked(root: Path) -> list[Path]:
     """The fallback: every file under `root` minus the fixed exclusions."""
     # Anchored on the FIRST component: `tests/fixtures/hostile-project/.claude/settings.json`
     # is a fixture to walk, not a configuration directory to skip. Coverage's data files are
-    # named rather than listed: each sits in the root and is its own first component.
+    # named rather than listed: each sits in the root and is its own first component. Bytecode
+    # is the one exclusion at any depth: one pytest run leaves `tests/__pycache__/*.pyc` beside
+    # every module, and no fixture is named `__pycache__`.
     return sorted(
         p
         for p in root.rglob("*")
         if p.is_file()
         and (parts := p.relative_to(root).parts)[0] not in FALLBACK_EXCLUDED
+        and "__pycache__" not in parts
         and not (len(parts) == 1 and (p.name == ".coverage" or p.name.startswith(".coverage.")))
     )
 
@@ -302,6 +305,18 @@ def test_the_fallback_walk_skips_coverage_data_in_the_root(tmp_path: Path) -> No
     for name in (".coverage", ".coverage.runner_host.pid4242.XaBcDeFx", "README.md"):
         (tmp_path / name).write_text("x", encoding="utf-8")
     assert [p.name for p in walked(tmp_path)] == ["README.md"]
+
+
+def test_the_fallback_walk_skips_bytecode_at_any_depth(tmp_path: Path) -> None:
+    # An unpacked sdist after one pytest run: `__pycache__` sits beside every module, not only in
+    # the root, and its `.pyc` files are undecodable — the public-anchor gate reads every file it
+    # is given and would raise on the first one.
+    #
+    # Mutation (declared): the any-depth clause dropped from `walked` -> the `.pyc` is walked.
+    (tmp_path / "tests" / "__pycache__").mkdir(parents=True)
+    (tmp_path / "tests" / "__pycache__" / "test_x.cpython-313.pyc").write_bytes(b"\xa7\r\r\n")
+    (tmp_path / "tests" / "test_x.py").write_text("x = 1\n", encoding="utf-8")
+    assert [p.relative_to(tmp_path).as_posix() for p in walked(tmp_path)] == ["tests/test_x.py"]
 
 
 @needs_git

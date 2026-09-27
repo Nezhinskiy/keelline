@@ -1105,14 +1105,15 @@ reddens = [
   "tests/test_neutral.py::test_the_gate_discriminates",
 ]
 
-# The public-anchor gate: shipped code and documents never cite the private design by section
+# The public-anchor gate: no tracked file outside the plans cites the private design by section
 # number or decision id, because a reader here cannot open what either points at. Its failure
-# mode is the neutrality gate's — silence — so each arm and the walk's reach are declared.
+# mode is the neutrality gate's — silence — so each arm, the whole-text reading, the loop and the
+# walk's reach are declared.
 [[mutation]]
 name = "the public-anchor gate stops seeing a design section number"
 file = "tests/test_public_anchors.py"
-before = '    ("design section", re.compile(r"§\s*\d")),'
-after = '    ("design section", re.compile(r"§\s*\d(?!)")),'
+before = '    ("design section", re.compile(r"§\s*\d+(?:\.\d+)*")),'
+after = '    ("design section", re.compile(r"§\s*\d+(?:\.\d+)*(?!)")),'
 reddens = [
   "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
 ]
@@ -1123,8 +1124,8 @@ reddens = [
 [[mutation]]
 name = "the public-anchor gate sees only the two-letter decision ids"
 file = "tests/test_public_anchors.py"
-before = '    ("decision id", re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b")),'
-after = '    ("decision id", re.compile(r"\b(?:DC|DP|OD|RD)\d+\b")),'
+before = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b(?!\s+control)"),'
+after = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b"),'
 reddens = [
   "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
 ]
@@ -1135,97 +1136,206 @@ reddens = [
 [[mutation]]
 name = "the public-anchor gate forgets the RD prefix"
 file = "tests/test_public_anchors.py"
-before = '    ("decision id", re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b")),'
-after = '    ("decision id", re.compile(r"\b(?:DC|DP|OD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b")),'
+before = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b(?!\s+control)"),'
+after = '        re.compile(r"\b(?:DC|DP|OD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b(?!\s+control)"),'
 reddens = [
   "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
 ]
 
-# And the other direction: `C0` is the Unicode name of the control characters `tomlout` escapes,
-# so an arm widened to every `C<digit>` refuses a correct sentence, which is how a gate earns an
-# exemption and then loses its point.
+# And the other direction: "C0 control" and "C1 control" are the Unicode names of the classes
+# `tomlout` and the probes escape, so an arm widened to every `C<digit>`, or one that forgets the carve-out
+# before "control", refuses a correct sentence — which is how a gate earns an exemption and then
+# loses its point.
 [[mutation]]
 name = "the public-anchor gate refuses the C0 control class"
 file = "tests/test_public_anchors.py"
-before = '    ("decision id", re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b")),'
-after = '    ("decision id", re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC\d\b")),'
+before = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b(?!\s+control)"),'
+after = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC\d\b"),'
 reddens = [
   "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
 ]
 
-# The walk's reach. Drop `src` and the package — where almost every citation lived — is never
-# read, while the walk over the documents stays green and says nothing.
 [[mutation]]
-name = "the public-anchor walk forgets the package"
+name = "the public-anchor gate refuses the C1 control class"
 file = "tests/test_public_anchors.py"
-before = 'SCOPE = ("src", "skills", "docs", "hooks", "agents", "tests", "scripts")'
-after = 'SCOPE = ("skills", "docs", "hooks", "agents", "tests", "scripts")'
+before = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b(?!\s+control)"),'
+after = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b"),'
 reddens = [
-  "tests/test_public_anchors.py::test_the_citation_walk_reads_what_ships_and_skips_the_plans",
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
 ]
 
-# The walk's reach into the maintainers' files: drop `tests` and the suite's docstrings, which
-# carried most of the citations left after the package, go unread again.
+# A bracketed list whose members are none of them decision ids is caught by the list's tail
+# alone; without it only the single-id brackets and the ids the decision arm spells survive.
 [[mutation]]
-name = "the public-anchor walk forgets the suite"
+name = "the public-anchor gate stops reading a bracketed list"
 file = "tests/test_public_anchors.py"
-before = 'SCOPE = ("src", "skills", "docs", "hooks", "agents", "tests", "scripts")'
-after = 'SCOPE = ("src", "skills", "docs", "hooks", "agents", "scripts")'
+before = '    ("bracketed id", re.compile(r"\([A-Z]{1,2}\d{1,2}(?:,\s*[A-Z]{1,2}\d{1,2})*\)")),'
+after = '    ("bracketed id", re.compile(r"\([A-Z]{1,2}\d{1,2}\)")),'
 reddens = [
-  "tests/test_public_anchors.py::test_the_citation_walk_reads_what_ships_and_skips_the_plans",
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
 ]
 
-# And its own exemption: the guard's planted examples are citations on purpose, and a walk that
-# read them would be red for ever, which is how a gate gets switched off.
+# The plan headings in either case and across a re-wrap: three shipped modules named the plans'
+# list of constraints in lower case and one split its two words over two lines, and the
+# case-sensitive, single-space arm that preceded this one saw none of them.
+[[mutation]]
+name = "the public-anchor gate reads the plan headings case-sensitively again"
+file = "tests/test_public_anchors.py"
+before = '    ("plan section", re.compile(r"\bPremise\s+\d+|(?i:\bglobal\s+constraint)")),'
+after = '    ("plan section", re.compile(r"\bPremise \d+|G[l]obal Constraint")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# The code-only arms, a spelling at a time: every planted line carries one, so none covers for
+# another. Gone quiet, the plan bookkeeping this change took out of the code comes back unremarked.
+[[mutation]]
+name = "the public-anchor gate stops seeing the unit a plan shipped in"
+file = "tests/test_public_anchors.py"
+before = '            r"(?i:\bwave\b)|\bTask\s+\d+|(?i:\bfix\s+round)|(?i:\bround\s+\d+)"'
+after = '            r"\bTask\s+\d+|(?i:\bfix\s+round)|(?i:\bround\s+\d+)"'
+reddens = [
+  "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
+]
+
+[[mutation]]
+name = "the public-anchor gate stops seeing a numbered item or finding"
+file = "tests/test_public_anchors.py"
+before = '            r"|(?i:\bitem\s+\d+)|(?i:\bfinding\s+\d+)"'
+after = '            r""'
+reddens = [
+  "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
+]
+
+# A spike's or a review's `S<n>` — and not the public source list's bracketed `[S12]`, which the
+# arm must go on leaving alone.
+[[mutation]]
+name = "the public-anchor gate stops seeing a spike id"
+file = "tests/test_public_anchors.py"
+before = '    ("spike id", re.compile(r"(?<!\[)\bS\d{1,2}\b(?!\])")),'
+after = '    ("spike id", re.compile(r"(?<!\[)\bS\d{1,2}\b(?!\])(?!)")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
+]
+
+[[mutation]]
+name = "the public-anchor gate refuses a bracketed public source"
+file = "tests/test_public_anchors.py"
+before = '    ("spike id", re.compile(r"(?<!\[)\bS\d{1,2}\b(?!\])")),'
+after = '    ("spike id", re.compile(r"\bS\d{1,2}\b")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
+]
+
+# The whole-text reading. A comment's `#` left in place splits a wrapped phrase in two; the
+# overlap rule gone reports a bracketed decision id twice; a line number computed from nothing points at line 1.
+[[mutation]]
+name = "the public-anchor gate lets a comment leader split a phrase"
+file = "tests/test_public_anchors.py"
+before = '    text = COMMENT_LEADER.sub(lambda m: m.group(1) + " " * len(m.group(2)), text)'
+after = '    text = text'
+reddens = [
+  "tests/test_public_anchors.py::test_the_scan_reports_what_it_read_by_path_and_line",
+]
+
+[[mutation]]
+name = "the public-anchor gate reports one span once per arm"
+file = "tests/test_public_anchors.py"
+before = '        if start < covered:'
+after = '        if False:'
+reddens = [
+  "tests/test_public_anchors.py::test_a_citation_reports_its_whole_text_once_on_its_own_line",
+]
+
+[[mutation]]
+name = "the public-anchor gate reports every hit on the first line"
+file = "tests/test_public_anchors.py"
+before = '        found.append((text.count("\n", 0, start) + 1, name, " ".join(matched.split())))'
+after = '        found.append((1, name, " ".join(matched.split())))'
+reddens = [
+  "tests/test_public_anchors.py::test_a_citation_reports_its_whole_text_once_on_its_own_line",
+]
+
+# Where the code-only arms apply, all three ways: nowhere and they read nothing; everywhere and
+# a document talking about a task in its own sense is refused; a fixture read as code and the
+# smoke project's own plans are held to bookkeeping rules they are data for.
+[[mutation]]
+name = "the public-anchor walk never applies the code-only arms"
+file = "tests/test_public_anchors.py"
+before = '    return CITATIONS if is_document(relative) else CITATIONS + CODE_ONLY'
+after = '    return CITATIONS'
+reddens = [
+  "tests/test_public_anchors.py::test_the_arms_follow_where_a_file_lives",
+]
+
+[[mutation]]
+name = "the public-anchor walk applies the code-only arms to every file"
+file = "tests/test_public_anchors.py"
+before = '    return CITATIONS if is_document(relative) else CITATIONS + CODE_ONLY'
+after = '    return CITATIONS + CODE_ONLY'
+reddens = [
+  "tests/test_public_anchors.py::test_the_arms_follow_where_a_file_lives",
+]
+
+[[mutation]]
+name = "the public-anchor walk reads a fixture as code"
+file = "tests/test_public_anchors.py"
+before = '    return relative.endswith(DOCUMENT_SUFFIX) or relative.startswith(FIXTURES + "/")'
+after = '    return relative.endswith(DOCUMENT_SUFFIX)'
+reddens = [
+  "tests/test_public_anchors.py::test_the_arms_follow_where_a_file_lives",
+]
+
+# The walk's reach is every tracked file minus a named exemption, so the two ways to break it are
+# the exemption widened — here over the package, where almost every citation lived — and the
+# exemption lost, which reads the guard's own planted examples and is red for ever.
+[[mutation]]
+name = "the public-anchor walk's exemption swallows the package"
+file = "tests/test_public_anchors.py"
+before = 'EXEMPT = ("docs/plans", "tests/test_public_anchors.py")'
+after = 'EXEMPT = ("docs/plans", "tests/test_public_anchors.py", "src")'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_walk_reads_every_tracked_file_but_the_exemptions",
+]
+
 [[mutation]]
 name = "the public-anchor walk reads its own planted examples"
 file = "tests/test_public_anchors.py"
 before = 'EXEMPT = ("docs/plans", "tests/test_public_anchors.py")'
 after = 'EXEMPT = ("docs/plans",)'
 reddens = [
-  "tests/test_public_anchors.py::test_the_citation_walk_reads_what_ships_and_skips_the_plans",
+  "tests/test_public_anchors.py::test_the_citation_walk_reads_every_tracked_file_but_the_exemptions",
 ]
 
-# The code-only arm: the wave, task, review round and numbered finding a line came from. Gone
-# quiet, the plan bookkeeping this change took out of the code can come back unremarked.
+# The loop the gate runs. Read nothing, or read and keep nothing, and the gate is green over any
+# tree while every arm test still passes — which is what the arm tests alone could not show.
 [[mutation]]
-name = "the public-anchor gate stops seeing plan vocabulary"
+name = "the public-anchor scan reads nothing"
 file = "tests/test_public_anchors.py"
-before = '''            r"\b[Ww]ave[- ]\d|\b[Tt]his wave\b|\bWave [A-Z]\d*\b|\bTask \d|\b[Ff]ix round"'''
-after = '''            r"(?!)"'''
+before = '        text = path.read_text(encoding="utf-8")'
+after = '        text = ""'
 reddens = [
-  "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
-]
-
-# A fixture is a document a test reads — the smoke project's own plans, a hostile clone's README —
-# and a fixture that talks about a task or a round in its own sense is not plan bookkeeping.
-[[mutation]]
-name = "the public-anchor walk holds the fixtures to the code-only arms"
-file = "tests/test_public_anchors.py"
-before = '    if relative.startswith(FIXTURES + "/"):'
-after = '    if False:'
-reddens = [
-  "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
-]
-
-# Where the arm applies, both ways: nowhere and the arm reads nothing; everywhere and a document
-# talking about a task in its own sense is refused.
-[[mutation]]
-name = "the public-anchor walk never applies the code-only arms"
-file = "tests/test_public_anchors.py"
-before = '    return citations(text, code=is_code(relative))'
-after = '    return citations(text, code=False)'
-reddens = [
-  "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
+  "tests/test_public_anchors.py::test_the_scan_reports_what_it_read_by_path_and_line",
 ]
 
 [[mutation]]
-name = "the public-anchor walk applies the code-only arms to every tree"
+name = "the public-anchor scan keeps nothing it read"
 file = "tests/test_public_anchors.py"
-before = '    return citations(text, code=is_code(relative))'
-after = '    return citations(text, code=True)'
+before = '        hits.extend('
+after = '        [].extend('
 reddens = [
-  "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
+  "tests/test_public_anchors.py::test_the_scan_reports_what_it_read_by_path_and_line",
+]
+
+# The sdist fallback walk leaves bytecode out at any depth: one pytest run leaves a `__pycache__`
+# beside every module, and the public-anchor gate reads every file it is given.
+[[mutation]]
+name = "the fallback walk reads bytecode below the root"
+file = "tests/test_neutral.py"
+before = '        and "__pycache__" not in parts'
+after = '        and True'
+reddens = [
+  "tests/test_neutral.py::test_the_fallback_walk_skips_bytecode_at_any_depth",
 ]
 
 # A repository-controlled prefix reaches a regular expression only after its shape is checked.
