@@ -8677,7 +8677,7 @@ reddens = [
 # base enforces have failed the run, no custom gate starts, another enforced one included; the
 # one that would have started writes `marker`.
 [[mutation]]
-name = "a custom gate outside the base's enforced ones starts after the run has already failed"
+name = "every custom gate starts after the run has already failed"
 file = "src/keelline/assess/gates.py"
 before = "        if failed is not None and name in custom and failed(tuple(results)):"
 after = "        if False:"
@@ -10391,7 +10391,7 @@ reddens = [
 [[mutation]]
 name = "the base's ledger is listed at its tip, not where the change forked from it"
 file = "src/keelline/ledger/check.py"
-before = '    code, out = git_run(root, "merge-base", base, "HEAD")'
+before = '    code, out = git_run(root, "merge-base", "--all", base, "HEAD")'
 after = "    code, out = 0, base"
 reddens = [
   "tests/ledger/test_check.py::test_a_branch_forked_before_the_base_filed_an_entry_deleted_nothing",
@@ -10400,15 +10400,47 @@ reddens = [
   "tests/assess/test_gate_command.py::test_a_branch_behind_its_base_is_not_blamed_for_an_entry_the_base_filed_since",
 ]
 
+# A change that shapes its own history can have several merge bases with the base, and the one
+# `git merge-base` alone answers, the newest by date, can predate an entry another carries: a
+# merge still deletes that entry. Every merge base is listed and their entries united.
+[[mutation]]
+name = "the ledger is listed at the one merge base git picks, not at every one"
+file = "src/keelline/ledger/check.py"
+before = '    code, out = git_run(root, "merge-base", "--all", base, "HEAD")'
+after = '    code, out = git_run(root, "merge-base", base, "HEAD")'
+reddens = [
+  "tests/ledger/test_check.py::test_a_deletion_is_named_whichever_of_several_merge_bases_git_would_pick",
+]
+
+[[mutation]]
+name = "only the first of several merge bases is listed"
+file = "src/keelline/ledger/check.py"
+before = "    forks = out.split() if code == 0 else []"
+after = "    forks = out.split()[:1] if code == 0 else []"
+reddens = [
+  "tests/ledger/test_check.py::test_a_deletion_is_named_whichever_of_several_merge_bases_git_would_pick",
+]
+
+# In a shallow clone the commits HEAD forked from can be cut off, and the merge base git sees is
+# then older than the real one, from before an entry the change deleted.
+[[mutation]]
+name = "a shallow clone is compared at whatever merge base it can see"
+file = "src/keelline/ledger/check.py"
+before = '    if code == 0 and out.strip() == "true":'
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_check.py::test_a_shallow_clone_is_a_failure_never_an_older_fork_point",
+]
+
 # A base that shares no commit with HEAD has no fork point, and "the base carried nothing" would
 # pass whatever the change deleted.
 [[mutation]]
 name = "a merge base git cannot answer reads as a base with no ledger"
 file = "src/keelline/ledger/check.py"
-before = "    if code == 0:"
+before = "    forks = out.split() if code == 0 else []"
 after = """    if code != 0:
         return _BaseLedger(False, ())
-    if code == 0:"""
+    forks = out.split()"""
 reddens = [
   "tests/ledger/test_check.py::test_a_base_that_shares_no_history_with_the_tree_is_a_failure",
   "tests/ledger/test_check.py::test_a_base_git_cannot_list_never_reads_as_a_base_with_no_ledger",
@@ -10418,7 +10450,7 @@ reddens = [
 [[mutation]]
 name = "a base git cannot list reads as a base with no ledger"
 file = "src/keelline/ledger/check.py"
-before = "    if code != 0:"
+before = "    if code != 0 or not forks:"
 after = "    if code < 0:"
 reddens = [
   "tests/ledger/test_check.py::test_a_base_git_cannot_list_never_reads_as_a_base_with_no_ledger",

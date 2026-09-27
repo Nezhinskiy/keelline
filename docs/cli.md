@@ -616,13 +616,17 @@ regenerating the index deletes the ledger as surely as removing it, and renaming
 alone deletes it too, on a filesystem that folds case as on one that does not. Other files under
 the directory — a `README.md`, a subdirectory's notes — are not entries and may go. An entry
 moves with `bugs renumber`, which leaves a `void` entry at the old number and so removes nothing.
-What the change forked with is the ledger at `git merge-base <ref> HEAD`, the commit `plan`
-compares against too: an entry the base filed after the branch forked is not one the branch
-deleted, and a deletion is still named on a branch behind its base and on the merge commit CI
-checks out. `--base` is what the `bugs` gate passes, the base it judges against; a base git
-cannot list, or one that shares no commit with `HEAD`, fails (`1`) rather than read as a base
-with no ledger, and under a gate that is the gate not running. Without `--base` the tree alone is
-judged.
+What the change forked with is the ledger at every commit `git merge-base --all <ref> HEAD`
+names, their entries taken together: an entry the base filed after the branch forked is not one
+the branch deleted, and a deletion is still named on a branch behind its base, on the merge
+commit CI checks out, and on a history with several merge bases, where the one git would pick
+alone can predate the entry while a merge deletes it all the same. Entries are append-only, so
+taking them together refuses no branch that deleted nothing. `--base` is what the `bugs` gate
+passes, the base it judges against; a base git cannot list, one that shares no commit with
+`HEAD`, and any base in a shallow clone, where the commits `HEAD` forked from can be cut off and
+the merge base git sees be an older one, fail (`1`) rather than read as a base with no ledger,
+and under a gate that is the gate not running: fetch the whole history (`fetch-depth: 0`).
+Without `--base` the tree alone is judged.
 A generated index with no directory behind it is a deleted ledger and exits `1`. Git enumerates
 the files where the root is the top of a checkout (tracked plus untracked-not-ignored), and a
 walk stands in elsewhere. A file whose first 2 KiB carry `keelline:ledger:fixtures` holds sample
@@ -843,9 +847,9 @@ it runs in the process that holds the verdict, on a GitHub-hosted runner with pa
 no exception: a test runner the base enforces beside a pinned policy runs the change's code, and
 started after the policy failed it would run after the verdict was decided. So once the verdict
 is a failure no custom gate runs, and a pinned gate named to sort first among the enforced ones
-has passed before any other custom gate starts. When every gate before it has passed, a custom
-gate runs as always; one that was not started is judged on the next run, once the failure is
-fixed.
+has passed before any other custom gate starts. While the run has not failed (an advisory gate's
+findings do not fail it), a custom gate runs as always; one that was not started is judged on the
+next run, once the failure is fixed.
 Each custom gate runs in a session of its own, and the command's process group is ended when
 the command exits, passes or not, as on a timeout or an interrupt, so nothing it started in the
 background in that group runs on into the next gate. A descendant that leaves the command's

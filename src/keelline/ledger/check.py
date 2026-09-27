@@ -52,22 +52,23 @@ _EVIDENCE_BOUNDARY = re.compile(
 _CONFLICT_MARKER = re.compile(r"^(<{7} |={7}$|>{7} )", re.MULTILINE)
 _BODY_STATE_BULLET = re.compile(r"^- \*\*(Status|Severity):\*\*", re.MULTILINE)
 LEDGER_REMOVED = (
-    "the commit this change forked from the base at carries the ledger ({bugs} or {index}) and "
+    "a commit this change forked from the base at carries the ledger ({bugs} or {index}) and "
     "this tree has neither; deleting the ledger does not switch the bugs gate off: restore it "
     "from the base"
 )
 ENTRY_REMOVED = (
-    "the commit this change forked from the base at carries this entry and this tree does not; "
+    "a commit this change forked from the base at carries this entry and this tree does not; "
     "ledger entries are never deleted: restore it from the base, and move one with `keelline "
     "bugs renumber`, which leaves a `void` entry at the old number"
 )
 _BASE_UNREAD = (
-    "git could not find the commit HEAD forked from `{base}` at, or list {bugs} and {index} "
+    "git could not find the commits HEAD forked from `{base}` at, or list {bugs} and {index} "
     "there, under {root} ({cause}), so whether this change deleted the ledger or an entry of it "
     "is unknown and the bugs gate proved nothing. In CI the cause is a checkout too shallow to "
     "hold the base ref (`fetch-depth: 0`); locally it is a `--base` that names a ref this clone "
     "does not have, or one that shares no history with HEAD"
 )
+_SHALLOW = "this clone is shallow, so the commits HEAD forked from may be cut off"
 
 
 @dataclass(frozen=True)
@@ -85,34 +86,49 @@ def uninitialised(root: Path, config: Config) -> bool:
 
 
 def _base_ledger(root: Path, config: Config, base: str) -> _BaseLedger:
-    """What the commit HEAD forked from `base` at carries of the ledger: whether it has the
-    directory or the index, and the `<PREFIX>-nnn.md` entry files directly under the directory.
+    """What the commits HEAD forked from `base` at carry of the ledger: whether any has the
+    directory or the index, and the `<PREFIX>-nnn.md` entry files directly under the directory
+    in any of them.
 
-    That commit is `git merge-base <base> HEAD`, the one `plan` compares against when it reads
-    `<base>...HEAD`. What the base gained after the change forked is not the change's to have
-    kept, so a branch behind its base is not blamed for an entry filed since; and what the
-    change forked with, it still answers for, on a stale branch as on the merge commit CI checks
-    out, whose base parent the base can have moved past. Then one `git ls-tree -r` of the two
-    configured paths there, whose names come back relative to `root`, as they are configured.
+    Those commits are `git merge-base --all <base> HEAD`, every best common ancestor: where
+    `plan` reads `<base>...HEAD`, git picks one of them. What the base gained after the change
+    forked is not the change's to have kept, so a branch behind its base is not blamed for an
+    entry filed since; and what the change forked with, it still answers for, on a stale branch
+    as on the merge commit CI checks out, whose base parent the base can have moved past. A
+    history the change shapes itself can give it several merge bases, and the one `merge-base`
+    alone answers, the newest by date, can predate an entry another of them carries: a merge
+    deletes that entry all the same. So each is listed with one `git ls-tree -r` of the two
+    configured paths, whose names come back relative to `root`, and their entries are united.
+    Entries are append-only, so the union refuses no branch that deleted nothing.
 
-    A base shaped like an option is refused, as `plan check` refuses it, and a base git cannot
-    list, or one that shares no commit with HEAD, is a `Failure` — "could not run" to a gate —
-    and never "the base has no ledger", which would pass exactly the change this question exists
-    to catch.
+    A base shaped like an option is refused, as `plan check` refuses it. A base git cannot list,
+    one that shares no commit with HEAD, and any base in a shallow clone, where the commits HEAD
+    forked from can be cut off and the merge base git sees be an older one, are a `Failure` —
+    "could not run" to a gate — and never "the base has no ledger", which would pass exactly the
+    change this question exists to catch.
     """
     if base.startswith("-"):
         raise Refusal(f"{base!r} looks like an option, not a base ref")
     bugs, index = config.paths.bugs, config.paths.bug_index
-    code, out = git_run(root, "merge-base", base, "HEAD")
-    if code == 0:
-        fork = out.strip()
+    code, out = git_run(root, "rev-parse", "--is-shallow-repository")
+    if code == 0 and out.strip() == "true":
+        raise Failure(
+            _BASE_UNREAD.format(bugs=bugs, index=index, base=base, root=root, cause=_SHALLOW)
+        )
+    code, out = git_run(root, "merge-base", "--all", base, "HEAD")
+    forks = out.split() if code == 0 else []
+    found: set[str] = set()
+    for fork in forks:
         code, out = git_run(root, "ls-tree", "-r", "-z", "--name-only", fork, "--", bugs, index)
-    if code != 0:
+        if code != 0:
+            break
+        found.update(name for name in out.split("\0") if name)
+    if code != 0 or not forks:
         cause = NO_ANSWER if code < 0 else f"git exited {code}"
         raise Failure(
             _BASE_UNREAD.format(bugs=bugs, index=index, base=base, root=root, cause=cause)
         )
-    names = [name for name in out.split("\0") if name]
+    names = sorted(found)
     ids = identifiers(config)
     under = f"{bugs}/"
     entries = tuple(
@@ -177,7 +193,7 @@ def _unledgered(root: Path, config: Config, base: _BaseLedger | None) -> list[Fi
     dangles.
 
     "No ledger" is read off the tree, which a pull request writes, so the tree's word for it
-    cannot be what switches the gate off: the commit the change forked from the base at is
+    cannot be what switches the gate off: the commits the change forked from the base at are
     asked whether it had one, and a mention of an identifier is as much a reference as a
     citation of its file. A project that registers the gate before its first entry has no
     ledger there and mentions none, and stays green, as does a branch forked before the base's
@@ -224,7 +240,7 @@ def problems(root: Path, config: Config, base: str = "") -> list[Finding]:
     (`_unledgered`). A generated index with no ledger directory behind it is the other thing
     that shape describes, and it is the ledger having been deleted. Against a `base`, every arm
     past that one also names each entry the change forked with and the tree lacks
-    (`entry-removed`). Both are read at the commit HEAD forked from `base` at
+    (`entry-removed`). Both are read at every commit HEAD forked from `base` at
     (`_base_ledger`).
     """
     carried = _base_ledger(root, config, base) if base else None

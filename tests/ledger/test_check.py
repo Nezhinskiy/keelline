@@ -363,6 +363,75 @@ def test_a_deletion_is_named_on_a_stale_branch_and_on_a_merge_commit(tmp_path: P
     assert [(p.rule, p.path) for p in problems(root, config, base)] == expected
 
 
+def _at(root: Path, tick: int, *args: str) -> None:
+    """`git args` with the author and committer date of the `tick`th commit, so git orders
+    merge bases as the test says rather than by the clock."""
+    stamp = f"@{1_700_000_000 + tick * 1000} +0000"
+    git(root, *args, GIT_AUTHOR_DATE=stamp, GIT_COMMITTER_DATE=stamp)
+
+
+@needs_git
+def test_a_deletion_is_named_whichever_of_several_merge_bases_git_would_pick(
+    tmp_path: Path,
+) -> None:
+    # A criss-cross: `main` files BR-002 and then merges a colleague's side branch, forked
+    # before BR-002 and committed after it; the change merges the filing commit and the side
+    # branch itself. HEAD and the base then have two merge bases, and `git merge-base` answers
+    # the newer-dated one, the side branch's, which predates the entry: listed there alone,
+    # deleting BR-002 passed, and merging the change deletes it from `main`. Every merge base is
+    # listed and their entries are united; entries are append-only, so the union refuses no
+    # branch that deleted nothing. Mutations (declared): `--all` dropped, or only the first
+    # merge base kept -> nothing reported.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    ledger(root, config, {"BR-001": entry(1)})
+    git(root, "add", "-A")
+    _at(root, 1, "commit", "-q", "-m", "the first entry")
+    first = git(root, "rev-parse", "HEAD").strip()
+    ledger(root, config, {"BR-002": entry(2)})
+    git(root, "add", "-A")
+    _at(root, 2, "commit", "-q", "-m", "file BR-002")
+    filed = git(root, "rev-parse", "HEAD").strip()
+    git(root, "checkout", "-q", "-b", "q", first)
+    (root / "src" / "q.py").write_text("q = 1\n", encoding="utf-8")
+    git(root, "add", "-A")
+    _at(root, 3, "commit", "-q", "-m", "a colleague's side branch")
+    side = git(root, "rev-parse", "HEAD").strip()
+    git(root, "checkout", "-q", "main")
+    _at(root, 4, "merge", "-q", "--no-ff", "--no-edit", "q")
+    base = git(root, "rev-parse", "HEAD").strip()
+    git(root, "checkout", "-q", "--detach", filed)
+    _at(root, 5, "merge", "-q", "--no-ff", "--no-edit", side)
+    git(root, "checkout", "-q", "-b", "change")
+    # The premise: two merge bases, and the one git picks is the one without BR-002.
+    assert sorted(git(root, "merge-base", "--all", base, "HEAD").split()) == sorted([filed, side])
+    assert git(root, "merge-base", base, "HEAD").strip() == side
+    # A branch that merged both and deleted nothing is not refused.
+    assert problems(root, config, base) == []
+    _drop(root, config, "BR-002")
+    git(root, "add", "-A")
+    _at(root, 6, "commit", "-q", "-m", "delete BR-002")
+    assert [(p.rule, p.path) for p in problems(root, config, base)] == [
+        ("entry-removed", "docs/bugs/BR-002.md")
+    ]
+
+
+@needs_git
+def test_a_shallow_clone_is_a_failure_never_an_older_fork_point(tmp_path: Path) -> None:
+    # In a shallow clone the commits HEAD forked from can be cut off, and the merge base git can
+    # see is then older than the real one, from before the entry the change deleted: a deletion
+    # passed. A shallow clone is a question with no answer, `Failure` like a base git cannot
+    # list, whose remedy is the full history. Mutation (declared): the shallow check made
+    # `if False:` -> the clone below, whose tip is its own merge base, answers `[]`.
+    root, config, _ = _committed_ledger(tmp_path, ("BR-001",))
+    shallow = tmp_path / "shallow"
+    git(tmp_path, "clone", "-q", "--depth", "1", root.as_uri(), str(shallow))
+    assert git(shallow, "rev-parse", "--is-shallow-repository").strip() == "true"
+    with pytest.raises(Failure) as caught:
+        problems(shallow, config, "refs/remotes/origin/main")
+    assert "shallow" in str(caught.value)
+
+
 @needs_git
 def test_a_base_that_shares_no_history_with_the_tree_is_a_failure(tmp_path: Path) -> None:
     # A base with no commit in common with HEAD leaves nothing to compare the ledger with, and
