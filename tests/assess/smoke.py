@@ -1,7 +1,7 @@
 """The smoke fixture as a repository with a change to judge: two commits, judged from the first.
 
-Against `HEAD` itself `plan` would diff `HEAD...HEAD` and `commit` would read `HEAD..HEAD`, so
-both would pass by reading nothing; against `BASE` each has something to read.
+Against `HEAD` itself `plan` would diff `HEAD` with itself and `commit` would read
+`HEAD..HEAD`, so both would pass by reading nothing; against `BASE` each has something to read.
 """
 
 from __future__ import annotations

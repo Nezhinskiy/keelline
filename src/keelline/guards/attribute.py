@@ -6,6 +6,13 @@ Between (2) and (3) the only variable is the code; between (1) and (2) the only 
 the environment — provided the command syncs its own environment, which is the caller's to
 arrange and the reason the command is an argument.
 
+Run (3) needs one merge base, and a history can have several: each is as much "before this
+change" as the others, a failure can pass on one and fail on another, and the one git picks
+alone, the newest by date, is not the one the change forked from in any sense the others are
+not. So several merge bases, like a shallow clone where the real one can be cut off and an older
+commit stand in for it, leave the attribution undetermined: a `Failure` naming why, before
+anything runs, and never a verdict read off a tree chosen for the reader.
+
 Nothing here runs `git checkout`, `git stash` or `git reset`: `git archive` reads the object
 database, and this module never writes the working tree or moves the checkout between
 commits. Run 1 does execute the caller's command *in* the working tree, so whatever that
@@ -20,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from keelline.errors import Failure, Refusal
-from keelline.gitenv import NO_ANSWER, git_run, scrubbed_env
+from keelline.gitenv import NO_ANSWER, SHALLOW, ForkUnknown, fork_points, git_run, scrubbed_env
 from keelline.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
 
 VERDICTS = (
@@ -149,19 +156,39 @@ def _extract(root: Path, ref: str, into: Path) -> None:
         )
 
 
+def _merge_base(root: Path, base: str) -> str:
+    """The one commit run (3) extracts, or a `Failure` saying why there is none.
+
+    `gitenv.fork_points` names every merge base, or says why they are not known. More than one
+    is undetermined: naming them all is the report, and picking one would be a verdict about a
+    tree nobody asked for.
+    """
+    forks = fork_points(root, base)
+    if isinstance(forks, ForkUnknown):
+        if forks.cause == SHALLOW:
+            remedy = "; fetch the whole history (`git fetch --unshallow`) and run it again"
+        elif forks.answered:
+            remedy = f"; is {base} fetched, and is --root inside a checkout?"
+        else:
+            remedy = ""
+        raise Failure(
+            f"the attribution is undetermined: the merge base of HEAD and {base} is unknown "
+            f"({forks.cause}){remedy}"
+        )
+    if len(forks) > 1:
+        raise Failure(
+            f"the attribution is undetermined: HEAD and {base} have {len(forks)} merge bases "
+            f"({', '.join(forks)}), each as much before this change as the others, and a "
+            f"failure can pass on one and fail on another; merge {base} into the change so its "
+            f"tip is the one merge base, or pass `--base` naming the commit to compare against"
+        )
+    return forks[0]
+
+
 def attribute(root: Path, *, command: str, base: str, runner: Runner) -> Attribution:
     if base.startswith("-"):
         raise Refusal("--base must name a ref, not an option")
-    code, merge_base = git_run(root, "merge-base", "HEAD", base)
-    merge_base = merge_base.strip()
-    # `git_run`'s own sentinel for "no answer", which is not an exit code and must not be
-    # rendered as one: `exited -1; is origin/main fetched?` sends a reader to fetch a ref when
-    # the answer is that there is no git here, or that it ran past its bound. A `Failure` and not
-    # the listing's skip, because this command has no verdict without a merge-base.
-    if code == -1:
-        raise Failure(f"{NO_ANSWER}, so `merge-base HEAD {base}` gave nothing to compare against")
-    if code != 0 or not merge_base:
-        raise Failure(f"`git merge-base HEAD {base}` exited {code}; is {base} fetched?")
+    merge_base = _merge_base(root, base)
     ambient = _executed("working tree", runner.run(["sh", "-c", command], root))
     with tempfile.TemporaryDirectory(prefix="keelline-attribute-") as scratch:
         head = Path(scratch) / "head"

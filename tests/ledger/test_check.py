@@ -21,7 +21,7 @@ from keelline.ledger.check import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, problems
 from keelline.ledger.entries import load_entries
 from keelline.ledger.index import render_index
 from keelline.ledger.write import renumber
-from tests.gitfixture import git, needs_git
+from tests.gitfixture import answer_shallow_check, criss_cross, dated, git, needs_git
 
 CONFIG = """
 [keelline]
@@ -366,13 +366,6 @@ def test_a_deletion_is_named_on_a_stale_branch_and_on_a_merge_commit(tmp_path: P
     assert [(p.rule, p.path) for p in problems(root, config, base)] == expected
 
 
-def _at(root: Path, tick: int, *args: str) -> None:
-    """`git args` with the author and committer date of the `tick`th commit, so git orders
-    merge bases as the test says rather than by the clock."""
-    stamp = f"@{1_700_000_000 + tick * 1000} +0000"
-    git(root, *args, GIT_AUTHOR_DATE=stamp, GIT_COMMITTER_DATE=stamp)
-
-
 @needs_git
 def test_a_deletion_is_named_whichever_of_several_merge_bases_git_would_pick(
     tmp_path: Path,
@@ -389,32 +382,15 @@ def test_a_deletion_is_named_whichever_of_several_merge_bases_git_would_pick(
     git(root, "init", "-q", "-b", "main")
     ledger(root, config, {"BR-001": entry(1)})
     git(root, "add", "-A")
-    _at(root, 1, "commit", "-q", "-m", "the first entry")
-    first = git(root, "rev-parse", "HEAD").strip()
-    ledger(root, config, {"BR-002": entry(2)})
-    git(root, "add", "-A")
-    _at(root, 2, "commit", "-q", "-m", "file BR-002")
-    filed = git(root, "rev-parse", "HEAD").strip()
-    git(root, "checkout", "-q", "-b", "q", first)
-    (root / "src" / "q.py").write_text("q = 1\n", encoding="utf-8")
-    git(root, "add", "-A")
-    _at(root, 3, "commit", "-q", "-m", "a colleague's side branch")
-    side = git(root, "rev-parse", "HEAD").strip()
-    git(root, "checkout", "-q", "main")
-    _at(root, 4, "merge", "-q", "--no-ff", "--no-edit", "q")
-    base = git(root, "rev-parse", "HEAD").strip()
-    git(root, "checkout", "-q", "--detach", filed)
-    _at(root, 5, "merge", "-q", "--no-ff", "--no-edit", side)
+    dated(root, 1, "commit", "-q", "-m", "the first entry")
+    shape = criss_cross(root, lambda: ledger(root, config, {"BR-002": entry(2)}))
     git(root, "checkout", "-q", "-b", "change")
-    # The premise: two merge bases, and the one git picks is the one without BR-002.
-    assert sorted(git(root, "merge-base", "--all", base, "HEAD").split()) == sorted([filed, side])
-    assert git(root, "merge-base", base, "HEAD").strip() == side
     # A branch that merged both and deleted nothing is not refused.
-    assert problems(root, config, base) == []
+    assert problems(root, config, shape.base) == []
     _drop(root, config, "BR-002")
     git(root, "add", "-A")
-    _at(root, 6, "commit", "-q", "-m", "delete BR-002")
-    assert [(p.rule, p.path) for p in problems(root, config, base)] == [
+    dated(root, 6, "commit", "-q", "-m", "delete BR-002")
+    assert [(p.rule, p.path) for p in problems(root, config, shape.base)] == [
         ("entry-removed", "docs/bugs/BR-002.md")
     ]
 
@@ -424,8 +400,8 @@ def test_a_shallow_clone_is_a_failure_never_an_older_fork_point(tmp_path: Path) 
     # In a shallow clone the commits HEAD forked from can be cut off, and the merge base git can
     # see is then older than the real one, from before the entry the change deleted: a deletion
     # passed. A shallow clone is a question with no answer, `Failure` like a base git cannot
-    # list, whose remedy is the full history. Mutation (declared): the shallow check made
-    # `if False:` -> the clone below, whose tip is its own merge base, answers `[]`.
+    # list, whose remedy is the full history. Mutation (declared, on `gitenv`): the shallow
+    # answer ignored -> the clone below, whose tip is its own merge base, answers `[]`.
     root, config, _ = _committed_ledger(tmp_path, ("BR-001",))
     shallow = tmp_path / "shallow"
     git(tmp_path, "clone", "-q", "--depth", "1", root.as_uri(), str(shallow))
@@ -447,15 +423,10 @@ def test_a_shallow_check_git_does_not_answer_is_a_failure_never_a_full_clone(
     # Whether the clone is shallow is a question too: read as "not shallow" when git gave no
     # answer or refused, a shallow clone went on to the merge base it could see, an older one
     # than the real fork point, which is the case the shallow check exists to close. Mutation
-    # (declared): only a `true` answer counted -> the listing below goes ahead and answers `[]`.
+    # (declared, on `gitenv`): the shallow check's failure ignored -> the listing below goes
+    # ahead and answers `[]`.
     root, config, base = _committed_ledger(tmp_path, ("BR-001",))
-
-    def unanswered(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
-        if args[:2] == ("rev-parse", "--is-shallow-repository"):
-            return answer, ""
-        return git_run(where, *args, **kwargs)
-
-    monkeypatch.setattr(check, "git_run", unanswered)
+    answer_shallow_check(monkeypatch, answer)
     with pytest.raises(Failure) as caught:
         problems(root, config, base)
     assert f"({cause})" in str(caught.value)
@@ -491,6 +462,26 @@ def test_a_base_git_cannot_list_never_reads_as_a_base_with_no_ledger(tmp_path: P
     # Shaped like an option, it is refused before git sees it, as `plan check` refuses it.
     with pytest.raises(Refusal):
         problems(root, config, "--output=x")
+
+
+@needs_git
+def test_a_listing_git_refuses_at_a_merge_base_is_a_failure_never_an_empty_ledger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The fork points are known and the listing at one of them is not: an empty listing would
+    # read as a base with no ledger, and pass the deletion below. Mutation (declared): the
+    # listing's failure arm dropped -> `[]`.
+    root, config, base = _committed_ledger(tmp_path, ("BR-001",))
+    _drop(root, config, "BR-001")
+    real = git_run
+
+    def refused(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        return (128, "") if args[0] == "ls-tree" else real(where, *args, **kwargs)
+
+    monkeypatch.setattr(check, "git_run", refused)
+    with pytest.raises(Failure, match="git exited 128") as caught:
+        problems(root, config, base)
+    assert "proved nothing" in str(caught.value)
 
 
 def test_a_generated_index_with_no_entries_directory_is_a_deleted_ledger(tmp_path: Path) -> None:

@@ -1901,19 +1901,6 @@ before = '    skip = _ignored(root, paths) | _untracked(root, paths)'
 after = '    skip = _ignored(root, paths)'
 reddens = ["tests/docs/test_trail.py::test_an_untracked_or_ignored_document_is_not_listed"]
 
-# A gate that cannot answer must say so in its exit code; this one ran green for its whole
-# life on a checkout that had no base ref. It raises, so the `plan` gate could not run, as
-# `commit` could not, and `plan check` prints the cause as its own finding.
-[[mutation]]
-name = "an unresolvable base reads as a clean run"
-file = "src/keelline/docs/plans.py"
-before = "            raise BaseUnresolvable(_BASE_UNRESOLVABLE.format(base=base, root=root))"
-after = "            return Lint([], [], [])"
-reddens = [
-  "tests/docs/test_plans.py::test_a_base_that_will_not_resolve_is_raised_never_an_ok",
-  "tests/assess/test_command.py::test_assess_after_init_with_no_origin_fetched_names_the_gates_that_cannot_judge",
-]
-
 # `plan check` is the one surface that prints an unresolvable base as a finding, its documented
 # output; let the exception through and it ends as a bare `failed:` with no findings listed.
 [[mutation]]
@@ -4622,20 +4609,6 @@ before = "    except OSError as exc:"
 after = "    except ZeroDivisionError as exc:"
 reddens = [
   "tests/guards/test_attribute.py::test_a_tar_that_cannot_be_launched_is_a_finding_and_not_a_traceback",
-]
-
-# `-1` is `git_run`'s sentinel for "no answer" — not launched, or past its bound — and not an
-# exit status; rendered as one it sends a reader to fetch a ref that is not the problem. Two arms
-# now read it, so each entry carries its own `raise` line to name one of them.
-[[mutation]]
-name = "attribute reports an unlaunchable git as an exit code"
-file = "src/keelline/guards/attribute.py"
-before = """    if code == -1:
-        raise Failure(f"{NO_ANSWER}, so `merge-base HEAD {base}` gave nothing to compare against")"""
-after = """    if False:
-        raise Failure(f"{NO_ANSWER}, so `merge-base HEAD {base}` gave nothing to compare against")"""
-reddens = [
-  "tests/guards/test_attribute.py::test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code",
 ]
 
 [[mutation]]
@@ -10717,90 +10690,6 @@ reddens = [
   "tests/assess/test_gate_command.py::test_deleting_every_entry_but_keeping_the_directory_fails_an_enforced_bugs_gate",
 ]
 
-# The ledger is compared with the commit HEAD forked from the base at, as `plan` compares with
-# `<base>...HEAD`: listed at the base's tip, an entry the base filed after a branch forked read as
-# one the branch deleted, and a branch forked before the first entry as deleting the ledger.
-[[mutation]]
-name = "the base's ledger is listed at its tip, not where the change forked from it"
-file = "src/keelline/ledger/check.py"
-before = '    code, out = git_run(root, "merge-base", "--all", base, "HEAD")'
-after = "    code, out = 0, base"
-reddens = [
-  "tests/ledger/test_check.py::test_a_branch_forked_before_the_base_filed_an_entry_deleted_nothing",
-  "tests/ledger/test_check.py::test_a_branch_forked_before_the_base_had_a_ledger_deleted_none",
-  "tests/ledger/test_check.py::test_a_deletion_is_named_on_a_stale_branch_and_on_a_merge_commit",
-  "tests/assess/test_gate_command.py::test_a_branch_behind_its_base_is_not_blamed_for_an_entry_the_base_filed_since",
-]
-
-# A change that shapes its own history can have several merge bases with the base, and the one
-# `git merge-base` alone answers, the newest by date, can predate an entry another carries: a
-# merge still deletes that entry. Every merge base is listed and their entries united.
-[[mutation]]
-name = "the ledger is listed at the one merge base git picks, not at every one"
-file = "src/keelline/ledger/check.py"
-before = '    code, out = git_run(root, "merge-base", "--all", base, "HEAD")'
-after = '    code, out = git_run(root, "merge-base", base, "HEAD")'
-reddens = [
-  "tests/ledger/test_check.py::test_a_deletion_is_named_whichever_of_several_merge_bases_git_would_pick",
-]
-
-[[mutation]]
-name = "only the first of several merge bases is listed"
-file = "src/keelline/ledger/check.py"
-before = "    forks = out.split() if code == 0 else []"
-after = "    forks = out.split()[:1] if code == 0 else []"
-reddens = [
-  "tests/ledger/test_check.py::test_a_deletion_is_named_whichever_of_several_merge_bases_git_would_pick",
-]
-
-# In a shallow clone the commits HEAD forked from can be cut off, and the merge base git sees is
-# then older than the real one, from before an entry the change deleted.
-[[mutation]]
-name = "a shallow clone is compared at whatever merge base it can see"
-file = "src/keelline/ledger/check.py"
-before = '    if code != 0 or out.strip() == "true":'
-after = "    if False:"
-reddens = [
-  "tests/ledger/test_check.py::test_a_shallow_clone_is_a_failure_never_an_older_fork_point",
-]
-
-# Whether the clone is shallow is itself a question: a timeout or a refusal read as "not shallow"
-# lets a shallow clone go on to the older merge base it can see.
-[[mutation]]
-name = "a shallow check git does not answer reads as a full clone"
-file = "src/keelline/ledger/check.py"
-before = '    if code != 0 or out.strip() == "true":'
-after = '    if code == 0 and out.strip() == "true":'
-reddens = [
-  "tests/ledger/test_check.py::test_a_shallow_check_git_does_not_answer_is_a_failure_never_a_full_clone[no-answer]",
-  "tests/ledger/test_check.py::test_a_shallow_check_git_does_not_answer_is_a_failure_never_a_full_clone[refused]",
-]
-
-# A base that shares no commit with HEAD has no fork point, and "the base carried nothing" would
-# pass whatever the change deleted.
-[[mutation]]
-name = "a merge base git cannot answer reads as a base with no ledger"
-file = "src/keelline/ledger/check.py"
-before = "    forks = out.split() if code == 0 else []"
-after = """    if code != 0:
-        return _BaseLedger(False, ())
-    forks = out.split()"""
-reddens = [
-  "tests/ledger/test_check.py::test_a_base_that_shares_no_history_with_the_tree_is_a_failure",
-  "tests/ledger/test_check.py::test_a_base_git_cannot_list_never_reads_as_a_base_with_no_ledger",
-  "tests/assess/test_gates.py::test_a_base_the_bugs_gate_cannot_list_is_a_gate_that_could_not_run",
-]
-
-[[mutation]]
-name = "a base git cannot list reads as a base with no ledger"
-file = "src/keelline/ledger/check.py"
-before = "    if code != 0 or not forks:"
-after = "    if code < 0:"
-reddens = [
-  "tests/ledger/test_check.py::test_a_base_git_cannot_list_never_reads_as_a_base_with_no_ledger",
-  "tests/assess/test_gates.py::test_a_base_the_bugs_gate_cannot_list_is_a_gate_that_could_not_run",
-]
-
 [[mutation]]
 name = "the bugs gate's base reaches git shaped like an option"
 file = "src/keelline/ledger/check.py"
@@ -11533,4 +11422,277 @@ before = "passes through a symlink at {str(ancestor)!r}"
 after = "passes through a symlink at {ancestor}"
 reddens = [
   "tests/config/test_paths.py::test_a_crafted_symlink_on_the_way_is_named_escaped_never_raw",
+]
+
+# The fork points, asked once for `plan`, `bugs` and `test attribute`. A history the change shapes
+# itself can have several merge bases, and the one git picks alone, the newest by date, can already
+# hold what the change puts back or deletes.
+[[mutation]]
+name = "the fork points are the one merge base git picks"
+file = "src/keelline/gitenv.py"
+before = """    code, out = git_run(root, "merge-base", "--all", base, "HEAD")"""
+after = """    code, out = git_run(root, "merge-base", base, "HEAD")"""
+reddens = [
+  "tests/test_fork_points.py::test_every_merge_base_is_named_in_git_s_order",
+  "tests/ledger/test_check.py::test_a_deletion_is_named_whichever_of_several_merge_bases_git_would_pick",
+  "tests/docs/test_plans.py::test_a_plan_is_linted_whichever_of_several_merge_bases_git_would_pick",
+  "tests/guards/test_attribute.py::test_several_merge_bases_leave_the_attribution_undetermined",
+]
+
+# In a shallow clone the fork point can be cut off and an older commit be what git names.
+[[mutation]]
+name = "a shallow clone's merge base is a fork point"
+file = "src/keelline/gitenv.py"
+before = """    if out.strip() == "true":
+        return ForkUnknown(SHALLOW, answered=True)"""
+after = """    if False:
+        return ForkUnknown(SHALLOW, answered=True)"""
+reddens = [
+  "tests/test_fork_points.py::test_a_shallow_clone_is_not_known",
+  "tests/ledger/test_check.py::test_a_shallow_clone_is_a_failure_never_an_older_fork_point",
+  "tests/docs/test_plans.py::test_a_shallow_clone_is_a_base_that_will_not_resolve_never_an_older_fork_point",
+  "tests/guards/test_attribute.py::test_a_shallow_clone_leaves_the_attribution_undetermined",
+]
+
+# Whether the clone is shallow is a question too, and one git does not answer is not "not shallow".
+[[mutation]]
+name = "a shallow check git does not answer reads as a full clone"
+file = "src/keelline/gitenv.py"
+before = """    code, out = git_run(root, "rev-parse", "--is-shallow-repository")
+    if code != 0:
+        return ForkUnknown.of(code)"""
+after = """    code, out = git_run(root, "rev-parse", "--is-shallow-repository")
+    if False:
+        return ForkUnknown.of(code)"""
+reddens = [
+  "tests/test_fork_points.py::test_a_shallow_check_git_does_not_answer_is_not_known[no-answer]",
+  "tests/test_fork_points.py::test_a_shallow_check_git_does_not_answer_is_not_known[signalled]",
+  "tests/test_fork_points.py::test_a_shallow_check_git_does_not_answer_is_not_known[refused]",
+  "tests/ledger/test_check.py::test_a_shallow_check_git_does_not_answer_is_a_failure_never_a_full_clone[no-answer]",
+  "tests/ledger/test_check.py::test_a_shallow_check_git_does_not_answer_is_a_failure_never_a_full_clone[refused]",
+  "tests/docs/test_plans.py::test_a_shallow_check_git_does_not_answer_never_reads_as_a_full_clone[no-answer]",
+  "tests/docs/test_plans.py::test_a_shallow_check_git_does_not_answer_never_reads_as_a_full_clone[refused]",
+  "tests/guards/test_attribute.py::test_a_shallow_check_git_does_not_answer_leaves_the_attribution_undetermined[no-answer]",
+  "tests/guards/test_attribute.py::test_a_shallow_check_git_does_not_answer_leaves_the_attribution_undetermined[refused]",
+]
+
+# A base that shares no commit with HEAD has no fork point, and none to compare with would pass
+# whatever the change deleted or put back.
+[[mutation]]
+name = "a base that shares no commit reads as no fork point to compare"
+file = "src/keelline/gitenv.py"
+before = """    if code == 1 and not forks:
+        return ForkUnknown(DISJOINT, answered=True)"""
+after = """    if code == 1 and not forks:
+        return []"""
+reddens = [
+  "tests/test_fork_points.py::test_a_base_that_shares_no_commit_is_not_known_and_says_so",
+  "tests/ledger/test_check.py::test_a_base_that_shares_no_history_with_the_tree_is_a_failure",
+  "tests/docs/test_plans.py::test_a_base_that_shares_no_history_with_the_tree_will_not_resolve",
+]
+
+# A base git cannot resolve names no fork point, and that is not "none to compare".
+[[mutation]]
+name = "a base git cannot resolve reads as no fork point to compare"
+file = "src/keelline/gitenv.py"
+before = """    if code != 0 or not forks:
+        return ForkUnknown.of(code)"""
+after = """    if code < 0:
+        return ForkUnknown.of(code)"""
+reddens = [
+  "tests/test_fork_points.py::test_a_merge_base_git_does_not_give_is_not_known[missing-ref]",
+  "tests/ledger/test_check.py::test_a_base_git_cannot_list_never_reads_as_a_base_with_no_ledger",
+  "tests/docs/test_plans.py::test_a_base_that_will_not_resolve_is_raised_never_an_ok",
+  "tests/guards/test_attribute.py::test_a_base_git_names_in_bytes_that_are_not_text_keeps_git_s_own_exit_code",
+  "tests/assess/test_gates.py::test_a_base_the_bugs_gate_cannot_list_is_a_gate_that_could_not_run",
+]
+
+# A git a signal ended answered nothing, whatever negative number `subprocess` gives it: read as a
+# refusal, it sends a reader to fetch a ref that is already here.
+[[mutation]]
+name = "a git a signal ended reads as a refusal"
+file = "src/keelline/gitenv.py"
+before = """        if code < 0:
+            return cls(NO_ANSWER, answered=False)"""
+after = """        if code == -1:
+            return cls(NO_ANSWER, answered=False)"""
+reddens = [
+  "tests/test_fork_points.py::test_a_shallow_check_git_does_not_answer_is_not_known[signalled]",
+  "tests/test_fork_points.py::test_a_merge_base_git_does_not_give_is_not_known[signalled]",
+]
+
+# A gate that cannot answer must say so in its exit code; this one ran green for its whole
+# life on a checkout that had no base ref. It raises, so the `plan` gate could not run, as
+# `commit` could not, and `plan check` prints the cause as its own finding.
+[[mutation]]
+name = "an unresolvable base reads as a clean run"
+file = "src/keelline/docs/plans.py"
+before = """    if isinstance(forks, ForkUnknown):
+        raise _unresolved(forks, base, root)"""
+after = """    if isinstance(forks, ForkUnknown):
+        forks = []"""
+reddens = [
+  "tests/docs/test_plans.py::test_a_base_that_will_not_resolve_is_raised_never_an_ok",
+  "tests/docs/test_plans.py::test_a_shallow_clone_is_a_base_that_will_not_resolve_never_an_older_fork_point",
+  "tests/docs/test_plans.py::test_a_base_that_shares_no_history_with_the_tree_will_not_resolve",
+  "tests/assess/test_command.py::test_assess_after_init_with_no_origin_fetched_names_the_gates_that_cannot_judge",
+]
+
+# A git that gave no answer is not a base that will not resolve: that finding's remedy is a deeper
+# checkout, sent to a clone that may hold every ref.
+[[mutation]]
+name = "plan reads a git that gave no answer as a base that will not resolve"
+file = "src/keelline/docs/plans.py"
+before = "    if not unknown.answered:"
+after = "    if False:"
+reddens = [
+  "tests/docs/test_plans.py::test_a_shallow_check_git_does_not_answer_never_reads_as_a_full_clone[no-answer]",
+  "tests/docs/test_plans.py::test_a_diff_git_gave_no_answer_for_is_not_a_shallow_checkout",
+]
+
+# `<base>...HEAD` diffs against the one merge base git picks. A change that merges both sides of a
+# base merge and puts an old plan back diffs clean against the side branch, which holds that plan
+# too, and merging it puts the plan back on the base unlinted.
+[[mutation]]
+name = "plan diffs against the one merge base git would pick"
+file = "src/keelline/docs/plans.py"
+before = """    for fork in forks:
+        found |= changed(fork)"""
+after = """    for fork in forks[:1]:
+        found |= changed(fork)"""
+reddens = [
+  "tests/docs/test_plans.py::test_a_plan_is_linted_whichever_of_several_merge_bases_git_would_pick",
+]
+
+# A plan whose copy in HEAD is the base's own is not the change's: merging leaves it as it is.
+# Without the base comparison a branch stacked on another answers for a plan the base gained
+# before the stack merged the base in, and fails on a file it never touched.
+[[mutation]]
+name = "plan lints a plan the base already holds as the change does"
+file = "src/keelline/docs/plans.py"
+before = "    found &= changed(base)"
+after = "    found |= set()"
+reddens = [
+  "tests/docs/test_plans.py::test_a_plan_the_base_holds_as_head_does_is_not_linted",
+]
+
+# A diff git did not answer lists no plan, and no plan listed is an OK over nothing.
+[[mutation]]
+name = "plan reads a diff git did not answer as no plan changed"
+file = "src/keelline/docs/plans.py"
+before = """        if code != 0:
+            raise _unresolved(ForkUnknown.of(code), base, root)"""
+after = """        if False:
+            raise _unresolved(ForkUnknown.of(code), base, root)"""
+reddens = [
+  "tests/docs/test_plans.py::test_a_diff_git_gave_no_answer_for_is_not_a_shallow_checkout",
+]
+
+# Run (3) needs one merge base. Several are each as much "before this change" as the others, and a
+# failure can pass on one and fail on another: the one git picks alone filed a failure the change
+# brought back as pre-existing. No verdict, and nothing run.
+[[mutation]]
+name = "attribute extracts the one merge base git would pick among several"
+file = "src/keelline/guards/attribute.py"
+before = "    if len(forks) > 1:"
+after = "    if False:"
+reddens = [
+  "tests/guards/test_attribute.py::test_several_merge_bases_leave_the_attribution_undetermined",
+]
+
+# A merge base that is not known is no tree to run (3) in.
+[[mutation]]
+name = "attribute goes on without a merge base"
+file = "src/keelline/guards/attribute.py"
+before = """    forks = fork_points(root, base)
+    if isinstance(forks, ForkUnknown):"""
+after = """    forks = fork_points(root, base)
+    if False:"""
+reddens = [
+  "tests/guards/test_attribute.py::test_a_shallow_clone_leaves_the_attribution_undetermined",
+  "tests/guards/test_attribute.py::test_a_shallow_check_git_does_not_answer_leaves_the_attribution_undetermined[no-answer]",
+  "tests/guards/test_attribute.py::test_a_shallow_check_git_does_not_answer_leaves_the_attribution_undetermined[refused]",
+  "tests/guards/test_attribute.py::test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code",
+  "tests/guards/test_attribute.py::test_a_merge_base_git_gave_no_answer_for_is_not_reported_as_an_exit_code",
+]
+
+# `-1` is `git_run`'s sentinel for "no answer" — not launched, or past its bound — and not an exit
+# status; rendered as one it sends a reader to fetch a ref that is not the problem.
+[[mutation]]
+name = "attribute sends a git that gave no answer to fetch the base"
+file = "src/keelline/guards/attribute.py"
+before = "        elif forks.answered:"
+after = "        elif True:"
+reddens = [
+  "tests/guards/test_attribute.py::test_a_merge_base_git_gave_no_answer_for_is_not_reported_as_an_exit_code",
+]
+
+# A shallow clone's remedy is the whole history, and the refusal says so.
+[[mutation]]
+name = "attribute's shallow refusal names no remedy"
+file = "src/keelline/guards/attribute.py"
+before = "        if forks.cause == SHALLOW:"
+after = "        if False:"
+reddens = [
+  "tests/guards/test_attribute.py::test_a_shallow_clone_leaves_the_attribution_undetermined",
+]
+
+# The ledger is compared with the commits HEAD forked from the base at, as `plan` compares with
+# them too: listed at the base's tip, an entry the base filed after a branch forked read as
+# one the branch deleted, and a branch forked before the first entry as deleting the ledger.
+[[mutation]]
+name = "the base's ledger is listed at its tip, not where the change forked from it"
+file = "src/keelline/ledger/check.py"
+before = """    forks = fork_points(root, base)
+    if isinstance(forks, ForkUnknown):
+        raise unread(forks)"""
+after = """    forks = [base]
+    if isinstance(forks, ForkUnknown):
+        raise unread(forks)"""
+reddens = [
+  "tests/ledger/test_check.py::test_a_branch_forked_before_the_base_filed_an_entry_deleted_nothing",
+  "tests/ledger/test_check.py::test_a_branch_forked_before_the_base_had_a_ledger_deleted_none",
+  "tests/ledger/test_check.py::test_a_deletion_is_named_on_a_stale_branch_and_on_a_merge_commit",
+  "tests/assess/test_gate_command.py::test_a_branch_behind_its_base_is_not_blamed_for_an_entry_the_base_filed_since",
+]
+
+# Every merge base is listed and their entries united: the one git picks alone can predate an
+# entry another carries, and a merge still deletes it.
+[[mutation]]
+name = "only the first of several merge bases is listed"
+file = "src/keelline/ledger/check.py"
+before = """    for fork in forks:
+        code, out = git_run(root, "ls-tree""""
+after = """    for fork in forks[:1]:
+        code, out = git_run(root, "ls-tree""""
+reddens = [
+  "tests/ledger/test_check.py::test_a_deletion_is_named_whichever_of_several_merge_bases_git_would_pick",
+]
+
+# Fork points that are not known are not "the base has no ledger", which would pass exactly the
+# deletion the question exists to catch.
+[[mutation]]
+name = "a fork point that is not known reads as a base with no ledger"
+file = "src/keelline/ledger/check.py"
+before = """    if isinstance(forks, ForkUnknown):
+        raise unread(forks)"""
+after = """    if isinstance(forks, ForkUnknown):
+        return _BaseLedger(False, ())"""
+reddens = [
+  "tests/ledger/test_check.py::test_a_shallow_clone_is_a_failure_never_an_older_fork_point",
+  "tests/ledger/test_check.py::test_a_base_that_shares_no_history_with_the_tree_is_a_failure",
+  "tests/ledger/test_check.py::test_a_base_git_cannot_list_never_reads_as_a_base_with_no_ledger",
+  "tests/assess/test_gates.py::test_a_base_the_bugs_gate_cannot_list_is_a_gate_that_could_not_run",
+]
+
+# A listing git refuses at a fork point is no listing, and an empty one reads as no ledger.
+[[mutation]]
+name = "a listing git refuses reads as a base with no ledger"
+file = "src/keelline/ledger/check.py"
+before = """        if code != 0:
+            raise unread(ForkUnknown.of(code))"""
+after = """        if False:
+            raise unread(ForkUnknown.of(code))"""
+reddens = [
+  "tests/ledger/test_check.py::test_a_listing_git_refuses_at_a_merge_base_is_a_failure_never_an_empty_ledger",
 ]
