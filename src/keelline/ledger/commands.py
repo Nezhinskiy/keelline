@@ -61,8 +61,8 @@ def run_bugs_check(args: argparse.Namespace) -> Result:
     data = {"checked": True, "findings": [asdict(p) for p in found]}
     if not found:
         return Result(_OK, data)
-    # Labels only on the line: a path, a line number and a rule are this lane's; the detail may
-    # quote the repository and stays in `data`.
+    # Labels only on the line: a path, a line number and a rule are this command's; the detail
+    # may quote the repository and stays in `data`.
     return Result(f"FAIL: {len(found)} ledger problem(s): {labels(found)}", data, exit_code=1)
 
 

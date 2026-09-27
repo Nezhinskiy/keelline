@@ -400,7 +400,7 @@ def test_an_unchanged_note_round_trips_byte_for_byte(tmp_path: Path, label: str,
 
 
 def test_a_rewritten_key_keeps_the_body_and_the_files_own_line_endings(tmp_path: Path) -> None:
-    # The half that has to keep working: when this lane *does* change a line, the change is the
+    # The half that has to keep working: when `memory` *does* change a line, the change is the
     # only difference — the body is still the body that was there, and a CRLF file stays CRLF
     # rather than becoming a whole-file diff.
     path = tmp_path / "n.md"

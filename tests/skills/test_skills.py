@@ -45,7 +45,7 @@ TOOL_NAMES = (
 )
 _TOOL = re.compile(r"\b(?:" + "|".join(TOOL_NAMES) + r")\b")
 # Commands the wrapper skills describe against the CLI frame before the command exists, keyed to the
-# package that ships each. The lane that ships one DELETES its entry: a parsing command that is
+# package that ships each. The change that ships one DELETES its entry: a parsing command that is
 # still listed here reddens `test_every_invocation_parses_or_is_allowlisted`. Empty since
 # `uninstall` shipped; kept, with its check against `PACKAGES`, for the next wrapper written ahead
 # of its command.
@@ -116,7 +116,7 @@ def split(path: Path) -> tuple[dict[str, str], str]:
 
 def test_the_walk_finds_the_ported_skills() -> None:
     # The mutation guard for the parametrised tests below: an empty `skills/` passes them all.
-    # Every skill this lane ships is named, not only the two ported ones — deleting the six
+    # Every skill `skills/` ships is named, not only the two ported ones — deleting the six
     # wrappers would otherwise leave NOT_YET_SHIPPED describing commands no skill names, with
     # the suite still green. Subsets, not equalities: `skills-author` grows this directory.
     names = {path.parent.name for path in skills()}

@@ -10,8 +10,7 @@ from keelline.hooks.api import EVENTS
 from keelline.hooks.registry import discover
 
 # `keelline.memory.api` and not `keelline.memory.bundles`: an area is imported through its
-# published surface, never through a private module, and `api.py`'s own docstring names this
-# lane as the reason `SLOTS` is on the list — "`hooks-core` needs the bundle slots".
+# published surface, never through a private module, and `SLOTS` is on that surface.
 from keelline.memory.api import SLOTS
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -60,10 +59,10 @@ def test_every_command_parses_against_the_real_parser() -> None:
 
 
 def test_no_entry_passes_json() -> None:
-    # `bundles.py`'s CAP_MARGIN comment, addressing this lane by name: "the `hooks.json`
+    # `bundles.py`'s CAP_MARGIN comment, addressing `keelline.hooks` by name: "the `hooks.json`
     # entries must not pass `--json`. The margin is additive only because `memory
     # session-context` prints the text raw." `memory/commands.py` records that this invariant
-    # was "owned by a different lane, asserted by no test here". This is that test.
+    # is owned outside `memory` and asserted by no test there. This is that test.
     for _, _matcher, entry in _entries():
         assert "--json" not in entry["command"].split()
 

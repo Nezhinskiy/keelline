@@ -54,7 +54,7 @@ def _machine(args: argparse.Namespace) -> Path | None:
 # **stdout** under `--json` — twice, in one object, since the envelope carries it as both
 # `summary` and the message. `memory session-context` is a `hooks.json` entry, so the invariant
 # was holding only on the expectation that those entries never pass `--json`: an expectation
-# owned by a different lane, asserted by no test here, and contradicted by `hooks.py` going to
+# owned by a different area, asserted by no test here, and contradicted by `hooks.py` going to
 # real lengths to keep this same string out of `HookResult.context`.
 #
 # So the detail is kept and wrapped, rather than dropped. A person running `memory index` by

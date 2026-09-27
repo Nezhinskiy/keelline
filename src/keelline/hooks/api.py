@@ -17,7 +17,7 @@ area's surface left all three, with the reason beside each rather than the silen
 pass necessary:
 
 - `HandlerFn` is `Handler.run`'s type. `Handler` is what `guards/hooks.py` and
-  `memory/hooks.py` build, and a lane that holds one before registering it — a table of
+  `memory/hooks.py` build, and a consumer that holds one before registering it — a table of
   handlers, a decorator, a test double — cannot annotate the callable without this name.
 - `Sink` is the protocol `dispatch.py` takes and `sink.py` implements, and `NullSink` is the
   degradation it falls back to when there is no harness data root. `doctor` reports on the tree
@@ -60,7 +60,7 @@ __all__ = [
 ]
 
 
-# The five events the dispatcher carries. A lane that needs a sixth adds it here deliberately;
+# The five events the dispatcher carries. An area that needs a sixth adds it here deliberately;
 # `registry.discover` refuses anything else, so a handler registered for "PreToolUSe" is a
 # loud failure at discovery rather than a guard that never fires and tests that never notice.
 EVENTS = (

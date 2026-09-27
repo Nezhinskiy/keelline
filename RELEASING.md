@@ -97,8 +97,8 @@ step 7's sentence true.
    **On a first release, fold the `Fixed` entries into the features they repair.** There is no
    released version for a fix to be a fix *relative to*, so every `Fixed` entry in 0.1.0
    describes a bug no user could have met — and reads as a warning about the release it ships
-   in. `init`, `attach`, `doctor` and the overlay lane each accumulated several of these while
-   the wave was open, which is correct while it is open: the fragments are the per-commit
+   in. `init`, `attach`, `doctor` and `overlay` each accumulated several of these while 0.1.0
+   was being built, which is correct while it is being built: the fragments are the per-commit
    record, and a fold done earlier is undone by the next commit. Do it here, once, over the
    assembled file: state the feature as what it now is, delete the fixes that only describe
    its development, and keep the ones a reader of 0.1.0 has to act on — a grammar that refuses

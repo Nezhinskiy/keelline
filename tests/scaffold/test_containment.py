@@ -394,7 +394,7 @@ def test_the_engine_refuses_a_control_directory_target_the_loader_never_sees(
 # --- the two fields nobody guards yet ---------------------------------------------------------
 
 
-def test_two_of_the_fixtures_own_fields_reach_no_guard_in_this_lane(tmp_path: Path) -> None:
+def test_two_of_the_fixtures_own_fields_reach_no_guard_in_scaffold(tmp_path: Path) -> None:
     """`ledger.code_roots` and `memory.index_extra` are contained targets as well, and `scaffold`
     consumes neither: `config/paths.py`'s docstring hands them to whichever area first reads them,
     which is `ledger` and `memory`. Pinned here so the day one of them starts refusing, this

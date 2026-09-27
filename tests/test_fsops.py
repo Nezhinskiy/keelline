@@ -211,7 +211,7 @@ def test_an_absolute_path_is_refused(tmp_path: Path) -> None:
 def test_a_current_directory_component_is_refused(tmp_path: Path) -> None:
     # `PurePosixPath` normalises `.` away today, so this asserts the guard rather than the
     # parse: the normalisation is pathlib's implementation detail and this is the single place
-    # five later lanes' containment rests on.
+    # every caller's containment rests on.
     with pytest.raises(UnsafePath):
         checked_components("docs/./a.md")
 

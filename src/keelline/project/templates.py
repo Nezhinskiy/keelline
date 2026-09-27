@@ -116,7 +116,7 @@ NOT_ASKED = (
     "this repository is initialised"
 )
 UVX_LATER = (
-    'the uvx form of the gate ships with a later lane; [ci] mode = "reusable" is what this '
+    'the uvx form of the gate ships in a later release; [ci] mode = "reusable" is what this '
     "Keelline renders"
 )
 NO_CI = "[ci] mode is none"

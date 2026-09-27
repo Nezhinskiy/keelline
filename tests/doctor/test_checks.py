@@ -224,7 +224,7 @@ def _attached(tmp_path: Path) -> Path:
     """A project bound to an overlay: the record, the ledger, the settings and the link tree.
 
     Built by hand rather than by running `attach`, so that what `doctor` reads is stated here
-    in one place and a change to either lane shows up as a disagreement rather than as two
+    in one place and a change to either command shows up as a disagreement rather than as two
     green suites. `tests/test_install_path.py` is where the two are run against each other.
     """
     overlay = _overlay(tmp_path)
@@ -530,8 +530,8 @@ def _planted_plugin(base: Path, *, executable: bool = True) -> Path:
     The wrapper alone was enough while `files` measured only a mode. It is not enough now that
     the row compares the installed copies against the record: `write_record` refuses a tree
     missing any shipped file, so a fixture that planted one of three could not be recorded at
-    all. `HASHED_FILES` is the list, read from the release lane rather than spelled here, so a
-    lane that ships a fourth executable file plants it in every case below without editing one.
+    all. `HASHED_FILES` is the list, read from `keelline.release` rather than spelled here, so a
+    change that ships a fourth executable file plants it in every case below without editing one.
     """
     plugin = base / "plugin"
     bodies = {WRAPPER_BODY[0]: WRAPPER_BODY[1]}
@@ -665,7 +665,7 @@ def test_a_diagnostics_log_the_environment_named_is_counted_and_never_quoted(
     assert handler not in check.detail
     assert "E" * 100 not in check.detail
     # Non-vacuous: the row still answers the question it exists for — how many failures, and
-    # where to read them — and it is a count, which is this lane's own answer.
+    # where to read them — and it is a count, which is `doctor`'s own answer.
     assert "1 hook failure(s) recorded" in check.detail
     assert "${CLAUDE_PLUGIN_DATA}" in check.remedy
     # The path is not quoted either: `${CLAUDE_PLUGIN_DATA}` expands to a value a repository
@@ -801,7 +801,7 @@ def test_a_hook_sink_log_this_process_cannot_read_is_a_warning_and_never_a_red_r
 
 def test_a_data_root_with_no_log_is_not_a_finding(tmp_path: Path) -> None:
     # The vacuity guard for both cases above: a check that warned whenever a data root was set
-    # would pass them. `sessions` is a count of directories, which is this lane's own answer.
+    # would pass them. `sessions` is a count of directories, which is `doctor`'s own answer.
     data = tmp_path / "data"
     (data / DIRECTORY / MARKERS / "abc").mkdir(parents=True)
     check = _by_name(
@@ -1179,9 +1179,9 @@ def test_a_cli_that_does_not_resolve_is_a_warning_that_names_the_install_command
 def test_an_environment_with_no_path_at_all_resolves_nothing(tmp_path: Path) -> None:
     # The hole the two cases above could not see, because `_env` always supplies a `PATH`:
     # `context.env.get("PATH")` answers `None` for an environment that carries none, and
-    # `shutil.which(path=None)` then reads `os.environ` -- so the one check this lane made a
-    # function of its context went back to the process environment for exactly the input where
-    # that matters most. A hook's environment is composed, not inherited.
+    # `shutil.which(path=None)` then reads `os.environ` -- so the one check built as a function of
+    # its context went back to the process environment for exactly the input where that matters
+    # most. A hook's environment is composed, not inherited.
     #
     # Mutation: `context.env.get("PATH", "")` -> `context.env.get("PATH")` -> reddens here on any
     # machine with `keelline` installed, and nowhere else in the suite.

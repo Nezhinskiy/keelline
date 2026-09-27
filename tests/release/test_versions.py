@@ -508,7 +508,7 @@ def test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version
 
 
 def test_a_tag_with_pending_fragments_is_refused(tmp_path: Path) -> None:
-    # Without `--tag`, pending fragments let CHANGELOG.md lag, because a lane's fragment is
+    # Without `--tag`, pending fragments let CHANGELOG.md lag, because a change's fragment is
     # written before the release assembles it. AT a tag there is nothing left to assemble:
     # a fragment still pending means the changelog the users read is not the one the tag
     # claims. Mutation (declared): skip the fragment check under `tag` -> reddens.

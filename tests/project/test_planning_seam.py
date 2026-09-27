@@ -2,12 +2,12 @@
 project area plans at all.
 
 `Passes` binds the ownership relation into every plan and runs the ignore guard over every
-prediction, so a command that plans through it cannot leave either behind. The engine's own
-`plan` keeps its `owners` keyword optional, because the overlay lane keeps nothing out of git and
-has no relation to pass; so the seam is what holds the project area, and this is what holds the
-seam. Required instead, the keyword would make every overlay call and a hundred engine tests say
-`owners=None`, and would still let a new command (`adopt`) pass `None` beside them: the bypass
-is importing the planner, so that is what is checked.
+prediction, so a command that plans through it cannot leave either behind. The engine's own `plan`
+keeps its `owners` keyword optional, because `keelline.overlay` keeps nothing out of git and has no
+relation to pass; so the seam is what holds the project area, and this is what holds the seam.
+Required instead, the keyword would make every overlay call and a hundred engine tests say
+`owners=None`, and would still let a new command (`adopt`) pass `None` beside them: the bypass is
+importing the planner, so that is what is checked.
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
-"""The doctor area's import surface: everything another lane may import from it.
+"""The doctor area's import surface: everything another area may import from it.
 
-The command module in this area is its first consumer. A lane that needs something absent from
-this list grows it deliberately, in a commit that says which lane and why — it does not import
+The command module in this area is its first consumer. An area that needs something absent from
+this list grows it deliberately, in a commit that says which area and why — it does not import
 a private module of this area.
 
 Every name below is here for a reason written beside it, because a surface that survives a trim

@@ -5,9 +5,9 @@
 `contained()`: `ledger.code_roots`, `artifacts.local`, `memory.groups` and
 `memory.index_extra`. A `keelline.toml` setting
 `ledger.code_roots = ["../../../../etc", "/etc/passwd"]` loads without a murmur, while the same
-strings under `[paths]` are refused. Until that changes, the ledger and memory lanes must call
-`contained()` themselves on the fields they consume; widening the guard here would change
-`Config`'s shape, so it belongs with the lane that first reads those fields.
+strings under `[paths]` are refused. Until that changes, `keelline.ledger` and `keelline.memory`
+must call `contained()` themselves on the fields they consume; widening the guard here would change
+`Config`'s shape, so it belongs with the module that first reads those fields.
 
 Two rules, not one: `PATH_VALUE` is the grammar half — what a value must match before it may be
 printed anywhere, a report included — and `contained()` is the root half, deciding whether the
@@ -60,7 +60,7 @@ def contained(
         raise PathEscape(str(exc)) from exc
     # Git's control directory is refused by the call above, at every depth and in any case, and
     # this is where that matters for a *configured* path: `contained()` is the function every
-    # `[paths]` value and every lane-supplied path goes through, above the first write.
+    # `[paths]` value and every caller-supplied path goes through, above the first write.
     # `validate_paths` asks the same question one key at a time so its refusal can name the key;
     # the rule itself is `fsops.names_control_directory` in both places, because a guard stated
     # twice is the defect this module was just repaired for.

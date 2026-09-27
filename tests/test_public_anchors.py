@@ -59,6 +59,10 @@ CITATIONS = (
     # A plan's own headings, which a module quoted as if the reader had the plan open: "Premise 2
     # of the lane's plan", "by the Global Constraints' own list", in either case.
     ("plan section", re.compile(r"\bPremise\s+\d+|(?i:\bglobal\s+constraint)")),
+    # The plans' word for a unit of work. A module, a test and a document all name the area, the
+    # module or the command they mean instead: "the foundation lane" told a reader nothing that
+    # `keelline.hooks.dispatch` does not tell them better.
+    ("plan unit", re.compile(r"(?i:\blanes?\b)")),
 )
 
 # The plans' own bookkeeping, which means nothing once the code has shipped: the wave a line
@@ -171,6 +175,8 @@ def test_the_citation_gate_discriminates() -> None:
         "the global constraints make `gh` a seam",
         "The Global\nConstraints list it",
         "under Premise\n12",
+        "the foundation lane",
+        "Lanes that scaffold",
     ):
         assert citations(planted), planted
     for clean in (
@@ -183,6 +189,7 @@ def test_the_citation_gate_discriminates() -> None:
         "a sha256 digest, MD5 never",
         "exit code 2 (a refusal)",
         "a global constant",
+        "a plane of glass",
     ):
         assert citations(clean) == [], clean
 
@@ -248,7 +255,7 @@ def test_the_arms_follow_where_a_file_lives() -> None:
         ".github/workflows/ci.yml",
         "hooks/run-hook.sh",
     ):
-        assert citations("the wave-4 lane", arms_for(code)), code
+        assert citations("the wave-4 engine", arms_for(code)), code
     for document in (
         "docs/cli.md",
         "README.md",
@@ -258,7 +265,7 @@ def test_the_arms_follow_where_a_file_lives() -> None:
         "tests/fixtures/smoke-project/docs/plans/README.md",
         "tests/fixtures/hostile-project/keelline.toml",
     ):
-        assert citations("the wave-4 lane", arms_for(document)) == [], document
+        assert citations("the wave-4 engine", arms_for(document)) == [], document
 
 
 def test_the_scan_reports_what_it_read_by_path_and_line(tmp_path: Path) -> None:
@@ -266,8 +273,8 @@ def test_the_scan_reports_what_it_read_by_path_and_line(tmp_path: Path) -> None:
     # nothing, leaves the gate green over any tree; this is where either shows.
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "a.py").write_text("x = 1\n# the Global\n# Constraints\n", encoding="utf-8")
-    (tmp_path / "src" / "b.py").write_text("# the wave-4 lane\n", encoding="utf-8")
-    (tmp_path / "c.md").write_text("the wave-4 lane, and §3\n", encoding="utf-8")
+    (tmp_path / "src" / "b.py").write_text("# the wave-4 engine\n", encoding="utf-8")
+    (tmp_path / "c.md").write_text("the wave-4 engine, and §3\n", encoding="utf-8")
     paths = sorted(tmp_path.rglob("*.*"))
     assert scan(tmp_path, paths) == [
         "c.md:1: design section '§3'",

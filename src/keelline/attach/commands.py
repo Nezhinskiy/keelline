@@ -21,7 +21,7 @@ the caller believed it was reading the one it named, which is the worse of the t
 
 Scoped to these two commands and deliberately not to `command.common_flags`: the other readers
 of that flag take personal parameters, and rewriting a shared flag's semantics for three areas
-is not this lane's to do. The agent-driven path is unaffected — the `attach` skill passes
+is not this area's to do. The agent-driven path is unaffected — the `attach` skill passes
 `--store` and no `--machine`, so it resolves the default path exactly as before.
 """
 
@@ -128,7 +128,7 @@ def run_detach(args: argparse.Namespace) -> Result:
         "entries_removed": len(removed.entries_removed),
         "rules_removed": len(removed.rules_removed),
         "settings_keys_removed": len(removed.settings_keys_removed),
-        # A boolean this lane computed, so it prints.
+        # A boolean this command computed, so it prints.
         "ignore_region_removed": removed.ignore_region_removed,
         # A count, for the reason `run_attach` gives above.
         "links_revoked": len(removed.links.revoked),

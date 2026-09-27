@@ -129,7 +129,7 @@ def test_output_that_is_not_text_is_read_with_replacement_characters_not_raised(
     # and never as a path. Decoded strictly, one byte that was not text ended the command as
     # `internal error: UnicodeDecodeError`: `test attribute` over a test run whose output
     # quoted a latin-1 filename, measured. A byte the codec cannot read is U+FFFD instead, which
-    # every stream and every UTF-8 file this lane writes can hold. Mutation (declared): decode
+    # every stream and every UTF-8 file Keelline writes can hold. Mutation (declared): decode
     # strictly again -> this reddens.
     done = subprocess_runner().run(["sh", "-c", "printf 'caf\\351'; printf 'x\\351' >&2"], tmp_path)
     assert done == Completed(0, "caf\ufffd", "x\ufffd")

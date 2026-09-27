@@ -264,7 +264,7 @@ def test_a_pyc_from_another_interpreter_is_not_judged(tmp_path: Path) -> None:
 
 @needs_git
 def test_only_contained_code_roots_are_scanned(tmp_path: Path) -> None:
-    # `config.paths` leaves `ledger.code_roots` to the consuming lane; an escaping entry is
+    # `config.paths` leaves `ledger.code_roots` to its consumer; an escaping entry is
     # skipped rather than followed, and a missing one is skipped rather than raised on.
     # `outside` is CREATED, which is what makes the containment check load-bearing here: with
     # `contained()` removed, `root/../outside` is a real directory and would be walked, so the

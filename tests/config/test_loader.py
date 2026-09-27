@@ -150,7 +150,7 @@ def test_a_path_that_escapes_the_root_is_refused_by_load(tmp_path: Path) -> None
 
 
 def test_an_unsupported_schema_type_is_named_instead_of_read_as_a_string() -> None:
-    # `_build` reads real types now, so a section a later lane adds with a `float`, an
+    # `_build` reads real types now, so a section a later change adds with a `float`, an
     # `int | None` or an alias fails loudly here rather than being refused as "must be a
     # string" — a wrong reason nothing in the tests or the type checker would point at.
     @dataclass(frozen=True)
@@ -479,7 +479,7 @@ def test_unknown_sections_name_the_typo_and_count_the_rest_never_quoting_them(
 
 
 def test_a_repeated_memory_group_is_one_group(tmp_path: Path) -> None:
-    """The list four lanes read as a count is deduplicated in the order it was written.
+    """The list four areas read as a count is deduplicated in the order it was written.
 
     `_build` coerced it with `tuple(value)` and nothing else, so `["a", "a"]` made
     `unlinked_groups` walk one directory twice: `attach` refused naming two groups that never

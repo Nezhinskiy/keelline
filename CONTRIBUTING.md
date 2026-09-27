@@ -41,7 +41,7 @@ fine; a runtime one is not.
 `fsops.write_within` / `mkdirs_within` / `remove_within` then do the write through an
 `O_NOFOLLOW` walk, so a component that becomes a symlink after the check cannot redirect it.
 Do not add a `Path.write_text`, a `mkdir(parents=True)` or an `os.replace` on a string path to
-a lane that puts files into a repository.
+code that puts files into a repository.
 
 **Repository bytes are data.** Anything a repository authored — a note, an index line, a
 `memory.groups` entry, a refusal message built out of one — reaches the model only inside
@@ -81,13 +81,13 @@ count is raised. When no such file exists — a timeout on a hung `git`, the lon
 
 ### Enumerated writes
 
-A command's section in [docs/cli.md](docs/cli.md) names every path the command writes, almost
-always in a paragraph that opens with **Writes** (a read-only command says "writes nothing"
-there), and the command writes those paths and no others: a change that makes a command write
-somewhere new names the path there in the same commit. A few sections say it in their prose
-rather than under that label, and `keelline hook`, which is internal, has none: everything it
-writes is inside the one directory Keelline owns under the data root the harness hands it
-(`${CLAUDE_PLUGIN_DATA}/keelline/`), and `src/keelline/hooks/sink.py` says what goes there.
+A command's section in [docs/cli.md](docs/cli.md) names every path the command writes, in a
+paragraph that opens with **Writes** (a read-only command's says "**Writes** nothing"), and the
+command writes those paths and no others: a change that makes a command write somewhere new
+names the path there in the same commit. `keelline hook`, which is internal, is held to the same
+rule: its paragraph names what it keeps inside the one directory Keelline owns under the data
+root the harness hands it (`${CLAUDE_PLUGIN_DATA}/keelline/`, which `src/keelline/hooks/sink.py`
+writes), and the one handler that writes outside it.
 
 Removal is held tighter. Every file or directory Keelline removes is one it names before it looks —
 a fixed name in the code, a path its ledger or manifest recorded, one its configuration computes, or
@@ -126,9 +126,9 @@ nor a `hooks.py`.)
   its `__all__` must equal exactly what it imports — a test parses the file and checks, and
   `tests/test_areas.py` walks every module under `src/keelline/` and fails on a cross-area
   import that reaches past one. The list is what consumers actually reach for, not what the
-  area finds tidy: a lane that needs something absent from it grows it deliberately, in a commit
-  that says which lane and why. `cli.py` is the CLI frame rather than an area, and its one
-  direct import of `hooks.policy` is named in that test rather than skipped silently.
+  area finds tidy: a consumer that needs something absent from it grows it deliberately, in a
+  commit that says which consumer and why. `cli.py` is the CLI frame rather than an area, and its
+  one direct import of `hooks.policy` is named in that test rather than skipped silently.
 - **`keelline.hooks.api` is the one exception, and it is structural rather than drift.** That
   module *defines* the vocabulary two areas share — `EVENTS`, `Policy`, `Decision`, `HookEvent`,
   `HookResult`, `Handler`, `Sink`, `NullSink`, `detect_harness` and the sink's on-disk layout —
@@ -146,7 +146,7 @@ plugin ships and `agents/` the agent files; [skills/README.md](skills/README.md)
 contract — a skill body is **action language** and never names a harness tool, a `SKILL.md` is
 capped at 80 lines with the detail in `<skill>/references/`, and every `keelline …` invocation
 in a skill must parse against the real parser or be listed in `NOT_YET_SHIPPED` against the
-package that will ship it. `tests/skills/test_skills.py` holds all three, and the lane that
+package that will ship it. `tests/skills/test_skills.py` holds all three, and the change that
 ships a command deletes its `NOT_YET_SHIPPED` entry.
 
 ## Tests
@@ -280,8 +280,8 @@ User-visible changes need a towncrier fragment in `changelog.d/`, named
 `+<slug>.<type>.md` where type is `feature`, `fix` or `change`. The leading `+` is towncrier's
 orphan prefix, and it is not decoration: without it towncrier reads the slug as an issue
 reference and prints it in parentheses at the end of the bullet, so the release notes everyone
-reads would carry the project's internal lane vocabulary. Write the fragment as a release note
-someone outside the project can read — not as a note to yourself about the lane.
+reads would carry a file-name slug that means nothing to them. Write the fragment as a release
+note someone outside the project can read — not as a note to yourself about the change.
 
 `uv run keelline release check` cross-checks the version across `pyproject.toml`, `uv.lock`,
 the package, and both plugin manifests. It runs in CI; run it before you push.
@@ -294,7 +294,7 @@ references to it cannot be followed from here. You do not need a plan for a bug 
 documentation change; open an issue or a pull request and say what you found.
 
 The delivered plans in `docs/plans/` are a record, not a work list. Their `**Interfaces:**`
-blocks are kept current and are what a later lane builds against; their code blocks are
+blocks are kept current and are what later work builds against; their code blocks are
 as-planned and may differ from what shipped.
 
 ## Security

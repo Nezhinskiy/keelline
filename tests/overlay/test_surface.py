@@ -14,7 +14,7 @@ from __future__ import annotations
 import keelline.overlay.api as overlay
 
 
-def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
+def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     # An equality and not a subset, for the reason tests/guards/test_surface.py gives: a subset
     # lets an export arrive unnoticed. What each name is doing here is written beside it, so
     # this set states the policy `api.py`'s docstring states rather than freezing today's list.

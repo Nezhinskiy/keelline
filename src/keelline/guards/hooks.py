@@ -95,11 +95,11 @@ def register() -> list[Handler]:
         # Per the Claude Code hooks reference, a non-zero exit arrives on `PostToolUseFailure`,
         # which `keelline.hooks.api.EVENTS` does not carry yet — and `registry.discover` refuses a
         # handler whose event is not in that tuple, so registering it here today would take
-        # the whole plugin down. `EVENTS` is the `foundation` lane's file. When it gains the
+        # the whole plugin down. `EVENTS` is `keelline.hooks`' file. When it gains the
         # event, register the same handler there too:
         # Handler(name="test-hygiene", event="PostToolUseFailure", policy=Policy.OPEN,
         #         run=_test_hygiene, once_key=ONCE_TEST_HYGIENE),
-        # Kept ABOVE the row it annotates, not below it: a later lane appending a handler to
+        # Kept ABOVE the row it annotates, not below it: a later change appending a handler to
         # the tail of this list would otherwise detach the comment from its subject.
         Handler(
             name="test-hygiene",

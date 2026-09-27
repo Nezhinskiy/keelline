@@ -122,7 +122,7 @@ def _render_locally(root: Path, name: str) -> Path:
     # cannot open a root that is not there yet. `mkdirs_within` creates a target's *parents*, so
     # the instance directory is asked for as the parent of the first file that goes into it —
     # through the same walk, rather than with the `Path.mkdir(parents=True)` this project does
-    # not allow into a lane that puts files into a repository.
+    # not allow into a module that puts files into a repository.
     fsops.mkdirs_within(root, f"{name}/{OVERLAY_FILES[0]}")
     apply(target, planned)
     return target
@@ -158,7 +158,7 @@ def create(
 def _detail(done: Completed) -> str:
     """What a subprocess said about itself, in the order a reader wants it.
 
-    `Completed` has carried `code` and `stderr` since this seam was written and this lane threw
+    `Completed` has carried `code` and `stderr` since this seam was written and this module threw
     both away: with `gh` absent from `PATH`, every call answered `Completed(127, "", "gh could
     not be run: …")` and the failure below still said "GitHub did not confirm the repository
     exists; check `gh auth status`" — a cause that was not the cause, about a binary that was
@@ -273,7 +273,7 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
     advertises, and attributing to the owner an edit Keelline itself made. Re-stamping is the
     narrow answer of the two the review offered; rendering the suffix through the `Template`
     instead would put an owner-dependent value into the shipped tree, which every *other*
-    consumer of that tree (`upgrade`'s hash rule, the release lane) would then have to know
+    consumer of that tree (`upgrade`'s hash rule, `keelline.release`) would then have to know
     about. A `--template` clone carries no ledger at all, and gets no record written for it.
 
     A manifest that is *absent* is a note rather than a failure. An overlay generated before the

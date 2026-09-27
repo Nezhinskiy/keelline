@@ -181,7 +181,7 @@ def test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherw
     body = {t.id: t for t in footprint}["ci-workflow"].render()
     assert f"/.github/workflows/check.yml@{SHA}\n" in body and "%%" not in body
     assert 'branches: ["main"]' in body
-    for mode, phrase in (("none", "[ci] mode is none"), ("uvx", "ships with a later lane")):
+    for mode, phrase in (("none", "[ci] mode is none"), ("uvx", "ships in a later release")):
         varied = replace(_recording(config), ci=replace(_recording(config).ci, mode=mode))
         prepared = _prepared(varied, resolution=PINNED)
         assert phrase in prepared.skipped["ci-workflow"], mode

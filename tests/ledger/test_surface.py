@@ -6,7 +6,7 @@ from __future__ import annotations
 import keelline.ledger.api as ledger
 
 
-def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
+def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     # An equality, for the reason tests/guards/test_surface.py gives: a subset let an export
     # arrive unnoticed. No mutation entry: the mutation is adding an export (two lines).
     # Measured by hand instead — re-exporting `write.file_entry` reddens this test and this

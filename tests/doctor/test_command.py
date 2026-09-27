@@ -112,8 +112,8 @@ def test_the_runner_this_command_builds_is_bounded_for_a_diagnostic(
 def test_a_skip_is_not_a_finding(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     # One check cannot be answered by this build — the Codex hook-trust hash, which no spike has
     # measured — and `ci-ref` skips on a state this repository is in: it records no `[ci] ref`.
-    # (`files` was counted with the first until the release lane shipped the record it compares
-    # against.) If a skip exited 1, `doctor` would be red on every correct installation.
+    # (`files` is not among them: the release ships the record it compares against.) If a skip
+    # exited 1, `doctor` would be red on every correct installation.
     root = _initialised(tmp_path)
     code = invoke(["doctor", "--root", str(root), "--home", str(tmp_path / "home"), "--json"])
     assert code == 0

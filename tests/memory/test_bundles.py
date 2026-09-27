@@ -268,7 +268,7 @@ def test_the_owners_own_preset_rules_need_no_trust(
 ) -> None:
     # A preset ships with the plugin; it is never repository content, so gating it on a
     # repository's trust record would make the owner's own rules hostage to a clone. That is
-    # supplying a fixture for the `load_preset` collaborator the `setup` lane owns, not
+    # supplying a fixture for the `load_preset` collaborator `setup` owns, not
     # mocking the unit under test.
     monkeypatch.setattr(
         bundles_module, "load_preset", lambda name: {"rules": {"greeting": "Hello."}}
@@ -443,9 +443,9 @@ def test_the_declared_slot_counts_are_the_ones_hooks_json_has_to_ship() -> None:
     # entries a session actually gets. The mapping is the contract, so the mapping is pinned —
     # a bundle added or dropped fails this too.
     #
-    # The other side of that contract, `hooks/hooks.json` itself, belongs to the `hooks-core`
-    # lane and does not exist in this tree: cross-checking these counts against the entries
-    # that file declares is that lane's test to write, not one this one can fake.
+    # The other side of that contract, `hooks/hooks.json` itself, belongs to `keelline.hooks`:
+    # `tests/hooks/test_hooks_json.py` cross-checks these counts against the entries that file
+    # declares, which is not a check this file can fake.
     assert SLOTS == {
         Bundle.PRESET_RULES: 1,
         Bundle.STANDING_RULES: 3,
@@ -462,8 +462,8 @@ def test_the_margin_is_additive_because_the_text_is_emitted_raw(tmp_path: Path) 
     # margin as headroom. Through `--json` it does not, and that is the point of the name —
     # `cli._emit` wraps the same string in `json.dumps({"summary": ...}, indent=2)`, whose
     # envelope and escaping alone carry a cap-length bundle past the platform cap.
-    # **So the `hooks.json` entries must not pass `--json`** — recorded here because this is
-    # the file the `hooks-core` lane reads `SLOTS` out of.
+    # **So the `hooks.json` entries must not pass `--json`** — recorded here because `bundles`
+    # defines the `SLOTS` those entries are counted against.
     # (`test_a_note_sized_to_the_margins_edge_is_flagged_oversized` pins the subtraction
     # itself; this pins what the remainder of the margin is for.)
     store, config = a_store(tmp_path)

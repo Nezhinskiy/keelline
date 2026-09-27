@@ -1,7 +1,7 @@
-"""The overlay area's import surface: everything another lane may import from it.
+"""The overlay area's import surface: everything another area may import from it.
 
-The list is chosen from what consumers outside this area actually reach for. A lane that needs
-something absent from it grows it deliberately, in a commit that says which lane and why — it
+The list is chosen from what consumers outside this area actually reach for. An area that needs
+something absent from it grows it deliberately, in a commit that says which area and why — it
 does not import a private module of this area.
 
 `setup` builds an overlay and so needs `create`, `init_instance`, `target_root`, `require_overlay`
@@ -32,9 +32,9 @@ because `tests/test_areas.py` walked `src/` alone. It walks `scripts/` too now.
 **Trimmed, when the area boundaries were drawn tight.** `COMMON` and `COMMON_RULES` had no importer
 anywhere. `CAPABILITY_FILES`, `template_root`, `templates`, `upgrade` and `OverlayUpgrade` had
 none outside this area: `upgrade` is driven by this area's own command module, and the template
-tree was published against a sentence — "the release lane will need the template tree" — about a
-lane that does not exist yet. That lane grows the list when it arrives, which is what this
-docstring asks of every other lane.
+tree was published against a sentence predicting that the `release` area would need it, which
+nothing in `keelline.release` does. If it ever does, it grows the list then, which is what this
+docstring asks of every other area.
 
 `requires_of`, `satisfies`, `Sync` and `overlay_sync` are published for `doctor` (the
 `overlay-requires` row) and the `attach` area's session-start handler; the floor is one grammar

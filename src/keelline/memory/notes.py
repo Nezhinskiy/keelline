@@ -363,7 +363,7 @@ def render_note(note: Note) -> str:
     wanted = _wanted(note)
     # A key this module could not parse — `group_order: 2b` — has a wanted value of `None`
     # while the file plainly has a line. That is not a deletion, it is a value this reader
-    # does not understand, and nothing in this lane deletes a declared key, so an absent
+    # does not understand, and nothing in this area deletes a declared key, so an absent
     # wanted value never overrides a present original.
     changed = {
         key: value
@@ -396,7 +396,7 @@ def render_note(note: Note) -> str:
     lines.append(FENCE)
     frontmatter = note.newline.join(lines) + note.newline
     # The body as it was, when there is one to preserve; the normalised form otherwise. Nothing
-    # in this lane edits a body — `with_index` changes the `index:` line and nothing else — so
+    # in this area edits a body — `with_index` changes the `index:` line and nothing else — so
     # the first branch is the one every note read from disk takes.
     if note.verbatim is not None:
         return frontmatter + note.verbatim

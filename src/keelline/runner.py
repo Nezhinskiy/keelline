@@ -48,7 +48,7 @@ NETWORK_TIMEOUT_SECONDS = 300
 # that redirect git was wrong.** `GH_HOST` and `GH_CONFIG_DIR` redirect `gh` the same way and
 # are kept deliberately: they are how a GitHub Enterprise owner reaches their own host, and
 # dropping them would break that installation outright to close a gap the inherited token does
-# not have. A lane that needs them gone should say which call and why.
+# not have. A caller that needs them gone should say which call and why.
 _ENV_DROP = (
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -73,7 +73,7 @@ _ENV_DROP = (
 # row has asked about `keelline.REPOSITORY_URL`, a module constant, ever since that constant was
 # introduced. The control is unchanged and still needed; what was wrong was the sentence explaining
 # it, which named the one caller it had stopped applying to -- and a false rationale on a hardening
-# is how a later lane concludes the hardening is unnecessary.
+# is how a later change concludes the hardening is unnecessary.
 _ENV_FORCE = {"GIT_TERMINAL_PROMPT": "0"}
 # How a launched program's output is read: as text in the locale's codec, and a byte that codec
 # cannot read is U+FFFD rather than a `UnicodeDecodeError`. The rule rests on what every caller

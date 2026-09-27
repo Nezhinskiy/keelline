@@ -16,7 +16,7 @@ those two kinds is the region body and the marked entries, never the file around
 no longer say where it ends, a settings document that is not JSON: each is recorded in
 `Plan.refusals` and the remaining templates are still decided. `plan` raises only for input no
 per-artifact report could rescue — the configured profile, the manifest itself, and a malformed
-`Template`, which is a bug in the lane that built it rather than a file a user can put right.
+`Template`, which is a bug in the caller that built it rather than a file a user can put right.
 Both shapes of malformed `Template` raise, symmetrically: a managed region that names no
 region, and keyed entries that name no entries. The second did not, and `entries or {}` turned
 it into a silent uninstall of whatever the user had wired up.
@@ -70,7 +70,7 @@ _IN_FILE = (Kind.MANAGED_REGION, Kind.KEYED_ENTRIES)
 # bad merge, a half-typed edit — and both are answered per artifact. `Refusal` itself is
 # deliberately not caught: `_payload_and_stamp` raises it for a `MANAGED_REGION` template
 # carrying no region name and for a `KEYED_ENTRIES` template carrying no entries, each a
-# malformed `Template` and so a bug in the lane that built it, not something a user can put
+# malformed `Template` and so a bug in the caller that built it, not something a user can put
 # right by editing a file.
 _OWN_FILE_REFUSALS = (RegionError, EntriesError)
 _VERB_FOR = {Kind.MANAGED_REGION: Verb.REGION_UPDATE, Kind.KEYED_ENTRIES: Verb.ENTRIES_UPDATE}
@@ -228,11 +228,11 @@ def _payload_and_stamp(template: Template, current: str | None) -> tuple[str, st
     if template.kind is Kind.KEYED_ENTRIES:
         if template.entries is None:
             # `{}` means "remove every Keelline entry", and `Template.entries` defaults to
-            # `None` — so `template.entries or {}` read a lane that forgot one keyword argument
-            # as a lane asking to uninstall the user's hook wiring, reported the result as
+            # `None` — so `template.entries or {}` read a caller that forgot one keyword argument
+            # as a caller asking to uninstall the user's hook wiring, reported the result as
             # `entries_update` / "refreshed", and rewrote the manifest as though it were an
             # ordinary upgrade. The malformed-`Template` rule five lines above is the same
-            # rule: a bug in the lane that built it, raised rather than acted on. `{}` is left
+            # rule: a bug in the caller that built it, raised rather than acted on. `{}` is left
             # to mean removal, for the caller that genuinely wants it.
             raise Refusal(f"{template.id}: a keyed-entries template names no entries")
         if missing := unmarked(template.entries):
@@ -242,7 +242,7 @@ def _payload_and_stamp(template: Template, current: str | None) -> tuple[str, st
             # `owned()` renders the marked entries alone, so with none marked it answers `{}`
             # for both the payload and what is already on disk, the digests match, and the
             # artifact is reported `unchanged` — the report says "up to date" about a file
-            # nothing wrote. A lane that did not call `entries.mark` is a bug in that lane,
+            # nothing wrote. A caller that did not call `entries.mark` is a bug in that caller,
             # raised rather than acted on, exactly like a malformed `Template` above.
             raise Refusal(
                 f"{template.id}: a keyed-entries template carries {len(missing)} entry/entries "
@@ -292,8 +292,8 @@ def plan(
 ) -> Plan:
     """What applying `templates` under `config` would do, decided and not yet written.
 
-    `owners` is which artifacts the lane that built `templates` builds to write each place, and
-    `left_copies` says what it guards. A lane whose templates are never kept out of git (the
+    `owners` is which artifacts the caller that built `templates` builds to write each place, and
+    `left_copies` says what it guards. A caller whose templates are never kept out of git (the
     overlay's) has no ledger to guard and passes none.
     """
     validate_sources(config)

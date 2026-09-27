@@ -1,9 +1,9 @@
-"""The attach area's import surface: everything another lane may import from it.
+"""The attach area's import surface: everything another area may import from it.
 
 The list is chosen from what consumers outside this area actually reach for, and every name on
 it carries the reason beside it — a surface that survives a trim with no explanation is what
-made the trim necessary. A lane that needs something absent from this list grows it
-deliberately, in a commit that says which lane and why — it does not import a private module of
+made the trim necessary. An area that needs something absent from this list grows it
+deliberately, in a commit that says which area and why — it does not import a private module of
 this area.
 
 `doctor` is the one consuming area, and it is the whole of what any module outside this area

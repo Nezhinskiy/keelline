@@ -1,13 +1,12 @@
 """No project-identifying string anywhere in the public repository — the whole tree.
 
-Two lane-scoped copies of this gate held the door before it, the second of them saying
-"both gates are deleted the day the `workflows` lane ships the whole-tree gate — do not
-extend either into a third." This is that day. Source under `src/`, `tests/` and `scripts/`
-is held to the full table: a module has no reason to spell a default path. Every other
-tracked text file is held to the public table, which exempts exactly the preset's own
-default `[paths]` values, because a document that could not say where the note store lives
-by default would be useless. The denylist is digests; the two docstrings this replaces say
-why, and their reasoning is kept verbatim in `digest_of`.
+Two copies of this gate, each scoped to one area, held the door before it; this whole-tree gate
+replaced both, and no scoped copy is to be added beside it. Source under `src/`, `tests/` and
+`scripts/` is held to the full table: a module has no reason to spell a default path. Every other
+tracked text file is held to the public table, which exempts exactly the preset's own default
+`[paths]` values, because a document that could not say where the note store lives by default would
+be useless. The denylist is digests; the two docstrings this replaces say why, and their reasoning
+is kept verbatim in `digest_of`.
 
 **The denylist is stored as digests, not as the tokens themselves, and that is not decoration.**
 A gate that lists the strings it is hiding publishes them: this file ships in a public repository,
@@ -543,11 +542,11 @@ def test_a_token_hit_names_the_offset_of_its_first_window() -> None:
 
 def test_mutations_toml_carries_no_source_repository_string() -> None:
     # `mutations.toml` is walked whole under the public table by the parametrised test below,
-    # like every other tracked document. This is the stricter half the two lane gates each
-    # carried for their own entries: a mutation quotes a line of the file it names, so the
+    # like every other tracked document. This is the stricter half the two area-scoped gates
+    # each carried for their own entries: a mutation quotes a line of the file it names, so the
     # entry is held to *that file's* table. Scoping it by the named file rather than by a
     # hand-kept list of path prefixes is what one gate can do that two could not — neither
-    # copy could see the other's lane, and every lane added since was nobody's.
+    # copy could see the other's area, and every area added since was nobody's.
     entries = tomllib.loads((ROOT / "mutations.toml").read_text(encoding="utf-8"))["mutation"]
     assert len(entries) >= 200, len(entries)
     for entry in entries:

@@ -238,11 +238,11 @@ def test_a_mixed_case_owner_gets_one_answer_from_both_commands(tmp_path: Path) -
 def test_a_gh_that_is_not_installed_is_named_as_the_cause_and_costs_one_subprocess(
     tmp_path: Path,
 ) -> None:
-    # `Completed` has carried `code` and `stderr` since this seam was written
-    # and this lane threw both away: with `gh` absent from `PATH`, the command launched three
-    # subprocesses and then exited 1 saying "GitHub did not confirm the repository exists; check
-    # `gh auth status`" — a cause that was not the cause, about a binary that was not there.
-    # A missing optional binary is a reported finding, and never a misattributed one.
+    # `Completed` has carried `code` and `stderr` since this seam was written and `overlay.create`
+    # threw both away: with `gh` absent from `PATH`, the command launched three subprocesses and
+    # then exited 1 saying "GitHub did not confirm the repository exists; check `gh auth status`" —
+    # a cause that was not the cause, about a binary that was not there. A missing optional binary
+    # is a reported finding, and never a misattributed one.
     #
     # Mutation (`mutations.toml`, "overlay create --template asks GitHub about a `gh` that
     # could not run"): the `NOT_FOUND`/`TIMED_OUT` arm becomes `if False:` → two more

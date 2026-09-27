@@ -70,7 +70,7 @@ def _overlay_repository(overlay: Path, *, hooks_path: Path | None = None) -> Pat
     if hooks_path is None:
         # Pinned LOCALLY, and this is not belt-and-braces. `hooks_dir` runs `git` under
         # `gitenv.scrubbed_env()`, which keeps `HOME` deliberately — honouring the machine
-        # owner's global `core.hooksPath` is exactly what this lane now asks for — so a
+        # owner's global `core.hooksPath` is exactly what `attach` asks for — so a
         # developer whose own `~/.gitconfig` sets one would have this fixture answer *their*
         # directory and the case fail for a reason that is nothing to do with the code. `_git`
         # pins only `GIT_CONFIG_GLOBAL`, which the separate `hooks_dir` subprocess never sees.
@@ -280,7 +280,7 @@ def test_a_group_mixing_a_marked_entry_with_a_foreign_one_is_split_not_replaced(
     tmp_path: Path,
 ) -> None:
     # Inherited from `scaffold.apply_entries` rather than re-implemented, and asserted here
-    # because this is the lane whose mistake would delete a developer's own hook.
+    # because this is the command whose mistake would delete a developer's own hook.
     hooks = {"SessionStart": [{"hooks": [ENTRY]}]}
     root, store, machine = _attachable(tmp_path, hooks=hooks)
     (root / ".claude").mkdir()
@@ -399,11 +399,10 @@ def test_the_merged_rules_are_recorded_where_they_can_be_removed_again(tmp_path:
 
 
 def test_attach_writes_the_ignore_region_that_keeps_the_ledger_untracked(tmp_path: Path) -> None:
-    # The repository has no `.keelline` line today and the lane that would ship one
-    # (templates/project/) is out of scope, so an earlier revision's confidentiality argument
-    # rested on a file that does not exist. Assert the region exists after attach, and assert
-    # `git check-ignore -q .keelline/local/attach.json` succeeds — not that nothing is tracked,
-    # which passes on a fixture that has committed nothing.
+    # The repository has no `.keelline` line today and nothing under `templates/project/` ships one,
+    # so an earlier revision's confidentiality argument rested on a file that does not exist. Assert
+    # the region exists after attach, and assert `git check-ignore -q .keelline/local/attach.json`
+    # succeeds — not that nothing is tracked, which passes on a fixture that has committed nothing.
     root, store, machine = _attachable(tmp_path)
     assert not _check_ignore(root, LEDGER)
     attach(
@@ -505,10 +504,10 @@ def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
     tmp_path: Path,
 ) -> None:
     # `memory.groups` is repository-authored (principle 5) and reaches no guard of its own —
-    # `config/paths.py` says so in as many words, and names this lane as the one that has to call
-    # the containment itself. The entry decides a directory created inside the OVERLAY, which is
-    # the one tree `attach` trusts, so a `..` in it is refused rather than created, and refused
-    # rather than crashing out as a raw `OSError`.
+    # `config/paths.py` says so in as many words, and names `attach` as the caller that has to call
+    # the containment itself. The entry decides a directory created inside the OVERLAY, which is the
+    # one tree `attach` trusts, so a `..` in it is refused rather than created, and refused rather
+    # than crashing out as a raw `OSError`.
     #
     # **And refused before the first write**, which is the half this case was missing. The
     # containment was called from `_prepare_store`, which runs after the ignore region, the
@@ -1123,7 +1122,7 @@ def test_the_refusal_counts_the_groups_and_never_names_one(tmp_path: Path) -> No
         )
     message = str(refusal.value)
     assert "developer" not in message
-    # Non-vacuous: the message did report, and what it reported is the count this lane took.
+    # Non-vacuous: the message did report, and what it reported is the count `attach` took.
     assert "1 of this project's memory groups" in message
 
 

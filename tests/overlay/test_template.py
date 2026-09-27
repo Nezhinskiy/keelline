@@ -214,7 +214,7 @@ def test_no_file_in_the_tree_is_undeclared() -> None:
 def test_the_templates_plan_cleanly_into_an_empty_directory(tmp_path: Path) -> None:
     from keelline.scaffold import apply, plan
 
-    # The overlay writes through the scaffold engine like every other lane, which is what makes
+    # The overlay writes through the scaffold engine like every other area, which is what makes
     # `overlay upgrade` the engine's hash-and-skip rule rather than a second implementation of it.
     planned = plan(tmp_path, preset_defaults("keelline-private"), templates())
     assert planned.refusals == ()

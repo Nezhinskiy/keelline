@@ -828,7 +828,7 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
     """Create the overlay if this run has to, record what there is, and say what happened.
 
     Everything here that can refuse is a **floor** under `_requested_overlay` rather than a
-    second copy of it, in the sense the `attach` lane settled the same shape: the checks above
+    second copy of it, in the sense the `attach` area settled the same shape: the checks above
     the first write are what a person acts on, and these are what catches a tree that changed in
     between — or, for the create branch, one that did not exist to be checked at all. What this
     function returns is written into the machine file, and every later `attach` on this machine

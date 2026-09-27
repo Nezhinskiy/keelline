@@ -101,7 +101,7 @@ reddens = [
 
 # The mirror of the entry above, and the direction the gate did not run in. Creation was gated
 # and revocation was not, so an approved link outlived the record that authorised it: one
-# `git pull` lapses the record, every channel this lane controls shuts, and the one it does not
+# `git pull` lapses the record, every channel `memory` controls shuts, and the one it does not
 # control kept pointing at the new bytes.
 [[mutation]]
 name = "the harness link outlives the trust record that authorised it again"
@@ -1010,7 +1010,7 @@ reddens = [
 # The neutrality gate stores its denylist as digests so the file that hides a name does not publish
 # it, which means the match is a windowed hash comparison rather than a substring test — an
 # invisible mechanism whose failure mode is silence. Empty the per-width digest set and every scan
-# comes back clean: the whole-lane walk goes green over a tree that could name anything.
+# comes back clean: the whole-tree walk goes green over a tree that could name anything.
 [[mutation]]
 name = "the hashed neutrality denylist stops matching a planted token"
 file = "tests/test_neutral.py"
@@ -1183,6 +1183,17 @@ name = "the public-anchor gate reads the plan headings case-sensitively again"
 file = "tests/test_public_anchors.py"
 before = '    ("plan section", re.compile(r"\bPremise\s+\d+|(?i:\bglobal\s+constraint)")),'
 after = '    ("plan section", re.compile(r"\bPremise \d+|G[l]obal Constraint")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# The plans' word for a unit of work, in every file and either case: nearly three hundred lines
+# said it before this arm, and a reader here could not tell which area any of them meant.
+[[mutation]]
+name = "the public-anchor gate stops seeing the plans' unit of work"
+file = "tests/test_public_anchors.py"
+before = '    ("plan unit", re.compile(r"(?i:\blanes?\b)")),'
+after = '    ("plan unit", re.compile(r"(?i:\blanes?\b)(?!)")),'
 reddens = [
   "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
 ]
@@ -2028,7 +2039,7 @@ reddens = [
   "tests/docs/test_trail.py::test_a_trail_file_that_is_not_utf8_is_a_failure_not_an_internal_error",
 ]
 
-# The same defect in the memory lane's own reader: `UnicodeDecodeError` is not an `OSError`, so
+# The same defect in `memory`'s own reader: `UnicodeDecodeError` is not an `OSError`, so
 # a latin-1 byte in a note escaped the walk instead of being quarantined onto `unreadable`.
 [[mutation]]
 name = "a non-UTF-8 note escapes the walk instead of being quarantined"
@@ -2983,7 +2994,7 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_log_larger_than_the_sink_would_ever_write_is_read_to_a_bound",
 ]
 
-# Three load-bearing guards of the `attach` lane that had no entry. The first is the `--machine`
+# Three load-bearing guards of `attach` that had no entry. The first is the `--machine`
 # gate -- a flag is a third member of the equivalence class `config/machine.py` gates
 # `KEELLINE_CONFIG` and `XDG_CONFIG_HOME` on, and this is the command that turns the machine file
 # into capability: the overlay root comes from it, and from the overlay come allow rules, hook
@@ -3052,7 +3063,7 @@ reddens = [
 ]
 
 # `memory.groups` is repository-authored and reaches no guard of its own (`config/paths.py`
-# names this lane as the one that has to call the containment itself). The entry decides a
+# names `attach` as the caller that has to call the containment itself). The entry decides a
 # directory created inside the OVERLAY -- the one tree `attach` trusts -- so `fsops` refusing it
 # has to reach the caller as a refusal and not as silence.
 #
@@ -3180,7 +3191,7 @@ reddens = [
 ]
 
 # The worktree's settings-file fallback is state that persists, on the one channel `memory/worktree`
-# calls "the one hop that leaves this lane's gate". A gate evaluated once at creation over such
+# calls the one hop that leaves `memory`'s gate. A gate evaluated once at creation over such
 # state is not a gate: the key outlived the trust record that allowed it, while the ledger that
 # `detach` reads was reset to `[]` around it.
 [[mutation]]
@@ -3618,7 +3629,7 @@ before = """        destination, account = target_root(home, owner, name)
 after = "        destination, account = target_root(home, owner, name)"
 reddens = ["tests/setup/test_setup.py::test_a_created_overlay_is_refused_before_the_repository_exists"]
 
-# `CONTRIBUTING`'s containment rule has two stages, and this lane had only the second: the
+# `CONTRIBUTING`'s containment rule has two stages, and `setup` had only the second: the
 # `O_NOFOLLOW` walk refused a symlinked `~/.claude` with `UnsafePath`, which `cli.run` renders as
 # `internal error`, after the machine file was already written. `config.paths.contained` is the
 # user-facing half. The mutation leaves the walk, so the run still refuses — with no link named,
@@ -6791,7 +6802,7 @@ reddens = [
   "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
 ]
 
-# The one list four lanes report as a count, and the one fault none of those lanes can fix for
+# The one list four areas report as a count, and the one fault none of those areas can fix for
 # itself. `_build` coerced it with `tuple(value)`, so a repeated entry was walked twice and
 # counted twice -- in `attach`'s refusal, in `--check`'s `real_directories` and in the session
 # line -- about one directory whose remedy was already done.
@@ -8099,7 +8110,7 @@ reddens = ["tests/project/test_uninstall.py::test_a_dry_run_writes_nothing_and_s
 
 # Only the planning seam (`footprint.Passes`) imports the engine's planner or the ignore guard, so
 # every footprint command, the next one included, plans with both guards bound. The engine's
-# `owners` stays optional for the overlay lane; the import is the bypass, and this is its check.
+# `owners` stays optional for `keelline.overlay`; the import is the bypass, and this is its check.
 [[mutation]]
 name = "a footprint command imports the planner past the seam"
 file = "src/keelline/project/init.py"

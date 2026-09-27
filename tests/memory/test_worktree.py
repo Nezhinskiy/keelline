@@ -657,7 +657,7 @@ def test_an_overlay_store_gates_the_harness_link_on_the_directory_it_exposes(
     created = link(tree, store, config, home=home).created
     assert harness_memory_path(tree, home) not in created
     assert not harness_memory_path(tree, home).exists()
-    # Everything inside the worktree is still linked; only the hop outside this lane's gate
+    # Everything inside the worktree is still linked; only the hop outside `memory`'s gate
     # waits for the record.
     assert (tree / "docs" / "memory" / "developer").is_symlink()
     record(store, config)
@@ -685,7 +685,7 @@ def test_a_committed_index_reaches_no_harness_link_before_trust(tmp_path: Path) 
 def test_the_harness_link_is_withdrawn_once_the_trust_record_lapses(tmp_path: Path) -> None:
     # The mirror of the two tests above, and the direction nothing checked. The gate ran at
     # creation only, over state that persists — so a `git pull` that adds one note to an
-    # approved in-repo store lapsed the record, closed every channel this lane controls, and
+    # approved in-repo store lapsed the record, closed every channel `memory` controls, and
     # left `~/.claude/projects/<slug>/memory` pointing at the store the new note is in, where
     # the harness's own native reader read it with no gate, no delimiter and no record.
     from keelline.memory.bundles import Bundle, blocks

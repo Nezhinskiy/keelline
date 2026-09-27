@@ -551,7 +551,7 @@ def test_a_settings_document_the_engine_cannot_parse_refuses_only_its_own_artifa
 
 def test_a_keyed_entries_template_naming_no_entries_raises(tmp_path: Path) -> None:
     # The symmetric case, and the one that was missing. `Template.entries` defaults to `None`
-    # and `apply_entries(current, {})` means "remove every Keelline entry", so a lane that
+    # and `apply_entries(current, {})` means "remove every Keelline entry", so a caller that
     # forgot one keyword argument uninstalled the user's hook wiring — reported as
     # `entries_update` / "refreshed", with the manifest rewritten as an ordinary upgrade.
     settings = tmp_path / ".claude"
@@ -619,11 +619,11 @@ def test_one_unmarked_entry_beside_a_marked_one_is_still_a_refusal(tmp_path: Pat
 def test_an_entry_that_cannot_be_keyed_is_refused_rather_than_written(
     tmp_path: Path, entry: object
 ) -> None:
-    # `apply_entries` writes `wanted` into the user's file verbatim, and nothing between a lane
+    # `apply_entries` writes `wanted` into the user's file verbatim, and nothing between a caller
     # and that write validates its shape — `_entries_of` checks the *document*, not the mapping
     # coming in. An entry that cannot be keyed is the same bug whatever makes it unkeyable, and
     # the last case is why the shape guard is a guard rather than decoration: without it
-    # `entry.get` raises `AttributeError` out of `plan` instead of naming the lane's bug.
+    # `entry.get` raises `AttributeError` out of `plan` instead of naming the caller's bug.
     settings = tmp_path / ".claude"
     settings.mkdir()
     (settings / "settings.json").write_text(json.dumps({"hooks": OURS}), encoding="utf-8")
@@ -648,7 +648,7 @@ def test_an_empty_entries_mapping_still_means_remove_everything(tmp_path: Path) 
 
 def test_a_template_naming_no_region_raises_rather_than_becoming_a_refusal(tmp_path: Path) -> None:
     # The boundary of what `plan` converts into a per-artifact refusal. A `MANAGED_REGION`
-    # template carrying no region name is a malformed `Template`, so it is a bug in the lane
+    # template carrying no region name is a malformed `Template`, so it is a bug in the caller
     # that built it; recording it beside the user's own bad merges would hide it.
     template = a_template(kind=Kind.MANAGED_REGION, region=None, render=lambda: "R1")
     (tmp_path / "AGENTS.md").write_text("PROSE\n", encoding="utf-8")

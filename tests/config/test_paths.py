@@ -297,7 +297,7 @@ def test_a_paths_value_naming_gits_control_directory_is_refused_and_never_quoted
 def test_contained_refuses_gits_control_directory_at_any_depth_and_in_any_case(
     tmp_path: Path, value: str
 ) -> None:
-    # `contained()` is the function every configured path and every lane-supplied path goes
+    # `contained()` is the function every configured path and every area-supplied path goes
     # through above the first write, so the rule has to hold here and not only in the grammar
     # loop: `ledger`, `memory` and `docs` all call it with strings `validate_paths` never sees.
     # The case arm is not decoration — the default filesystem on macOS is case-insensitive, so
@@ -348,9 +348,9 @@ def test_a_name_that_merely_resembles_keellines_directory_is_admitted(tmp_path: 
 
 
 def test_every_file_keelline_keeps_in_its_own_directory_is_under_the_reserved_name() -> None:
-    # `config` spells `.keelline` because it imports no area; the lanes that keep files there
+    # `config` spells `.keelline` because it imports no area; the areas that keep files there
     # spell their own paths. This holds each of them under the reserved name, so a rename on
-    # either side reddens here instead of leaving a lane's state unprotected.
+    # either side reddens here instead of leaving an area's state unprotected.
     from keelline.attach.api import LEDGER
     from keelline.memory.store import LOCAL_STORE
     from keelline.project.uninstall import ASSESSMENT, LEDGER_DIRS

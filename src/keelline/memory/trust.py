@@ -148,7 +148,7 @@ _CONFIG_KEY = "\0keelline:memory-config\0"
 
 
 def _config_digest(config: Config) -> str:
-    """The repository-controlled configuration this lane renders into a file the gate covers.
+    """The repository-controlled configuration this area renders into a file the gate covers.
 
     `memory.index_extra` lives in `keelline.toml`, which no store file covers, and `_extra`
     renders it straight into `MEMORY.md` — the file the `index` bundle injects. An attacker who

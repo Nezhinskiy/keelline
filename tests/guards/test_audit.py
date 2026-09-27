@@ -312,7 +312,7 @@ def test_import_roots_are_the_packages_and_modules_directly_under_each_root(tmp_
     # counting it would make the suite its own subject. Reddened by mutating `import_roots`'s
     # `not child.name.startswith("test_")` to `not child.name.startswith("zzz_")`. Measured:
     # it also reddens the CLI test, whose fixture has a `test_*.py` directly under a code root
-    # and asserts the derived names; no test outside this lane moved.
+    # and asserts the derived names; no test outside `guards` moved.
     src = tmp_path / "src"
     (src / "widget").mkdir(parents=True)
     (src / "widget" / "__init__.py").write_text("", encoding="utf-8")

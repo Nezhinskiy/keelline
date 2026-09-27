@@ -6,9 +6,9 @@ from __future__ import annotations
 import keelline.memory.api as memory
 
 
-def test_the_memory_surface_carries_what_every_downstream_lane_reaches_for() -> None:
-    # This list is the contract. A lane that needs something absent from it grows the list
-    # deliberately, in a commit that says which lane and why — it does not import a private
+def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
+    # This list is the contract. A consumer that needs something absent from it grows the list
+    # deliberately, in a commit that says which consumer and why — it does not import a private
     # module, and it does not get told after the fact that its import was a review finding.
     #
     # An equality, because every name below has its argument, in `api.py` or beside it here, and
@@ -64,7 +64,7 @@ def test_the_memory_surface_carries_what_every_downstream_lane_reaches_for() -> 
         "new_nonce",
         "UnsafeNote",
         # the trust gate. Repository bytes reach a model only after `keelline memory trust`
-        # and only inside a delimited region, so a lane that injects them has to be able to
+        # and only inside a delimited region, so an area that injects them has to be able to
         # ask this area whether it may, to see a store that was trusted and is not any more,
         # and to tell a broken record from an unapproved store.
         "may_inject",

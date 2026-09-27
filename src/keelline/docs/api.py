@@ -1,4 +1,4 @@
-"""The import surface: everything a consumer lane may import from this area.
+"""The import surface: everything a consumer may import from this area.
 
 A module and not the package's `__init__`, for the reason `keelline.guards.api`,
 `keelline.memory.api` and `keelline.ledger.api` all give: area discovery imports a package
@@ -9,12 +9,12 @@ whole area — and with it the configuration layer — into every `discover()` c
 **Outside this area, `project` imports `trail_target` (the paragraphs on `trail_path` and
 `trail_target` say why), `keelline.assess.gates` imports the three gate functions (the last
 paragraph) and `keelline.assess.state` imports `lint` and `declared_state`, to check an adoption
-plan; nothing imports
-any other name on this list**, measured over `src/`, `scripts/` and `tests/`: this area's own
-tests reach `keelline.docs.plans`, `keelline.docs.hygiene`, `keelline.docs.graph` and
-`keelline.docs.trail` directly, and every other lane runs the commands. So every other name below
-is here on an argument rather than on a caller, and the argument is written beside it — a surface
-that survives a trim with no explanation is what made the trim necessary.
+plan; nothing imports any other name on this list**, measured over `src/`, `scripts/` and
+`tests/`: this area's own tests reach `keelline.docs.plans`, `keelline.docs.hygiene`,
+`keelline.docs.graph` and `keelline.docs.trail` directly, and every other area runs the commands.
+So every other name below is here on an argument rather than on a caller, and the argument is
+written beside it — a surface that survives a trim with no explanation is what made the trim
+necessary.
 
 The five besides `trail_target` and the three gate functions are the four checks this area
 *is*, one call each, and the one record one of them returns:
@@ -33,8 +33,8 @@ them from there.
 **The trail half is not here.** The markers, the file name, `Trail`, `read_trail`,
 `trail_path`, `render_listing`, `rebuild` and `undeclared_new_documents` stay in
 `keelline.docs.trail`, which `docs/commands.py` and this area's own tests reach directly: no
-other area reads them, and a lane that needs one grows this list, in a commit that says which
-lane and why.
+other area reads them, and an area that needs one grows this list, in a commit that says which
+area and why.
 
 Of the five names above, `lint` has one importer, `keelline.assess.state`, and the other four
 none; they stay on an argument about shape — one call per check rather than the machinery behind

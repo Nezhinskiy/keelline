@@ -1,9 +1,9 @@
 """The scaffold engine: manifest, regions, keyed entries, plan and apply.
 
-Everything a consumer lane needs is re-exported here, including the four primitives the later
-lanes reach for directly: `owned_ids` for `doctor`'s provenance list, `mark` for any lane that
+Everything a consumer needs is re-exported here, including the four primitives other areas
+reach for directly: `owned_ids` for `doctor`'s provenance list, `mark` for any caller that
 builds `Template.entries`, and `drop` / `apply_entries` for `uninstall`. The three refusals a
-consumer has to catch by name are here too: a lane that cannot import `ManifestError`,
+consumer has to catch by name are here too: a caller that cannot import `ManifestError`,
 `RegionError` or `EntriesError` from this list has no way to tell a bad merge from a bug except
 by catching `Refusal` whole. `effective_target` and `unlinks` are for `uninstall`, which must
 compare paths the way the engine resolves them (an `[artifacts] local` artifact lives where
@@ -17,8 +17,8 @@ leaves in a file kept out of git, and that verdict, which file it is asked of, a
 `LocalDigests` and `LOCAL_DIGESTS` are the ledger that rule reads, which `uninstall` removes before
 the ignore block goes. `LOCAL_ARTIFACTS` is for the project area's guard against writes git
 ignores, which exempts the one directory Keelline keeps out of git on purpose. Importing a private
-module of this package from another area is a review finding; if a lane needs something this list
-does not carry, the list grows deliberately.
+module of this package from another area is a review finding; if an area needs something this
+list does not carry, the list grows deliberately.
 """
 
 from keelline.scaffold.engine import (

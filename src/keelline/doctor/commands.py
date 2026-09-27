@@ -6,7 +6,7 @@ invokes.
 **A `skip` is not a finding.** One of the sixteen checks cannot be answered by this build at
 all — the hash Codex keys hook trust on, which no spike has measured — so an exit code that
 counted skips would make `doctor` red on every correct installation. Two others were counted
-here and are not: `files` until the release lane shipped the record it compares against, and
+here and are not: `files` until `keelline.release` shipped the record it compares against, and
 `ci-ref` until `init` shipped the writer of `[ci] ref`. `ci-ref`'s skip is now a *state* — this
 repository records no ref — and which state is ordinary moves with the release history and not
 with any code here, so nothing in this module asserts a number about it: before a released tag

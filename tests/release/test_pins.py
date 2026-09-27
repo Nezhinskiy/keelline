@@ -65,7 +65,7 @@ def test_is_released_judges_semver_tags_and_never_the_alias(tmp_path: Path) -> N
     pins = released(_Stub(), cwd=tmp_path)
     assert pins is not None
     assert "v1" in pins
-    # And the per-plugin tag is not a tag this lane answers about. `_LINE` is what drops it — the
+    # And the per-plugin tag is not a tag this module answers about. `_LINE` is what drops it — the
     # pattern requires `refs/tags/v`, so `keelline--v1.0.0` never reaches the dictionary at all —
     # and `_SEMVER` would drop it a second time downstream. Asserted on both sides, because the
     # fixture line was inert until now: a `uses:` pin resolved to this sha would check out a ref

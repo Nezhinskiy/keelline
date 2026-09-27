@@ -1,4 +1,4 @@
-"""The import surface: everything a consumer lane may import from this area.
+"""The import surface: everything a consumer may import from this area.
 
 A module and not the package's `__init__`, for the reason `keelline.docs.api`,
 `keelline.ledger.api` and `keelline.memory.api` all give: area discovery imports a package
@@ -23,7 +23,7 @@ Six names, each with the consumer that reaches for it:
   `tests/test_surfaces.py` derives that rule rather than restating it.
 - `rewrite_owned`, for `keelline adopt begin` and `keelline adopt promote`, which move
   `[keelline] state` and `enforced` as a project is adopted and its gates promoted. It is
-  the one operation that rewrites a tool-owned key: a second copy in that lane would skip the
+  the one operation that rewrites a tool-owned key: a second copy in `adopt` would skip the
   `config` record's re-stamp, and `uninstall` would then keep every promoted project's
   `keelline.toml` as hand-edited.
 - `CI_WORKFLOW`, for `keelline assess`'s workflow and code-owners probes, which must name
@@ -34,8 +34,8 @@ Six names, each with the consumer that reaches for it:
 
 `read`, `fill` and `HARNESS_REGION` are **not** here: they are this area's own, reached by
 `keelline.project.templates` and by nothing outside it. The branch grammar a rendered workflow
-holds `[ci] gate_branch` to is `config.schema.BRANCH_NAME`, which the loader applies too. A lane
-that needs one grows this list deliberately, in a commit that says which lane and why.
+holds `[ci] gate_branch` to is `config.schema.BRANCH_NAME`, which the loader applies too. An area
+that needs one grows this list deliberately, in a commit that says which area and why.
 """
 
 from keelline.project.layout import PROJECT_FILES

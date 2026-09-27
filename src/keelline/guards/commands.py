@@ -266,7 +266,7 @@ def run_test_audit(args: argparse.Namespace) -> Result:
     # exercises a neighbouring one, `override_is_honoured` inside
     # `test_the_override_is_honoured_from_an_interactive_shell`. So exit 1 would be red on its
     # own repository from the first run, and the schema has no per-command enable switch to
-    # turn it off with. Gating belongs to a lane that has triaged these to zero.
+    # turn it off with. Gating belongs to a change that has triaged these to zero.
     if findings:
         return Result(f"{len(findings)} candidate(s) in {len(files)} test file(s)", data)
     return Result(f"no candidates in {len(files)} test file(s)", data)

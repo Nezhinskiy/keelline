@@ -101,7 +101,7 @@ class Keelline:
         document written then says nothing else.
 
         The one reading of "which gates enforce": `keelline assess` asks it to report each gate's
-        column and `keelline gate` asks it per gate. A lane that read `enforced` directly would
+        column and `keelline gate` asks it per gate. A caller that read `enforced` directly would
         skip the loader's `installed` rule.
         """
         return frozenset(self.enforced)

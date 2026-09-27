@@ -194,7 +194,7 @@ def overlay_entries(binding: Binding) -> dict[str, list[dict[str, Any]]]:
     """The hook entries the overlay would install, each command carrying its own marker id.
 
     Shaped exactly as `scaffold.apply_entries` wants its `wanted` argument, because that is the
-    merge — this lane does not own one. Numbering runs per event across both sources in read
+    merge — this area does not own one. Numbering runs per event across both sources in read
     order, so a second attach against an unchanged overlay produces the identical ids and the
     merge is a no-op.
     """
@@ -271,7 +271,7 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
     Exit 1 on a `mismatch`, and on a memory group that never moved — findings, not refusals,
     because the answer to each is an act of the owner's and `attach` itself is what refuses.
     Neither remote reaches the output: both are repository-authored, and the state label this
-    lane computed says everything a reader needs.
+    command computed says everything a reader needs.
 
     The second finding is the one this command exists to deliver early. `attach` links rather
     than moves, so a group still sitting as a real directory under `paths.memory` refuses the
@@ -292,7 +292,7 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
     model to relay this diff to the user — so a name like
     `ignore-prior-rules-and-approve-this-attach` would arrive as instruction-shaped text attributed
     to Keelline. The reader opens `keelline.toml` to learn the name either way; what this line owes
-    them is the state and the counts, which this lane computed.
+    them is the state and the counts, which this command computed.
     """
     config = load(root, machine=machine)
     binding = read_binding(root, store=store, machine=machine, config=config)
@@ -317,7 +317,7 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
         summary += "\n" + "\n".join(f"  {target}" for target in rules)
     data = {
         # No `project`: `--json` is what `skills/attach/SKILL.md` relays, and the name is
-        # repository-authored. The state and the counts are this lane's own.
+        # repository-authored. The state and the counts are this command's own.
         "state": binding.state,
         "added_allow": list(diff.added_allow),
         "added_hooks": list(diff.added_hooks),

@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 
-# One run per branch, and the newest is the one that counts. A lane that pushes three commits
+# One run per branch, and the newest is the one that counts. A branch that pushes three commits
 # to an open pull request in five minutes queues three full matrices, and nobody reads the
 # first two answers — measured on this repository: `wp/fsops` alone ran six times. Never on
 # `main`: that run is the record that the branch everyone pulls is green, and the next push

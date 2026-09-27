@@ -90,7 +90,7 @@ def test_a_payload_with_no_session_id_gets_a_segment_nothing_can_precompute(
 ) -> None:
     # `UNKEYED_SESSION` was `""`, so the session segment was `sha256("")` — a hex pair anything
     # can work out in advance. With a data root the environment names, that made the unkeyed
-    # lane the one direction a read out of this tree could be used in: plant a file at the known
+    # segment the one direction a read out of this tree could be used in: plant a file at the known
     # pair and a `once_key` handler is silenced before it ever runs.
     #
     # Per process now, so `once_key` degrades to "every invocation" for a payload with no

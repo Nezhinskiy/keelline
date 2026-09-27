@@ -331,7 +331,7 @@ def test_a_two_line_index_entry_never_corrupts_the_note_it_names(tmp_path: Path)
 
 def test_index_extra_entries_that_leave_the_project_root_are_dropped(tmp_path: Path) -> None:
     # `config/paths.py` names `memory.index_extra` among the fields its own guard does not
-    # cover and assigns the check to the lane that consumes them. These strings land verbatim
+    # cover and assigns the check to the area that consumes them. These strings land verbatim
     # in `MEMORY.md`, which the `index` bundle injects.
     store, config = a_store(
         tmp_path, extra='["docs/handbooks/ledger.md", "../../secret.md", "/etc/passwd"]'
@@ -514,8 +514,8 @@ index_extra = {extra}
 def an_overlay_store(tmp_path: Path, *, extra: str = "[]") -> tuple[Store, Config, Path]:
     """A store shaped like the link tree `attach` creates, except `developer` is a real,
     repository-committed directory rather than a symlink into the overlay's own share — the
-    "mixed" shape the reviewer built by hand, since `attach` (another lane) is not present to
-    build the honest one. `permitted_roots(overlay, "widget")` is `(overlay/common/memory,
+    "mixed" shape the reviewer built by hand, since this test does not run `attach` (another
+    area) to build the honest one. `permitted_roots(overlay, "widget")` is `(overlay/common/memory,
     overlay/projects/widget/memory)`; only the second is created here, which is enough for the
     per-link resolution check `_resolved_if_permitted` runs — it never requires the far end to
     exist.

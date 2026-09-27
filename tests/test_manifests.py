@@ -43,13 +43,12 @@ def test_codex_manifest_carries_no_hooks_or_skills_key() -> None:
     manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text())
     assert manifest["name"] == "keelline"
     assert "hooks" not in manifest
-    # `claude plugin validate` refuses "../skills/" as a path traversal attempt and
-    # reports "./skills/" as not found, because the value resolves relative to
-    # .codex-plugin/ itself: no string reaches the root-level skills/ directory from
-    # there. `skills/` now holds skills, but the key is the foundation/release lane's to
-    # add — this assertion is what encodes its absence today, and the lane that adds it
-    # rewrites this test and its name, once Codex's own manifest reading has actually
-    # been measured.
+    # `claude plugin validate` refuses "../skills/" as a path traversal attempt and reports
+    # "./skills/" as not found, because the value resolves relative to .codex-plugin/ itself: no
+    # string reaches the root-level skills/ directory from there. `skills/` now holds skills, but
+    # the key is the release's to add — this assertion is what encodes its absence today, and the
+    # change that adds it rewrites this test and its name, once Codex's own manifest reading has
+    # actually been measured.
     assert "skills" not in manifest
 
 

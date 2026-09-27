@@ -6,7 +6,7 @@ from __future__ import annotations
 import keelline.docs.api as docs
 
 
-def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
+def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     # An equality and not a subset, for the reason tests/guards/test_surface.py gives: a subset
     # lets an export arrive unnoticed. No mutation entry: the mutation is adding an export,
     # which is two lines in `api.py` (the import and the `__all__` entry) and not one

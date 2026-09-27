@@ -3,14 +3,14 @@
 The refresh itself is the scaffold engine's, unchanged: an untouched skeleton file is updated,
 a hand-edited one is skipped and named, and the oracle is the digest the manifest recorded. An
 overlay is where the owner's own rules live, so a silent overwrite here destroys the only copy
-of something — which is exactly why this lane calls the engine rather than reimplementing the
+of something — which is exactly why this module calls the engine rather than reimplementing the
 rule.
 
 **Why a wrapper type rather than a bare `Plan`.** An upgrade gives two files an exception to the
 hash rule: `common/claude/permissions.json` and `common/claude/hooks.json` are named *regardless
 of hash*, because they are the two that can grant capability and a hash match is not consent
 for those. The scaffold engine's `Plan` has no verb for "needs a decision", and that contract is
-shared by every lane that scaffolds, so the answer is a type *around* the plan rather than a new
+shared by every area that scaffolds, so the answer is a type *around* the plan rather than a new
 `Verb` inside it.
 
 **What `decisions` actually is, stated plainly because an earlier account of it was not.** The
@@ -34,7 +34,7 @@ merges into `<home>/.claude/settings.json`. The file is inert because it grants 
 is the property this argument actually needs.
 
 **It stops being enough the day a third capability file lands** — or the day one of those two
-ships a non-empty body. A lane that adds one has to move the ask in front of `apply()`, or give
+ships a non-empty body. A change that adds one has to move the ask in front of `apply()`, or give
 the caller a way to decline; this paragraph is the record that the current shape depends on the
 template being inert, and not on the order of the two statements below.
 """
@@ -53,7 +53,7 @@ from keelline.scaffold import Plan, apply, plan
 # What `--root` has to name, said once. `--root` defaults to `.`, so the directory this command
 # is pointed at is ordinarily the one the agent happens to be sitting in.
 # The count is `len(OVERLAY_FILES)` and not a word, for the reason `layout.py` gives about
-# `CAPABILITY_NAMES`: one spelling, so a lane that ships a file ships the sentence with it. A
+# `CAPABILITY_NAMES`: one spelling, so a change that ships a file ships the sentence with it. A
 # hand-written "fifteen" outlived the fifteenth file by exactly one release.
 NOT_AN_OVERLAY = (
     f"`keelline overlay upgrade --root` must name an overlay. It refreshes an overlay's own "

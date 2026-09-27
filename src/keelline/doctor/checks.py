@@ -1,7 +1,7 @@
 """The sixteen checks an installation is judged by, and the context they share.
 
 **A `Check` is not a `Finding`.** `findings.Finding` carries a rule, a path and a line, and its
-docstring says the label is "what this lane computed" while the detail "may quote the
+docstring says the label carries "what the check computed" while the detail "may quote the
 repository" and is for `--json`. A doctor row needs a fourth thing neither of those is — a
 **remedy**, the command a reader is supposed to run next — and it has no path or line to carry.
 Widening `Finding` would reach into three areas that depend on its current shape, so this area
@@ -112,7 +112,7 @@ STATUSES: tuple[Status, ...] = (OK, WARN, RED, SKIP)
 
 # Every file a hook entry can be installed into, as a path relative to a root. The set is
 # load-bearing twice — `setup` writes `USER_SETTINGS` and this check reads all three — so
-# `USER_SETTINGS` is a *member* rather than a fourth spelling of the same name: a lane that
+# `USER_SETTINGS` is a *member* rather than a fourth spelling of the same name: a change that
 # moves it moves this walk with it. The two roots are the project (all three) and `home`
 # (`USER_SETTINGS` alone, which is where `setup` merges the preset's deny rules).
 SETTINGS_FILES = (
@@ -152,7 +152,7 @@ WRAPPER_TIMEOUT_SECONDS = 30
 CI_REF_TIMEOUT_SECONDS = 30
 # Said by `files` about a wrapper it measured under a root the environment named, so nobody
 # reads "executable" as "this installation is sound". The sentence is a constant because both
-# of that check's rows carry it and a lane that changes one must change the other.
+# of that check's rows carry it and a change to one must change the other.
 # The remedy both plugin-root skips carry. Two quiet `skip` rows are what a machine with no
 # findable plugin root looks like from here, and a `skip` with an empty remedy is what
 # `skills/doctor/SKILL.md` tells the model not to treat as red — so the two together said
@@ -192,7 +192,7 @@ OVERLAY_GONE_REMEDY = (
     "--preset recommended --overlay <path>` to record where it is now"
 )
 # Why `diagnostics` prints a count and no content. One constant because the reason is the row's
-# whole substance, and a lane that starts quoting the file has to delete this sentence to do it.
+# whole substance, and a change that starts quoting the file has to delete this sentence to do it.
 UNVOUCHED_LOG = (
     "the environment names where this file is, so nothing here can establish that Keelline "
     "wrote it, and its fields are Keelline's vocabulary only for a log Keelline wrote"
@@ -462,7 +462,7 @@ def _files(context: Context) -> Row:
     # is the wrong one sends them to reinstall over the one artifact that is correct.
     #
     # All three lists are drawn from `HASHED_FILES`, which is Keelline's own constant, so
-    # printing their names is this lane's own text — the rule the `theirs` count below keeps.
+    # printing their names is this module's own text — the rule the `theirs` count below keeps.
     mine = [name for name in changed if name in HASHED_FILES]
     absent = [name for name in mine if name not in actual]
     unrecorded = [name for name in mine if name in actual and name not in recorded]
@@ -1392,7 +1392,7 @@ def _ci_ref(context: Context) -> Row:
     reported as what it is, a mutable opt-in; and the rendered workflow is read because the pin
     GitHub acts on is the file, not the configuration beside it.
 
-    `init` is the lane that writes both, so an empty value is `skip` rather than red: a
+    `init` is the command that writes both, so an empty value is `skip` rather than red: a
     repository that has not been initialised has had no chance to set one, and calling that a
     fault would make `doctor` red on every correct installation.
 
@@ -1493,7 +1493,7 @@ def _store_debris(context: Context) -> Row:
     """Files in the note store that are not notes.
 
     Counted and not named. A filename in the store is repository-authored in `in-repo` and
-    `local-only` mode — the two the preset ships — so the count is this lane's own answer and
+    `local-only` mode — the two the preset ships — so the count is this check's own answer and
     the remedy names the command that lists them under the trust gate.
     """
     store = context.store
@@ -1544,7 +1544,7 @@ def _diagnostics(context: Context) -> Row:
     paragraph up: a marker id **bounded by a grammar and capped** was still refused, because
     bounded is not inert. An unbounded free-text field cannot be held to a weaker rule than a
     bounded one, so the allowlist is gone rather than narrowed. What is left is a count, which
-    is this lane's own answer, and a remedy that names the file by the variable rather than by
+    is this check's own answer, and a remedy that names the file by the variable rather than by
     its value — the value is repository-authored too.
 
     **The read is bounded here, because the cap the sink documents is enforced on write.**

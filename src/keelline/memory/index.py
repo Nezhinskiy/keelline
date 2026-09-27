@@ -368,7 +368,7 @@ def _extra(config: Config, store: Store) -> list[str]:
     """`memory.index_extra` entries that actually stay inside the project root.
 
     `config/paths.py` names this field, alongside `memory.groups`, as one its own guard does
-    not cover, and assigns the check to "the lane that consumes them" in as many words. The
+    not cover, and assigns the check to "the module that first reads those fields". The
     strings are repository-controlled and land verbatim in `MEMORY.md`, which the `index`
     bundle injects — the same channel a symlinked index reaches. `contained` is called without
     `allow_final_symlink`, unlike `_group_targets`: a group legitimately *is* a symlink in

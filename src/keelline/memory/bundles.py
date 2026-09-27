@@ -39,8 +39,8 @@ class Bundle(StrEnum):
 
 
 # How many numbered entries `hooks/hooks.json` declares for each bundle. Raising one edits
-# that shipped file, which the `hooks-core` lane owns; `doctor` compares these against
-# what a store actually needs and reports a bundle that does not fit.
+# that shipped file, which the hooks area owns; `doctor` compares these against what a store
+# actually needs and reports a bundle that does not fit.
 SLOTS: dict[Bundle, int] = {
     Bundle.PRESET_RULES: 1,
     Bundle.STANDING_RULES: 3,
@@ -55,19 +55,19 @@ SLOTS: dict[Bundle, int] = {
     Bundle.INDEX: 3,
 }
 
-# How much of `native_caps.hook_output_chars` this lane keeps back. `_cap` subtracts it, so a
+# How much of `native_caps.hook_output_chars` this area keeps back. `_cap` subtracts it, so a
 # part packed to `_cap` and emitted raw is the bundle plus one trailing newline: measured at
 # `hook_output_chars = 10000`, 9,985 characters emitted with 15 to spare.
 #
 # **A named cap (CONTRIBUTING.md#named-caps), and no shipped file changes with it.** There is no
-# such file for this one and there should not be: it is the headroom between a cap this lane does
-# not own and the way this lane emits text, and a project that could widen it would be a project
+# such file for this one and there should not be: it is the headroom between a cap this area does
+# not own and the way this area emits text, and a project that could widen it would be a project
 # that could make its own bundles overrun the platform truncation silently. The cap it is subtracted
 # from, `hook_output_chars`, is a `[native_caps]` key, which is where a change to the platform's
 # number belongs.
 #
-# **For the `hooks-core` lane, which reads `SLOTS` out of this file: the `hooks.json` entries
-# must not pass `--json`.** The margin is additive only because `memory session-context` prints
+# **For the hooks area, which reads `SLOTS` out of this file: the `hooks.json` entries must
+# not pass `--json`.** The margin is additive only because `memory session-context` prints
 # the text raw. Through `cli._emit`'s `json.dumps({"summary": ...}, indent=2)` the envelope and
 # the escaping both count against the same platform cap, and a cap-length standing bundle no
 # longer fits — measured at 10,009 characters for the single-block bundle
@@ -180,9 +180,9 @@ def _volatile(store: Store, config: Config) -> list[str]:
 
 
 def _preset_rules(config: Config) -> list[str]:
-    # `presets/` belongs to the `setup` lane; foundation wrote only budgets, caps and
-    # defaults. When the configured preset carries no `[rules]` table, this bundle is
-    # silent by design.
+    # `presets/` belongs to `keelline.setup`; the configuration loader reads only budgets, caps
+    # and defaults from it. When the configured preset carries no `[rules]` table, this bundle
+    # is silent by design.
     rules = load_preset(config.keelline.preset).get("rules", {})
     if not isinstance(rules, dict):
         return []

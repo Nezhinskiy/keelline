@@ -85,7 +85,7 @@ def test_detach_leaves_a_rule_the_ledger_does_not_claim(tmp_path: Path) -> None:
 def test_detach_leaves_a_hook_entry_that_was_never_marked(tmp_path: Path) -> None:
     # The same rule for the other half of the file. `scaffold.apply_entries` splits a group
     # rather than replacing it, so a developer's own entry beside Keelline's survives — and
-    # this is the lane whose mistake would delete it.
+    # this is the command whose mistake would delete it.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], hooks=True)
     (root / ".claude").mkdir(exist_ok=True)
@@ -394,10 +394,10 @@ def test_detach_removes_the_directories_the_attach_created(tmp_path: Path) -> No
         ".codex",
         ".claude",
     }
-    # `paths.memory` is the documented exception and is named here so a lane that changes it has
-    # to change this line: `worktree.detach_main` withdraws the links and not the directory that
-    # held them, because that directory is repository-configured and may be one the project
-    # keeps for its own reasons.
+    # `paths.memory` is the documented exception and is named here so a change to it has to change
+    # this line: `worktree.detach_main` withdraws the links and not the directory that held them,
+    # because that directory is repository-configured and may be one the project keeps for its own
+    # reasons.
     memory = PurePosixPath(DEFAULT_MEMORY)
     assert _directories(root) - before == {str(memory), str(memory.parent)}
 

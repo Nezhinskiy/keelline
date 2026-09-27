@@ -184,8 +184,8 @@ def test_a_second_attach_neither_forgets_the_fallback_nor_lets_it_outlive_its_re
 ) -> None:
     # `memory/worktree.py`'s own rule, one function over: "a gate evaluated once, at creation,
     # over state that persists is not a gate". A settings value is exactly such state, and this
-    # is the channel that module calls "the one hop that leaves this lane's gate" — read by the
-    # harness's native reader, outside every delimiter and trust record this lane controls.
+    # is the channel that module calls the one hop that leaves its gate — read by the harness's
+    # native reader, outside every delimiter and trust record Keelline controls.
     #
     # The sequence measured: attach with a real directory where the link belongs, so the
     # fallback is taken and recorded; then a `git pull` adds a note, which lapses the trust

@@ -11,7 +11,7 @@ checked, and each closes a hole the other three leave open:
 2. **Containment inside the store.** A group name is repository-controlled — `memory.groups`
    is an ordinary `keelline.toml` list — so `groups = ["../secret"]` must not become a read,
    and certainly not a write, outside the store. `config/paths.py` says in as many words that
-   this field reaches no guard of its own and that the lane consuming it owns the check.
+   this field reaches no guard of its own and that the module consuming it owns the check.
 3. **The link's target.** A link is honoured only when it lands inside *this project's* share
    of the recorded overlay: `common/memory`, or `projects/<the bound name>/memory`. Testing
    containment in the overlay root alone lets an honestly-named, honestly-bound project point
@@ -29,7 +29,7 @@ that applies with no trust prompt in a non-interactive session.
 
 **The machine file makes the same claim now.** `machine_config_path` gates `KEELLINE_CONFIG`
 behind `interactive` — and `XDG_CONFIG_HOME` with it, which it did not, and which made the
-first gate worth nothing: both variables reach the same file and this lane routes the store's
+first gate worth nothing: both variables reach the same file and this area routes the store's
 overlay anchor (`overlay_root(None)`) and the trust record (`trust._trust_file(None)`)
 through it. A committed `env` block therefore chose which overlay root `permitted_roots` was
 computed from, and which `trust.json` `may_inject` consulted, wherever no `--machine` was
@@ -293,7 +293,7 @@ def origin_remote(root: Path) -> str | None:
     Public because `attach` compares it against the overlay's record and must not reach for a
     `subprocess.run` of its own: `_git` scrubs `GIT_DIR` and `GIT_WORK_TREE`, and an inherited
     one would make the comparison answer for a different repository than the session is in.
-    Two lanes asking one question two ways is how they stop agreeing.
+    Two areas asking one question two ways is how they stop agreeing.
 
     A URL in bytes that are not UTF-8 is answered, as the filesystem's codec spells it, and not
     raised: it never equals a URL read out of a TOML file, so the binding reads as not this
@@ -518,7 +518,7 @@ def refusal_reason(
     messages) and out of `config.paths.memory`, both repository-controlled and neither
     schema-constrained — a TOML multi-line string carries literal newlines through unchanged,
     so this can come back multi-line, and the same repository text can appear in it twice. It
-    must never reach model context unwrapped: see `keelline.memory.hooks`, this lane's own
+    must never reach model context unwrapped: see `keelline.memory.hooks`, this area's own
     consumer, which refuses to put this text into `HookResult.context` for exactly that reason.
     A consumer that must show the detail wraps it first with `trust.wrap`.
     """

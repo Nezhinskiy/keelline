@@ -297,7 +297,7 @@ def registered_commands() -> set[str]:
 
 # A vacuity floor, not a count of the commands this CLI ships: the parser registered twenty
 # when this test was written, and the number is here so that a walk which found nothing — or
-# half of them — cannot satisfy the subset check above it. A lane that ships a command raises
+# half of them — cannot satisfy the subset check above it. A change that ships a command raises
 # the parser's count and leaves this alone.
 REGISTERED_COMMANDS_FLOOR = 20
 
@@ -313,7 +313,7 @@ def test_the_parser_registers_what_this_test_expects_to_walk() -> None:
 
 def test_every_registered_command_has_a_readme_row() -> None:
     # Mutation: delete the `keelline docs trail` line from the README → reddens naming it.
-    # This is the test that makes the README a shared file every lane owes a line to.
+    # This is the test that makes the README a shared file every command owes a line to.
     named = {" ".join(line.split()[1:3]) for line in readme_invocations()}
     named |= {line.split()[1] for line in readme_invocations()}
     missing = sorted(command for command in registered_commands() if command not in named)
@@ -638,7 +638,7 @@ def _anchor(heading: str) -> str:
 
 def test_the_cli_reference_contents_lists_every_section_in_order() -> None:
     # Every `## ` heading after the Contents, in order, each linked by GitHub's anchor: a command
-    # section a lane adds without its Contents line, or a heading renamed under a stale link, is
+    # section added without its Contents line, or a heading renamed under a stale link, is
     # a reference a reader cannot navigate. The floor is today's section count (44: the 39 there
     # were before `assess`, `gate`, `adopt begin`, `adopt promote` and `init --questions`), so a
     # walk that found nothing, or half, cannot pass.

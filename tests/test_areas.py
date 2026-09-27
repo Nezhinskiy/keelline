@@ -111,7 +111,7 @@ def _imported_modules(tree: ast.AST, package: tuple[str, ...]) -> list[tuple[int
 
     **The third is the relative import**, and it used to be dropped on the floor: the condition
     read `and not node.level`, so `from ..hooks.sink import DIRECTORY` inside `doctor/checks.py`
-    — the violation this lane exists to end, spelled the other way — walked straight past. There
+    — the violation this guard exists to end, spelled the other way — walked straight past. There
     are no relative imports under `src/keelline/` today, but only by house style: ruff's `TID`
     rules are not selected, so nothing bans one, and the first contributor to write an idiomatic
     one would have reopened the boundary with the guard still green.
@@ -229,7 +229,7 @@ def test_the_boundary_rule_resolves_a_relative_import_before_judging_it() -> Non
     # The hole the guard above shipped with, and the reason it needs a test of its own: there is
     # not one relative import under `src/keelline/`, so the walk cannot exercise this spelling
     # and a synthetic module has to. `from ..hooks.sink import DIRECTORY` inside
-    # `doctor/checks.py` is the violation this whole lane exists to end, written the way a
+    # `doctor/checks.py` is the violation this whole guard exists to end, written the way a
     # contributor who prefers relative imports would write it.
     #
     # Asserted as the exact offence rather than as "some offence": a rule that resolved the

@@ -274,7 +274,7 @@ def test_uninstall_promotes_whatever_sits_at_local_even_a_stranger(tmp_path: Pat
     # hook is absent, so one dropped beside an installed hook is checked by nothing — and the
     # installed hook has been `exec`ing it on every commit since, which is the larger fact.
     # `uninstall` restores it rather than pretending it can tell it from one install preserved.
-    # Changing that is the `setup` lane's call, not this module's; this pins today's answer so
+    # Changing that is `setup`'s call, not this module's; this pins today's answer so
     # a change to it is a decision somebody makes rather than a diff nobody notices.
     root = repo(tmp_path)
     installed = install(root)
@@ -345,8 +345,8 @@ def test_hooks_dir_refuses_where_git_cannot_answer(tmp_path: Path) -> None:
     # And the refusal says so in this module's own words. `rev-parse`'s stderr is
     # repository-authored — here `fatal: not a git repository …`, and for a `core.hooksPath` git
     # dislikes it quotes the config VALUE — so piping it into the message puts bytes a repository
-    # chose in front of a person. `commit.commits_in` carries the same reasoning and was fixed in
-    # this lane's own review; this one was not, and the assertion is what makes that visible.
+    # chose in front of a person. `commit.commits_in` carries the same reasoning and was fixed
+    # first; this one was not, and the assertion is what makes that visible.
     message = str(raised.value)
     assert "not a git repository" not in message
     assert "fatal" not in message

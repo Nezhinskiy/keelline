@@ -26,11 +26,11 @@ so an allow rule has exactly **one** witness, the ledger at `.keelline/local/att
 `detach` is only ever as good as that file.
 
 **The ledger is written under `.keelline/local/`, and the `.gitignore` region goes first.** The
-repository has no `.keelline` line today and the lane that would ship one is out of scope, so
-without that region `attach` drops the owner's personal allow rules into a tracked-by-default
-path. It is written before the ledger rather than beside it, so the ledger is never in a tracked
-path even for an instant — and if the region cannot be written, writing the ledger would be a
-leak, so the answer is a refusal rather than a warning.
+repository has no `.keelline` line today and nothing in this area ships one, so without that
+region `attach` drops the owner's personal allow rules into a tracked-by-default path. It is
+written before the ledger rather than beside it, so the ledger is never in a tracked path even
+for an instant — and if the region cannot be written, writing the ledger would be a leak, so the
+answer is a refusal rather than a warning.
 
 **Every write goes through a primitive that already exists.** `fsops.write_within(root, …)` for
 everything inside the project and `fsops.write_within(overlay, …)` for the binding record — the
@@ -220,7 +220,7 @@ class AttachLedger:
     `scaffold.marker_id` and nothing else can appear there.
 
     `allow` and `store` are not bounded here, and saying why is part of the rule rather than an
-    omission. An allow rule has no grammar this lane owns — the ledger exists *because* a rule
+    omission. An allow rule has no grammar this area owns — the ledger exists *because* a rule
     cannot be told from the owner's own by its content — and `_withdraw_settings` only ever
     removes a rule the settings file already holds, so the worst a committed `allow` achieves is
     taking a permission away. `store` is read by nothing: `detach` derives every path it
@@ -485,7 +485,7 @@ def _secret_scan(binding: Binding, runner: Runner) -> str | None:
     try:
         installed = (hooks_dir(binding.overlay) / PRE_COMMIT_HOOK).exists()
     except Refusal:
-        # `hooks_dir` shells out to `git`, and a `git` that cannot answer is this lane's own
+        # `hooks_dir` shells out to `git`, and a `git` that cannot answer is this area's own
         # kind of missing optional binary: a note, never a traceback, and never a `pre-commit
         # install` fired blind at an overlay whose hooks directory nobody could name.
         return (
@@ -604,13 +604,13 @@ def _check_groups(binding: Binding, config: Config) -> None:
     """Refuse a `memory.groups` entry that leaves this project's share of the overlay — first.
 
     `memory.groups` is repository-authored (principle 5) and reaches no guard of its own —
-    `config/paths.py` says so in as many words, and names this lane as the one that has to call the
-    containment itself. This lane was calling it, and calling it too late: the refusal came out of
-    `_prepare_store`, which runs after the ignore region, the `.codex/rules/` copies, the settings
-    merge, the ledger **and** the overlay's binding record. So a clone committing
+    `config/paths.py` says so in as many words, and leaves the containment to the module that
+    consumes the field. This module was calling it, and calling it too late: the refusal came
+    out of `_prepare_store`, which runs after the ignore region, the `.codex/rules/` copies, the
+    settings merge, the ledger **and** the overlay's binding record. So a clone committing
     `groups = ["../../escape"]` got `attach` to write five artifacts and exit 2, with
-    `doctor._attached` — which keys on the ledger existing — then reporting the repository attached
-    and the binding *bound*, because the record had been written too.
+    `doctor._attached` — which keys on the ledger existing — then reporting the repository
+    attached and the binding *bound*, because the record had been written too.
 
     Hoisting it here is not only a reordering: it is this project's own two-stage rule, which
     `attach` was skipping for this one path. `config.paths.contained` "decides whether a
@@ -656,8 +656,8 @@ def _worktrees(root: Path) -> list[Path]:
     """Every checkout of this repository, from `git worktree list --porcelain`.
 
     Through `gitenv.git_run`, which scrubs `GIT_DIR` and `GIT_WORK_TREE`: an inherited one would
-    list the worktrees of a different repository altogether, and this lane then writes into each
-    one of them.
+    list the worktrees of a different repository altogether, and this module then writes into
+    each one of them.
     """
     code, out = git_run(root, "worktree", "list", "--porcelain")
     if code != 0:
@@ -673,7 +673,7 @@ def _worktrees(root: Path) -> list[Path]:
     # same state completed. Skipped here, so both halves read the same set.
     found: list[Path] = []
     # Lines split where git ended them: `splitlines()` also broke a path at a `\r` it holds, and
-    # listed `…/wt` — a directory that is not the worktree, and one this lane links into — for
+    # listed `…/wt` — a directory that is not the worktree, and one this module links into — for
     # the worktree at `…/wt\rx` (`gitenv.answer_lines`).
     for block in out.split("\n\n"):
         lines = answer_lines(block)
@@ -788,8 +788,8 @@ def _harness_fallback(
     **And it is asked in both directions, in the same call**, which is `memory/worktree`'s rule
     one hop over: "a gate evaluated once, at creation, over state that persists is not a gate".
     A settings value is exactly such state, and this is the same channel that module calls "the
-    one hop that leaves this lane's gate" — the harness's own native reader, outside every
-    delimiter and every trust record this lane controls. `_apply_harness_link` already revokes
+    one hop that leaves keelline's gate" — the harness's own native reader, outside every
+    delimiter and every trust record this area controls. `_apply_harness_link` already revokes
     the *symlink* when the record lapses; this key outlived it, so a `git pull` that added one
     note shut every channel except the one pointing the harness straight at the new bytes.
 

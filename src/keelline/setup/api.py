@@ -1,11 +1,11 @@
-"""The setup area's import surface: everything another lane may import from it.
+"""The setup area's import surface: everything another area may import from it.
 
 `doctor` checks what `setup` installed and needs `USER_SETTINGS` by name — that is the whole of
 what another area imports from here, and it is the whole of what anything outside this area
 imports from here at all.
 
-A lane that needs something absent from this list grows it deliberately, in a commit that says
-which lane and why — it does not import a private module of this area.
+An area that needs something absent from this list grows it deliberately, in a commit that says
+which area and why — it does not import a private module of this area.
 
 **`setup` and `SetupReport` have no importer outside this area, and the sentence that said they
 did was false.** It named `tests/test_install_path.py` — "the walkthrough that runs the four

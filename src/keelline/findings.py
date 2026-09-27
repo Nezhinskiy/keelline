@@ -1,8 +1,8 @@
 """What every check in the ledger, docs and memory areas returns, and how a summary line
 renders a list of them (one line per command).
 
-The label carries what this lane computed — a repo-relative path, a line number, a rule name from
-this lane's own vocabulary; the detail may quote the repository and is for `--json`, because a
+The label carries what the check computed — a repo-relative path, a line number, a rule name from
+the check's own vocabulary; the detail may quote the repository and is for `--json`, because a
 summary line never quotes the repository's own text (principle 5). The assess, docs, doctor, guards,
 ledger and memory areas import it, and so does `profiles`.
 

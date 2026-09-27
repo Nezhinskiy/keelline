@@ -109,11 +109,11 @@ def _project(tmp_path: Path, *, mode: str, initialised: bool = False) -> Path:
     is where the launcher environment lives. The flag keeps the name `_install_path` gives it,
     because renaming one of the pair would split them.
 
-    `[ci] mode = "none"` because this repository wants no workflow — a `ci` mode that asked for
-    one would have `init` reach for the release pin and a remote, which is a different lane's
-    test. The commit matters because `init` then writes its footprint on top of a tree that was
-    already committed, which is the order an adopting project meets it in, and the notes moved
-    later are notes that were tracked before Keelline arrived.
+    `[ci] mode = "none"` because this repository wants no workflow — a `ci` mode that asked for one
+    would have `init` reach for the release pin and a remote, which is a different test's subject.
+    The commit matters because `init` then writes its footprint on top of a tree that was already
+    committed, which is the order an adopting project meets it in, and the notes moved later are
+    notes that were tracked before Keelline arrived.
     """
     root = tmp_path / "project"
     root.mkdir(parents=True, exist_ok=True)
@@ -316,7 +316,7 @@ def _install_path(tmp_path: Path, *, initialised: bool = False, attach: bool = T
     # 3. the machine layer, into a scratch machine file and a scratch home. **Two runs**, as
     # the walkthrough had before it was converted: the first writes the machine file with no
     # overlay in it, the second records one into a file that already exists. "A second `setup`
-    # records an overlay the first did not" is a merge seam between two lanes, and collapsing
+    # records an overlay the first did not" is a merge seam between two areas, and collapsing
     # the two runs into one would have left it to `tests/setup/` alone -- which is the shape of
     # gap this whole module exists to close. The assertion between them is what makes it a
     # seam rather than two commands that happened to run.
@@ -606,9 +606,9 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
     # Codex hook-trust hash nothing has measured yet — and `ci-ref`, which skips on a state this
     # fixture is in rather than on a limit of the build: it records no `[ci] ref`, because no
     # released tag matches the Keelline running here for `init` to have pinned.
-    # `files` was the third of them until the release lane shipped `hooks/hashes.json`; this
-    # walk runs against the checkout, so the row now compares the three shipped files against
-    # the record committed beside them and is green. A `files` back in this list means the
+    # `files` is not among them: the release ships `hooks/hashes.json`, and this walk runs
+    # against the checkout, so the row compares the three shipped files against the record
+    # committed beside them and is green. A `files` back in this list means the
     # record went stale — `uv run keelline release hashes` is what refreshes it.
     walk = _install_path(tmp_path)
     rows = _doctor(walk)

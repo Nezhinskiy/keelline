@@ -55,7 +55,7 @@ class FakeRunner:
     and CONTRIBUTING forbade a cross-module import. No such rule exists, `tests/__init__.py` is
     tracked, and `tests/overlay/test_upgrade.py` imports that very class from that very module.
     The three recorders are still three because each answers to a different area's command; a
-    lane that wants one shared recorder puts it in `tests/snapshot.py` beside the `git` helper,
+    change that wants one shared recorder puts it in `tests/snapshot.py` beside the `git` helper,
     which is what that module is for."""
 
     answers: dict[str, Completed] = field(default_factory=dict)
@@ -1399,7 +1399,7 @@ def test_a_symlinked_claude_directory_is_a_refusal_that_names_the_link(tmp_path:
     # a synced directory raised `UnsafePath` — which `cli.run`'s final handler renders as
     # `keelline: internal error: UnsafePath: …`, exit 2, for the most common non-default home
     # layout there is, and only *after* the machine file had been written. The containment rule
-    # has two stages and this lane had only the second; `config.paths.contained` is the first,
+    # has two stages and `setup` had only the second; `config.paths.contained` is the first,
     # and it now runs above the first write and names the link and the way out.
     #
     # Mutation ("setup meets a symlinked ~/.claude only at write time"): the

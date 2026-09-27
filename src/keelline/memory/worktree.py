@@ -35,9 +35,9 @@ That rule lives in `index.index_source`, not here, because linking is not its on
 matters more. Two copies of one boundary rule is one copy too many.
 
 One of the two gaps is not like the other. The links inside the worktree are read by this
-lane's own bundles, which gate on `trust.may_inject` and wrap what they emit; the harness
+area's own bundles, which gate on `trust.may_inject` and wrap what they emit; the harness
 project-memory link is read by the harness's own memory reader, outside both — so it is the one
-hop that leaves this lane's gate entirely, and the one place where asking the gate a slightly
+hop that leaves this area's gate entirely, and the one place where asking the gate a slightly
 wrong question costs everything the gate was for. `link` asks it about the directory the link
 exposes, which in overlay mode is repository data even though the notes are not; see the note
 on `link` itself.
@@ -45,7 +45,7 @@ on `link` itself.
 **And it asks in both directions.** A gate evaluated once, at creation, over state that
 persists is not a gate: `~/.claude/projects/<slug>/memory` outlived the record that authorised
 it, so a `git pull` that adds a note to a trusted in-repo store lapses the record, closes every
-channel this lane controls — and left the one channel it does not controlling a live link to
+channel this area controls — and left the one channel it does not controlling a live link to
 the new bytes. `link` therefore removes that link when the gate now answers False, in the same
 call that would have created it: it already knows both facts, and the only state it may act on
 is a symlink pointing at this store, never a real directory and never somebody else's link.
@@ -326,10 +326,10 @@ def _apply_harness_link(
     """Create or withdraw the harness memory link for one checkout; report which it did.
 
     One definition for `link` and `attach_main` both, and it earns its name three times over.
-    This is the one hop that leaves this lane's own channel, so it is the one place where asking
+    This is the one hop that leaves this area's own channel, so it is the one place where asking
     the gate a slightly wrong question costs everything the gate was for. **The gate runs in
     both directions in the same call**, because a gate evaluated once over state that persists
-    is not a gate: a `git pull` that adds a note lapses the record, every channel this lane
+    is not a gate: a `git pull` that adds a note lapses the record, every channel this area
     controls shuts, and an ungated withdrawal would leave the one it does not control pointing
     at the new bytes. And `_unlink` is deliberately narrower than `_link` — refusing to expose a
     directory is not licence to delete one.
@@ -366,13 +366,13 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
 
     **The harness link is the one hop that leaves keelline's gate, so it is the one that asks
     about trust.** Every link above lands inside the worktree, where the only reader is this
-    lane's own `bundles.blocks` — which calls `trust.may_inject` and wraps what it emits in
+    area's own `bundles.blocks` — which calls `trust.may_inject` and wraps what it emits in
     `trust.wrap`'s nonce region. `~/.claude/projects/<slug>/memory` is read by the *harness's*
     native memory reader instead: whatever sits behind it reaches the model with no gate, no
     delimiter and no trust record. In `local-only` — the preset default — and in `in-repo` the
     store is content the clone shipped, so creating that link before the owner has said
     `keelline memory trust --in-repo-memory` hands repository-authored text to the model
-    through a channel this lane does not control.
+    through a channel this area does not control.
 
     The condition is `trust.may_inject`, and it must be asked **about the directory this link
     exposes**, which is what `repository_data=in_repository(store, store.path)` says. Asked
@@ -381,7 +381,7 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
     directory *inside the repository*. So a clone shipping a committed index at the configured
     memory path got the harness link created for it on no trust record at all, and the harness's
     own **native** memory reader then injected the file with no delimiter, no nonce and no gate.
-    `bundles.blocks` correctly returned `[]` for the same store in the same session: this lane
+    `bundles.blocks` correctly returned `[]` for the same store in the same session: this area
     refused to inject the file through the channel it controls, and created the link to the
     channel it does not.
 
@@ -400,7 +400,7 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
     **The same gate runs in the other direction, in the same call.** Creation was gated and
     removal was not, so the link outlived the record that authorised it: `record`, then a
     `git pull` adding one note, and `state(...).trusted` is False, `blocks(...)` is `[]` —
-    every channel this lane controls correctly shut — while `~/.claude/projects/<slug>/memory`
+    every channel this area controls correctly shut — while `~/.claude/projects/<slug>/memory`
     still pointed at the store the new note is in, and the harness's native reader still read
     it with no gate, no delimiter and no trust record. A gate asked once about state that
     persists is not a gate. `_unlink` is deliberately narrower than `_link`: only a symlink
@@ -590,7 +590,7 @@ def detach_main(
     — `_unlink` says so for the harness link, and what the withdrawal is about is the name, not
     the bytes behind it.
 
-    The harness link goes first, because it is the one hop that leaves this lane's gate, and it
+    The harness link goes first, because it is the one hop that leaves this area's gate, and it
     is compared against the store directory rather than against what it happens to point at.
 
     Takes a `Config` and not a `Store`: by the time a repository is detached its store may no

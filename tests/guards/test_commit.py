@@ -339,7 +339,7 @@ def test_a_single_line_message_is_its_own_final_paragraph() -> None:
 
 
 def test_an_offence_carries_a_line_number_and_a_label_but_not_the_text() -> None:
-    # The message is repository-authored (principle 5); only what this lane computed travels.
+    # The message is repository-authored (principle 5); only what this module computed travels.
     message = "fix: thing\n\nBody.\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"
     assert offending_lines(message) == [Offence(5, "attribution trailer naming an AI tool")]
 

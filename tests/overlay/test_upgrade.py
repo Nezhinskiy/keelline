@@ -50,7 +50,7 @@ def test_a_hand_edited_file_is_skipped_and_named(tmp_path: Path) -> None:
 def test_the_two_permission_files_are_asked_about_even_when_unchanged(tmp_path: Path) -> None:
     # Exactly two files are exceptions to the hash rule, and `overlay upgrade` diffs and asks
     # about them regardless of hash — they are the two files that can grant capability, and a
-    # hash match is not consent for those. The scaffold engine every lane shares has no verb for
+    # hash match is not consent for those. The scaffold engine every area shares has no verb for
     # it, so the decision list lives beside the plan rather than inside it.
     root = _an_overlay(tmp_path)
     decisions = upgrade(root, dry_run=True).decisions
