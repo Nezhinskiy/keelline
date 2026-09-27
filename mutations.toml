@@ -11058,8 +11058,8 @@ reddens = [
 [[mutation]]
 name = "the init skill hands over adopt promote without --builtin after a no"
 file = "skills/init/references/adoption.md"
-before = "     `keelline adopt promote --builtin`: without the flag it runs the commands the user"
-after = "     `keelline adopt promote`: without the flag it runs the commands the user"
+before = "     step 1 it is `keelline adopt promote --builtin`: without the flag it runs the commands the"
+after = "     step 1 it is `keelline adopt promote`: without the flag it runs the commands the"
 reddens = [
   "tests/skills/test_skills.py::test_the_init_skill_keeps_a_no_to_the_clone_s_commands_through_the_whole_adoption",
 ]
@@ -11850,4 +11850,40 @@ before = "    uses: Nezhinskiy/keelline/.github/workflows/check.yml@v0.1.0"
 after = "    uses: Nezhinskiy/keelline/.github/workflows/check.yml@v1"
 reddens = [
   "tests/test_fixtures.py::test_the_release_smoke_calls_the_release_this_tree_carries",
+]
+
+# git tracks a symlink as the link alone, and CI checks it out dangling when what it leads to is
+# untracked or outside the project: a link target read through a tracked symlink is judged by
+# where the link leads, link by link.
+[[mutation]]
+name = "a symlinked link target is judged by the link alone"
+file = "src/keelline/assess/tracked.py"
+before = "        if not link.is_symlink():"
+after = "        if True:"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[to-an-ignored-file]",
+  "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[through-an-ignored-link]",
+]
+
+# A link whose target is absolute or climbs out of the root names nothing a checkout has, and the
+# name it leads to is outside the project: the link itself is named, never where it leads.
+[[mutation]]
+name = "a link out of the project is followed to its target outside it"
+file = "src/keelline/assess/tracked.py"
+before = "        if os.path.isabs(target) or step == os.pardir or step.startswith(os.pardir + os.sep):"
+after = "        if False:"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[out-of-the-project]",
+  "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[absolute]",
+]
+
+# The walk collapses `..` without asking the filesystem, which climbs out of a symlinked directory
+# from where the directory leads: where the two land apart, the walk is no answer about the path.
+[[mutation]]
+name = "the link walk's landing is not compared with the filesystem's"
+file = "src/keelline/assess/tracked.py"
+before = "            return None if link.resolve() == (root / relative).resolve() else relative"
+after = "            return None"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_link_walk_that_lands_elsewhere_than_the_filesystem_is_no_answer",
 ]

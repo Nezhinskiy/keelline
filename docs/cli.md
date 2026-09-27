@@ -816,27 +816,34 @@ and suggests `--base refs/heads/<project.base_branch>`, as `adopt promote` does.
 
 A gate that could not judge the tree — a base that is not there, an unreadable plan, a range git
 cannot read, a custom gate that could not start or ran past `custom_timeout_seconds`, a file it
-reads that git does not track (below) — is failing: a gate that could not look has not passed. A gate never reports that as a finding; it
-is the one outcome every command that runs gates spells `could not run`, and `--json` carries it
-as `answered: false` with a fixed `reason` naming the command that shows why.
+reads that CI's checkout will not have (below) — is failing: a gate that could not look has not
+passed. A gate never reports that as a finding; it is the one outcome every command that runs
+gates spells `could not run`, and `--json` carries it as `answered: false` with a fixed `reason`
+naming the command that shows why.
 
-**The `docs` and `trail` gates judge tracked files.** That is the contract. CI checks out what
-git tracks and nothing else, so a file that is on disk here and that git does not track — never
-added, or ignored — is one those gates read here and CI never sees, and there the gate's own
-finding for an absent file fails every pull request. The files are `[paths] agents_md` and
-every file or directory its links name, for `docs`, and `[paths] roadmap` and the `trail.toml`
-beside it, for `trail`. When one of them is on disk and untracked, `assess` reports its gate as
-could not run, its `reason` saying it could not judge the tree as CI will, and adds an
-`untracked` item naming the files, each inside the path grammar or withheld; the gate counts as
-one that would fail. Inside a git work tree, a git that gives no answer about it is never read
-as tracked: the gate could not run the same way, and its item is `could-not-look`. Outside a
-work tree nothing is asked, since there is no index to ask and no checkout for CI to take, and
-both gates judge the files as they are, as `docs trail` lists every document there. The roadmap
-the `docs` gate reads for its prose budget is not asked about: an absent roadmap adds no
-finding, so one CI cannot see can only make the verdict here stricter than CI's. `keelline
-gate` asks nothing about tracking — it runs on the checkout CI took, where such a file is simply
-absent and the gate's own finding says so — and `keelline adopt promote` never enforces such a
-gate. To keep one of those files out of git, take its gate out of `[gates] builtin`.
+**The `docs` and `trail` gates judge tracked files.** That is the contract. CI checks out what git
+tracks and nothing else, so a file that is on disk here and that git does not track — never added,
+or ignored — is one those gates read here and CI never sees, and there the gate's own finding for an
+absent file fails every pull request. The files are `[paths] agents_md` and every file or directory
+its links name, for `docs`, and `[paths] roadmap` and the `trail.toml` beside it, for `trail`. A
+symlink is tracked as the link alone, and a checkout writes the link whether or not what it names is
+there, so a link target that is a symlink is followed, link by link: every link on the way and the
+file it lands on must be tracked, and a link whose target is absolute or climbs out of the project
+counts as untracked, since no other checkout has what it names. Tracked means in git's index, as
+`git ls-files` lists it, so a file staged and not yet committed counts — CI checks out commits, so
+commit it with the change that promotes the gate. When one of them is on disk and untracked,
+`assess` reports its gate as could not run, its `reason` saying it could not judge the tree as CI
+will, and adds an `untracked` item naming the files — the first untracked step on a link's way, or
+the link that leads out — each inside the path grammar or withheld; the gate counts as one that
+would fail. Inside a git work tree, a git that gives no answer about it is never read as tracked:
+the gate could not run the same way, and its item is `could-not-look`. Outside a work tree nothing
+is asked, since there is no index to ask and no checkout for CI to take, and both gates judge the
+files as they are, as `docs trail` lists every document there. The roadmap the `docs` gate reads for
+its prose budget is not asked about: an absent roadmap adds no finding, so one CI cannot see can
+only make the verdict here stricter than CI's. `keelline gate` asks nothing about tracking — it runs
+on the checkout CI took, where such a file is simply absent and the gate's own finding says so — and
+`keelline adopt promote` never enforces such a gate. To keep one of those files out of git, take its
+gate out of `[gates] builtin`.
 
 **A gate's row.** `keelline assess`, `keelline gate` and `keelline adopt promote` each give every
 gate they ran one `--json` row in one shape: `name`; `enforcing`; `answered`, false when the gate
@@ -1131,12 +1138,13 @@ a `note:` saying to land it on the base branch first, because `keelline gate` wo
 in the pull request that carries the promotion. A base that cannot be read, or has no
 `keelline.toml`, has no command, so every custom gate waits.
 
-A `docs` or `trail` gate that reads a file git does not track is never promoted, since CI never
-checks that file out and would fail the gate on every pull request (*The `docs` and `trail`
-gates judge tracked files*, under `keelline assess`). It could not run, is named `(could not
-run)`, and a `note:` for it names the files, each inside the path grammar or withheld, and says
-to track them with `git add`, or to keep them out of git and take the gate out of `[gates]
-builtin`; one git gave no answer about is named with a `note:` saying so.
+A `docs` or `trail` gate that reads a file CI's checkout will not have is never promoted, since
+CI would fail the gate on every pull request (*The `docs` and `trail` gates judge tracked files*,
+under `keelline assess`). It could not run, is named `(could not run)`, and a `note:` for it names
+the files, each inside the path grammar or withheld, and says to commit them — an ignored one
+needs its ignore rule removed, or `git add -f` — and to point a symlink it names at a file inside
+the project, or to keep them out of git and take the gate out of `[gates] builtin`; one git gave
+no answer about is named with a `note:` saying so.
 
 `--builtin` runs the built-in gates and no custom gate, as `keelline assess --builtin` does: for
 a clone whose commands you have not agreed to run, where the base is the clone author's and its
@@ -1150,7 +1158,7 @@ as `keelline assess` defines it, `enforcing` when this run promoted it), `promot
 which maps each gate that ran and did not pass to its finding count, `unanswered`, the gates that
 could not run, `not_on_base`, the custom gates not run because the base does not have their
 command, `skipped`, the custom gates `--builtin` did not run, and `untracked`, which maps each gate
-not promoted because it reads files git does not track to those files. When a gate stays
+not promoted because it reads files CI's checkout will not have to those files. When a gate stays
 advisory, the summary ends with a line saying where its findings are
 (`keelline assess --json`, or `keelline assess --builtin --json` under `--builtin`, or the
 gate's own command), and, when `plan`, `commit` or `bugs`
@@ -2777,9 +2785,10 @@ built-in gate's name nor `config`, which names the configuration check. `keellin
 gates. A custom gate runs only from a command a person or a workflow runs on purpose, never
 from a hook or `doctor`, so running such a command in a clone runs the commands that clone
 configured, as running its test suite would. The `docs` and `trail` gates judge tracked files,
-so a project that keeps its roadmap or its `AGENTS.md` out of git drops `trail` or `docs` from
-`[gates] builtin`: those gates read the committed place, where in CI the file is not, and
-`keelline assess` reports such a gate and `keelline adopt promote` never enforces it.
+so a project that keeps its roadmap or its `AGENTS.md` out of git — ignored, never added, or
+written under `[artifacts] local` — drops `trail` or `docs` from `[gates] builtin`: those gates
+read the committed place, where in CI the file is not, and `keelline assess` reports such a gate
+and `keelline adopt promote` never enforces it.
 
 **Enforcement is per gate.** `[keelline] enforced` lists the gates promoted while a project
 adopts Keelline, and `state = "installed"` means every gate the project runs. Both keys are

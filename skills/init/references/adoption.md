@@ -42,12 +42,12 @@ After the footprint is written:
 6. End with one message saying:
    - what was written, and what was skipped and why;
    - how many findings the plan covers;
-   - the next command, `keelline adopt promote`, which enforces every gate that passes now and
-     names the rest; run it again as the plan lands. After a no in step 1 it is
-     `keelline adopt promote --builtin`: without the flag it runs the commands the user
-     declined. Say that it promotes no custom gate, and that promoting one means running its
-     command, which needs the user's explicit yes first;
+   - to commit `keelline.toml`, `.keelline/manifest.json`, the footprint, the design, the plan,
+     `trail.toml` and the roadmap together, first: CI checks out only what git tracks, so the
+     `docs` and `trail` gates are not enforced while a file they read is outside git;
+   - the next command, once that commit is made, `keelline adopt promote`, which enforces every
+     gate that passes now and names the rest; run it again as the plan lands. After a no in
+     step 1 it is `keelline adopt promote --builtin`: without the flag it runs the commands the
+     user declined. Say that it promotes no custom gate, and that promoting one means running
+     its command, which needs the user's explicit yes first;
    - the undo: `keelline uninstall`.
-
-Ask the user to commit `keelline.toml`, `.keelline/manifest.json`, the footprint, the design,
-the plan, `trail.toml` and the roadmap together.

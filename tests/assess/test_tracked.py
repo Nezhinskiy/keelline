@@ -149,6 +149,81 @@ def test_a_file_the_always_loaded_document_links_to_is_read_by_the_docs_gate(
     assert _items(assessment, UNTRACKED) == {"docs": ("local-notes.md",)}
 
 
+def _link_through(root: Path, links: dict[str, str], ignored: tuple[str, ...] = ()) -> None:
+    """`AGENTS.md` gains a link to `notes.md`; each of `links` is a symlink, its path to its
+    target as written; `private/notes.md` is a file; every path in `ignored` is kept out of git
+    by an ignore rule; and the rest is committed."""
+    (root / "private").mkdir(exist_ok=True)
+    (root / "private" / "notes.md").write_text("# mine\n", encoding="utf-8")
+    for path, target in links.items():
+        (root / path).symlink_to(target)
+    (root / ".gitignore").write_text("".join(f"/{p}\n" for p in ignored), encoding="utf-8")
+    agents = root / AGENTS
+    agents.write_text(agents.read_text(encoding="utf-8") + "\n[notes](notes.md)\n", "utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "docs: link the notes through a symlink")
+
+
+@pytest.mark.parametrize(
+    ("links", "ignored", "named"),
+    [
+        ({"notes.md": "private/notes.md"}, ("private/",), "private/notes.md"),
+        (
+            {"notes.md": "mid.md", "mid.md": "private/notes.md"},
+            ("mid.md",),
+            "mid.md",
+        ),
+        ({"notes.md": "../outside.md"}, (), "notes.md"),
+        ({"notes.md": "/etc/hosts"}, (), "notes.md"),
+    ],
+    ids=["to-an-ignored-file", "through-an-ignored-link", "out-of-the-project", "absolute"],
+)
+def test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout(
+    tmp_path: Path, links: dict[str, str], ignored: tuple[str, ...], named: str
+) -> None:
+    # git tracks a symlink as the link alone, and CI checks it out dangling when what it leads to
+    # is not tracked, or is outside the project, where no checkout of it has anything: there the
+    # link is `missing-link`. So the link being tracked says nothing about what CI reads through
+    # it. Each link on the way is followed, and the first that a checkout would not have is
+    # named: the untracked file or link, or the link that leaves the project. Mutation
+    # (declared): a symlinked link target is judged by the link alone.
+    root = smoke_repo(tmp_path)
+    if named == "notes.md":
+        (root.parent / "outside.md").write_text("# outside\n", encoding="utf-8")
+    _link_through(root, links, ignored)
+    assert (root / "notes.md").exists()
+    assessment = _assess(root, tmp_path)
+    assert _row(assessment, "docs").reason == UNSEEN_REASON
+    assert _items(assessment, UNTRACKED) == {"docs": (named,)}
+
+
+def test_a_link_walk_that_lands_elsewhere_than_the_filesystem_is_no_answer(tmp_path: Path) -> None:
+    # The walk collapses `..` in a link's target without asking the filesystem, which climbs out
+    # of a symlinked directory from where the directory leads. `sub` leads into the ignored
+    # `private/deeper`, so `sub/../elsewhere.md` is `private/elsewhere.md` on disk and in no
+    # checkout, while the walk reads the tracked `elsewhere.md`. Where the two disagree the walk
+    # is not an answer about the path, and the link is named. Mutation (declared): the walk's
+    # landing is not compared with the filesystem's.
+    root = smoke_repo(tmp_path)
+    (root / "private" / "deeper").mkdir(parents=True)
+    (root / "private" / "elsewhere.md").write_text("# mine\n", encoding="utf-8")
+    (root / "elsewhere.md").write_text("# ours\n", encoding="utf-8")
+    _link_through(root, {"sub": "private/deeper", "notes.md": "sub/../elsewhere.md"}, ("private/",))
+    assert (root / "notes.md").resolve() == (root / "private" / "elsewhere.md").resolve()
+    assessment = _assess(root, tmp_path)
+    assert _items(assessment, UNTRACKED) == {"docs": ("notes.md",)}
+
+
+def test_a_symlinked_link_target_that_leads_to_a_tracked_file_is_judged(tmp_path: Path) -> None:
+    # The legitimate shape, which must not be refused: a committed symlink to a committed file,
+    # such as a `current.md` naming this quarter's plan. CI checks out both and the link lands.
+    root = smoke_repo(tmp_path)
+    _link_through(root, {"notes.md": "private/notes.md"})
+    assessment = _assess(root, tmp_path)
+    assert _row(assessment, "docs").answered
+    assert _items(assessment, UNTRACKED) == {}
+
+
 def test_a_link_target_outside_the_path_grammar_is_withheld_where_it_is_named(
     tmp_path: Path,
 ) -> None:
@@ -241,7 +316,7 @@ def test_adopt_promote_never_enforces_a_gate_that_reads_an_untracked_file(tmp_pa
 
 
 def test_adopt_promote_s_refusal_says_to_track_the_file_and_names_it(tmp_path: Path) -> None:
-    # The note is the remedy: track the file, or keep it out of git and stop running the gate.
+    # The note is the remedy: commit the file, or keep it out of git and stop running the gate.
     # It names the file, bounded, and names no value for `enforced`, which only a gate that
     # passed has earned. `--json` carries the files by gate. Mutation (declared): the note is
     # not printed.
@@ -252,8 +327,10 @@ def test_adopt_promote_s_refusal_says_to_track_the_file_and_names_it(tmp_path: P
     assert code == 1, out
     assert "docs (could not run)" in out, out
     note = next(line for line in out.splitlines() if line.startswith("note: docs reads"))
-    assert f"{AGENTS}, which git does not track" in note, note
-    assert "git add" in note and "[gates] builtin" in note, note
+    assert f"{AGENTS}, which CI's checkout will not have" in note, note
+    assert "commit each file named" in note and "[gates] builtin" in note, note
+    # An ignored file is the commonest case, and plain `git add` refuses one.
+    assert "`git add -f`" in note, note
     assert "enforced =" not in note and "[keelline]" not in note, note
     code, out, _ = cli(
         root, tmp_path, "adopt", "promote", "docs", "--base", _sha(root, BASE), "--json"

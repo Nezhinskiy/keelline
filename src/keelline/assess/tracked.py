@@ -1,14 +1,16 @@
 """The `docs` and `trail` gates judge tracked files: which files they read here that CI cannot.
 
-CI checks out what git tracks and nothing else. The `docs` gate reads `[paths] agents_md` and
-every file its links name, and the `trail` gate reads `[paths] roadmap` and the `trail.toml`
-beside it, each at its path. A file that is on disk here and that git does not track, an ignored
-one included, is a file those gates read here and CI never sees: in CI it is absent, and the
-gate's own finding for an absent file (`missing-document`, `missing-link`, `roadmap-missing`, or a
-listing rebuilt without the states) fails every pull request. So a verdict taken here would not
-be CI's verdict, and `keelline assess` reports such a gate as unable to judge the tree as CI
-will, and `keelline adopt promote` never enforces it. `keelline gate` asks nothing of this: it
-runs where CI checked out, and there the file is simply absent.
+CI checks out what git tracks and nothing else. The `docs` gate reads `[paths] agents_md` and every
+file its links name, and the `trail` gate reads `[paths] roadmap` and the `trail.toml` beside it,
+each at its path. A file that is on disk here and that git does not track, an ignored one included,
+is a file those gates read here and CI never sees, and so is one read through a tracked symlink
+whose target is untracked or outside the project, since git tracks the link alone and the checkout
+leaves it dangling: in CI it is absent, and the gate's own finding for an absent file
+(`missing-document`, `missing-link`, `roadmap-missing`, or a listing rebuilt without the states)
+fails every pull request. So a verdict taken here would not be CI's verdict, and `keelline assess`
+reports such a gate as unable to judge the tree as CI will, and `keelline adopt promote` never
+enforces it. `keelline gate` asks nothing of this: it runs where CI checked out, and there the file
+is simply absent.
 
 **What is not asked.** The `docs` gate also reads the roadmap, for its prose budget, but only
 when it is there, and a roadmap that is absent adds no finding, so a roadmap CI cannot see can
@@ -46,20 +48,28 @@ if TYPE_CHECKING:
     from keelline.config.schema import Config
 
 UNTRACKED = "untracked"
+# The most links followed from one path the gates read. A named cap (CONTRIBUTING.md#named-caps),
+# bounding a walk over links the repository wrote; no shipped file sets it. 40 is Linux's own
+# limit on the links one lookup follows (macOS stops at 32), so a chain the filesystem follows is
+# never cut short here, and one it would not follow is not read by the gates at all.
+LINK_HOPS = 40
 UNASKED = "could-not-look"
 # A gate's `reason` when a file it reads is not tracked, or git would not say. Fixed text: the
 # files are in the item beside it.
 UNSEEN_REASON = (
-    "could not judge this tree as CI will: it reads a file git does not track, which CI never "
-    "checks out; `keelline assess --json` names it"
+    "could not judge this tree as CI will: it reads a file CI's checkout will not have, one git "
+    "does not track or a symlink that leads out of the project; `keelline assess --json` names it"
 )
 UNASKED_REASON = (
     "could not judge this tree as CI will: git gave no answer to whether it tracks the files "
     "this gate reads; `keelline assess --json` names them"
 )
+# Commit, not "add": CI checks out commits, and a file an ignore rule matches is one plain
+# `git add` refuses.
 REMEDY = (
-    "track the file (`git add` it), since CI judges only what git tracks; to keep it out of git, "
-    "take {gate} out of [gates] builtin instead"
+    "commit each file named, since CI checks out only what git tracks (one an ignore rule "
+    "matches needs the rule removed, or `git add -f`), and point a symlink named here at a file "
+    "inside the project; to keep them out of git, take {gate} out of [gates] builtin instead"
 )
 UNASKED_REMEDY = (
     "run `git ls-files` here to see why git gives no answer; a git that timed out may answer "
@@ -101,6 +111,34 @@ def _is_tracked(relative: str, tracked: set[str]) -> bool:
     return relative in tracked or any(name.startswith(relative + "/") for name in tracked)
 
 
+def _not_checked_out(root: Path, relative: str, tracked: set[str]) -> str | None:
+    """What of `relative` a checkout of the tracked tree would not have, or `None` when it would
+    have all of it.
+
+    git tracks a symlink as the link alone, and a checkout writes the link whether or not what it
+    names is there, so a tracked link says nothing about what is read through it. Each link on the
+    way is followed, lexically and relative to the link's own directory as the filesystem reads
+    it, and the first step that is untracked is named; so is a link whose target is absolute or
+    climbs out of the root, since no other checkout of the project has that target. A component
+    before the last that is itself a symlink needs no walk of its own: git lists nothing under a
+    symlink, so a path through one is already untracked. Last, the walk must land where the
+    filesystem did, or it is not an answer about this path, and the path is named.
+    """
+    current = relative
+    for _ in range(LINK_HOPS + 1):
+        if not _is_tracked(current, tracked):
+            return current
+        link = root / current
+        if not link.is_symlink():
+            return None if link.resolve() == (root / relative).resolve() else relative
+        target = os.readlink(link)
+        step = os.path.normpath(os.path.join(os.path.dirname(current), target))
+        if os.path.isabs(target) or step == os.pardir or step.startswith(os.pardir + os.sep):
+            return current
+        current = Path(step).as_posix()
+    return current
+
+
 def unseen(root: Path, config: Config, names: tuple[str, ...]) -> tuple[Unseen, ...]:
     """Each of `names` that reads a file here which git does not track, or of which git would not
     say; nothing outside a git work tree."""
@@ -122,7 +160,9 @@ def unseen(root: Path, config: Config, names: tuple[str, ...]) -> tuple[Unseen, 
         if tracked is None:
             result.append(Unseen(gate, tuple(files), answered=False))
             continue
-        missing = tuple(f for f in files if not _is_tracked(f, tracked))
+        missing = tuple(
+            dict.fromkeys(n for f in files if (n := _not_checked_out(root, f, tracked)) is not None)
+        )
         if missing:
             result.append(Unseen(gate, missing, answered=True))
     return tuple(result)

@@ -111,7 +111,8 @@ BUILTIN: tuple[Gate, ...] = (
         "docs",
         None,
         "run `keelline docs check` and fix each finding; a checked document kept out of git "
-        "([artifacts] local) drops docs from [gates] builtin instead",
+        "(ignored, never added, or under [artifacts] local) drops docs from [gates] builtin "
+        "instead",
         "docs check",
         docs_gate,
     ),
@@ -140,7 +141,8 @@ BUILTIN: tuple[Gate, ...] = (
         "trail",
         None,
         "run `keelline docs trail` and commit the roadmap it rewrites; a roadmap kept out of "
-        "git ([artifacts] local) drops trail from [gates] builtin instead",
+        "git (ignored, never added, or under [artifacts] local) drops trail from [gates] builtin "
+        "instead",
         "docs trail --check",
         trail_gate,
     ),
