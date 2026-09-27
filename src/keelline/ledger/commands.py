@@ -15,8 +15,9 @@ from keelline.result import Result
 _OK = "OK: bug ledger entries, index freshness, and identifier references"
 _INERT = "nothing to check: no ledger directory and no generated index"
 BASE_HELP = (
-    "also fail when this base ref carries the ledger and the tree has none, so a change that "
-    "deletes the ledger answers for it; without it the tree alone is judged"
+    "also fail when this base ref carries the ledger and the tree has none, or carries an entry "
+    "the tree lacks, so a change that deletes the ledger or an entry of it answers for it; "
+    "without it the tree alone is judged"
 )
 
 

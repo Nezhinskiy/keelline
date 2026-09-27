@@ -204,11 +204,12 @@ def test_assess_after_init_with_no_origin_fetched_names_the_gates_that_cannot_ju
     tmp_path: Path,
 ) -> None:
     # The first thing a person runs after `init`: `origin` is configured and never fetched, so
-    # the default base does not exist. `plan` and `commit` could not run, one gate contract for
-    # one cause: `plan` reported a `base-unresolvable` finding here, a second outcome for the
-    # same missing base. Both are failing, so the command exits 1, and the inventory is still
-    # written where git ignores it. Mutation (advisory): the default base spelled as `HEAD` ->
-    # both gates read an empty range, nothing fails, and the exit code reddens.
+    # the default base does not exist. `plan`, `commit` and `bugs`, which compares the ledger's
+    # entries with the base's, could not run, one gate contract for one cause: `plan` reported a
+    # `base-unresolvable` finding here, a second outcome for the same missing base. All three
+    # are failing, so the command exits 1, and the inventory is still written where git
+    # ignores it. Mutation (advisory): the default base spelled as `HEAD` -> the gates read an
+    # empty range and the base's own ledger, nothing fails, and the exit code reddens.
     root = repository(tmp_path)
     init(root, machine=tmp_path / "m.toml", runner=LsRemote(), yes=True, dry_run=False, ci=False)
     git(root, "add", "-A")
@@ -217,7 +218,7 @@ def test_assess_after_init_with_no_origin_fetched_names_the_gates_that_cannot_ju
     assert code == 1
     printed = json.loads(out)
     failing = {g["name"]: g["answered"] for g in printed["gates"] if g["failing"]}
-    assert failing == {"plan": False, "commit": False}
+    assert failing == {"bugs": False, "plan": False, "commit": False}
     assert printed["base"] == "refs/remotes/origin/main"
     assert git(root, "check-ignore", "--", ASSESSMENT).strip() == ASSESSMENT
 

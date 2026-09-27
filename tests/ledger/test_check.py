@@ -16,6 +16,7 @@ from keelline.errors import Failure, Refusal
 from keelline.ledger.check import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, problems, uninitialised
 from keelline.ledger.entries import load_entries
 from keelline.ledger.index import render_index
+from keelline.ledger.write import renumber
 from tests.gitfixture import git, needs_git
 
 CONFIG = """
@@ -150,6 +151,93 @@ def test_a_base_with_no_ledger_leaves_a_project_before_its_first_entry_green(
     # The gate can be enforced before the first entry: no ledger on the base and no reference
     # in the tree is nothing to report.
     root, config, base = _based(tmp_path, "none")
+    assert problems(root, config, base) == []
+
+
+def _committed_ledger(tmp_path: Path, names: tuple[str, ...]) -> tuple[Path, Config, str]:
+    """A project whose one commit carries the entries `names` and their index, with a mention
+    of each in `src/a.py`; the commit's id is the base, and the tree is left as committed."""
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    ledger(root, config, {name: entry(int(name[3:])) for name in names})
+    (root / "src" / "a.py").write_text(
+        "".join(f"# workaround for {name}\n" for name in names), encoding="utf-8"
+    )
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "base")
+    return root, config, git(root, "rev-parse", "HEAD").strip()
+
+
+def _drop(root: Path, config: Config, *names: str) -> None:
+    """Delete the entries `names`, keep the directory with a placeholder, and regenerate the
+    index, which is what a change that empties the ledger commits."""
+    for name in names:
+        (root / "docs" / "bugs" / f"{name}.md").unlink()
+    (root / "docs" / "bugs" / ".gitkeep").write_text("", encoding="utf-8")
+    (root / "docs" / "bug-reports.md").write_text(
+        render_index(load_entries(root, config), config), encoding="utf-8"
+    )
+
+
+@needs_git
+@pytest.mark.parametrize(
+    "mentions",
+    ["", "# keelline:ledger:fixtures\n# workaround for BR-001\n"],
+    ids=["mentions-removed", "fixtures-marker"],
+)
+def test_an_entry_the_base_carries_and_the_tree_lacks_is_entry_removed(
+    tmp_path: Path, mentions: str
+) -> None:
+    # Ledger entries are append-only. Deleting every entry and the mentions of them, keeping the
+    # directory with a placeholder and regenerating the empty index, left a ledger that was not
+    # "uninitialised", and the base was asked nothing: an enforced `bugs` gate passed. The
+    # mentions do not decide it either way, so a file that marks itself as holding sample
+    # identifiers exempts nothing. Mutation (declared): the entries the base carries not
+    # compared with the tree's -> nothing is reported.
+    root, config, base = _committed_ledger(tmp_path, ("BR-001",))
+    _drop(root, config, "BR-001")
+    (root / "src" / "a.py").write_text(mentions, encoding="utf-8")
+    assert not uninitialised(root, config)
+    assert [(p.rule, p.path) for p in problems(root, config, base)] == [
+        ("entry-removed", "docs/bugs/BR-001.md")
+    ]
+    # Without a base the tree alone is judged, and it is a consistent, empty ledger.
+    assert problems(root, config) == []
+
+
+@needs_git
+def test_one_entry_removed_of_several_is_named_and_the_rest_are_not(tmp_path: Path) -> None:
+    root, config, base = _committed_ledger(tmp_path, ("BR-001", "BR-002"))
+    _drop(root, config, "BR-002")
+    (root / "src" / "a.py").write_text("# workaround for BR-001\n", encoding="utf-8")
+    assert [(p.rule, p.path) for p in problems(root, config, base)] == [
+        ("entry-removed", "docs/bugs/BR-002.md")
+    ]
+
+
+@needs_git
+def test_a_ledger_whose_directory_went_and_index_stayed_names_each_removed_entry(
+    tmp_path: Path,
+) -> None:
+    # The other arm a deleted ledger takes: the generated index is still there and says the
+    # entries are missing, and against a base each one the base carried is named too.
+    root, config, base = _committed_ledger(tmp_path, ("BR-001",))
+    shutil.rmtree(root / "docs" / "bugs")
+    (root / "src" / "a.py").write_text("", encoding="utf-8")
+    assert [(p.rule, p.path) for p in problems(root, config, base)] == [
+        ("entries-missing", "docs/bug-reports.md"),
+        ("entry-removed", "docs/bugs/BR-001.md"),
+    ]
+
+
+@needs_git
+def test_renumbering_an_entry_removes_nothing(tmp_path: Path) -> None:
+    # `bugs renumber` is how an entry moves, and it leaves a `void` entry at the old number, so
+    # an identifier once allocated keeps resolving: against the base it moved on, nothing is
+    # reported.
+    root, config, base = _committed_ledger(tmp_path, ("BR-001",))
+    renumber(root, config, "BR-001", "BR-002", today="2026-01-02")
+    assert (root / "docs" / "bugs" / "BR-001.md").is_file()
     assert problems(root, config, base) == []
 
 

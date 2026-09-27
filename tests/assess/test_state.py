@@ -571,21 +571,24 @@ def test_a_promotion_is_what_the_gate_enforces_next(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("branch", ["main", "develop"])
-def test_a_base_that_is_not_there_is_named_as_the_reason_plan_and_commit_did_not_pass(
+def test_a_base_that_is_not_there_is_named_as_the_reason_the_gates_reading_it_did_not_pass(
     tmp_path: Path, branch: str
 ) -> None:
     # The fixture has an origin and no remote-tracking ref, so the default base is not there:
-    # `plan` and `commit` could not run, which read as a defect in the tree. The note says why
-    # and names `--base`, and the last line where the findings are. Mutation (by hand): the note
-    # dropped -> the `--base` assertion reddens. The `--base` it suggests is the project's own
-    # base branch: a fixed `refs/heads/main` sent a `develop` project to a branch it does not
-    # have. Mutation (oracle): "the missing-base note suggests main whatever the base branch" ->
-    # `develop` reddens.
+    # `bugs`, `plan` and `commit` could not run, which read as a defect in the tree. The note
+    # says why and names `--base`, and the last line where the findings are. Mutation (by hand):
+    # the note dropped -> the `--base` assertion reddens. The `--base` it suggests is the
+    # project's own base branch: a fixed `refs/heads/main` sent a `develop` project to a branch
+    # it does not have. Mutation (oracle): "the missing-base note suggests main whatever the base
+    # branch" -> `develop` reddens.
     root, _ = _project(tmp_path, branch=branch)
     code, out, err = cli(root, tmp_path, "adopt", "promote")
     assert code == 1, err
     lines = out.splitlines()
-    assert "still advisory: plan (could not run), commit (could not run)" in lines[0]
+    assert (
+        "still advisory: bugs (could not run), plan (could not run), commit (could not run)"
+        in lines[0]
+    )
     assert lines[1:] == [BASE_NOT_THERE.format(branch=branch), FINDINGS_ELSEWHERE]
     assert lines[1].endswith(f"such as refs/heads/{branch}")
 

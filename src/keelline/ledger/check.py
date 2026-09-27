@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from keelline.errors import Failure, Refusal
@@ -53,12 +55,23 @@ LEDGER_REMOVED = (
     "the base carries the ledger ({bugs} or {index}) and this tree has neither; deleting the "
     "ledger does not switch the bugs gate off: restore it from the base"
 )
+ENTRY_REMOVED = (
+    "the base carries this entry and this tree does not; ledger entries are never deleted: "
+    "restore it from the base, and move one with `keelline bugs renumber`, which leaves a `void` "
+    "entry at the old number"
+)
 _BASE_UNREAD = (
     "git could not list {bugs} and {index} at `{base}` under {root} ({cause}), so whether this "
-    "change deleted the ledger is unknown and the bugs gate proved nothing. In CI the cause is a "
-    "checkout too shallow to hold the base ref (`fetch-depth: 0`); locally it is a `--base` that "
-    "names a ref this clone does not have"
+    "change deleted the ledger or an entry of it is unknown and the bugs gate proved nothing. In "
+    "CI the cause is a checkout too shallow to hold the base ref (`fetch-depth: 0`); locally it "
+    "is a `--base` that names a ref this clone does not have"
 )
+
+
+@dataclass(frozen=True)
+class _BaseLedger:
+    carried: bool  # the base has the ledger directory or the index
+    entries: tuple[str, ...]  # the entry files directly under the directory there, by name
 
 
 def uninitialised(root: Path, config: Config) -> bool:
@@ -69,9 +82,11 @@ def uninitialised(root: Path, config: Config) -> bool:
     return not bugs_dir(root, config).is_dir() and not is_generated_index(index_text(root, config))
 
 
-def _base_has_ledger(root: Path, config: Config, base: str) -> bool:
-    """Whether the commit `base` names carries the ledger directory or the index: one `git
-    ls-tree` of the two configured paths.
+def _base_ledger(root: Path, config: Config, base: str) -> _BaseLedger:
+    """What the commit `base` names carries of the ledger: whether it has the directory or the
+    index, and the `<PREFIX>-nnn.md` entry files directly under the directory. One `git ls-tree
+    -r` of the two configured paths, whose names come back relative to `root`, as they are
+    configured.
 
     A base shaped like an option is refused, as `plan check` refuses it, and a base git cannot
     list is a `Failure` — "could not run" to a gate — and never "the base has no ledger", which
@@ -80,13 +95,41 @@ def _base_has_ledger(root: Path, config: Config, base: str) -> bool:
     if base.startswith("-"):
         raise Refusal(f"{base!r} looks like an option, not a base ref")
     bugs, index = config.paths.bugs, config.paths.bug_index
-    code, out = git_run(root, "ls-tree", "-z", "--name-only", base, "--", bugs, index)
+    code, out = git_run(root, "ls-tree", "-r", "-z", "--name-only", base, "--", bugs, index)
     if code != 0:
         cause = NO_ANSWER if code < 0 else f"git exited {code}"
         raise Failure(
             _BASE_UNREAD.format(bugs=bugs, index=index, base=base, root=root, cause=cause)
         )
-    return bool(out)
+    names = [name for name in out.split("\0") if name]
+    ids = identifiers(config)
+    under = f"{bugs}/"
+    entries = tuple(
+        name.removeprefix(under)
+        for name in names
+        if name.startswith(under)
+        and name.endswith(".md")
+        and ids.is_identifier(name.removeprefix(under).removesuffix(".md"))
+    )
+    return _BaseLedger(bool(names), entries)
+
+
+def _removed_entries(root: Path, config: Config, base: _BaseLedger | None) -> list[Finding]:
+    """Every entry file `base` carries that this tree has nothing at, one finding each.
+
+    Entries are append-only: `bugs renumber` leaves a `void` entry at the number it moves from,
+    so no command this project ships deletes one, and a change that does is refused whatever
+    still mentions the identifier. The mentions cannot decide it, and nor can the fixtures
+    marker, which is an exemption a file grants itself.
+    """
+    if base is None:
+        return []
+    bugs = bugs_dir(root, config)
+    return [
+        Finding("entry-removed", f"{config.paths.bugs}/{name}", None, ENTRY_REMOVED)
+        for name in base.entries
+        if not os.path.lexists(bugs / name)
+    ]
 
 
 def _dangling_mentions(root: Path, config: Config, known: set[str]) -> list[Finding]:
@@ -108,7 +151,7 @@ def _dangling_mentions(root: Path, config: Config, known: set[str]) -> list[Find
     return found
 
 
-def _unledgered(root: Path, config: Config, base: str) -> list[Finding]:
+def _unledgered(root: Path, config: Config, base: _BaseLedger | None) -> list[Finding]:
     """The findings for a tree with no ledger: the ledger the base carries, when it carries one,
     and every mention and citation of an entry, since with no ledger each one dangles.
 
@@ -116,10 +159,11 @@ def _unledgered(root: Path, config: Config, base: str) -> list[Finding]:
     cannot be what switches the gate off: the base is asked whether it had one, and a mention
     of an identifier is as much a reference as a citation of its file. A project that registers
     the gate before its first entry has no ledger on its base and mentions none, and stays
-    green. With no `base` — `bugs check` run without `--base` — only the tree is judged.
+    green. With no `base` — `bugs check` run without `--base` — only the tree is judged. The
+    one `ledger-removed` finding stands for every entry the base carried.
     """
     found: list[Finding] = []
-    if base and _base_has_ledger(root, config, base):
+    if base is not None and base.carried:
         bugs, index = config.paths.bugs, config.paths.bug_index
         found.append(
             Finding("ledger-removed", bugs, None, LEDGER_REMOVED.format(bugs=bugs, index=index))
@@ -156,23 +200,20 @@ def problems(root: Path, config: Config, base: str = "") -> list[Finding]:
     first entry is filed: only a reference to an entry is reported then, since with no ledger
     every one of them dangles, and, against a `base`, a ledger the base carries
     (`_unledgered`). A generated index with no ledger directory behind it is the other thing
-    that shape describes, and it is the ledger having been deleted.
+    that shape describes, and it is the ledger having been deleted. Against a `base`, every arm
+    past that one also names each entry the base carries and the tree lacks (`entry-removed`).
     """
-    found: list[Finding] = []
+    carried = _base_ledger(root, config, base) if base else None
     if uninitialised(root, config):
-        return _unledgered(root, config, base)
+        return _unledgered(root, config, carried)
     ids = identifiers(config)
     bugs = bugs_dir(root, config)
     index_name = config.paths.bug_index
+    # First: a deleted entry is the most structural finding a ledger can have.
+    found = _removed_entries(root, config, carried)
     if not bugs.is_dir():
-        return [
-            Finding(
-                "entries-missing",
-                index_name,
-                None,
-                ENTRIES_MISSING.format(bugs=config.paths.bugs, index=index_name),
-            )
-        ]
+        missing = ENTRIES_MISSING.format(bugs=config.paths.bugs, index=index_name)
+        return [Finding("entries-missing", index_name, None, missing), *found]
 
     entries: list[Entry] = []
     required = set(config.ledger.evidence_boundary_required_for)
@@ -273,8 +314,9 @@ def problems(root: Path, config: Config, base: str = "") -> list[Finding]:
 
 
 def bugs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
-    """The `bugs` gate's whole composition: every ledger violation, and before there is a
-    ledger every reference to an entry and a ledger the base carries.
+    """The `bugs` gate's whole composition: every ledger violation, before there is a ledger
+    every reference to an entry, and against the base a ledger or an entry it carries that the
+    tree lacks.
 
     `bugs check` answers with this function, with `--base` as `base` or `""`, which judges the
     tree alone; every gate run passes the base it judges against.

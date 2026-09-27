@@ -8460,8 +8460,8 @@ reddens = ["tests/assess/test_read_base.py::test_a_prefix_git_spells_otherwise_t
 [[mutation]]
 name = "a tree with no ledger reports no citation of an entry file"
 file = "src/keelline/ledger/check.py"
-before = "        return _unledgered(root, config, base)"
-after = "        return found"
+before = "        return _unledgered(root, config, carried)"
+after = "        return []"
 reddens = [
   "tests/ledger/test_check.py::test_with_no_ledger_every_citation_of_an_entry_file_dangles",
   "tests/ledger/test_commands.py::test_check_reports_a_citation_when_there_is_no_ledger",
@@ -10314,12 +10314,39 @@ reddens = [
 [[mutation]]
 name = "the uninitialised arm ignores the base's ledger"
 file = "src/keelline/ledger/check.py"
-before = "    if base and _base_has_ledger(root, config, base):"
+before = "    if base is not None and base.carried:"
 after = "    if False:"
 reddens = [
   "tests/ledger/test_check.py::test_a_tree_that_deleted_the_base_s_ledger_is_one_ledger_removed_finding",
   "tests/ledger/test_commands.py::test_check_with_a_base_answers_for_a_ledger_the_base_carries",
   "tests/assess/test_gate_command.py::test_deleting_the_ledger_and_its_index_fails_an_enforced_bugs_gate",
+]
+
+# Ledger entries are append-only: `bugs renumber` leaves a `void` entry at the number it moves
+# from. Deleting every entry while keeping the directory (a `.gitkeep`) and regenerating the empty
+# index left a ledger that was not "uninitialised", the base was asked nothing, and an enforced
+# `bugs` gate passed, with the mentions gone or kept under the fixtures marker. Against a base,
+# every entry file it carries that the tree lacks is `entry-removed`, in every arm.
+[[mutation]]
+name = "the entries the base carries are never compared with the tree's"
+file = "src/keelline/ledger/check.py"
+before = "        if not os.path.lexists(bugs / name)"
+after = "        if False"
+reddens = [
+  "tests/ledger/test_check.py::test_an_entry_the_base_carries_and_the_tree_lacks_is_entry_removed",
+  "tests/ledger/test_check.py::test_one_entry_removed_of_several_is_named_and_the_rest_are_not",
+  "tests/ledger/test_check.py::test_a_ledger_whose_directory_went_and_index_stayed_names_each_removed_entry",
+  "tests/assess/test_gate_command.py::test_deleting_every_entry_but_keeping_the_directory_fails_an_enforced_bugs_gate",
+]
+
+[[mutation]]
+name = "the base's ledger is listed without its entries"
+file = "src/keelline/ledger/check.py"
+before = '    code, out = git_run(root, "ls-tree", "-r", "-z", "--name-only", base, "--", bugs, index)'
+after = '    code, out = git_run(root, "ls-tree", "-z", "--name-only", base, "--", bugs, index)'
+reddens = [
+  "tests/ledger/test_check.py::test_an_entry_the_base_carries_and_the_tree_lacks_is_entry_removed",
+  "tests/assess/test_gate_command.py::test_deleting_every_entry_but_keeping_the_directory_fails_an_enforced_bugs_gate",
 ]
 
 [[mutation]]
@@ -10407,7 +10434,7 @@ file = "src/keelline/assess/commands.py"
 before = "            lines.append(BASE_NOT_THERE.format(branch=config.project.base_branch))"
 after = '            lines.append(BASE_NOT_THERE.format(branch="main"))'
 reddens = [
-  "tests/assess/test_state.py::test_a_base_that_is_not_there_is_named_as_the_reason_plan_and_commit_did_not_pass[develop]",
+  "tests/assess/test_state.py::test_a_base_that_is_not_there_is_named_as_the_reason_the_gates_reading_it_did_not_pass[develop]",
 ]
 
 [[mutation]]

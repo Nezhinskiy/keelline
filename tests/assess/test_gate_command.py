@@ -715,6 +715,33 @@ def test_deleting_the_ledger_and_its_index_fails_an_enforced_bugs_gate(
     assert (bugs["answered"], bugs["count"]) == (True, 2 if "BR-001" in mention else 1)
 
 
+@pytest.mark.parametrize(
+    "mention",
+    ["", "# keelline:ledger:fixtures\n# workaround for BR-001\n"],
+    ids=["mention-removed", "fixtures-marker"],
+)
+def test_deleting_every_entry_but_keeping_the_directory_fails_an_enforced_bugs_gate(
+    tmp_path: Path, mention: str
+) -> None:
+    # The same deletion in substance as the case above, with one placeholder left in the
+    # directory and the index regenerated empty: the ledger was then not "uninitialised", the
+    # base was asked nothing, and the enforced gate passed. A file that marks itself as holding
+    # sample identifiers passed with the mention kept. Mutation (declared): the base's entries
+    # not compared with the tree's -> exit 0.
+    project = _ledgered(tmp_path, "# workaround for BR-001\n")
+    git(project, "rm", "-q", "docs/bugs/BR-001.md", "docs/bug-reports.md")
+    (project / "docs" / "bugs").mkdir(parents=True, exist_ok=True)
+    (project / "docs" / "bugs" / ".gitkeep").write_text("", encoding="utf-8")
+    (project / "src" / "a.py").write_text(mention, encoding="utf-8")
+    parser = build_parser(discover_registrars())
+    common = ["--root", str(project), "--machine", str(tmp_path / "absent.toml")]
+    with redirect_stdout(io.StringIO()):
+        assert run(["bugs", "index", *common], parser=parser) == 0
+    commit(project, "chore: empty the ledger")
+    code, out, _ = cli(project, tmp_path, "gate", "--builtin", "--only", "bugs")
+    assert (code, out.splitlines()[1]) == (1, "bugs: enforcing, 1 finding(s)"), out
+
+
 def test_a_base_branch_outside_its_grammar_is_named_and_never_blamed_on_base(
     tmp_path: Path,
 ) -> None:

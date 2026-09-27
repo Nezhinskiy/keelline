@@ -608,12 +608,17 @@ generated index — every mention of an identifier and every citation of an entr
 with `--base <ref>` a ledger that commit carries (its `[paths] bugs` or `bug_index`) is one
 `ledger-removed` finding: with none of them it prints `nothing to check` and exits `0`, so the
 check can be required before the first entry, and a change that deletes the ledger answers for the
-ledger and for everything that refers to it. `--base` is what the `bugs` gate passes, the base it
-judges against; a base git cannot list fails (`1`) rather than read as a base with no ledger, and
-under a gate that is the gate not running. Without `--base` the tree alone is judged. A generated
-index with no directory behind it is a deleted ledger and exits `1`. Git enumerates the files
-where the root is the top of a checkout (tracked plus untracked-not-ignored), and a walk stands
-in elsewhere. A file whose first 2 KiB carry `keelline:ledger:fixtures` holds sample
+ledger and for everything that refers to it. Once a ledger exists its entries are append-only:
+with `--base`, each `<PREFIX>-nnn.md` that commit carries directly under `[paths] bugs` and the
+tree has nothing at is an `entry-removed` finding, whatever still mentions the identifier and
+whatever a file's fixtures marker says, so emptying the directory and regenerating the index
+deletes the ledger as surely as removing it. An entry moves with `bugs renumber`, which leaves a
+`void` entry at the old number and so removes nothing. `--base` is what the `bugs` gate passes,
+the base it judges against; a base git cannot list fails (`1`) rather than read as a base with no
+ledger, and under a gate that is the gate not running. Without `--base` the tree alone is judged.
+A generated index with no directory behind it is a deleted ledger and exits `1`. Git enumerates
+the files where the root is the top of a checkout (tracked plus untracked-not-ignored), and a
+walk stands in elsewhere. A file whose first 2 KiB carry `keelline:ledger:fixtures` holds sample
 identifiers and is neither scanned nor swept. **Writes** nothing.
 
 ## `keelline bugs renumber OLD NEW`
@@ -717,12 +722,12 @@ probes below, which read files and the git index and never run a tool or reach t
 commands you have not agreed to run. The summary names the custom gates it left out, which count
 toward no total, and the inventory lists them under `skipped`.
 
-`REF` is the revision `plan` and `commit` compare against, and the one `bugs` asks whether it
-carried the ledger when the tree has none, default `refs/remotes/origin/<project.base_branch>` —
-the fully qualified name, so a tag cannot stand in for it. Where that ref does not exist (no
-`origin`, or not fetched), `plan` and `commit` could not run, as `bugs` could not in a tree with
-no ledger, and each counts as failing; a `note:` after the summary says the base is missing and
-suggests `--base refs/heads/<project.base_branch>`, as `adopt promote` does.
+`REF` is the revision `plan` and `commit` compare against, and the one `bugs` compares the ledger
+with (whether it carried one when the tree has none, and which entries the tree lacks), default
+`refs/remotes/origin/<project.base_branch>` — the fully qualified name, so a tag cannot stand in
+for it. Where that ref does not exist (no `origin`, or not fetched), `plan`, `commit` and `bugs`
+could not run, and each counts as failing; a `note:` after the summary says the base is missing
+and suggests `--base refs/heads/<project.base_branch>`, as `adopt promote` does.
 
 A gate that could not judge the tree — a base that is not there, an unreadable plan, a range git
 cannot read, a custom gate that could not start or ran past `custom_timeout_seconds` — is
@@ -998,8 +1003,8 @@ editor names `state` and `enforced` together, one line each: as they stand when 
 the gates finds it, and as the command would write them when the write itself refuses, so
 following it either leaves the project as it was or makes the transition whole.
 
-`--base` is what `plan` and `commit` judge a range against, and what `bugs` asks about a ledger
-the tree lacks, as for `keelline gate`: a 40-hex commit or a `refs/…` name,
+`--base` is what `plan` and `commit` judge a range against, and what `bugs` compares the ledger
+with, as for `keelline gate`: a 40-hex commit or a `refs/…` name,
 `refs/remotes/origin/<project.base_branch>` by default. The reusable workflow judges against `[ci]
 gate_branch`, which is that branch unless the file sets it; where the two differ, pass `--base` to
 judge as CI will. Run on the base branch itself, that range is empty and those two gates pass
