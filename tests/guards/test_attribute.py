@@ -97,6 +97,101 @@ def test_the_three_runs_land_in_the_working_tree_head_and_the_merge_base(tmp_pat
     assert result.merge_base == _git(root, "merge-base", "HEAD", "main")
 
 
+def _at(root: Path, tick: int, *args: str) -> str:
+    """`git args` with the author and committer date of the `tick`th commit, so git orders
+    merge bases as the test says rather than by the clock."""
+    stamp = f"@{1_700_000_000 + tick * 1000} +0000"
+    return gitfixture.git(root, *args, GIT_AUTHOR_DATE=stamp, GIT_COMMITTER_DATE=stamp).strip()
+
+
+@needs_git
+def test_several_merge_bases_leave_the_attribution_undetermined(tmp_path: Path) -> None:
+    # A criss-cross: `main` fixes a failure and then merges a colleague's side branch, forked
+    # before the fix and committed after it; the change merges the fixing commit and the side
+    # branch itself, then breaks it again. HEAD and the base then have two merge bases, and
+    # `git merge-base` answers the newer-dated one, the side branch's, which fails too: run 3
+    # failed there and the failure the change brought back was filed as pre-existing. Each
+    # merge base is as much "before this change" as the other and they disagree, so no verdict
+    # is given, nothing is run, and both are named. Mutation (declared): `--all` dropped, or
+    # several merge bases accepted -> a verdict comes back.
+    root = tmp_path / "repo"
+    root.mkdir()
+    _git(root, "init", "-q", "-b", "main")
+    (root / "state.txt").write_text("broken\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _at(root, 1, "commit", "-q", "-m", "broken")
+    first = _at(root, 1, "rev-parse", "HEAD")
+    (root / "state.txt").write_text("fixed\n", encoding="utf-8")
+    _at(root, 2, "commit", "-q", "-am", "fix it")
+    fixed = _at(root, 2, "rev-parse", "HEAD")
+    _git(root, "checkout", "-q", "-b", "side", first)
+    (root / "side.txt").write_text("side\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _at(root, 3, "commit", "-q", "-m", "a colleague's side branch")
+    side = _at(root, 3, "rev-parse", "HEAD")
+    _git(root, "checkout", "-q", "main")
+    _at(root, 4, "merge", "-q", "--no-ff", "--no-edit", "side")
+    _git(root, "checkout", "-q", "--detach", fixed)
+    _at(root, 5, "merge", "-q", "--no-ff", "--no-edit", side)
+    (root / "state.txt").write_text("broken\n", encoding="utf-8")
+    _at(root, 6, "commit", "-q", "-am", "break it again")
+    # The premise: two merge bases, and the one git picks is the one that fails.
+    assert sorted(_git(root, "merge-base", "--all", "main", "HEAD").split()) == sorted(
+        [fixed, side]
+    )
+    assert _git(root, "merge-base", "HEAD", "main") == side
+    runner = _Coded({})
+    with pytest.raises(Failure, match="undetermined") as caught:
+        attribute(root, command="grep -q fixed state.txt", base="main", runner=runner)
+    assert fixed in str(caught.value) and side in str(caught.value)
+    assert runner.calls == []
+
+
+@needs_git
+def test_a_shallow_clone_leaves_the_attribution_undetermined(tmp_path: Path) -> None:
+    # In a shallow clone the commit HEAD forked from can be cut off and the merge base git sees
+    # be an older one, so run 3 can be a tree from before the fix a failure broke. No verdict,
+    # nothing run, and the remedy named. Mutation (declared): the shallow check reads only
+    # whether git answered -> the clone below, whose tip is its own merge base, gets a verdict.
+    root = _repo(tmp_path)
+    shallow = tmp_path / "shallow"
+    _git(tmp_path, "clone", "-q", "--depth", "1", "--branch", "main", root.as_uri(), str(shallow))
+    assert _git(shallow, "rev-parse", "--is-shallow-repository") == "true"
+    runner = _Coded({})
+    with pytest.raises(Failure, match="undetermined: this clone is shallow") as caught:
+        attribute(shallow, command="true", base="origin/main", runner=runner)
+    assert "--unshallow" in str(caught.value)
+    assert runner.calls == []
+
+
+@needs_git
+@pytest.mark.parametrize(
+    ("answer", "cause"),
+    [(-1, NO_ANSWER), (128, "git exited 128")],
+    ids=["no-answer", "refused"],
+)
+def test_a_shallow_check_git_does_not_answer_leaves_the_attribution_undetermined(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: int, cause: str
+) -> None:
+    # Whether the clone is shallow is a question too: read as "not shallow" when git gave no
+    # answer or refused, a shallow clone went on to the merge base it could see. Mutation
+    # (declared): only a `true` answer counted -> a verdict comes back.
+    root = _repo(tmp_path)
+    real = git_run
+
+    def unanswered(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        if args[:2] == ("rev-parse", "--is-shallow-repository"):
+            return answer, ""
+        return real(where, *args, **kwargs)
+
+    monkeypatch.setattr("keelline.guards.attribute.git_run", unanswered)
+    runner = _Coded({})
+    with pytest.raises(Failure, match="undetermined") as caught:
+        attribute(root, command="true", base="main", runner=runner)
+    assert cause in str(caught.value)
+    assert runner.calls == []
+
+
 @needs_git
 @pytest.mark.parametrize(
     ("codes", "verdict"),
@@ -225,11 +320,32 @@ def test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code(
     # sentinel and not an exit status — rendered as one, the message read "`git merge-base
     # HEAD origin/main` exited -1; is origin/main fetched?", which sends a reader to fetch a ref
     # when the answer is that there is no git on this machine. The assertion is on the cause,
-    # not on the exception type.
+    # not on the exception type. The first question asked is whether the clone is shallow, so
+    # the cause surfaces there; the merge-base's own arm has the test below.
     root = _repo(tmp_path)
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
     with pytest.raises(Failure, match="git could not be run"):
         attribute(root, command="true", base="main", runner=_Coded({}))
+
+
+@needs_git
+def test_a_merge_base_git_gave_no_answer_for_is_not_reported_as_an_exit_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The same sentinel one question later: the shallow check answered and the merge-base did
+    # not. Rendered as an exit code it read "exited -1; is main fetched?", sending a reader to
+    # fetch a ref that is already here. Mutation (oracle): the merge-base's `-1` arm dropped ->
+    # the message names an exit code and this reddens.
+    root = _repo(tmp_path)
+    real = git_run
+
+    def unanswered(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        return (-1, "") if args[0] == "merge-base" else real(where, *args, **kwargs)
+
+    monkeypatch.setattr("keelline.guards.attribute.git_run", unanswered)
+    with pytest.raises(Failure, match=re.escape(NO_ANSWER)) as caught:
+        attribute(root, command="true", base="main", runner=_Coded({}))
+    assert "fetched" not in str(caught.value)
 
 
 @needs_git

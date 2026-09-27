@@ -6,6 +6,13 @@ Between (2) and (3) the only variable is the code; between (1) and (2) the only 
 the environment — provided the command syncs its own environment, which is the caller's to
 arrange and the reason the command is an argument.
 
+Run (3) needs one merge-base, and a history can have several: each is as much "before this
+change" as the others, a failure can pass on one and fail on another, and the one git picks
+alone, the newest by date, is not the one the change forked from in any sense the others are
+not. So several merge-bases, like a shallow clone where the real one can be cut off and an older
+commit stand in for it, leave the attribution undetermined: a `Failure` naming why, before
+anything runs, and never a verdict read off a tree chosen for the reader.
+
 Nothing here runs `git checkout`, `git stash` or `git reset`: `git archive` reads the object
 database, and this module never writes the working tree or moves the checkout between
 commits. Run 1 does execute the caller's command *in* the working tree, so whatever that
@@ -149,19 +156,52 @@ def _extract(root: Path, ref: str, into: Path) -> None:
         )
 
 
-def attribute(root: Path, *, command: str, base: str, runner: Runner) -> Attribution:
-    if base.startswith("-"):
-        raise Refusal("--base must name a ref, not an option")
-    code, merge_base = git_run(root, "merge-base", "HEAD", base)
-    merge_base = merge_base.strip()
+def _merge_base(root: Path, base: str) -> str:
+    """The one commit run (3) extracts, or a `Failure` saying why there is none.
+
+    Whether the clone is shallow is asked first, and a question git does not answer is not
+    "not shallow". Then `git merge-base --all HEAD <base>`: with more than one answer, naming
+    them all is the report, and picking one would be a verdict about a tree nobody asked for.
+    """
+    code, out = git_run(root, "rev-parse", "--is-shallow-repository")
+    if code != 0:
+        cause = NO_ANSWER if code == -1 else f"git exited {code}"
+        raise Failure(
+            f"the attribution is undetermined: whether this clone is shallow is unknown "
+            f"({cause}), and in a shallow clone the merge-base git sees can be an older commit"
+        )
+    if out.strip() == "true":
+        raise Failure(
+            f"the attribution is undetermined: this clone is shallow, so the commit HEAD forked "
+            f"from {base} at can be cut off and an older one stand in for it; fetch the whole "
+            f"history (`git fetch --unshallow`) and run it again"
+        )
+    code, out = git_run(root, "merge-base", "--all", "HEAD", base)
+    forks = out.split()
     # `git_run`'s own sentinel for "no answer", which is not an exit code and must not be
     # rendered as one: `exited -1; is origin/main fetched?` sends a reader to fetch a ref when
     # the answer is that there is no git here, or that it ran past its bound. A `Failure` and not
     # the listing's skip, because this command has no verdict without a merge-base.
     if code == -1:
-        raise Failure(f"{NO_ANSWER}, so `merge-base HEAD {base}` gave nothing to compare against")
-    if code != 0 or not merge_base:
-        raise Failure(f"`git merge-base HEAD {base}` exited {code}; is {base} fetched?")
+        raise Failure(
+            f"{NO_ANSWER}, so `merge-base --all HEAD {base}` gave nothing to compare against"
+        )
+    if code != 0 or not forks:
+        raise Failure(f"`git merge-base --all HEAD {base}` exited {code}; is {base} fetched?")
+    if len(forks) > 1:
+        raise Failure(
+            f"the attribution is undetermined: HEAD and {base} have {len(forks)} merge-bases "
+            f"({', '.join(forks)}), each as much before this change as the others, and a "
+            f"failure can pass on one and fail on another; merge {base} into the change so its "
+            f"tip is the one merge-base, or pass `--base` naming the commit to compare against"
+        )
+    return forks[0]
+
+
+def attribute(root: Path, *, command: str, base: str, runner: Runner) -> Attribution:
+    if base.startswith("-"):
+        raise Refusal("--base must name a ref, not an option")
+    merge_base = _merge_base(root, base)
     ambient = _executed("working tree", runner.run(["sh", "-c", command], root))
     with tempfile.TemporaryDirectory(prefix="keelline-attribute-") as scratch:
         head = Path(scratch) / "head"

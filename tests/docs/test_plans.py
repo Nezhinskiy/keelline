@@ -304,8 +304,7 @@ def test_a_diff_git_gave_no_answer_for_is_not_a_shallow_checkout(
     # does not resolve": that finding sends a reader to `fetch-depth: 0` in a clone that holds
     # every ref, and reads as a finding rather than as a gate that never looked. Still exit 1,
     # with the cause in words. Mutation (advisory): drop the `code == -1` arm in
-    # `touched_plans` — `BaseUnresolvable` is raised instead of this `Failure` and
-    # this reddens.
+    # `_unresolved` — `BaseUnresolvable` is raised instead of this `Failure` and this reddens.
     from keelline.docs import plans as module
 
     root, config = project(tmp_path)
@@ -321,6 +320,155 @@ def test_a_diff_git_gave_no_answer_for_is_not_a_shallow_checkout(
     with pytest.raises(Failure, match=re.escape(NO_ANSWER)) as caught:
         lint(root, config, plans=[], base="HEAD")
     assert "fetch-depth" not in str(caught.value)
+
+
+def _at(root: Path, tick: int, *args: str) -> str:
+    """`git args` with the author and committer date of the `tick`th commit, so git orders
+    merge bases as the test says rather than by the clock."""
+    stamp = f"@{1_700_000_000 + tick * 1000} +0000"
+    return git(root, *args, GIT_AUTHOR_DATE=stamp, GIT_COMMITTER_DATE=stamp).strip()
+
+
+OLD = "an old plan, from before it had a Scope line\n"
+
+
+@needs_git
+def test_a_plan_is_linted_whichever_of_several_merge_bases_git_would_pick(tmp_path: Path) -> None:
+    # A criss-cross: `main` fixes an old plan and then merges a colleague's side branch, forked
+    # before the fix and committed after it; the change merges the fixing commit and the side
+    # branch itself, then puts the old plan back. HEAD and the base then have two merge bases,
+    # and `<base>...HEAD` diffs against the newer-dated one, the side branch's, which holds the
+    # old plan too: nothing was linted, and merging the change puts the old plan back on
+    # `main`. Every merge base is diffed and the plans are taken together. Mutations
+    # (declared): `--all` dropped, or only the first merge base diffed -> nothing is linted.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    old = plan(root, OLD)
+    git(root, "add", "-A")
+    _at(root, 1, "commit", "-q", "-m", "the old plan")
+    first = _at(root, 1, "rev-parse", "HEAD")
+    plan(root, SCOPE + "fixed\n")
+    _at(root, 2, "commit", "-q", "-am", "fix the plan")
+    fixed = _at(root, 2, "rev-parse", "HEAD")
+    git(root, "checkout", "-q", "-b", "side", first)
+    (root / "side.txt").write_text("side\n", encoding="utf-8")
+    git(root, "add", "-A")
+    _at(root, 3, "commit", "-q", "-m", "a colleague's side branch")
+    side = _at(root, 3, "rev-parse", "HEAD")
+    git(root, "checkout", "-q", "main")
+    _at(root, 4, "merge", "-q", "--no-ff", "--no-edit", "side")
+    base = _at(root, 4, "rev-parse", "HEAD")
+    git(root, "checkout", "-q", "--detach", fixed)
+    _at(root, 5, "merge", "-q", "--no-ff", "--no-edit", side)
+    git(root, "checkout", "-q", "-b", "change")
+    # The premise: two merge bases, and the one git picks is the one without the fix.
+    assert sorted(git(root, "merge-base", "--all", base, "HEAD").split()) == sorted([fixed, side])
+    assert git(root, "merge-base", base, "HEAD").strip() == side
+    # A branch that merged both and put nothing back lints the fixed plan, which is clean.
+    assert lint(root, config, plans=[], base=base).findings == []
+    old.write_text(OLD, encoding="utf-8")
+    _at(root, 6, "commit", "-q", "-am", "put the old plan back")
+    assert git(root, "diff", "--name-only", f"{base}...HEAD", "--", "docs/plans") == ""
+    result = lint(root, config, plans=[], base=base)
+    assert result.linted == [old]
+    assert [f.rule for f in result.findings] == ["scope-missing"]
+
+
+@needs_git
+def test_a_shallow_clone_is_a_base_that_will_not_resolve_never_an_older_fork_point(
+    tmp_path: Path,
+) -> None:
+    # In a shallow clone the commits HEAD forked from can be cut off, and the merge base git
+    # sees is then an older one. Here the base merges an old commit back in, a clone of depth 2
+    # keeps that commit and cuts the base's path to the real fork point, and git names the old
+    # commit: a change that put a plan back as it was there was not linted. A shallow clone is a
+    # base that will not resolve, whose remedy is the whole history. Mutation (declared): the
+    # shallow check reads only whether git answered -> the older commit is diffed and nothing
+    # is linted.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    old = plan(root, OLD)
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "the old plan")
+    older = git(root, "rev-parse", "HEAD").strip()
+    plan(root, SCOPE + "fixed\n")
+    git(root, "commit", "-q", "-am", "fix the plan")
+    forked = git(root, "rev-parse", "HEAD").strip()
+    (root / "later.txt").write_text("later\n", encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "later")
+    later = git(root, "rev-parse", "HEAD").strip()
+    tree = f"{later}^{{tree}}"
+    base = git(root, "commit-tree", "-m", "merge the old commit", "-p", later, "-p", older, tree)
+    git(root, "update-ref", "refs/heads/main", base.strip())
+    git(root, "checkout", "-q", "-b", "change", forked)
+    old.write_text(OLD, encoding="utf-8")
+    git(root, "commit", "-q", "-am", "put the old plan back")
+    clone = tmp_path / "clone"
+    git(tmp_path, "clone", "-q", "--depth", "2", "--branch", "main", root.as_uri(), str(clone))
+    git(clone, "fetch", "-q", "origin", "change")
+    git(clone, "checkout", "-q", "--detach", "FETCH_HEAD")
+    # The premise: the clone is shallow, and the merge base it sees is the old commit.
+    assert git(clone, "rev-parse", "--is-shallow-repository").strip() == "true"
+    assert git(clone, "merge-base", "--all", "origin/main", "HEAD").split() == [older]
+    config = load(clone, machine=tmp_path / "m.toml")
+    with pytest.raises(BaseUnresolvable, match="fetch-depth: 0") as caught:
+        lint(clone, config, plans=[])
+    assert "shallow" in str(caught.value)
+
+
+@needs_git
+@pytest.mark.parametrize(
+    ("answer", "raised", "cause"),
+    [(-1, Failure, NO_ANSWER), (128, BaseUnresolvable, "git exited 128")],
+    ids=["no-answer", "refused"],
+)
+def test_a_shallow_check_git_does_not_answer_never_reads_as_a_full_clone(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    answer: int,
+    raised: type[Failure],
+    cause: str,
+) -> None:
+    # Whether the clone is shallow is a question too: read as "not shallow" when git gave no
+    # answer or refused, a shallow clone went on to the merge base it could see, an older one
+    # than the real fork point, which is the case the shallow check exists to close. Mutation
+    # (declared): only a `true` answer counted -> the diff below goes ahead and nothing raises.
+    from keelline.docs import plans as module
+
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "seed")
+    real = git_run
+
+    def unanswered(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        if args[:2] == ("rev-parse", "--is-shallow-repository"):
+            return answer, ""
+        return real(where, *args, **kwargs)
+
+    monkeypatch.setattr(module, "git_run", unanswered)
+    with pytest.raises(raised, match=re.escape(cause)) as caught:
+        lint(root, config, plans=[], base="HEAD")
+    assert "NOTHING was linted" in str(caught.value)
+
+
+@needs_git
+def test_a_base_that_shares_no_history_with_the_tree_will_not_resolve(tmp_path: Path) -> None:
+    # A base with no commit in common with HEAD leaves nothing to diff against, and "no plan
+    # changed" would pass whatever the change carries. Mutation (declared): no merge base read
+    # as nothing touched -> the lint answers OK over no plans.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    plan(root, "no scope here\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "seed")
+    git(root, "checkout", "-q", "--orphan", "unrelated")
+    git(root, "commit", "-q", "-m", "no shared history")
+    other = git(root, "rev-parse", "HEAD").strip()
+    git(root, "checkout", "-q", "-f", "main")
+    with pytest.raises(BaseUnresolvable, match="shares no history"):
+        lint(root, config, plans=[], base=other)
 
 
 @needs_git

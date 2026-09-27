@@ -90,8 +90,8 @@ def _base_ledger(root: Path, config: Config, base: str) -> _BaseLedger:
     directory or the index, and the `<PREFIX>-nnn.md` entry files directly under the directory
     in any of them.
 
-    Those commits are `git merge-base --all <base> HEAD`, every best common ancestor: where
-    `plan` reads `<base>...HEAD`, git picks one of them. What the base gained after the change
+    Those commits are `git merge-base --all <base> HEAD`, every best common ancestor, the ones
+    `plan` diffs against too. What the base gained after the change
     forked is not the change's to have kept, so a branch behind its base is not blamed for an
     entry filed since; and what the change forked with, it still answers for, on a stale branch
     as on the merge commit CI checks out, whose base parent the base can have moved past. A

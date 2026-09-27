@@ -18,7 +18,9 @@ description: Attribute one failing test or command to the change or to the envir
 3. Take the verdict, and the three exit codes under `--json` beside it. A run that did not
    execute is reported as a failure naming which of the three it was, never as a verdict:
    a timeout is not a result, and reading one as "it fails there too" is the worst wrong
-   answer this tool can give.
+   answer this tool can give. An attribution the tool calls undetermined — `HEAD` and the base
+   have several merge-bases, or the clone is shallow — has no verdict either: do what it names
+   (merge the base in, pass `--base`, or fetch the whole history) and run it again.
 4. Before writing "flake" or "environmental" anywhere, read
    [references/baselines.md](references/baselines.md): a baseline can lie in two opposite
    ways, and "transient" ends an investigation, so it has to be earned.

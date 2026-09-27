@@ -71,7 +71,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NoReturn
 
 from keelline.config.layout import local_base
 from keelline.config.paths import contained
@@ -126,13 +126,15 @@ _MARKED_AS_EXPECTATION = re.compile(r"\bexpect(?:s|ed|ation|ations)?\b", re.IGNO
 _SENTENCE_END = re.compile(r"[.!?][)\]\"'`]*\s")
 
 _BASE_UNRESOLVABLE = (
-    "git cannot resolve `{base}...HEAD` under {root}, so NOTHING was linted and this gate "
-    "proved nothing. In CI the cause is a checkout too shallow to hold the base ref "
-    "(`fetch-depth: 0`); locally it is a `--base` that names a ref this clone does not have."
+    "git could not find the commits HEAD forked from `{base}` at under {root} ({cause}), so "
+    "NOTHING was linted and this gate proved nothing. In CI the cause is a checkout too shallow "
+    "to hold them (`fetch-depth: 0`); locally it is a `--base` that names a ref this clone does "
+    "not have, or one that shares no history with HEAD."
 )
+_SHALLOW = "this clone is shallow, so they can be cut off and an older commit stand in for them"
 _NO_ANSWER = (
-    "{no_answer}, so the plans `{base}...HEAD` touches under {root} could not be listed and "
-    "NOTHING was linted"
+    "{no_answer}, so the plans changed since the commits HEAD forked from `{base}` at under "
+    "{root} could not be listed and NOTHING was linted"
 )
 _SCOPE_MISSING = (
     'no `**Scope:**` admission criterion — one line saying "a change belongs to this branch '
@@ -154,8 +156,8 @@ _ASSERTED = (
 
 
 class BaseUnresolvable(Failure):
-    """git cannot resolve the range, so nothing was linted: an answer about the checkout, not
-    about a plan.
+    """git cannot find the commits HEAD forked from the base at, so nothing was linted: an
+    answer about the checkout, not about a plan.
 
     Raised, never returned as a finding, so a gate run reads it as a gate that could not judge,
     as it reads every other gate's. `plan check` alone turns it into its `base-unresolvable`
@@ -180,9 +182,50 @@ def _is_git_repo(root: Path) -> bool:
     return git_run(root, "rev-parse", "--is-inside-work-tree")[0] == 0
 
 
-def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path] | None:
-    """Plans this change touches; None when git cannot resolve the range, and a `Failure` when
-    it gave no answer at all.
+def _unresolved(code: int, base: str, root: Path, cause: str = "") -> NoReturn:
+    """A question about the fork point git did not answer: a `Failure` when git gave no answer
+    at all, and `BaseUnresolvable` when it answered with a refusal or `cause` says why the
+    answer it gave is not one."""
+    if code == -1:
+        # Not "the base does not resolve": that finding's remedy is a deeper checkout, and a
+        # git that could not be run or ran past its bound is a clone that may hold every ref.
+        raise Failure(_NO_ANSWER.format(no_answer=NO_ANSWER, base=base, root=root))
+    raise BaseUnresolvable(
+        _BASE_UNRESOLVABLE.format(base=base, root=root, cause=cause or f"git exited {code}")
+    )
+
+
+def _fork_points(root: Path, base: str) -> list[str]:
+    """Every commit HEAD forked from `base` at: `git merge-base --all <base> HEAD`, each best
+    common ancestor.
+
+    `<base>...HEAD` diffs against one of them, and a history the change shapes itself can give
+    it several. The one git picks, the newest by date, can hold a plan as the change left it
+    while another holds the version the base carries since: a change that merged both and put
+    an old plan back diffed clean against the first, and merging it put that plan back on the
+    base unlinted. So the plans changed against each are listed by the caller, and taken
+    together.
+
+    Whether the clone is shallow is asked first, and a question git does not answer is not
+    "not shallow": in a shallow clone the fork point can be cut off and the merge base git sees
+    be an older commit, which holds the old plan as well. A shallow clone, one git will not say
+    is not shallow, and a base that shares no commit with HEAD all mean the fork point is not
+    known, so nothing can be linted against it.
+    """
+    code, out = git_run(root, "rev-parse", "--is-shallow-repository")
+    if code != 0 or out.strip() == "true":
+        _unresolved(code, base, root, _SHALLOW if code == 0 else "")
+    code, out = git_run(root, "merge-base", "--all", base, "HEAD")
+    forks = out.split() if code == 0 else []
+    if code != 0 or not forks:
+        _unresolved(code, base, root)
+    return forks
+
+
+def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path]:
+    """Plans this change touches: those that differ between HEAD and any commit it forked from
+    `base` at. `BaseUnresolvable` when those commits cannot be found, and a `Failure` when git
+    gave no answer at all.
 
     Read with `-z`, the same way and for the same reason as `unlinted_plans`: without it git
     C-quotes any path holding a space or a non-ASCII byte, splitting on whitespace then tears
@@ -192,28 +235,27 @@ def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path] | None:
     the trailing empty field falls out with everything that does not end in `.md`.
 
     The base is refused when it is shaped like an option (principle 5), in the one spelling
-    `guards.commit.commits_in` and `guards.commands.run_commit_strip` already use. `--` closes
-    the pathspec but sits behind the slot `base` interpolates into, so a `--base` of
-    `--output=<path>` reached `git diff` as git's own option: it wrote the diff to a file at a
-    caller-chosen absolute path, outside `contained()` and outside `fsops`, and then exited 0
-    with empty stdout — so this function answered `[]` rather than None and the gate reported
-    OK having linted nothing. That is the state `BaseUnresolvable` exists to make impossible —
-    raised, it is a `plan` gate that could not run and `plan check`'s `base-unresolvable`
-    finding — reached by an option-shaped typo instead of by a shallow checkout. The default,
+    `guards.commit.commits_in` and `guards.commands.run_commit_strip` already use. It reaches a
+    git argv slot ahead of any `--`, where git reads it as its own option: a `--base` of
+    `--output=<path>` makes `git diff` write the diff to a file at a caller-chosen absolute
+    path, outside `contained()` and outside `fsops`, and exit 0 with empty stdout — an empty
+    list, and a gate reporting OK having linted nothing. That is the state `BaseUnresolvable`
+    exists to make impossible — raised, it is a `plan` gate that could not run and `plan
+    check`'s `base-unresolvable` finding — reached by an option-shaped typo instead of by a
+    shallow checkout. The default,
     `config.layout.local_base`, is safe for its `refs/remotes/origin/` prefix alone, which is a
     property of that one caller and not of this argument.
     """
     if base.startswith("-"):
         raise Refusal(f"{base!r} looks like an option, not a base ref")
     relative = plans_dir.relative_to(root).as_posix()
-    code, out = git_run(root, "diff", "--name-only", "-z", f"{base}...HEAD", "--", relative)
-    if code == -1:
-        # Not "the base does not resolve": that finding's remedy is a deeper checkout, and a
-        # git that could not be run or ran past its bound is a clone that may hold every ref.
-        raise Failure(_NO_ANSWER.format(no_answer=NO_ANSWER, base=base, root=root))
-    if code != 0:
-        return None
-    return [root / name for name in out.split("\0") if name.endswith(".md")]
+    found: set[str] = set()
+    for fork in _fork_points(root, base):
+        code, out = git_run(root, "diff", "--name-only", "-z", fork, "HEAD", "--", relative)
+        if code != 0:
+            _unresolved(code, base, root)
+        found.update(name for name in out.split("\0") if name.endswith(".md"))
+    return [root / name for name in sorted(found)]
 
 
 def unlinted_plans(root: Path, plans_dir: Path) -> list[Path] | None:
@@ -361,8 +403,6 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
         selected = list(plans)
     elif _is_git_repo(root):
         touched = touched_plans(root, base, plans_dir)
-        if touched is None:
-            raise BaseUnresolvable(_BASE_UNRESOLVABLE.format(base=base, root=root))
         pending = unlinted_plans(root, plans_dir)
         if pending is None:
             raise Failure(
