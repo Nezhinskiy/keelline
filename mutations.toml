@@ -8118,15 +8118,15 @@ reddens = ["tests/assess/test_probes.py::test_a_git_query_that_does_not_answer_i
 [[mutation]]
 name = "the codeowners probe reads an owner-less line as owned"
 file = "src/keelline/assess/probes.py"
-before = "            owners = words[1:]"
-after = '            owners = ["x"]'
+before = "            owned = len(words) > 1"
+after = "            owned = True"
 reddens = ["tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[the-last-match-names-no-one]"]
 
 [[mutation]]
 name = "the codeowners probe reads a directory-only pattern as a file's owner"
 file = "src/keelline/assess/probes.py"
-before = "    if not directory and _components(parts, names):"
-after = "    if _components(parts, names):"
+before = "    last = end - 1 if directory else end"
+after = "    last = end"
 reddens = [
   "tests/assess/test_probes.py::test_a_trailing_slash_owns_a_directory_and_never_a_file_of_that_name[directory-only]",
   "tests/assess/test_probes.py::test_the_matcher_agrees_with_git_on_its_grammar",
@@ -8135,7 +8135,7 @@ reddens = [
 [[mutation]]
 name = "the codeowners probe reads a recursive wildcard as at least one directory"
 file = "src/keelline/assess/probes.py"
-before = "            least = 1 if i == len(pattern) - 1 else 0"
+before = "            least = 1 if i == len(parts) - 1 else 0"
 after = "            least = 1"
 reddens = [
   "tests/assess/test_probes.py::test_a_recursive_wildcard_matches_zero_directories_adjacent_ones_included",
@@ -8145,15 +8145,15 @@ reddens = [
 [[mutation]]
 name = "the codeowners probe reads a double star inside a component as recursive"
 file = "src/keelline/assess/probes.py"
-before = '        if pattern[i] == "**":'
-after = '        if pattern[i].startswith("**"):'
+before = '        "**" if len(part) > 1 and not part.strip("*") else _STAR_RUN.sub("*", part)'
+after = '        "**" if part.startswith("**") else _STAR_RUN.sub("*", part)'
 reddens = ["tests/assess/test_probes.py::test_the_matcher_agrees_with_git_on_its_grammar"]
 
 [[mutation]]
 name = "the codeowners probe reads a last star as owning nested files"
 file = "src/keelline/assess/probes.py"
-before = '    if parts[-1] == "*" and not directory:'
-after = "    if False:"
+before = '    first = 1 if directory or parts[-1] != "*" else end  # direct children only'
+after = "    first = 1"
 reddens = [
   "tests/assess/test_probes.py::test_a_last_star_owns_direct_children_only_where_github_and_git_differ",
   "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[direct-children-only]",
@@ -8169,8 +8169,8 @@ reddens = ["tests/assess/test_probes.py::test_a_pattern_of_many_wildcards_is_ans
 [[mutation]]
 name = "the codeowners probe reads any word holding an at sign as an owner"
 file = "src/keelline/assess/probes.py"
-before = "        if not words or not all(_OWNER.fullmatch(word) for word in words[1:]):"
-after = '        if not words or not all("@" in word for word in words[1:]):'
+before = "            if not all(_OWNER.fullmatch(word) for word in words[1:]):"
+after = '            if not all("@" in word for word in words[1:]):'
 reddens = [
   "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[a-bare-at]",
   "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[no-domain]",
@@ -10335,7 +10335,7 @@ reddens = [
 [[mutation]]
 name = "the scope probe never asks about a workflow the repository has"
 file = "src/keelline/assess/probes.py"
-before = "    unowned = [path for path in asked if not _governed(text, path)]"
+before = "    unowned = [path for path in asked if not _governed(rules, path)]"
 after = "    unowned: list[str] = []"
 reddens = [
   "tests/assess/test_probes.py::test_a_workflow_the_repository_has_is_reported_where_no_one_owns_it",
@@ -10351,12 +10351,70 @@ reddens = [
 ]
 
 [[mutation]]
-name = "the scope probe asks every workflow whatever the bound"
+name = "the scope probe asks every workflow whatever the budget"
 file = "src/keelline/assess/probes.py"
-before = '    asked = existing.where[: SCOPE_PAIRS_MAX // (text.count("\n") + 1)]'
+before = "    asked = existing.where[: sum(total <= SCOPE_WORK_MAX for total in spent)]"
 after = "    asked = existing.where"
 reddens = [
-  "tests/assess/test_probes.py::test_workflows_past_the_pair_bound_are_could_not_look_and_never_owned",
+  "tests/assess/test_probes.py::test_workflows_past_the_work_budget_are_could_not_look_and_never_owned",
+]
+
+[[mutation]]
+name = "the scope budget counts lines, not characters"
+file = "src/keelline/assess/probes.py"
+before = "    spent = accumulate(len(text) * len(path) for path in existing.where)"
+after = '    spent = accumulate(text.count("\n") + 1 for path in existing.where)'
+reddens = [
+  "tests/assess/test_probes.py::test_workflows_past_the_work_budget_are_could_not_look_and_never_owned",
+]
+
+[[mutation]]
+name = "the scope budget is too small to ask a monorepo's workflows"
+file = "src/keelline/assess/probes.py"
+before = "SCOPE_WORK_MAX = 300_000_000"
+after = "SCOPE_WORK_MAX = 200_000_000"
+reddens = [
+  "tests/assess/test_probes.py::test_a_monorepo_s_code_owners_file_is_asked_about_every_workflow",
+]
+
+[[mutation]]
+name = "a run of stars is walked at every match"
+file = "src/keelline/assess/probes.py"
+before = '        "**" if len(part) > 1 and not part.strip("*") else _STAR_RUN.sub("*", part)'
+after = '        "**" if len(part) > 1 and not part.strip("*") else part'
+reddens = [
+  "tests/assess/test_probes.py::test_a_run_of_stars_inside_a_component_is_read_once_as_one_star",
+]
+
+# A code-owners line is read on spaces and tabs, with a comment only from a `#` at the line's
+# start or after a blank; a line holding any other whitespace or a control character is read
+# owner-less, the side that warns whichever way GitHub splits it.
+[[mutation]]
+name = "a line GitHub may split elsewhere keeps its owners"
+file = "src/keelline/assess/probes.py"
+before = "            owned = False"
+after = "            owned = True"
+reddens = [
+  "tests/assess/test_probes.py::test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns[a-no-break-space-before-the-owner]",
+  "tests/assess/test_probes.py::test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns[a-vertical-tab-before-the-owner]",
+]
+
+[[mutation]]
+name = "a comment starts at any hash"
+file = "src/keelline/assess/probes.py"
+before = '_COMMENT = re.compile(r"(?:^|[ \t])#")'
+after = '_COMMENT = re.compile(r"#")'
+reddens = [
+  "tests/assess/test_probes.py::test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns[a-hash-inside-the-owner]",
+]
+
+[[mutation]]
+name = "a line GitHub may split elsewhere decides nothing"
+file = "src/keelline/assess/probes.py"
+before = "        if _ODD.search(kept):"
+after = "        if False:"
+reddens = [
+  "tests/assess/test_probes.py::test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns[a-no-break-space-after-the-pattern]",
 ]
 
 [[mutation]]
@@ -10389,8 +10447,8 @@ reddens = [
 [[mutation]]
 name = "the scope probe repeats what codeowners reports"
 file = "src/keelline/assess/probes.py"
-before = "    if isinstance(found, Looked) or not _governed(found[1], CI_WORKFLOW):"
-after = "    if isinstance(found, Looked):"
+before = "    if not _governed(rules, CI_WORKFLOW):"
+after = "    if False:"
 reddens = [
   "tests/assess/test_probes.py::test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_reported[the-caller-unowned]",
 ]

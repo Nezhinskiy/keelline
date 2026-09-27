@@ -29,6 +29,7 @@ from keelline.assess.probes import (
     PROFILE_NOT_SHIPPED,
     ProbeContext,
     _owns,
+    _pattern,
     run_probes,
 )
 from keelline.config.loader import load, preset_defaults
@@ -555,12 +556,13 @@ def test_a_directory_only_last_star_owns_what_is_below_each_directory_it_matches
 
 # Each runs in a child with a deadline, so a matcher that backtracks fails this case instead of
 # hanging the suite. Every pattern is the repository's to write: a run of `*`, a run of `**`
-# components long enough to exhaust a recursion, and a component of alternating stars.
+# components long enough to exhaust a recursion, a component of alternating stars, and one whose
+# ends and runs `keelline.yml` all holds, which only the walk answers.
 BOUNDED = (
     "from keelline.assess.probes import _owns\n"
     "from keelline.project.api import CI_WORKFLOW\n"
     "for pattern in ('*' * 100_000 + 'z', '**/' * 100_000 + 'z', '*e' * 50_000 + 'z',\n"
-    "                '/'.join(['*'] * 100_000)):\n"
+    "                '/'.join(['*'] * 100_000), 'k*l?e*l'):\n"
     "    print(_owns(pattern, CI_WORKFLOW))\n"
 )
 
@@ -569,14 +571,14 @@ DEADLINE_SECONDS = 20
 
 
 def test_a_pattern_of_many_wildcards_is_answered_promptly() -> None:
-    # Found in review: a regex with one `[^/]*` per `*` took 2.4 s at twenty asterisks and grew
-    # sevenfold per four more, so one CODEOWNERS line could hold `keelline assess` for good.
-    # The matcher has no regex now: `_glob` keeps one resumption point and moves it on at every
-    # retry, and the component table visits each cell once. Mutation (declared): `resume += 1`
-    # becomes `resume += 0` -> `_glob` retries the same position for ever, the child runs past
-    # its deadline, and this reddens with the deadline's message. Mutation (advisory): adjacent
-    # `**` no longer collapsed, or the component-count bound dropped -> survives: either makes
-    # the table larger, not the walk any less linear, which is why neither is this case's guard.
+    # A regex with one `[^/]*` per `*` backtracks exponentially, so one CODEOWNERS line could
+    # hold `keelline assess` for good. The matcher has none: `_glob` keeps one resumption point
+    # and moves it on at every retry, and the component table visits each cell once. Mutation
+    # (declared): `resume += 1` becomes `resume += 0` -> `_glob` retries the same position for
+    # ever on the last pattern, the child runs past its deadline, and this reddens with the
+    # deadline's message. Mutation (advisory): adjacent `**` no longer collapsed, or the
+    # component-count bound dropped -> survives: either makes the table larger, not the walk any
+    # less linear, which is why neither is this case's guard.
     try:
         done = subprocess.run(
             [sys.executable, "-c", BOUNDED],
@@ -587,7 +589,16 @@ def test_a_pattern_of_many_wildcards_is_answered_promptly() -> None:
         )
     except subprocess.TimeoutExpired:
         pytest.fail(f"the matcher ran past {DEADLINE_SECONDS} s on a pattern the repository wrote")
-    assert (done.returncode, done.stdout.split()) == (0, ["False"] * 4), done.stderr
+    assert (done.returncode, done.stdout.split()) == (0, ["False"] * 5), done.stderr
+
+
+def test_a_run_of_stars_inside_a_component_is_read_once_as_one_star() -> None:
+    # A run of `*` inside a component matches what one `*` does, and every workflow asked walks
+    # every component, so the run is collapsed when the file is read, never at each match: a
+    # line of a hundred thousand `*` then costs each workflow what `*` does. A whole component of
+    # stars is `**`, and adjacent `**` are one. Mutation (oracle): "a run of stars is walked at
+    # every match" -> the parts keep the run and this reddens.
+    assert _pattern("/a***b/**/***/c" + "*" * 100_000).parts == ("a*b", "**", "c*")
 
 
 def test_a_codeowners_file_github_does_not_load_owns_nothing(tmp_path: Path) -> None:
@@ -751,15 +762,65 @@ def test_a_workflow_the_repository_has_is_reported_where_no_one_owns_it(
     assert [(i.rule, i.severity, i.principle, i.where) for i in items] == expected
 
 
+CI_YML = ".github/workflows/ci.yml"
+
+
+@pytest.mark.parametrize(
+    ("codeowners", "unowned"),
+    [
+        (f"/.github/ @owner\n/{CI_YML}\n/{CI_YML}\xa0@owner\n", (CI_YML,)),
+        (f"/.github/ @owner\n/{CI_YML}\n/{CI_YML}\x0b@owner\n", (CI_YML,)),
+        (f"/.github/ @owner\n/{CI_YML}\n/{CI_YML} @owner#x\n", (CI_YML,)),
+        (f"/.github/ @owner\n/{CI_YML}\xa0\n", (CI_YML,)),
+        (f"/.github/ @owner\r\n/{CI_YML}\r\n", (CI_YML,)),
+        (f"/.github/ @owner\n/{CI_YML}\n/{CI_YML} @owner # restored\n", ()),
+        (f"# /{CI_YML}\xa0\n/.github/ @owner\n", ()),
+    ],
+    ids=[
+        "a-no-break-space-before-the-owner",
+        "a-vertical-tab-before-the-owner",
+        "a-hash-inside-the-owner",
+        "a-no-break-space-after-the-pattern",
+        "crlf",
+        "a-comment-after-a-blank",
+        "a-comment-line-holding-a-no-break-space",
+    ],
+)
+def test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns(
+    tmp_path: Path, codeowners: str, unowned: tuple[str, ...]
+) -> None:
+    # Words are separated by spaces and tabs, and a comment starts at the line's start or after a
+    # blank. Python's `split()` also broke words at a no-break space or a vertical tab, and the
+    # probe read `@owner` on a line GitHub may read as one pattern that matches nothing, which
+    # would leave the owner-less line before it governing `ci.yml`; `@owner#x` read as `@owner`
+    # the same way. A line holding such a character is read owner-less, so either reading of it
+    # is on the side that warns, and a file saved with CRLF still reads its owners. Mutations
+    # (oracle): "a line GitHub may split elsewhere keeps its owners" -> the first two cases are
+    # silent; "a comment starts at any hash" -> `a-hash-inside-the-owner` is silent; "a line
+    # GitHub may split elsewhere decides nothing" -> `a-no-break-space-after-the-pattern` is
+    # silent, and each reddens. Mutations (advisory): a comment only at the line's start ->
+    # `# restored` is read as owners that are not owners, `a-comment-after-a-blank` names
+    # `ci.yml`; the file read without universal newlines -> each CRLF line holds a carriage
+    # return and reads owner-less, `/.github/` included, so `crlf` is silent; each reddens.
+    root = _repo(tmp_path)
+    for name in ("keelline.yml", "ci.yml", "lint.yaml"):
+        _write(root, f".github/workflows/{name}", "on: push\n")
+    (root / ".github").mkdir(exist_ok=True)
+    (root / ".github/CODEOWNERS").write_bytes(codeowners.encode("utf-8"))
+    items = _items(root, tmp_path, "codeowners-scope")
+    expected = [("codeowners-scope", Severity.WARNING, 7, unowned)] if unowned else []
+    assert [(i.rule, i.severity, i.principle, i.where) for i in items] == expected
+
+
 def test_an_unowned_workflow_outside_the_path_grammar_is_reported_under_the_directory(
     tmp_path: Path,
 ) -> None:
     # A workflow's name is the repository's, and `where` names a path only inside the grammar a
     # path may print in: one outside it is reported under `.github/workflows/`, once, and never
     # quoted. The owner-less lines leave Keelline's workflow and the probed names owned, so the
-    # directory label here comes from the two unprintable names alone. Mutation (oracle): "every
-    # unowned workflow is named whatever its name" -> the raw names land in `where` and this
-    # reddens.
+    # directory label here comes from the two unprintable names alone. Mutation (oracle): "the
+    # scope probe names an unowned workflow outside the path grammar" -> the raw names land in
+    # `where` and this reddens.
     root = _repo(tmp_path)
     for name in ("keelline.yml", "x b.yml", "y‮z.yml", "ok.yml"):
         _write(root, f".github/workflows/{name}", "on: push\n")
@@ -774,28 +835,45 @@ def test_an_unowned_workflow_outside_the_path_grammar_is_reported_under_the_dire
     ]
 
 
-def test_workflows_past_the_pair_bound_are_could_not_look_and_never_owned(
+def test_workflows_past_the_work_budget_are_could_not_look_and_never_owned(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Each existing workflow is read against every line of the code-owners file, and both counts
-    # are the repository's: a 3 MB file of wildcard lines took 0.87 s per workflow, so a clone
-    # with a thousand workflows held `keelline assess` for a quarter of an hour. Past
-    # `SCOPE_PAIRS_MAX` the workflows not asked are could not look: here the file is three lines
-    # and the bound allows two workflows, so `ci.yml` and `lint.yaml` are asked and `zz.yml` is
-    # not. Mutation (oracle): "the scope probe asks every workflow whatever the bound" -> `zz.yml`
-    # is named, nothing is could not look, and this reddens.
-    monkeypatch.setattr(probes, "SCOPE_PAIRS_MAX", 7)
+    # Each existing workflow asked costs the code-owners file's length times its path's, and
+    # both are the repository's. A bound on lines let one long line cost what a whole file does:
+    # here the file is two lines, one of them a hundred thousand `*`, and the budget covers the
+    # first two workflows' work, so `a.yaml` and `b.yaml` are asked and `c.yaml` is could not
+    # look. Mutations (oracle): "the scope probe asks every workflow whatever the budget" and
+    # "the scope budget counts lines, not characters" -> `c.yaml` is named, nothing is could not
+    # look, and this reddens.
     root = _repo(tmp_path)
-    for name in ("keelline.yml", "ci.yml", "lint.yaml", "zz.yml"):
+    for name in ("keelline.yml", "a.yaml", "b.yaml", "c.yaml"):
         _write(root, f".github/workflows/{name}", "on: push\n")
-    _write(
-        root,
-        ".github/CODEOWNERS",
-        "/.github/ @owner\n/.github/workflows/*.yml\n/.github/workflows/keelline.yml @owner",
-    )
+    text = "/.github/ @owner\n" + "*" * 100_000 + ".yaml\n"
+    _write(root, ".github/CODEOWNERS", text)
+    asked = (".github/workflows/a.yaml", ".github/workflows/b.yaml")
+    monkeypatch.setattr(probes, "SCOPE_WORK_MAX", sum(len(text) * len(path) for path in asked))
     assert _shapes(_items(root, tmp_path, "codeowners-scope")) == [
-        ("codeowners-scope", (OWNED_WORKFLOWS, ".github/workflows/ci.yml")),
+        ("codeowners-scope", (OWNED_WORKFLOWS, *asked)),
         (COULD_NOT_LOOK, (".github/workflows",)),
+    ]
+
+
+def test_a_monorepo_s_code_owners_file_is_asked_about_every_workflow(tmp_path: Path) -> None:
+    # The budget is sized for the file a large repository keeps: 20 KB of team lines and 300
+    # workflows are asked in full, and the last workflow, which a later owner-less line takes
+    # back, is named rather than could not look. Mutation (oracle): "the scope budget is too
+    # small to ask a monorepo's workflows" -> the budget runs out part-way and this reddens.
+    root = _repo(tmp_path)
+    names = [f"service-{i:03d}-deploy.yml" for i in range(300)]
+    for name in ("keelline.yml", *names):
+        _write(root, f".github/workflows/{name}", "on: push\n")
+    lines = ["/.github/ @org/platform"]
+    while sum(len(line) + 1 for line in lines) < 20_000:
+        lines.append(f"/services/service-{len(lines):03d}/ @org/team-{len(lines):03d}")
+    lines.append(f"/.github/workflows/{names[-1]}")
+    _write(root, ".github/CODEOWNERS", "\n".join(lines) + "\n")
+    assert _shapes(_items(root, tmp_path, "codeowners-scope")) == [
+        ("codeowners-scope", (f".github/workflows/{names[-1]}",)),
     ]
 
 

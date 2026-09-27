@@ -31,6 +31,7 @@ import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from itertools import accumulate
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
@@ -218,10 +219,26 @@ _OWNER = re.compile(
     r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+"
 )
 
-# The most code-owners lines times existing workflows `codeowners-scope` reads. Both counts are
-# the repository's and each pair is one match of a few microseconds: a 3 MB file of wildcard
-# lines took 0.87 s per workflow. Past it the workflows not asked are could not look, never owned.
-SCOPE_PAIRS_MAX = 250_000
+# How a code-owners line is read: words separated by spaces and tabs; a comment, from a `#` at
+# the line's start or after a blank; a run of `*` inside a component, which matches what one `*`
+# does; the wildcards between a component's runs of plain characters; any other whitespace or a
+# control character, which GitHub may or may not read as a separator; and every separator
+# either reading knows.
+_BLANKS = re.compile(r"[ \t]+")
+_COMMENT = re.compile(r"(?:^|[ \t])#")
+_STAR_RUN = re.compile(r"\*{2,}")
+_WILD = re.compile(r"[*?]+")
+_ODD = re.compile(r"[^\S \t]|[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+_SEPARATORS = re.compile(r"[\s\x00-\x1f\x7f-\x9f]+")
+
+# The work `codeowners-scope` may spend on the workflows a repository already has, in
+# characters: each workflow asked is counted as the code-owners file's length times its path's.
+# The file is read once, and a match refuses most lines in one string operation and walks the
+# rest within their own length times the path's, so that product bounds what a workflow costs
+# whatever shape the file takes. Both lengths are the repository's: a 20 KB file and 300
+# workflows are asked in full, and the largest file GitHub loads is asked about a few workflows,
+# in a few seconds. Past it the workflows not asked are could not look, never owned.
+SCOPE_WORK_MAX = 300_000_000
 
 # GitHub does not load a code-owners file of 3 MB or more. Decimal megabytes: of the two
 # readings it is the smaller bound, so a file between them is read as unowned, the side that
@@ -236,7 +253,33 @@ def _glob(pattern: str, name: str) -> bool:
     No regex, and that is the point: a run of `*` compiled one `[^/]*` each backtracks
     exponentially, and the pattern is the repository's. This walk keeps one resumption point,
     the last `*`, so it takes at most `len(pattern) * len(name)` steps whatever the pattern.
+
+    What any match must have is asked first, in single string operations: the characters before
+    the first wildcard and after the last are the name's own ends, every run of characters
+    between wildcards is somewhere in the name, and every character but `*` is one of the
+    name's. A component with no `?` is then answered by finding each run in turn, since the
+    leftmost place a run can go leaves the most room for the rest; only one with a `?` is walked.
     """
+    first = min((i for i in (pattern.find("*"), pattern.find("?")) if i >= 0), default=-1)
+    if first < 0:
+        return pattern == name
+    cut = max(pattern.rfind("*"), pattern.rfind("?")) + 1
+    if (
+        len(name) < len(pattern) - pattern.count("*")
+        or not name.startswith(pattern[:first])
+        or not name.endswith(pattern[cut:])
+        or any(piece not in name for piece in _WILD.split(pattern))
+    ):
+        return False
+    if "?" not in pattern:
+        pieces = pattern.split("*")
+        at, stop = len(pieces[0]), len(name) - len(pieces[-1])
+        for piece in pieces[1:-1]:
+            at = name.find(piece, at, stop)
+            if at < 0:
+                return False
+            at += len(piece)
+        return True
     p = n = 0
     star, resume = -1, 0
     while n < len(name):
@@ -252,42 +295,51 @@ def _glob(pattern: str, name: str) -> bool:
     return pattern[p:].strip("*") == ""
 
 
-def _components(pattern: tuple[str, ...], path: tuple[str, ...]) -> bool:
-    """Whether `pattern`'s components match `path`'s, whole. `**` as a whole component is zero
-    or more components, and one or more when it is the last: `a/**` is everything inside `a`,
-    never `a`.
+@dataclass(frozen=True, slots=True)
+class _Pattern:
+    """One code-owners pattern, read once: its components, whether it names directories only,
+    how many components are not `**` (the fewest a matching path has), and its longest run of
+    characters without a wildcard, which a matching path must hold somewhere."""
 
-    A table rather than a recursion, filled from the pattern's end: `ahead[j]` says whether
-    the rest of the pattern matches `path[j:]`. Adjacent `**` are one `**`, and a pattern with
-    more other components than the path has cannot match, so the table is at most a few rows
-    whatever the repository wrote.
-    """
-    pattern = tuple(
-        part for i, part in enumerate(pattern) if part != "**" or pattern[i - 1 : i] != ("**",)
-    )
-    if sum(part != "**" for part in pattern) > len(path):
-        return False
-    end = len(path)
-    ahead = [j == end for j in range(end + 1)]
-    for i in range(len(pattern) - 1, -1, -1):
-        if pattern[i] == "**":
-            least = 1 if i == len(pattern) - 1 else 0
-            ahead = [any(ahead[j + least :]) for j in range(end + 1)]
-        else:
-            ahead = [
-                j < end and _glob(pattern[i], path[j]) and ahead[j + 1] for j in range(end + 1)
-            ]
-    return ahead[0]
+    parts: tuple[str, ...]
+    directory: bool
+    fixed: int
+    needle: str
 
 
-def _owns(text: str, path: str) -> bool:
-    """Whether the CODEOWNERS pattern `text` matches the file `path`, as GitHub reads it.
+def _pattern(text: str) -> _Pattern:
+    """The code-owners pattern `text`, as GitHub reads it.
 
     The grammar is gitignore's without `!` and `[]`, which GitHub does not support: a pattern
     with no `/` but a trailing one matches at any depth, and any other is rooted. A whole
-    component of two or more `*` is `**`, zero or more directories; any other run of `*` is one
-    `*`. A pattern matching a directory owns everything below it, and a trailing `/` makes it
-    directory-only, so it never owns a file of that name.
+    component of two or more `*` is `**`, zero or more directories, and adjacent `**` are one;
+    any other run of `*` is one `*`, collapsed here so no match walks the run. A pattern
+    matching a directory owns everything below it, and a trailing `/` makes it directory-only,
+    so it never owns a file of that name.
+    """
+    anchored = text.startswith("/") or "/" in text.rstrip("/")
+    parts = [
+        "**" if len(part) > 1 and not part.strip("*") else _STAR_RUN.sub("*", part)
+        for part in text.strip("/").split("/")
+    ]
+    if not anchored:
+        parts.insert(0, "**")
+    kept = tuple(part for i, part in enumerate(parts) if part != "**" or parts[i - 1 : i] != ["**"])
+    needle = max((run for part in kept for run in _WILD.split(part)), key=len)
+    return _Pattern(kept, text.endswith("/"), sum(part != "**" for part in kept), needle)
+
+
+def _matches(pattern: _Pattern, path: str, names: tuple[str, ...]) -> bool:
+    """Whether `pattern` matches the file `path`, whose components are `names`: the file
+    itself, or a directory above it, which owns what is below it.
+
+    One table rather than a recursion, filled from the pattern's end: `ahead[j]` says whether
+    the rest of the pattern matches `names[j:e]` for some end `e` it may stop at. `**` as a
+    whole component is zero or more components, and one or more when it is the last: `a/**` is
+    everything inside `a`, never `a`. A pattern with more other components than the path has,
+    or a run of characters the path does not hold, cannot match, so each is refused in one
+    string operation before the table, and the table is a few cells whatever the repository
+    wrote.
 
     One rule is GitHub's and not git's: a last component of exactly `*` matches the directory's
     own files and nothing nested (GitHub's documentation: `docs/*` owns `docs/getting-started.md`
@@ -296,20 +348,27 @@ def _owns(text: str, path: str) -> bool:
     alone: a directory-only pattern names directories, and each one it matches owns what is
     below it, as git reads it.
     """
-    directory = text.endswith("/")
-    anchored = text.startswith("/") or "/" in text.rstrip("/")
-    parts = tuple(
-        "**" if len(part) > 1 and not part.strip("*") else part
-        for part in text.strip("/").split("/")
-    )
-    if not anchored:
-        parts = ("**", *parts)
-    names = tuple(path.split("/"))
-    if not directory and _components(parts, names):
-        return True
-    if parts[-1] == "*" and not directory:
-        return False  # direct children only
-    return any(_components(parts, names[:depth]) for depth in range(1, len(names)))
+    end = len(names)
+    if pattern.fixed > end or pattern.needle not in path:
+        return False
+    parts, directory = pattern.parts, pattern.directory
+    first = 1 if directory or parts[-1] != "*" else end  # direct children only
+    last = end - 1 if directory else end
+    ahead = [first <= j <= last for j in range(end + 1)]
+    for i in range(len(parts) - 1, -1, -1):
+        if parts[i] == "**":
+            least = 1 if i == len(parts) - 1 else 0
+            ahead = [any(ahead[j + least :]) for j in range(end + 1)]
+        else:
+            ahead = [j < end and ahead[j + 1] and _glob(parts[i], names[j]) for j in range(end + 1)]
+        if not any(ahead):
+            return False  # no start left for the components before this one
+    return ahead[0]
+
+
+def _owns(text: str, path: str) -> bool:
+    """Whether the code-owners pattern `text` matches the file `path`, as GitHub reads it."""
+    return _matches(_pattern(text), path, tuple(path.split("/")))
 
 
 def _exact_file(path: Path) -> bool:
@@ -336,19 +395,54 @@ def _codeowners_file(context: ProbeContext) -> tuple[str, str] | Looked:
     return Looked((_UNOWNED,))
 
 
-def _governed(text: str, path: str) -> bool:
-    """Whether the line governing `path` names an owner, read as GitHub reads it: the last
-    matching line wins, and a line with a pattern and no owner leaves the path unowned."""
-    owners: list[str] = []
+def _rules(text: str) -> tuple[tuple[_Pattern, bool], ...]:
+    """The code-owners file `text` as `(pattern, owned)` rules, each line read once, as GitHub
+    reads it where it is documented and on the side that warns where it is not.
+
+    Words are separated by spaces and tabs, and a `#` starts a comment only at the line's start
+    or after a blank: GitHub documents an inline comment only after a blank, so `@owner#x` is one
+    word, and not an owner. A line with an owner outside the three plain shapes decides nothing,
+    as GitHub skips it. A line holding any other whitespace or control character is read without
+    its owners: split on those characters, its first word may be the pattern GitHub reads and
+    its owners ones it does not, and read owner-less it leaves each path it could match unowned,
+    the side that warns. The text is read with universal newlines, so a carriage return has
+    already ended its line.
+
+    Equal patterns match the same paths, so only the last line of each can govern one: the rules
+    are one per pattern, in the order of each one's last line, which is what the last match
+    wins reads.
+    """
+    latest: dict[str, bool] = {}
     for line in text.split("\n"):
-        words = line.split("#", 1)[0].split()
-        # GitHub skips a line with an owner that is neither `@user`, `@org/team` nor an
-        # email address, so such a line decides nothing.
-        if not words or not all(_OWNER.fullmatch(word) for word in words[1:]):
+        kept = _COMMENT.split(line, maxsplit=1)[0].strip(" \t")
+        if not kept:
             continue
-        if _owns(words[0], path):
-            owners = words[1:]
-    return bool(owners)
+        if _ODD.search(kept):
+            words = [word for word in _SEPARATORS.split(kept) if word][:1]
+            owned = False
+        else:
+            words = _BLANKS.split(kept)
+            if not all(_OWNER.fullmatch(word) for word in words[1:]):
+                continue
+            owned = len(words) > 1
+        if words:
+            latest.pop(words[0], None)
+            latest[words[0]] = owned
+    rules: dict[_Pattern, bool] = {}
+    for written, owned in latest.items():
+        pattern = _pattern(written)
+        rules.pop(pattern, None)
+        rules[pattern] = owned
+    return tuple(rules.items())
+
+
+def _governed(rules: tuple[tuple[_Pattern, bool], ...], path: str) -> bool:
+    """Whether the rule governing `path` names an owner: the last matching one wins, and a
+    pattern with no owner leaves the path unowned."""
+    names = tuple(path.split("/"))
+    return next(
+        (owned for pattern, owned in reversed(rules) if _matches(pattern, path, names)), False
+    )
 
 
 def _codeowners(context: ProbeContext) -> Looked:
@@ -361,7 +455,7 @@ def _codeowners(context: ProbeContext) -> Looked:
     found = _codeowners_file(context)
     if isinstance(found, Looked):
         return found
-    return Looked() if _governed(found[1], CI_WORKFLOW) else Looked((_UNOWNED,))
+    return Looked() if _governed(_rules(found[1]), CI_WORKFLOW) else Looked((_UNOWNED,))
 
 
 def _codeowners_scope(context: ProbeContext) -> Looked:
@@ -376,25 +470,29 @@ def _codeowners_scope(context: ProbeContext) -> Looked:
     `where` when its path is inside `PATH_VALUE`, and otherwise under `.github/workflows/`, since
     the name is the repository's. Silent wherever `codeowners` itself reports — no file, the
     workflow unowned, a file it could not read — so one gap is one warning; a workflows directory
-    it could not list, and the workflows past `SCOPE_PAIRS_MAX`, are could not look.
+    it could not list, and the workflows past `SCOPE_WORK_MAX`, are could not look.
     """
     from keelline.project.api import CI_WORKFLOW
 
     if context.config.ci.mode == "none":
         return Looked()
     found = _codeowners_file(context)
-    if isinstance(found, Looked) or not _governed(found[1], CI_WORKFLOW):
+    if isinstance(found, Looked):
         return Looked()
     relative, text = found
+    rules = _rules(text)
+    if not _governed(rules, CI_WORKFLOW):
+        return Looked()
     existing = _foreign_workflows(context)
-    asked = existing.where[: SCOPE_PAIRS_MAX // (text.count("\n") + 1)]
+    spent = accumulate(len(text) * len(path) for path in existing.where)
+    asked = existing.where[: sum(total <= SCOPE_WORK_MAX for total in spent)]
     unread = existing.unread or (() if asked == existing.where else (_WORKFLOWS,))
-    unowned = [path for path in asked if not _governed(text, path)]
+    unowned = [path for path in asked if not _governed(rules, path)]
     named = [path for path in unowned if PATH_VALUE.match(path)]
-    added = all(_governed(text, path) for path in _ANY_WORKFLOWS)
+    added = all(_governed(rules, path) for path in _ANY_WORKFLOWS)
     where = [] if added and len(named) == len(unowned) else [_UNOWNED]
     where += named
-    if not _governed(text, relative):
+    if not _governed(rules, relative):
         where.append(relative)
     return Looked(tuple(where), unread)
 
