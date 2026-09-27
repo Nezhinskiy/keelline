@@ -16,6 +16,7 @@ from pathlib import Path
 
 import keelline
 from keelline.scaffold import Manifest, digest
+from tests.floor import floor_env
 from tests.gitfixture import git, needs_git
 from tests.project.repos import tree
 
@@ -28,6 +29,7 @@ def _keelline(root: Path, home: Path, *argv: str) -> subprocess.CompletedProcess
         k: v for k, v in os.environ.items() if not k.startswith(("CLAUDE_", "KEELLINE_", "XDG_"))
     }
     env["HOME"] = str(home)
+    env.update(floor_env())
     return subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "keelline"), *argv, "--root", str(root)],
         cwd=root,

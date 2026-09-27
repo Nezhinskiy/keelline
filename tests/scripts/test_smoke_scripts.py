@@ -15,6 +15,9 @@ from types import ModuleType
 
 import pytest
 
+from keelline import gitenv
+from tests.floor import SUITE_GIT_FLOOR_SECONDS
+
 ROOT = Path(__file__).resolve().parents[2]
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -311,3 +314,20 @@ def test_the_exfiltration_scenario_reports_a_row_that_went_the_wrong_way(
     assert code == 1
     out = capsys.readouterr().out
     assert "FAIL  the owner's own trust record lets the note through" in out, out
+
+
+def test_a_hook_entry_keeps_the_suite_floor_and_no_other_keelline_variable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Both smoke scripts strip every `KEELLINE_*` variable so an entry never reads this
+    # developer's own Keelline, and that strip also took the suite's floor under the product's
+    # `git` bounds, so under load an entry's `keelline` ran a bound out and failed a test that
+    # passed alone. The floor alone is kept, spelled as the product spells it; the exfiltration
+    # script imports the same name. Mutation (oracle): "the hook smoke strips the suite's floor"
+    # -> this reddens.
+    smoke = _load("smoke_hooks")
+    assert smoke.FLOOR_VARIABLE == gitenv.FLOOR_VARIABLE
+    monkeypatch.setenv("KEELLINE_CONFIG", str(tmp_path / "developer.toml"))
+    env = smoke.session_env(plugin_root=ROOT, project=tmp_path, home=tmp_path, data=tmp_path)
+    assert env[gitenv.FLOOR_VARIABLE] == str(SUITE_GIT_FLOOR_SECONDS)
+    assert "KEELLINE_CONFIG" not in env

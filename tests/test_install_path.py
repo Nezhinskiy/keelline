@@ -43,6 +43,7 @@ from keelline.config.loader import CONFIG_FILE, load
 from keelline.doctor.api import OK, RED, SKIP, run_checks
 from keelline.memory.api import DELIMITER, PROJECTS, harness_memory_path, markers
 from keelline.runner import Completed
+from tests.floor import floor_env
 from tests.gitfixture import git
 from tests.snapshot import (
     assert_snapshot_changed,
@@ -208,6 +209,7 @@ def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.Complet
     env["PATH"] = f"{walk.bin}{os.pathsep}{env.get('PATH', '')}"
     env["CLAUDE_PLUGIN_ROOT"] = str(ROOT)
     env["CLAUDE_PLUGIN_DATA"] = str(walk.data)
+    env.update(floor_env())
     command = [sys.executable, str(ROOT / "scripts" / "keelline"), *argv]
     if not tty:
         return subprocess.run(
@@ -422,6 +424,7 @@ def _session(
     env["CLAUDE_PROJECT_DIR"] = str(walk.root)
     env["CLAUDE_PLUGIN_DATA"] = str(walk.data)
     env["HOME"] = str(walk.home)
+    env.update(floor_env())
     flags = ["--machine", str(walk.machine)] if machine else []
     return subprocess.run(
         [str(WRAPPER), "open", *argv, *flags],
@@ -487,6 +490,7 @@ def test_the_machine_file_is_the_only_thing_that_says_where_the_overlay_is(
     env["CLAUDE_PLUGIN_ROOT"] = str(ROOT)
     env["CLAUDE_PROJECT_DIR"] = str(walk.root)
     env["HOME"] = str(walk.home)
+    env.update(floor_env())
     without = subprocess.run(
         [str(WRAPPER), "open", "memory", "session-context", "--bundle", "standing-rules"],
         cwd=walk.root,

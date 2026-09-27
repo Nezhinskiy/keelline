@@ -1386,6 +1386,57 @@ before = "BOUND_FLOOR_SECONDS: float = 0"
 after = "BOUND_FLOOR_SECONDS: float = 0\nBOUND_FLOOR_SECONDS = 60"
 reddens = ["tests/test_git_run.py::test_the_product_ships_with_no_floor_under_its_bounds"]
 
+# The floor reaches the product through one environment variable, so a `keelline` the suite
+# starts as a separate process runs under it too. Read the constant instead, and a child whose
+# environment carries the floor runs a caller's small bound out.
+[[mutation]]
+name = "the git runner ignores the floor a test runner sets"
+file = "src/keelline/gitenv.py"
+before = "            timeout=max(timeout, bound_floor()),"
+after = "            timeout=max(timeout, BOUND_FLOOR_SECONDS),"
+reddens = [
+  "tests/test_git_run.py::test_a_keelline_the_suite_starts_inherits_the_floor",
+  "tests/test_git_run.py::test_the_suite_floor_outlasts_a_bound_its_caller_asked_for",
+]
+
+# The variable may only raise a bound: one that stands in for the caller's bound shortens it.
+[[mutation]]
+name = "the floor replaces the caller's bound instead of raising it"
+file = "src/keelline/gitenv.py"
+before = "            timeout=max(timeout, bound_floor()),"
+after = "            timeout=bound_floor() or timeout,"
+reddens = ["tests/test_git_run.py::test_the_floor_variable_never_shortens_a_bound"]
+
+# Uncapped, a huge value reaches `subprocess.run` as a timeout it cannot represent, and its
+# `OverflowError` is not one of the causes `git_run` reads as no answer.
+[[mutation]]
+name = "the floor variable is honoured without its ceiling"
+file = "src/keelline/gitenv.py"
+before = "    return max(BOUND_FLOOR_SECONDS, min(raised, FLOOR_CEILING_SECONDS))"
+after = "    return max(BOUND_FLOOR_SECONDS, raised)"
+reddens = ["tests/test_git_run.py::test_the_floor_variable_is_capped"]
+
+# An infinite floor is past what `subprocess` can wait for; it is ignored, not honoured.
+[[mutation]]
+name = "a floor variable that is not finite is honoured"
+file = "src/keelline/gitenv.py"
+before = "    if not math.isfinite(raised):"
+after = "    if math.isnan(raised):"
+reddens = [
+  "tests/test_git_run.py::test_a_floor_variable_that_raises_nothing_leaves_the_product_floor[inf]",
+]
+
+# The hook smoke strips every `KEELLINE_*` variable from an entry's environment; the suite's
+# floor is the one it keeps, or its entries run under the bare bounds the floor exists to lift.
+[[mutation]]
+name = "the hook smoke strips the suite's floor"
+file = "scripts/smoke_hooks.py"
+before = """        if k == FLOOR_VARIABLE or not k.startswith(("KEELLINE_", "XDG_", "CLAUDE_", "PLUGIN_"))"""
+after = """        if not k.startswith(("KEELLINE_", "XDG_", "CLAUDE_", "PLUGIN_"))"""
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_a_hook_entry_keeps_the_suite_floor_and_no_other_keelline_variable",
+]
+
 # The suite's floor lifts every bound past git's latency, so a bound shrunk below it passes every
 # test that runs through it; a table of the named bounds holds each to a second.
 [[mutation]]

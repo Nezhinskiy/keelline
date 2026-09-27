@@ -14,6 +14,7 @@ from keelline.errors import Refusal
 from keelline.guards.commit import offending_lines
 from keelline.guards.githooks import HOOK_MARKER, HOOK_NAME, hooks_dir, install, uninstall
 from tests import gitfixture
+from tests.floor import floor_env
 
 ROOT = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -37,9 +38,15 @@ def _scrubbed_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         pytest.skip("a system-wide core.hooksPath points these tests outside tmp_path")
 
 
-def env(tmp_path: Path) -> dict[str, str]:
-    # A `keelline` shim on PATH, so the hook's first branch is the one exercised — the same
-    # branch a `uv tool install` user takes. The shim runs this checkout's package.
+def launching(tmp_path: Path) -> dict[str, str]:
+    """What this module layers on `tests/gitfixture.py`'s sealed environment.
+
+    A `keelline` shim leading `PATH`, so the hook's first branch is the one exercised — the same
+    branch a `uv tool install` user takes. The shim runs this checkout's package, and it has to
+    be first because the `git commit` below runs the commit-msg hook this test just installed,
+    and that hook is what invokes `keelline`. And the suite's floor under the product's own
+    `git` (`tests/floor.py`), which git hands on to the hook and the hook to that `keelline`.
+    """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     shim = bin_dir / "keelline"
@@ -49,15 +56,12 @@ def env(tmp_path: Path) -> dict[str, str]:
             encoding="utf-8",
         )
         shim.chmod(0o755)
-    # `tests/gitfixture.py`'s sealed environment plus the one difference that is this module's
-    # own: `PATH` leads with the shim, because the `git commit` below has to run the
-    # commit-msg hook this test just installed, and that hook is what invokes `keelline`.
-    return gitfixture.env(tmp_path, PATH=f"{bin_dir}:{os.environ.get('PATH', '')}")
+    return {"PATH": f"{bin_dir}:{os.environ.get('PATH', '')}", **floor_env()}
 
 
 def git(tmp_path: Path, root: Path, *args: str) -> str:
     """The shared fixture `git`, given this module's shim `PATH` and its `tmp_path` as `HOME`."""
-    return gitfixture.git(root, *args, home=tmp_path, PATH=env(tmp_path)["PATH"])
+    return gitfixture.git(root, *args, home=tmp_path, **launching(tmp_path))
 
 
 def repo(tmp_path: Path) -> Path:
@@ -84,7 +88,7 @@ def committing(tmp_path: Path, root: Path, message: str) -> subprocess.Completed
     # `run_git`: the hook under test is what rejects this commit, so the exit code is the
     # subject and not a failure.
     return gitfixture.run_git(
-        root, "commit", "-q", "-m", message, home=tmp_path, PATH=env(tmp_path)["PATH"]
+        root, "commit", "-q", "-m", message, home=tmp_path, **launching(tmp_path)
     )
 
 

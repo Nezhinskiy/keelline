@@ -37,6 +37,12 @@ PRESET_RULE = "### decision-forks"
 # entries, fourteen rows (`PreToolUse` carries two samples). Both are asserted because a run
 # that executes fewer rows prints an identically green summary — the shape `unsampled` and
 # `unentered` close for events and nothing closed for rows.
+# The one `KEELLINE_*` variable an entry keeps: the floor a test runner puts under the product's
+# own bounds on `git` (`keelline.gitenv.FLOOR_VARIABLE`, which can only raise them). Under the
+# test suite it is the suite's, so the entries run under the floor every other `keelline` the
+# suite starts runs under, and do not fail the suite for the machine's load; run on its own,
+# nothing sets it.
+FLOOR_VARIABLE = "KEELLINE_GIT_FLOOR_SECONDS"
 EXPECTED_ENTRIES = 13
 EXPECTED_ROWS = 14
 
@@ -160,7 +166,7 @@ def session_env(*, plugin_root: Path, project: Path, home: Path, data: Path) -> 
     env = {
         k: v
         for k, v in os.environ.items()
-        if not k.startswith(("KEELLINE_", "XDG_", "CLAUDE_", "PLUGIN_"))
+        if k == FLOOR_VARIABLE or not k.startswith(("KEELLINE_", "XDG_", "CLAUDE_", "PLUGIN_"))
     }
     env.update(
         {

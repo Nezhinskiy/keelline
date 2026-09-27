@@ -31,7 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from smoke_hooks import fixture_repository
+from smoke_hooks import FLOOR_VARIABLE, fixture_repository
 
 CANARY = "CANARY-IN-REPO-RULE"
 DELIMITER = "<<<keelline:repository-data"
@@ -147,7 +147,7 @@ def hostile_env(planted: Planted, plugin_root: Path) -> dict[str, str]:
     env = {
         k: v
         for k, v in os.environ.items()
-        if not k.startswith(("KEELLINE_", "XDG_", "CLAUDE_", "PLUGIN_"))
+        if k == FLOOR_VARIABLE or not k.startswith(("KEELLINE_", "XDG_", "CLAUDE_", "PLUGIN_"))
     }
     env.update(
         {
