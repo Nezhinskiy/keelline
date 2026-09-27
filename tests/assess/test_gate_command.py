@@ -783,6 +783,44 @@ def test_deleting_every_entry_but_keeping_the_directory_fails_an_enforced_bugs_g
     assert (code, out.splitlines()[1]) == (1, "bugs: enforcing, 1 finding(s)"), out
 
 
+def test_a_branch_behind_its_base_is_not_blamed_for_an_entry_the_base_filed_since(
+    tmp_path: Path,
+) -> None:
+    # The legitimate user the append-only rule must not refuse: a colleague files BR-002 on the
+    # base after this branch forked, and the branch, fetched but not rebased, deleted nothing.
+    # Compared with the base's tip it read as deleting BR-002. A deletion on the same stale
+    # branch is still named, and only that one. Mutation (declared): the entries listed at the
+    # base's tip -> the first run fails.
+    project = _ledgered(tmp_path, "# workaround for BR-001\n")
+    upstream = tmp_path / "upstream"
+    (upstream / "docs" / "bugs" / "BR-002.md").write_text(
+        "---\nid: BR-002\ntitle: t\nstatus: open\nseverity: low\narea: a\nfound: 2026-01-01\n"
+        "source:\nfixed_in:\nrelated:\n---\n\nbody\n",
+        encoding="utf-8",
+    )
+    parser = build_parser(discover_registrars())
+    with redirect_stdout(io.StringIO()):
+        upstream_args = ["--root", str(upstream), "--machine", str(tmp_path / "absent.toml")]
+        assert run(["bugs", "index", *upstream_args], parser=parser) == 0
+    commit(upstream, "chore: file BR-002")
+    git(project, "fetch", "-q")
+    code, out, _ = cli(project, tmp_path, "gate", "--builtin", "--only", "bugs")
+    assert (code, out.splitlines()[1]) == (0, "bugs: enforcing, 0 finding(s)"), out
+    git(project, "rm", "-q", "docs/bugs/BR-001.md", "docs/bug-reports.md")
+    (project / "docs" / "bugs").mkdir(parents=True, exist_ok=True)
+    (project / "docs" / "bugs" / ".gitkeep").write_text("", encoding="utf-8")
+    (project / "src" / "a.py").write_text("", encoding="utf-8")
+    with redirect_stdout(io.StringIO()):
+        project_args = ["--root", str(project), "--machine", str(tmp_path / "absent.toml")]
+        assert run(["bugs", "index", *project_args], parser=parser) == 0
+    commit(project, "chore: empty the ledger")
+    code, out, _ = cli(project, tmp_path, "bugs", "check", "--base", "refs/remotes/origin/main")
+    assert (code, out.strip()) == (
+        1,
+        "FAIL: 1 ledger problem(s): docs/bugs/BR-001.md [entry-removed]",
+    )
+
+
 def test_a_base_branch_outside_its_grammar_is_named_and_never_blamed_on_base(
     tmp_path: Path,
 ) -> None:

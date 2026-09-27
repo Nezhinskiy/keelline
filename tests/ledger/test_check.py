@@ -5,6 +5,7 @@ keelline:ledger:fixtures — the identifiers below are sample data, not claims a
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -239,6 +240,143 @@ def test_renumbering_an_entry_removes_nothing(tmp_path: Path) -> None:
     renumber(root, config, "BR-001", "BR-002", today="2026-01-02")
     assert (root / "docs" / "bugs" / "BR-001.md").is_file()
     assert problems(root, config, base) == []
+
+
+@needs_git
+def test_an_entry_renamed_only_in_case_is_entry_removed_where_the_filesystem_folds_case(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `BR-001.md` renamed to `br-001.md` is no entry: the ledger loads `BR-*.md` by exact name,
+    # so the identifier lost its file. Asked by name, a filesystem that folds case (macOS's and
+    # Windows's default) answered that `BR-001.md` was still there, and the change passed where
+    # the reusable workflow's Linux runner refused it. The rename below folds on such a
+    # filesystem; the lookup is made to fold here too, so the case holds on every runner.
+    # Mutation (declared): the name looked up with `os.path.lexists` again -> nothing reported.
+    root, config, base = _committed_ledger(tmp_path, ("BR-001",))
+    bugs = root / "docs" / "bugs"
+    (bugs / "BR-001.md").rename(bugs / "br-001.md")
+    (root / "docs" / "bug-reports.md").write_text(render_index([], config), encoding="utf-8")
+    (root / "src" / "a.py").write_text("", encoding="utf-8")
+    real = os.path.lexists
+
+    def folding(path: str | os.PathLike[str]) -> bool:
+        where = Path(path)
+        if real(where) or not where.parent.is_dir():
+            return real(where)
+        return any(name.lower() == where.name.lower() for name in os.listdir(where.parent))
+
+    monkeypatch.setattr(os.path, "lexists", folding)
+    assert os.path.lexists(bugs / "BR-001.md")
+    assert [(p.rule, p.path) for p in problems(root, config, base)] == [
+        ("entry-removed", "docs/bugs/BR-001.md")
+    ]
+
+
+@needs_git
+def test_deleting_what_is_not_an_entry_under_the_ledger_directory_removes_no_entry(
+    tmp_path: Path,
+) -> None:
+    # The ledger directory can hold notes beside the entries: a README, an audit under a
+    # subdirectory, a file that looks like an entry and is not one. Only a `<PREFIX>-nnn.md`
+    # directly under the directory is an entry, so deleting the rest is no `entry-removed`.
+    # Mutation (declared): the identifier filter on the base's names dropped -> each `.md` the
+    # base carried under the directory reads as a deleted entry.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    ledger(root, config, {"BR-001": entry(1)})
+    bugs = root / "docs" / "bugs"
+    (bugs / "audits").mkdir()
+    for name in ("audits/a.md", "audits/BR-005.md", "README.md", "BR-002.txt", "notes.md"):
+        (bugs / name).write_text("notes\n", encoding="utf-8")
+    (root / "src" / "a.py").write_text("# workaround for BR-001\n", encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "base")
+    base = git(root, "rev-parse", "HEAD").strip()
+    shutil.rmtree(bugs / "audits")
+    for name in ("README.md", "BR-002.txt", "notes.md"):
+        (bugs / name).unlink()
+    assert problems(root, config, base) == []
+
+
+def _forked(
+    tmp_path: Path, at_fork: tuple[str, ...], filed_since: tuple[str, ...]
+) -> tuple[Path, Config, str]:
+    """A project whose `main` carries the entries `at_fork`, a branch `change` forked there, and
+    `main` then filing `filed_since`; the tree is `change` as forked, and the base is `main`."""
+    root, config, _ = _committed_ledger(tmp_path, at_fork)
+    git(root, "checkout", "-q", "-b", "change")
+    git(root, "checkout", "-q", "main")
+    ledger(root, config, {name: entry(int(name[3:])) for name in filed_since})
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "file entries on the base")
+    base = git(root, "rev-parse", "HEAD").strip()
+    git(root, "checkout", "-q", "change")
+    return root, config, base
+
+
+@needs_git
+def test_a_branch_forked_before_the_base_filed_an_entry_deleted_nothing(tmp_path: Path) -> None:
+    # The base gained BR-002 after this branch forked, and the branch touched nothing: listed at
+    # the base's tip, BR-002 read as an entry this change deleted, and the finding told a
+    # contributor whose branch predates a colleague's `bugs new` to restore it. The ledger is
+    # compared with the commit the change forked from, where `plan` compares too. Mutation
+    # (declared): the entries listed at the base's tip -> `entry-removed` for BR-002.
+    root, config, base = _forked(tmp_path, ("BR-001",), ("BR-002",))
+    assert not (root / "docs" / "bugs" / "BR-002.md").exists()
+    assert problems(root, config, base) == []
+
+
+@needs_git
+def test_a_branch_forked_before_the_base_had_a_ledger_deleted_none(tmp_path: Path) -> None:
+    # The same line for the whole ledger: a branch forked before the first entry has no ledger
+    # in its tree, and that is not a deletion. Mutation (declared, as above): the base's tip
+    # listed -> `ledger-removed`.
+    root, config, base = _based(tmp_path, "none")
+    git(root, "checkout", "-q", "-b", "change")
+    git(root, "checkout", "-q", "main")
+    ledger(root, config, {"BR-001": entry(1)})
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "the first entry")
+    base = git(root, "rev-parse", "HEAD").strip()
+    git(root, "checkout", "-q", "change")
+    assert uninitialised(root, config)
+    assert problems(root, config, base) == []
+
+
+@needs_git
+def test_a_deletion_is_named_on_a_stale_branch_and_on_a_merge_commit(tmp_path: Path) -> None:
+    # What the fork point may not do is let a deletion through. On a branch behind its base the
+    # entry it deleted is named, and the one the base filed since is not. In CI the tree is a
+    # merge commit whose base parent can be behind the base the run resolved (the base moved
+    # between the event and the job): the commit both share is that parent, which carried the
+    # entry, so the deletion is named there too.
+    root, config, base = _forked(tmp_path, ("BR-001",), ("BR-002",))
+    _drop(root, config, "BR-001")
+    (root / "src" / "a.py").write_text("", encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "empty the ledger")
+    expected = [("entry-removed", "docs/bugs/BR-001.md")]
+    assert [(p.rule, p.path) for p in problems(root, config, base)] == expected
+    git(root, "checkout", "-q", "--detach", "main~1")
+    git(root, "merge", "-q", "--no-ff", "--no-edit", "change")
+    assert git(root, "rev-parse", "HEAD^2").strip() == git(root, "rev-parse", "change").strip()
+    assert [(p.rule, p.path) for p in problems(root, config, base)] == expected
+
+
+@needs_git
+def test_a_base_that_shares_no_history_with_the_tree_is_a_failure(tmp_path: Path) -> None:
+    # A base with no commit in common with HEAD leaves nothing to compare the ledger with, and
+    # "the base carried nothing" would pass whatever the change deleted: a `Failure`, which a
+    # gate run reports as could not run. Mutation (declared): a merge base git cannot answer
+    # read as a base with no ledger -> `[]`.
+    root, config, _ = _committed_ledger(tmp_path, ("BR-001",))
+    git(root, "checkout", "-q", "--orphan", "unrelated")
+    git(root, "commit", "-q", "-m", "no shared history")
+    other = git(root, "rev-parse", "HEAD").strip()
+    git(root, "checkout", "-q", "-f", "main")
+    with pytest.raises(Failure) as caught:
+        problems(root, config, other)
+    assert "proved nothing" in str(caught.value)
 
 
 @needs_git

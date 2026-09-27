@@ -16,8 +16,8 @@ index` renders the index as a pure function of the entries, `bugs check` sweeps 
 roots for identifiers with no entry behind them and entries whose evidence boundary is the
 template's placeholder, and `bugs renumber` moves an entry and rewrites every mention, leaving a
 `void` entry at the old number. Against the base a change is judged on, `bugs check` reports an
-entry the change deleted: an identifier once allocated keeps its file. The identifier grammar is
-one definition, read from the project's configuration.
+entry the change forked with and deleted: an identifier once allocated keeps its file. The
+identifier grammar is one definition, read from the project's configuration.
 
 **Why a file.** An issue tracker records a conversation; a file records a claim a later
 session can falsify. The "what this evidence does not establish" line is the part that

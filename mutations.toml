@@ -10343,7 +10343,7 @@ reddens = [
 [[mutation]]
 name = "the entries the base carries are never compared with the tree's"
 file = "src/keelline/ledger/check.py"
-before = "        if not os.path.lexists(bugs / name)"
+before = "        if name not in present"
 after = "        if False"
 reddens = [
   "tests/ledger/test_check.py::test_an_entry_the_base_carries_and_the_tree_lacks_is_entry_removed",
@@ -10352,14 +10352,67 @@ reddens = [
   "tests/assess/test_gate_command.py::test_deleting_every_entry_but_keeping_the_directory_fails_an_enforced_bugs_gate",
 ]
 
+# The ledger loads its entries by exact name, so the tree is asked for exact names too: looked up
+# one by one, a filesystem that folds case found `BR-001.md` at `br-001.md`, and a rename in case
+# alone passed on macOS while Linux refused it. The test makes the lookup fold on every runner.
+[[mutation]]
+name = "an entry the base carries is looked up by a name the filesystem may fold"
+file = "src/keelline/ledger/check.py"
+before = "        if name not in present"
+after = "        if not os.path.lexists(bugs_dir(root, config) / name)"
+reddens = [
+  "tests/ledger/test_check.py::test_an_entry_renamed_only_in_case_is_entry_removed_where_the_filesystem_folds_case",
+]
+
+# Only a `<PREFIX>-nnn.md` directly under the ledger directory is an entry: a README, an audit in
+# a subdirectory or any other note there may be deleted without reading as a deleted entry.
+[[mutation]]
+name = "every markdown file the base carries under the ledger directory reads as an entry"
+file = "src/keelline/ledger/check.py"
+before = '        and ids.is_identifier(name.removeprefix(under).removesuffix(".md"))'
+after = "        and True"
+reddens = [
+  "tests/ledger/test_check.py::test_deleting_what_is_not_an_entry_under_the_ledger_directory_removes_no_entry",
+]
+
 [[mutation]]
 name = "the base's ledger is listed without its entries"
 file = "src/keelline/ledger/check.py"
-before = '    code, out = git_run(root, "ls-tree", "-r", "-z", "--name-only", base, "--", bugs, index)'
-after = '    code, out = git_run(root, "ls-tree", "-z", "--name-only", base, "--", bugs, index)'
+before = '        code, out = git_run(root, "ls-tree", "-r", "-z", "--name-only", fork, "--", bugs, index)'
+after = '        code, out = git_run(root, "ls-tree", "-z", "--name-only", fork, "--", bugs, index)'
 reddens = [
   "tests/ledger/test_check.py::test_an_entry_the_base_carries_and_the_tree_lacks_is_entry_removed",
   "tests/assess/test_gate_command.py::test_deleting_every_entry_but_keeping_the_directory_fails_an_enforced_bugs_gate",
+]
+
+# The ledger is compared with the commit HEAD forked from the base at, as `plan` compares with
+# `<base>...HEAD`: listed at the base's tip, an entry the base filed after a branch forked read as
+# one the branch deleted, and a branch forked before the first entry as deleting the ledger.
+[[mutation]]
+name = "the base's ledger is listed at its tip, not where the change forked from it"
+file = "src/keelline/ledger/check.py"
+before = '    code, out = git_run(root, "merge-base", base, "HEAD")'
+after = "    code, out = 0, base"
+reddens = [
+  "tests/ledger/test_check.py::test_a_branch_forked_before_the_base_filed_an_entry_deleted_nothing",
+  "tests/ledger/test_check.py::test_a_branch_forked_before_the_base_had_a_ledger_deleted_none",
+  "tests/ledger/test_check.py::test_a_deletion_is_named_on_a_stale_branch_and_on_a_merge_commit",
+  "tests/assess/test_gate_command.py::test_a_branch_behind_its_base_is_not_blamed_for_an_entry_the_base_filed_since",
+]
+
+# A base that shares no commit with HEAD has no fork point, and "the base carried nothing" would
+# pass whatever the change deleted.
+[[mutation]]
+name = "a merge base git cannot answer reads as a base with no ledger"
+file = "src/keelline/ledger/check.py"
+before = "    if code == 0:"
+after = """    if code != 0:
+        return _BaseLedger(False, ())
+    if code == 0:"""
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_that_shares_no_history_with_the_tree_is_a_failure",
+  "tests/ledger/test_check.py::test_a_base_git_cannot_list_never_reads_as_a_base_with_no_ledger",
+  "tests/assess/test_gates.py::test_a_base_the_bugs_gate_cannot_list_is_a_gate_that_could_not_run",
 ]
 
 [[mutation]]

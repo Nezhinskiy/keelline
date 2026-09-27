@@ -605,17 +605,24 @@ file that exists. Exits `1` with the count and up to eight `path:line [rule]` la
 line; `--json` carries every finding with its `detail`, which may quote the repository and is
 why it is not on the line. Before a ledger exists — no `[paths] bugs` directory *and* no
 generated index — every mention of an identifier and every citation of an entry file dangles, and
-with `--base <ref>` a ledger that commit carries (its `[paths] bugs` or `bug_index`) is one
+with `--base <ref>` a ledger the change forked with (its `[paths] bugs` or `bug_index`) is one
 `ledger-removed` finding: with none of them it prints `nothing to check` and exits `0`, so the
 check can be required before the first entry, and a change that deletes the ledger answers for the
 ledger and for everything that refers to it. Once a ledger exists its entries are append-only:
-with `--base`, each `<PREFIX>-nnn.md` that commit carries directly under `[paths] bugs` and the
-tree has nothing at is an `entry-removed` finding, whatever still mentions the identifier and
-whatever a file's fixtures marker says, so emptying the directory and regenerating the index
-deletes the ledger as surely as removing it. An entry moves with `bugs renumber`, which leaves a
-`void` entry at the old number and so removes nothing. `--base` is what the `bugs` gate passes,
-the base it judges against; a base git cannot list fails (`1`) rather than read as a base with no
-ledger, and under a gate that is the gate not running. Without `--base` the tree alone is judged.
+with `--base`, each `<PREFIX>-nnn.md` the change forked with directly under `[paths] bugs` whose
+exact name the tree's directory does not hold is an `entry-removed` finding, whatever still
+mentions the identifier and whatever a file's fixtures marker says, so emptying the directory and
+regenerating the index deletes the ledger as surely as removing it, and renaming an entry in case
+alone deletes it too, on a filesystem that folds case as on one that does not. Other files under
+the directory — a `README.md`, a subdirectory's notes — are not entries and may go. An entry
+moves with `bugs renumber`, which leaves a `void` entry at the old number and so removes nothing.
+What the change forked with is the ledger at `git merge-base <ref> HEAD`, the commit `plan`
+compares against too: an entry the base filed after the branch forked is not one the branch
+deleted, and a deletion is still named on a branch behind its base and on the merge commit CI
+checks out. `--base` is what the `bugs` gate passes, the base it judges against; a base git
+cannot list, or one that shares no commit with `HEAD`, fails (`1`) rather than read as a base
+with no ledger, and under a gate that is the gate not running. Without `--base` the tree alone is
+judged.
 A generated index with no directory behind it is a deleted ledger and exits `1`. Git enumerates
 the files where the root is the top of a checkout (tracked plus untracked-not-ignored), and a
 walk stands in elsewhere. A file whose first 2 KiB carry `keelline:ledger:fixtures` holds sample
@@ -723,7 +730,8 @@ commands you have not agreed to run. The summary names the custom gates it left 
 toward no total, and the inventory lists them under `skipped`.
 
 `REF` is the revision `plan` and `commit` compare against, and the one `bugs` compares the ledger
-with (whether it carried one when the tree has none, and which entries the tree lacks), default
+with where `HEAD` forked from it (whether it carried one when the tree has none, and which entries
+the tree lacks), default
 `refs/remotes/origin/<project.base_branch>` — the fully qualified name, so a tag cannot stand in
 for it. Where that ref does not exist (no `origin`, or not fetched), `plan`, `commit` and `bugs`
 could not run, and each counts as failing; a `note:` after the summary says the base is missing
@@ -1010,7 +1018,7 @@ the gates finds it, and as the command would write them when the write itself re
 following it either leaves the project as it was or makes the transition whole.
 
 `--base` is what `plan` and `commit` judge a range against, and what `bugs` compares the ledger
-with, as for `keelline gate`: a 40-hex commit or a `refs/…` name,
+with where `HEAD` forked from it, as for `keelline gate`: a 40-hex commit or a `refs/…` name,
 `refs/remotes/origin/<project.base_branch>` by default. The reusable workflow judges against `[ci]
 gate_branch`, which is that branch unless the file sets it; where the two differ, pass `--base` to
 judge as CI will. Run on the base branch itself, that range is empty and those two gates pass

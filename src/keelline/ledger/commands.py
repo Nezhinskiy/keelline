@@ -15,9 +15,9 @@ from keelline.result import Result
 _OK = "OK: bug ledger entries, index freshness, and identifier references"
 _INERT = "nothing to check: no ledger directory and no generated index"
 BASE_HELP = (
-    "also fail when this base ref carries the ledger and the tree has none, or carries an entry "
-    "the tree lacks, so a change that deletes the ledger or an entry of it answers for it; "
-    "without it the tree alone is judged"
+    "also fail when the commit HEAD forked from this base ref at carries the ledger and the tree "
+    "has none, or carries an entry the tree lacks, so a change that deletes the ledger or an "
+    "entry of it answers for it; without it the tree alone is judged"
 )
 
 
@@ -53,8 +53,8 @@ def run_bugs_check(args: argparse.Namespace) -> Result:
 
     root, config = root_and_config(args)
     found = bugs_gate(root, config, args.base or "")
-    # Before a ledger exists only a reference to an entry, or a ledger the base carries, is a
-    # finding, and there is none.
+    # Before a ledger exists only a reference to an entry, or a ledger the change forked with, is
+    # a finding, and there is none.
     if not found and uninitialised(root, config):
         return Result(_INERT, {"checked": False, "findings": []})
     data = {"checked": True, "findings": [asdict(p) for p in found]}

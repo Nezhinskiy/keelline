@@ -27,8 +27,9 @@ ASSESS_HELP = (
 # Any revision git resolves, unlike `gate` and `adopt promote`: `assess` is advice over a tree the
 # person chose, and nothing it answers governs a run or writes enforcement.
 BASE_HELP = (
-    "the revision the plan and commit gates compare against, and bugs compares the ledger with, "
-    "any git resolves: the inventory is advice and governs nothing; default "
+    "the revision the plan and commit gates compare against, and bugs compares the ledger with "
+    "(where HEAD forked from it), any git resolves: the inventory is advice and governs nothing; "
+    "default "
     "refs/remotes/origin/<project.base_branch>"
 )
 ASSESS_BUILTIN_HELP = (
