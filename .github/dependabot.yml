@@ -10,6 +10,9 @@ updates:
   # `RELEASING.md` section 4 is where they are checked by hand.
   - package-ecosystem: github-actions
     directory: /
+    # Every change reaches `main` through `dev`, so updates are proposed where changes land;
+    # the default, the repository's default branch, would skip `dev` and the release merge.
+    target-branch: dev
     schedule:
       interval: monthly
     open-pull-requests-limit: 5
@@ -23,6 +26,7 @@ updates:
   # `tests/test_import_boundary.py` is what keeps it that way.
   - package-ecosystem: uv
     directory: /
+    target-branch: dev
     schedule:
       interval: monthly
     open-pull-requests-limit: 5
