@@ -138,7 +138,7 @@ jobs:
           path: dist/
       - uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
 
-  # Independent of `publish`, so a declined or failed PyPI upload does not cost the Release —
+  # Independent of `publish`, so a failed PyPI upload does not cost the Release —
   # and behind the same `pypi` environment, because the environment is the one human gate this
   # file has and a mistaken tag must not become a public Release either.
   github-release:

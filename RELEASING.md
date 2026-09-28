@@ -5,13 +5,14 @@ tag and the record of the shipped files, and runs in CI. What was undocumented i
 around it: how to cut a release at all. This file is that, so the bus factor of the release
 process is not one.
 
-The sequence, once, before the detail: `release check` → `claude plugin tag` → towncrier
-assembles `CHANGELOG.md` from the `changelog.d/` fragments → the `vX.Y.Z` tag → the GitHub
-Release, attached to `vX.Y.Z` only and never to the floating `v1`, which immutable releases
-would freeze → `stayfixed overlay publish-template`, which renders `templates/overlay/` and
-pushes it to the template repository from your own authenticated checkout, so the public
-repository's CI holds no credential that can write a second repository → from `1.0.0` on, the
-`v1` alias moves → the cross-repository smoke runs at the new tag.
+The sequence, once, before the detail: `release check` → towncrier assembles `CHANGELOG.md`
+from the `changelog.d/` fragments → `claude plugin tag` and the `vX.Y.Z` tag, pushed without
+`main` → the PyPI upload and the GitHub Release, attached to `vX.Y.Z` only and never to the
+floating `v1`, which immutable releases would freeze → `main` moves to the release commit →
+`stayfixed overlay publish-template`, which renders `templates/overlay/` and pushes it to the
+template repository from your own authenticated checkout, so the public repository's CI holds
+no credential that can write a second repository → from `1.0.0` on, the `v1` alias moves → the
+cross-repository smoke runs at the new tag.
 
 ## 1. The sources
 
@@ -67,8 +68,9 @@ step 7's sentence true.
    gh api repos/stayfixed/stayfixed/rulesets \
      --jq '.[] | select(.name == "release tags") | .id' |
      xargs -I{} gh api repos/stayfixed/stayfixed/rulesets/{} \
-     --jq '[.enforcement, (.conditions.ref_name.include | sort)]'
-   # ["active",["refs/tags/stayfixed--v*","refs/tags/v*.*.*"]]
+     --jq '[.target, .enforcement, (.conditions.ref_name.include | sort),
+            ([.rules[].type] | sort), (.bypass_actors | length)]'
+   # ["tag","active",["refs/tags/stayfixed--v*","refs/tags/v*.*.*"],["deletion","update"],0]
    gh api repos/stayfixed/stayfixed/private-vulnerability-reporting --jq .enabled
    # true
    curl -sS -o /dev/null -w '%{http_code}\n' https://pypi.org/pypi/stayfixed/json
@@ -184,9 +186,10 @@ step 7's sentence true.
    ```
 
    `build` runs the gate against the tag, tests, builds and attests. **Once section 3's `pypi`
-   environment exists with a required reviewer**, `publish` waits for its approval, and
-   `github-release` waits for the same environment and does not depend on `publish`, so a
-   declined PyPI still leaves you a Release. Without that environment both jobs run straight
+   environment exists with a required reviewer**, `publish` and `github-release` both wait for
+   it. An approval is given per environment, not per job, so one approval starts both and one
+   rejection stops both; `github-release` does not depend on `publish`, so a failed upload still
+   leaves you a Release. Without that environment both jobs run straight
    through the name GitHub invents for them, and nothing on this tag waits for a human.
 
    When `publish` is green and `https://pypi.org/project/stayfixed/` lists you as owner, move
@@ -196,8 +199,10 @@ step 7's sentence true.
    git push origin main
    ```
 
-   If `publish` failed because the name was taken in the meantime, `main` still says nothing
-   is released; leave it there and settle the name with PyPI before anything else.
+   If `publish` failed because the name was taken in the meantime, `github-release` has still
+   published a Release whose README tells readers to install that name. Delete the Release
+   (`gh release delete vX.Y.Z`), leave `main` where it is, still saying nothing is released,
+   and settle the name with PyPI before anything else. The tags cannot be removed (section 5).
 
 8. **Publish the overlay template**, from this checkout, with an authenticated `gh` and an SSH
    key GitHub knows:
@@ -331,9 +336,12 @@ projects only.
 
 ## 5. If something goes wrong
 
-- **The tag is wrong and nothing published.** Delete both tags locally and on the remote, fix,
-  re-tag. A tag the ruleset refuses to delete or move is a tag that was already released: pick
-  the next patch version instead.
+- **Anything goes wrong after the tags are pushed.** The ruleset refuses to delete or move a
+  pushed `vX.Y.Z` or `stayfixed--vX.Y.Z`, for everyone, so that version is spent whether or not
+  anything was published: a wrong tag, a red `build`, a rejected approval or a failed upload.
+  `main` has not moved, so nothing else needs undoing. Fix the release commit locally and cut
+  X.Y.(Z+1) from step 3, the `CHANGELOG.md` heading included. If a Release was created for the
+  spent version, delete it, as step 7 says for a taken name.
 - **PyPI published a bad release.** You cannot replace it. Yank it on PyPI (which hides it from
   resolvers without breaking anyone who has already pinned it) and release a patch version.
 - **`release check` fails in the workflow but passed locally.** Almost always `uv.lock`: `uv
