@@ -10,5 +10,5 @@ one delivery spanning a lane — names all of them on that line and says why the
 The two P0 documents here were copied from that repository, which keeps its own copies as
 history.
 
-Plans dated before 2026-09-28 predate the rename and keep the former name as the record; read
-`stayfixed` for it in every path, command and variable.
+Plans dated before 2026-09-28 predate the rename and keep the former name as the record, and
+so does the plan that performs it; read `stayfixed` for it in every path, command and variable.

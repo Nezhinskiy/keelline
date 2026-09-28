@@ -14,10 +14,11 @@ before the first tag, so that `0.1.0` ships under the name it keeps.
 
 **Architecture:** a guard test states the end state first (the former name appears in no tracked
 file and no tracked path outside the historical plans), then one mechanical pass applies a fixed,
-ordered mapping, and the generated files (`uv.lock`, `hooks/hashes.json`, the smoke fixture's
-manifest digests) are regenerated rather than edited. No behaviour changes. Every existing test
-keeps what it asserts; where one pinned a number or a pattern that the name's length or letters
-decided, the value is derived instead, so the next rename cannot move it.
+ordered mapping, and the generated values (`uv.lock`, `hooks/hashes.json`, the smoke fixture's
+manifest digests) are regenerated or recomputed from the tree rather than edited. No behaviour
+changes. Every existing test keeps what it asserts; where one pinned a number or a pattern that
+the name's length or letters decided, the value is derived instead, so the next rename cannot
+move it.
 
 **Tech Stack:** Python 3.11+ standard library, `uv`, `pytest`, `ruff`, `mypy`, towncrier
 fragments, the Claude Code plugin validator.
@@ -27,8 +28,10 @@ fragments, the Claude Code plugin validator.
 
 **Scope:** package `rename` of wave 6 only. A change belongs to this branch if and only if it
 replaces the former name with `stayfixed`, regenerates a file the replacement invalidates,
-records the rename (the plans index note), or states a repository setting the move to the
-organisation has to carry (`RELEASING.md`'s one-time setup and its read-back before a tag).
+records the rename (the plans index note), or closes a release gap the rename and the move to
+the organisation opened: the settings the move carried as they were (`RELEASING.md`'s one-time
+setup and its read-back before a tag) and a PyPI name that is announced before it is owned
+(tags pushed before `main`).
 Anything else — a README rewrite, a tagline, a behaviour fix noticed on the way — is out and
 waits for its own branch.
 
@@ -64,7 +67,11 @@ so a later, shorter rule cannot split them.
 4. KEELLINE                              ->  STAYFIXED
 5. Keelline                              ->  stayfixed
 6. keelline                              ->  stayfixed
+7. KL_                                   ->  SF_
 ```
+
+Rule 7 is the name's initials, which prefix the hook wrapper's error tokens (`KL_NO_PY` and its
+five siblings) on stderr and in `docs/cli.md`.
 
 Every tracked path that carries the name moves with `git mv`, the package directory first and
 then each remaining path with the name replaced in it. Outside the package that is the launcher,
@@ -151,8 +158,9 @@ import re
 from tests.test_neutral import ROOT, tracked_files
 
 # Split so this file does not match itself; separators are allowed so a hyphenated, spaced or
-# wrapped spelling is caught as well as the contiguous one.
-FORMER = re.compile("keel" + r"[\s_.-]*" + "line", re.IGNORECASE)
+# wrapped spelling is caught as well as the contiguous one, and the initials are caught where
+# they prefixed the wrapper's error tokens.
+FORMER = re.compile("keel" + r"[\s_.-]*" + "line|" + r"(?-i:\bK" + r"L_[A-Z])", re.IGNORECASE)
 RENAME_DAY = "2026-09-28"
 RENAME_PLAN = f"{RENAME_DAY}-rename-stayfixed.md"
 DATED = re.compile(r"\d{4}-\d{2}-\d{2}-[^/]+\.md")
@@ -167,9 +175,10 @@ def _historical(relative: str) -> bool:
 
 
 def test_the_former_name_survives_only_in_the_historical_plans() -> None:
-    # Watched red on seven planted files: a path carrying the name, a file mentioning it, a
-    # hyphenated and a line-wrapped spelling, and three plans outside the exemption: undated
-    # (`1-notes.md`, which sorts before the date), nested (`2025/old.md`) and dated the rename day.
+    # Watched red on eight planted files: a path carrying the name, a file mentioning it, a
+    # hyphenated and a line-wrapped spelling, an error token under the initials, and three plans
+    # outside the exemption: undated (`1-notes.md`, which sorts before the date), nested
+    # (`2025/old.md`) and dated the rename day.
     hits = [
         relative
         for path in tracked_files()
@@ -238,6 +247,7 @@ RULES = [
     ("KEELLINE", "STAYFIXED"),
     ("Keelline", "stayfixed"),
     ("keelline", "stayfixed"),
+    ("KL_", "SF_"),
 ]
 def exempt(n):  # the guard test's `_historical`
     name = n.removeprefix("docs/plans/")
@@ -318,9 +328,10 @@ git commit -m "chore: rename the project to stayfixed before its first release"
 
 - [ ] **Step 1: Run the project's own gates on the renamed tree**
 
-These are the steps the `checks` and `plugin` jobs of `.github/workflows/ci.yml` run. The
-repository carries no configuration file of its own, so its `docs check` and `plan check` are
-not among them.
+These are the steps of the `checks` and `plugin` jobs of `.github/workflows/ci.yml` that a
+local run reproduces; the installed-wheel render and `claude plugin tag --dry-run` run in CI.
+The repository carries no configuration file of its own, so its `docs check` and `plan check`
+are not among them.
 
 ```bash
 uv sync --locked
