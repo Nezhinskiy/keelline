@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from keelline.errors import Failure, Refusal
-from keelline.release.notes import build
-from keelline.runner import NOT_FOUND, Completed
+from stayfixed.errors import Failure, Refusal
+from stayfixed.release.notes import build
+from stayfixed.runner import NOT_FOUND, Completed
 
 
 @dataclass
@@ -29,7 +29,7 @@ class _Stub:
 
 def _root(tmp_path: Path, version: str = "1.2.3") -> Path:
     (tmp_path / "pyproject.toml").write_text(
-        f'[project]\nname = "keelline"\nversion = "{version}"\n', encoding="utf-8"
+        f'[project]\nname = "stayfixed"\nversion = "{version}"\n', encoding="utf-8"
     )
     return tmp_path
 

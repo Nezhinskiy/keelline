@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from keelline.cli import build_parser, discover_registrars, run
-from keelline.runner import Completed
-from keelline.setup.api import SetupReport
+from stayfixed.cli import build_parser, discover_registrars, run
+from stayfixed.runner import Completed
+from stayfixed.setup.api import SetupReport
 
 
 class _NullRunner:
@@ -49,12 +49,12 @@ def test_the_command_is_discovered() -> None:
 def test_the_preset_flow_runs_through_the_cli_with_a_stubbed_runner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Patched at `keelline.setup.commands` itself, not at `overlay.api`: that module-level import is
-    # what `run_setup` calls directly, so a test that wants to keep this command away from a real
+    # Patched at `stayfixed.setup.commands` itself, not at `overlay.api`: that module-level import
+    # is what `run_setup` calls directly, so a test that wants to keep this command away from a real
     # `claude`/`codex` monkeypatches a name this module owns rather than reaching two hops into a
     # dependency's own attribute.
     stub = _NullRunner()
-    monkeypatch.setattr("keelline.setup.commands.subprocess_runner", lambda: stub)
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
     home = tmp_path / "home"
     machine = tmp_path / "config.toml"
     code = invoke(
@@ -87,9 +87,9 @@ def test_the_machine_default_is_the_file_every_reader_reads(
 ) -> None:
     # `--machine`'s default was `machine_config_path()` with no argument — the only such call in the
     # tree — so it took the `isatty` sniff that every *reader* pins with `interactive=False`. With
-    # `XDG_CONFIG_HOME` set, an owner running `keelline setup` in their own shell wrote
-    # `/xdg/keelline/config.toml`, got exit 0, and every reader then said "no overlay root is
-    # recorded in the machine configuration; run `keelline setup`" — the defect
+    # `XDG_CONFIG_HOME` set, an owner running `stayfixed setup` in their own shell wrote
+    # `/xdg/stayfixed/config.toml`, got exit 0, and every reader then said "no overlay root is
+    # recorded in the machine configuration; run `stayfixed setup`" — the defect
     # `config.loader.load`'s docstring says it fixed, reintroduced on the write side.
     #
     # Mutation (`mutations.toml`, "setup's --machine default takes the interactive sniff"):
@@ -104,10 +104,10 @@ def test_the_machine_default_is_the_file_every_reader_reads(
     # depend on it.
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     stub = _NullRunner()
-    monkeypatch.setattr("keelline.setup.commands.subprocess_runner", lambda: stub)
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
     assert invoke(["setup", "--preset", "recommended", "--yes", "--home", str(home)]) == 0
-    assert (home / ".config" / "keelline" / "config.toml").is_file()
-    assert not (xdg / "keelline" / "config.toml").exists()
+    assert (home / ".config" / "stayfixed" / "config.toml").is_file()
+    assert not (xdg / "stayfixed" / "config.toml").exists()
     assert stub.calls, "the stubbed runner was never called; the patch may have stopped applying"
 
 
@@ -115,14 +115,14 @@ def test_setup_help_names_no_path_from_the_machine_the_parser_was_built_on(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     # The second half of the same finding: both defaults used to be computed when the parser is
-    # built, so `keelline setup --help` printed the developer's own home directory — and it was
+    # built, so `stayfixed setup --help` printed the developer's own home directory — and it was
     # computed on every run of every command, since the parser is built for all of them.
     with pytest.raises(SystemExit):
         invoke(["setup", "--help"])
     printed = capsys.readouterr().out
     assert "--machine" in printed
     assert str(Path.home()) not in printed
-    assert "~/.config/keelline/config.toml" in printed
+    assert "~/.config/stayfixed/config.toml" in printed
 
 
 def test_settings_reaches_setup_as_a_path_and_not_as_the_string_argparse_read(
@@ -150,7 +150,7 @@ def test_settings_reaches_setup_as_a_path_and_not_as_the_string_argparse_read(
             notes=(),
         )
 
-    monkeypatch.setattr("keelline.setup.run.setup", fake_setup)
+    monkeypatch.setattr("stayfixed.setup.run.setup", fake_setup)
     settings = tmp_path / "dotfiles" / "claude" / "settings.json"
     code = invoke(
         [
@@ -199,7 +199,7 @@ def test_a_tilde_in_settings_is_expanded_the_way_home_and_machine_already_are(
             notes=(),
         )
 
-    monkeypatch.setattr("keelline.setup.run.setup", fake_setup)
+    monkeypatch.setattr("stayfixed.setup.run.setup", fake_setup)
     code = invoke(
         [
             "setup",

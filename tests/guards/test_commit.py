@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from keelline import gitenv
-from keelline.config.loader import CONFIG_FILE, load
-from keelline.errors import Refusal
-from keelline.guards.commit import (
+from stayfixed import gitenv
+from stayfixed.config.loader import CONFIG_FILE, load
+from stayfixed.errors import Refusal
+from stayfixed.guards.commit import (
     ATTRIBUTION_LABELS,
     LOG_TIMEOUT_SECONDS,
     Offence,
@@ -478,7 +478,7 @@ def test_a_message_that_is_only_attribution_strips_to_nothing() -> None:
 
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"

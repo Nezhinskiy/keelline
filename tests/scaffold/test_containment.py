@@ -4,18 +4,18 @@ from pathlib import Path
 
 import pytest
 
-from keelline import presets
-from keelline.config.loader import CONFIG_FILE, ConfigError, load
-from keelline.config.paths import PathEscape
-from keelline.config.schema import Config
-from keelline.errors import Failure, Refusal
-from keelline.presets import load_preset
-from keelline.project.init import init
-from keelline.scaffold import Kind, Template, apply, plan
+from stayfixed import presets
+from stayfixed.config.loader import CONFIG_FILE, ConfigError, load
+from stayfixed.config.paths import PathEscape
+from stayfixed.config.schema import Config
+from stayfixed.errors import Failure, Refusal
+from stayfixed.presets import load_preset
+from stayfixed.project.init import init
+from stayfixed.scaffold import Kind, Template, apply, plan
 from tests.gitfixture import LsRemote, git, needs_git
 
 VALID_HEAD = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "initialised"
 preset = "recommended"
@@ -65,7 +65,7 @@ HOSTILE_NAME = VALID_HEAD.replace('name = "widget"', 'name = "../common"')
 HOSTILE_PRESET = VALID_HEAD.replace('preset = "recommended"', 'preset = "../../etc/passwd"')
 HOSTILE_PROFILE = VALID_HEAD.replace('profile = ""', 'profile = "../../etc/passwd"')
 
-ESCAPES = ["../../AGENTS.md", "/etc/keelline", "../runbooks/x.md", "docs/../../x.md", "", "."]
+ESCAPES = ["../../AGENTS.md", "/etc/stayfixed", "../runbooks/x.md", "docs/../../x.md", "", "."]
 
 
 def write_config(root: Path, text: str) -> None:
@@ -108,7 +108,7 @@ def test_an_absolute_paths_value_is_refused_by_the_grammar_before_contained_is_r
     # `contained()`'s own `..`-shaped message never fires for it, and folding it into
     # `HOSTILE_PATHS` let one guard silently cover for the other. Asserted directly against the
     # grammar instead.
-    from keelline.config.schema import PATH_VALUE
+    from stayfixed.config.schema import PATH_VALUE
 
     assert PATH_VALUE.match("/etc") is None
 
@@ -145,7 +145,7 @@ def test_a_preset_name_outside_the_identifier_rule_is_refused_and_never_quoted(
     with pytest.raises(Failure) as caught:
         load_at(tmp_path)
     message = str(caught.value)
-    assert message.startswith("[keelline] preset is not a plain identifier"), message
+    assert message.startswith("[stayfixed] preset is not a plain identifier"), message
     assert "\x1b" not in message and "\n" not in message and "IGNORE" not in message
     assert "available: recommended" in message
 
@@ -160,7 +160,7 @@ def test_a_preset_this_build_does_not_ship_is_refused_and_never_quoted(tmp_path:
     with pytest.raises(Failure) as caught:
         load_at(tmp_path)
     message = str(caught.value)
-    assert message.startswith("[keelline] preset names a preset this version"), message
+    assert message.startswith("[stayfixed] preset names a preset this version"), message
     assert "IGNOREPRIORRULES" not in message
 
 
@@ -169,7 +169,7 @@ def test_a_preset_name_in_another_case_is_refused_on_every_filesystem(
     tmp_path: Path, name: str
 ) -> None:
     # The membership question was put to the filesystem, and macOS's default one folds case: the
-    # same `keelline.toml` loaded on a Mac and was refused on a Linux CI runner. It is asked of
+    # same `stayfixed.toml` loaded on a Mac and was refused on a Linux CI runner. It is asked of
     # the listing now, which answers the same everywhere. On a case-sensitive filesystem this
     # case cannot tell the two apart, so it is the regression and not the oracle's proof; the
     # case below is, and holds on every platform.
@@ -212,7 +212,7 @@ def test_load_preset_names_the_key_its_caller_passes() -> None:
 def test_the_engine_refuses_a_profile_the_loader_lets_through(tmp_path: Path) -> None:
     write_config(tmp_path, HOSTILE_PROFILE)
     config = load_at(tmp_path)
-    assert config.keelline.profile == "../../etc/passwd"
+    assert config.stayfixed.profile == "../../etc/passwd"
     with pytest.raises(PathEscape, match="profile"):
         plan(tmp_path, config, escaping_templates())
 
@@ -244,7 +244,7 @@ def test_nothing_outside_the_root_is_written_even_when_apply_is_called(tmp_path:
 ROUND_TRIP = (
     "docs/x.md",
     "AGENTS.md",
-    ".keelline/local/x.md",
+    ".stayfixed/local/x.md",
     "a.b-c/d_e.md",
     "docs//roadmap-history.md",
     "design/handbooks/",
@@ -279,7 +279,7 @@ def test_a_target_that_survives_plan_is_one_apply_can_write(tmp_path: Path) -> N
         if planned.refusals:
             # A refused plan is allowed, and must have planned nothing and written nothing.
             assert planned.actions == ()
-            assert not (root / ".keelline").exists(), target
+            assert not (root / ".stayfixed").exists(), target
             continue
         apply(root, planned)  # must not raise: this is the whole of the round trip
         assert (root / target).read_text(encoding="utf-8") == "x", target
@@ -321,7 +321,7 @@ def test_a_refused_paths_value_leaves_no_manifest_behind(tmp_path: Path) -> None
     # the pass. The assertions that must fail then are the ones about what is on disk.
     with pytest.raises(Refusal) as caught:
         _init(root)
-    assert not (root / ".keelline").exists()
+    assert not (root / ".stayfixed").exists()
     assert sorted(p.name for p in root.iterdir()) == [".git", CONFIG_FILE]
     assert isinstance(caught.value, PathEscape)
 
@@ -335,7 +335,7 @@ def test_a_paths_value_inside_the_control_directory_is_refused_before_any_write(
 ) -> None:
     """A reserved `.git` component, end to end through `init`, with the developer's hook on disk.
 
-    The `agents-md` artifact is a `MANAGED_REGION`, which the engine's "exists and Keelline did
+    The `agents-md` artifact is a `MANAGED_REGION`, which the engine's "exists and stayfixed did
     not write it" guard exempts, so this reached `region_update` and `fsops._mode_of` carried the
     existing 0755 onto the replacement. Driven through `init` rather than `load` so that the
     hook's bytes and mode are something the run could actually have changed.
@@ -362,7 +362,7 @@ def test_a_paths_value_inside_the_control_directory_is_refused_before_any_write(
         refused = None
     assert hook.read_text(encoding="utf-8") == "#!/bin/sh\necho real hook\n"
     assert hook.stat().st_mode & 0o777 == 0o755
-    assert not (root / ".keelline").exists()
+    assert not (root / ".stayfixed").exists()
     assert sorted(p.name for p in root.iterdir()) == [".git", CONFIG_FILE]
     assert refused is not None and "control directory" in str(refused)
 

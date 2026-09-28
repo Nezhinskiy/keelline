@@ -8,8 +8,8 @@ from typing import cast
 
 import pytest
 
-from keelline.hooks.api import Decision, Handler, HookEvent, HookResult, NullSink, Policy
-from keelline.hooks.dispatch import TRUNCATION_MARK, Recorder, _git_toplevel, dispatch, parse_event
+from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, NullSink, Policy
+from stayfixed.hooks.dispatch import TRUNCATION_MARK, Recorder, _git_toplevel, dispatch, parse_event
 from tests.gitfixture import git
 
 CLAUDE_ENV = {"CLAUDE_PROJECT_DIR": "/p", "CLAUDE_PLUGIN_ROOT": "/r"}
@@ -295,10 +295,10 @@ def test_context_at_a_realistic_cap_keeps_its_leading_content_and_the_mark() -> 
     outcome = dispatch(event(), handlers, None, sink=Recorder(), cap=200)
     context = json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"]
     # Every kept character here is plain ASCII, so nothing widens under JSON escaping and the
-    # search always lands exactly on the cap: 69 kept characters plus the mark is the true
-    # optimum for this event name and context, not merely a value close enough to it.
+    # search always lands exactly on the cap: what is left of it after the envelope and the mark
+    # is the true optimum for this event name and context, not merely a value close to it.
     assert len(outcome.stdout) == 200
-    assert context == "y" * 69 + TRUNCATION_MARK
+    assert context == "y" * (len(context) - len(TRUNCATION_MARK)) + TRUNCATION_MARK
 
 
 def test_the_cap_bounds_the_emitted_string_not_the_field_inside_it() -> None:
@@ -310,14 +310,20 @@ def test_the_cap_bounds_the_emitted_string_not_the_field_inside_it() -> None:
 
 
 def test_json_escaping_is_charged_to_the_same_budget() -> None:
+    # Each kept `\n` costs two rendered characters once JSON-escaped, so of two adjacent caps one
+    # leaves a budget that cannot be spent to the last character: the true optimum lands on one
+    # cap and one short of the other. Asking both pins that without depending on which one is
+    # odd, which the envelope's and the mark's widths decide and a rename moves. Mutations (by
+    # hand): `_clamp`'s `<= cap` as `< cap` -> [1, 2]; as `<= cap + 1` -> [-1, 0]; each reddens.
     handlers = [handler("a", Policy.OPEN, HookResult(context="\n" * 500))]
-    outcome = dispatch(event(), handlers, None, sink=Recorder(), cap=200)
-    # Each kept `\n` costs two rendered characters once JSON-escaped, so an odd cap budget
-    # cannot be spent to the last character: the true optimum here lands one short of the cap,
-    # not merely under it, so that is the value to pin instead of an inequality.
-    assert len(outcome.stdout) == 199
-    context = json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert context == "\n" * 34 + TRUNCATION_MARK
+    shortfall = []
+    for cap in (200, 201):
+        stdout = dispatch(event(), handlers, None, sink=Recorder(), cap=cap).stdout
+        context = json.loads(stdout)["hookSpecificOutput"]["additionalContext"]
+        assert context.endswith(TRUNCATION_MARK)
+        assert set(context.removesuffix(TRUNCATION_MARK)) == {"\n"}
+        shortfall.append(cap - len(stdout))
+    assert sorted(shortfall) == [0, 1]
 
 
 def test_a_once_per_context_handler_runs_once_and_is_skipped_afterwards() -> None:
@@ -510,7 +516,7 @@ def test_the_walk_finds_the_root_through_a_git_directory(
 ) -> None:
     (tmp_path / ".git").mkdir()
     (tmp_path / "a" / "b").mkdir(parents=True)
-    monkeypatch.setattr("keelline.hooks.dispatch._git_toplevel", _forbidden)
+    monkeypatch.setattr("stayfixed.hooks.dispatch._git_toplevel", _forbidden)
     ev = parse_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path / "a" / "b")}, env={})
     assert ev.project_root == tmp_path
 
@@ -521,7 +527,7 @@ def test_the_walk_finds_the_root_through_a_git_file(
     # A worktree and a submodule carry `.git` as a file, so `is_dir()` would miss both.
     (tmp_path / ".git").write_text("gitdir: /elsewhere/.git/worktrees/w\n", encoding="utf-8")
     (tmp_path / "a").mkdir()
-    monkeypatch.setattr("keelline.hooks.dispatch._git_toplevel", _forbidden)
+    monkeypatch.setattr("stayfixed.hooks.dispatch._git_toplevel", _forbidden)
     ev = parse_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path / "a")}, env={})
     assert ev.project_root == tmp_path
 
@@ -537,7 +543,7 @@ def test_the_walk_resolves_a_symlinked_root_the_way_git_does(
     (real_repo / "sub").mkdir()
     link = tmp_path / "link"
     link.symlink_to(real_repo)
-    monkeypatch.setattr("keelline.hooks.dispatch._git_toplevel", _forbidden)
+    monkeypatch.setattr("stayfixed.hooks.dispatch._git_toplevel", _forbidden)
     ev = parse_event({"hook_event_name": "PreToolUse", "cwd": str(link / "sub")}, env={})
     assert ev.project_root == real_repo.resolve()
 
@@ -551,7 +557,7 @@ def test_git_is_still_asked_when_the_walk_finds_no_dot_git(
         asked.append(cwd)
         return Path("/from-git")
 
-    monkeypatch.setattr("keelline.hooks.dispatch._git_toplevel", fake)
+    monkeypatch.setattr("stayfixed.hooks.dispatch._git_toplevel", fake)
     ev = parse_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path)}, env={})
     assert ev.project_root == Path("/from-git")
     assert asked == [tmp_path]

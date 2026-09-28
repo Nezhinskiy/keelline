@@ -13,17 +13,17 @@ from pathlib import Path
 
 import pytest
 
-from keelline.config.loader import CONFIG_FILE, load
-from keelline.config.schema import Config
-from keelline.guards.hygiene import Hygiene, context_for, inspect, is_pytest_run, notice, red_exit
-from keelline.guards.roots import contained_roots
+from stayfixed.config.loader import CONFIG_FILE, load
+from stayfixed.config.schema import Config
+from stayfixed.guards.hygiene import Hygiene, context_for, inspect, is_pytest_run, notice, red_exit
+from stayfixed.guards.roots import contained_roots
 from tests.gitfixture import git
 
 # Per test: `is_pytest_run` and `red_exit` are pure, and a module-level skip would void them.
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"

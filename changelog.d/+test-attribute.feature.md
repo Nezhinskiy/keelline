@@ -1,4 +1,4 @@
-`keelline test attribute --command CMD` is a new command, and what the `attribute-failure`
+`stayfixed test attribute --command CMD` is a new command, and what the `attribute-failure`
 skill runs. It takes the exact failing command and runs it three times — the working tree as
 it is, `HEAD`'s committed tree, and the merge-base with your base branch, the last two
 extracted with `git archive` into a scratch directory — and prints the verdict the three exit

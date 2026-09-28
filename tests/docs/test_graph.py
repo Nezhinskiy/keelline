@@ -1,18 +1,18 @@
 """The advisory memory link graph: every `[[link]]` resolves, no link is immediately repeated, no
-ledger identifier is bracketed. keelline:ledger:fixtures — `BR-` strings here are sample data.
+ledger identifier is bracketed. stayfixed:ledger:fixtures — `BR-` strings here are sample data.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from keelline.config.loader import load
-from keelline.config.schema import Config
-from keelline.docs.graph import check_memory_graph
-from keelline.memory.api import resolve
+from stayfixed.config.loader import load
+from stayfixed.config.schema import Config
+from stayfixed.docs.graph import check_memory_graph
+from stayfixed.memory.api import resolve
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -37,7 +37,7 @@ def project(tmp_path: Path) -> tuple[Path, Config]:
     root = tmp_path / "widget"
     for name in ("notes/developer", "notes/project-stable"):
         (root / name).mkdir(parents=True)
-    (root / "keelline.toml").write_text(CONFIG, encoding="utf-8")
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
     return root, load(root, machine=tmp_path / "m.toml")
 
 

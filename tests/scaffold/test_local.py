@@ -1,4 +1,4 @@
-"""The ledger of what Keelline last wrote under `.keelline/local/artifacts/`, and the engine rules
+"""The ledger of what stayfixed last wrote under `.stayfixed/local/artifacts/`, and the engine rules
 that read it: an unedited copy follows a changed template, a copy whose id left `[artifacts]
 local` is retired, and a ledger a clone wrote reaches nothing but bytes it already names."""
 
@@ -10,15 +10,15 @@ from pathlib import Path
 
 import pytest
 
-from keelline.scaffold import engine
-from keelline.scaffold.engine import apply, plan
-from keelline.scaffold.local import LOCAL_DIGESTS, MAX_BYTES, MAX_ENTRIES, LocalDigests
-from keelline.scaffold.manifest import Manifest, digest
-from keelline.scaffold.model import Verb
+from stayfixed.scaffold import engine
+from stayfixed.scaffold.engine import apply, plan
+from stayfixed.scaffold.local import LOCAL_DIGESTS, MAX_BYTES, MAX_ENTRIES, LocalDigests
+from stayfixed.scaffold.manifest import Manifest, digest
+from stayfixed.scaffold.model import Verb
 from tests.scaffold.test_engine import a_config, a_record, a_template
 
-LOCAL = ".keelline/local/artifacts/AGENTS.md"
-OTHER = ".keelline/local/artifacts/other.md"
+LOCAL = ".stayfixed/local/artifacts/AGENTS.md"
+OTHER = ".stayfixed/local/artifacts/other.md"
 
 
 def _written(tmp_path: Path, render: str = "BODY\n") -> None:
@@ -43,14 +43,14 @@ def test_a_write_kept_out_of_git_is_recorded_in_the_ledger_and_never_in_the_mani
 
 def test_a_footprint_with_nothing_kept_out_of_git_writes_no_ledger(tmp_path: Path) -> None:
     apply(tmp_path, plan(tmp_path, a_config(tmp_path), [a_template()]))
-    assert not (tmp_path / ".keelline" / "local").exists()
+    assert not (tmp_path / ".stayfixed" / "local").exists()
 
 
 def test_an_unedited_copy_follows_a_changed_template(tmp_path: Path) -> None:
     # With the render as the only oracle, every unedited copy read as somebody's after a release
     # changed its template: `skip_modified`, and `uninstall` refused over it. The ledger says
-    # these are the bytes Keelline wrote. Mutation (oracle): "an unedited artifact kept out of git
-    # is skipped as not Keelline's once its template changes" -> the verb is `skip_modified`.
+    # these are the bytes stayfixed wrote. Mutation (oracle): "an unedited artifact kept out of git
+    # is skipped as not stayfixed's once its template changes" -> the verb is `skip_modified`.
     _written(tmp_path)
     config = a_config(tmp_path, local=("agents-md",))
     planned = plan(tmp_path, config, [a_template(render=lambda: "BODY 2\n")])
@@ -61,7 +61,7 @@ def test_an_unedited_copy_follows_a_changed_template(tmp_path: Path) -> None:
 
 
 def test_a_retired_unedited_copy_goes_after_its_template_changed(tmp_path: Path) -> None:
-    # Mutation (oracle): "the ledger never vouches for bytes Keelline wrote kept out of git" ->
+    # Mutation (oracle): "the ledger never vouches for bytes stayfixed wrote kept out of git" ->
     # the copy is listed as changed and stays.
     _written(tmp_path)
     config = a_config(tmp_path, local=("agents-md",))
@@ -79,7 +79,7 @@ def test_a_retired_unedited_copy_goes_after_its_template_changed(tmp_path: Path)
 def test_an_edited_copy_is_named_as_changed_and_with_no_ledger_as_unrecorded(
     tmp_path: Path,
 ) -> None:
-    # Neither reason calls the file edited unless the ledger shows Keelline wrote other bytes
+    # Neither reason calls the file edited unless the ledger shows stayfixed wrote other bytes
     # there. With the ledger gone the file is judged by the render alone, as before it existed.
     _written(tmp_path)
     (tmp_path / LOCAL).write_text("BODY\nours\n", encoding="utf-8")
@@ -97,7 +97,7 @@ def test_an_edited_copy_is_named_as_changed_and_with_no_ledger_as_unrecorded(
     ]
 
 
-def test_a_copy_whose_id_left_the_list_is_retired_while_its_bytes_are_keellines(
+def test_a_copy_whose_id_left_the_list_is_retired_while_its_bytes_are_stayfixeds(
     tmp_path: Path,
 ) -> None:
     # Nothing ever judged it again: `upgrade` created the committed file and left the copy, and
@@ -166,8 +166,8 @@ def test_a_ledger_entry_away_from_the_artifact_s_own_place_vouches_only_by_its_d
     [
         # Outside `LOCAL_ARTIFACTS`: a committed file, attach's ledger, a parent segment.
         ({"agents-md": {"AGENTS.md": "0" * 64}}, {}),
-        ({"agents-md": {".keelline/local/attach.json": "0" * 64}}, {}),
-        ({"agents-md": {".keelline/local/artifacts/../x": "0" * 64}}, {}),
+        ({"agents-md": {".stayfixed/local/attach.json": "0" * 64}}, {}),
+        ({"agents-md": {".stayfixed/local/artifacts/../x": "0" * 64}}, {}),
         # Not this module's shape.
         ({"agents-md": {LOCAL: "zz"}}, {}),
         ({"Agents\x1b[31m": {LOCAL: "0" * 64}}, {}),
@@ -246,7 +246,7 @@ def test_a_left_copy_at_a_file_another_template_of_the_plan_targets_is_that_temp
     roadmap = a_template(id="roadmap", target="docs/roadmap.md", render=lambda: "R\n")
     planned = plan(tmp_path, config, [a_template(), roadmap])
     assert [(a.verb, a.target) for a in planned.actions] == [
-        (Verb.CREATE, ".keelline/local/artifacts/docs/roadmap.md")
+        (Verb.CREATE, ".stayfixed/local/artifacts/docs/roadmap.md")
     ]
     apply(tmp_path, planned)
     assert (tmp_path / LOCAL).read_text(encoding="utf-8") == "BODY\n"
@@ -278,7 +278,7 @@ def test_an_entry_under_one_id_never_names_another_artifact_s_place_kept_out_of_
     assert (tmp_path / LOCAL).read_text(encoding="utf-8") == "BODY\n"
 
 
-VARIANT = ".keelline/local/artifacts/agents.md"
+VARIANT = ".stayfixed/local/artifacts/agents.md"
 
 
 def _variant(tmp_path: Path) -> None:
@@ -332,7 +332,7 @@ def test_a_left_copy_at_a_case_variant_of_a_file_the_plan_targets_is_that_templa
 
 
 def test_a_ledger_past_its_entry_bound_is_absent(tmp_path: Path) -> None:
-    files = {f".keelline/local/artifacts/f{n}.md": "0" * 64 for n in range(MAX_ENTRIES + 1)}
+    files = {f".stayfixed/local/artifacts/f{n}.md": "0" * 64 for n in range(MAX_ENTRIES + 1)}
     _ledger(tmp_path, {"agents-md": files})
     assert LocalDigests.read(tmp_path).entries == {}
     _ledger(tmp_path, {"agents-md": dict(list(files.items())[:MAX_ENTRIES])})

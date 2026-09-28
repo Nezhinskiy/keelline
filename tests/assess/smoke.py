@@ -9,7 +9,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from keelline.config.loader import preset_defaults
+from stayfixed.config.loader import preset_defaults
 from tests.gitfixture import git
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "smoke-project"

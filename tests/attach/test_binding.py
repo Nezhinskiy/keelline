@@ -14,16 +14,16 @@ from pathlib import Path
 
 import pytest
 
-from keelline.attach.api import Binding, read_binding
-from keelline.attach.binding import MEMORY_GROUP_ESCAPES, UNBOUND, binding_for, unlinked_groups
-from keelline.attach.permissions import diff_permissions
-from keelline.config.loader import CONFIG_FILE, ConfigError, load, loads
-from keelline.config.paths import PathEscape
-from keelline.errors import Failure, Refusal
-from keelline.memory.api import PROJECT_RECORD, PROJECTS
-from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
-from keelline.presets import load_preset
-from keelline.scaffold import EntriesError
+from stayfixed.attach.api import Binding, read_binding
+from stayfixed.attach.binding import MEMORY_GROUP_ESCAPES, UNBOUND, binding_for, unlinked_groups
+from stayfixed.attach.permissions import diff_permissions
+from stayfixed.config.loader import CONFIG_FILE, ConfigError, load, loads
+from stayfixed.config.paths import PathEscape
+from stayfixed.errors import Failure, Refusal
+from stayfixed.memory.api import PROJECT_RECORD, PROJECTS
+from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
+from stayfixed.presets import load_preset
+from stayfixed.scaffold import EntriesError
 from tests.gitfixture import git as _git
 from tests.gitfixture import run_git
 
@@ -36,7 +36,7 @@ pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not 
 DEFAULT_MEMORY = load_preset("recommended")["defaults"]["paths"]["memory"]
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -66,20 +66,20 @@ def _git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
     def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
         return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
 
-    monkeypatch.setattr("keelline.memory.store.git_run", refuse)
+    monkeypatch.setattr("stayfixed.memory.store.git_run", refuse)
 
 
 def _project_and_store(
     tmp_path: Path, *, recorded: str | None, origin: str | None, name: str = "p"
 ) -> tuple[Path, Path]:
-    """A git repository with a `keelline.toml`, and the overlay it would attach to.
+    """A git repository with a `stayfixed.toml`, and the overlay it would attach to.
 
     Idempotent, because several of the tests below build the fixture and then read it back
     through `_read`. Returns `(project root, <overlay>/projects/<name>/memory)`.
     """
     root = tmp_path / "project"
     root.mkdir(parents=True, exist_ok=True)
-    # A home directory that is already there. Keelline finds the machine owner's home and
+    # A home directory that is already there. stayfixed finds the machine owner's home and
     # never creates it — `worktree.harness_link_parts` makes it the containment anchor, and
     # the `O_NOFOLLOW` walk vouches for every component below an anchor and never for the
     # anchor itself — so a home that is not there is a refusal, which
@@ -189,7 +189,7 @@ def test_git_being_unavailable_is_a_machine_fault_and_not_an_unbound_state(
     # caller "became a silent no-op … while every memory bundle was empty and nothing reported
     # a failure". An unreadable remote must not read as "never bound", which is the state that
     # invites a rebind.
-    from keelline.memory.api import GitUnavailable
+    from stayfixed.memory.api import GitUnavailable
 
     root, store = _project_and_store(tmp_path, recorded="u", origin="u")
     machine = _machine(tmp_path, overlay=store.parents[2])
@@ -263,12 +263,12 @@ def test_a_machine_that_records_no_overlay_is_refused_naming_what_records_one(
     blank.write_text("[personal]\n", encoding="utf-8")
     with pytest.raises(Refusal) as refused:
         read_binding(root, store=store, machine=blank)
-    assert "keelline setup" in str(refused.value)
+    assert "stayfixed setup" in str(refused.value)
 
 
 def test_a_binding_record_that_cannot_be_read_stops_the_run(tmp_path: Path) -> None:
     # `memory.store._bound` answers False for this file, which is right for the hook path: it
-    # degrades closed and says "run `keelline attach`". Here that advice *is* the command, and
+    # degrades closed and says "run `stayfixed attach`". Here that advice *is* the command, and
     # "no record" is the state that invites a rebind — so a broken record has to stop the run
     # rather than quietly become a first attach.
     root, store = _project_and_store(tmp_path, recorded="u", origin="u")
@@ -284,7 +284,7 @@ def test_a_binding_record_that_will_not_parse_reports_only_where_the_parser_stop
 
     **Which file this is, and why it is not exempt.** `projects/<name>/project.toml` lives in
     the overlay, whose bytes are the machine owner's own and may print — but the one value
-    Keelline puts in it is the repository's `origin`, and a remote URL may not print wherever
+    stayfixed puts in it is the repository's `origin`, and a remote URL may not print wherever
     it came from. `tomllib` builds its message as `f"{msg} (at line N, column M)"` and `msg`
     embeds the source for several of its faults, so interpolating the exception whole would put
     the *file's own text* into a `Failure` that `skills/attach/SKILL.md` has the model relay.
@@ -368,10 +368,10 @@ def test_check_refuses_the_allow_list_shape_the_real_run_refuses(tmp_path: Path)
 def test_binding_for_takes_the_config_it_is_handed_rather_than_loading_a_second_time(
     tmp_path: Path,
 ) -> None:
-    # A test that built its `Config` from a `keelline.toml` on disk would let a `binding_for` that
+    # A test that built its `Config` from a `stayfixed.toml` on disk would let a `binding_for` that
     # ignored its `config` argument and called `load(root, machine=machine)` itself pass too — and
     # "must not load a second time" is the entire reason this seam exists for the session-start
-    # handler. `root` carries no `keelline.toml` at all, so that fallback raises `ConfigError`
+    # handler. `root` carries no `stayfixed.toml` at all, so that fallback raises `ConfigError`
     # instead of quietly succeeding; the `Config` in hand comes from `loads` against text that was
     # never written. Mutation (comment): have `binding_for` call `load(root, machine=machine)` and
     # ignore `config` -> this reddens with `ConfigError` instead of returning a `Binding`.
@@ -380,7 +380,7 @@ def test_binding_for_takes_the_config_it_is_handed_rather_than_loading_a_second_
     _git(root, "init", "-q", "-b", "main")
     _git(root, "remote", "add", "origin", "git@github.com:o/p.git")
     machine = _machine(tmp_path, overlay=tmp_path / "overlay")
-    text = '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n'
+    text = '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n'
     config = loads(text, root, machine=machine)
     assert not (root / CONFIG_FILE).exists()
     assert binding_for(root, config, machine=machine).state == UNBOUND
@@ -432,7 +432,7 @@ def test_a_group_name_that_escapes_paths_memory_is_refused_with_the_fixed_senten
     # `except PathEscape` arm in `unlinked_groups` so `contained`'s raw message propagates -> the
     # `not in` below reddens.
     text = (
-        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
         f'[memory]\nmode = "overlay"\ngroups = ["{HOSTILE_GROUP}"]\nindex_extra = []\n'
     )
     config = loads(text, tmp_path, machine=tmp_path / "absent.toml")
@@ -462,7 +462,7 @@ def test_a_group_that_is_not_a_subdirectory_is_refused_by_a_sentence_that_is_tru
     Mutation: `mutations.toml`'s "the memory-group refusal describes an escape again".
     """
     text = (
-        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
         f'[memory]\nmode = "overlay"\ngroups = ["{group}"]\nindex_extra = []\n'
     )
     config = loads(text, tmp_path, machine=tmp_path / "absent.toml")

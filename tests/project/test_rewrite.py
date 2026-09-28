@@ -7,16 +7,16 @@ from pathlib import Path
 
 import pytest
 
-import keelline
-from keelline.config.loader import CONFIG_FILE
-from keelline.errors import Refusal
-from keelline.project import rewrite as module
-from keelline.project.rewrite import NO_DOCUMENT, rewrite_owned
-from keelline.scaffold import MANIFEST_PATH, Manifest, ManifestError, digest
+import stayfixed
+from stayfixed.config.loader import CONFIG_FILE
+from stayfixed.errors import Refusal
+from stayfixed.project import rewrite as module
+from stayfixed.project.rewrite import NO_DOCUMENT, rewrite_owned
+from stayfixed.scaffold import MANIFEST_PATH, Manifest, ManifestError, digest
 from tests.gitfixture import needs_git
 from tests.project.repos import initialised
 
-MOVED = {("keelline", "version"): "9.9.9"}
+MOVED = {("stayfixed", "version"): "9.9.9"}
 
 
 def _record_digest(root: Path) -> str:
@@ -74,8 +74,8 @@ def test_a_write_that_fails_puts_the_record_back_so_a_run_with_other_bytes_still
 ) -> None:
     # The record is re-stamped first, so a write that fails left it naming bytes the file never
     # held. The next run computing different bytes (a later version) then found the record
-    # describing neither, never re-stamped it, and `uninstall` kept an untouched `keelline.toml`
-    # as edited for good. Mutation (oracle): "a failed write of keelline.toml leaves its record
+    # describing neither, never re-stamped it, and `uninstall` kept an untouched `stayfixed.toml`
+    # as edited for good. Mutation (oracle): "a failed write of stayfixed.toml leaves its record
     # naming bytes the file never held" -> the first assertion after the failure reddens.
     root = initialised(tmp_path)
     before = _record_digest(root)
@@ -90,17 +90,17 @@ def test_a_write_that_fails_puts_the_record_back_so_a_run_with_other_bytes_still
         with pytest.raises(Refusal, match="cannot be written"):
             rewrite_owned(root, MOVED)
         assert _record_digest(root) == before
-    rewrite_owned(root, {("keelline", "version"): "9.9.10"})
+    rewrite_owned(root, {("stayfixed", "version"): "9.9.10"})
     text = (root / CONFIG_FILE).read_text(encoding="utf-8")
     assert 'version = "9.9.10"' in text and _record_digest(root) == digest(text)
 
 
 @needs_git
-def test_a_restore_that_fails_too_still_names_keelline_toml_s_own_failure(
+def test_a_restore_that_fails_too_still_names_stayfixed_toml_s_own_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Both writes fail: the document, then the manifest put back. The manifest's refusal used to
-    # replace the one naming `keelline.toml`, which is the failure to put right; it is the cause
+    # replace the one naming `stayfixed.toml`, which is the failure to put right; it is the cause
     # now. The state is the documented "killed between the two writes" one. Mutation (advisory):
     # let the restore's `ManifestError` propagate -> the message names the manifest.
     root = initialised(tmp_path)
@@ -134,7 +134,7 @@ def test_nothing_to_move_writes_nothing(tmp_path: Path, monkeypatch: pytest.Monk
         raise AssertionError("wrote a document that did not change")
 
     monkeypatch.setattr(module, "write_within", refuse)
-    rewrite_owned(root, {("keelline", "version"): keelline.__version__})
+    rewrite_owned(root, {("stayfixed", "version"): stayfixed.__version__})
 
 
 def test_a_missing_document_is_a_refusal(tmp_path: Path) -> None:
@@ -142,16 +142,16 @@ def test_a_missing_document_is_a_refusal(tmp_path: Path) -> None:
         rewrite_owned(tmp_path, MOVED)
 
 
-def test_a_hand_written_document_with_no_manifest_and_no_keelline_table_gets_the_key(
+def test_a_hand_written_document_with_no_manifest_and_no_stayfixed_table_gets_the_key(
     tmp_path: Path,
 ) -> None:
-    # `init` adopting a hand-written `keelline.toml` writes the tool-owned keys into it before any
-    # manifest exists, and such a file may have no `[keelline]` table at all. Nothing is
+    # `init` adopting a hand-written `stayfixed.toml` writes the tool-owned keys into it before any
+    # manifest exists, and such a file may have no `[stayfixed]` table at all. Nothing is
     # re-stamped, because nothing is recorded yet, and no manifest is created.
     written = '[project]\nname = "widget"\n'
     (tmp_path / CONFIG_FILE).write_text(written, encoding="utf-8")
     rewrite_owned(tmp_path, MOVED)
     text = (tmp_path / CONFIG_FILE).read_text(encoding="utf-8")
     assert text.startswith(written)
-    assert tomllib.loads(text) == {"project": {"name": "widget"}, "keelline": {"version": "9.9.9"}}
+    assert tomllib.loads(text) == {"project": {"name": "widget"}, "stayfixed": {"version": "9.9.9"}}
     assert not (tmp_path / MANIFEST_PATH).exists()

@@ -1,4 +1,4 @@
-"""`keelline uninstall`: what Keelline wrote goes, what a person wrote stays and is named."""
+"""`stayfixed uninstall`: what stayfixed wrote goes, what a person wrote stays and is named."""
 
 from __future__ import annotations
 
@@ -10,18 +10,18 @@ from pathlib import Path
 
 import pytest
 
-import keelline
-from keelline.attach.api import LEDGER
-from keelline.config.loader import CONFIG_FILE
-from keelline.errors import Refusal
-from keelline.project.footprint import LOCAL_ROOT_ONLY, ROOT_ONLY
-from keelline.project.templates import (
+import stayfixed
+from stayfixed.attach.api import LEDGER
+from stayfixed.config.loader import CONFIG_FILE
+from stayfixed.errors import Refusal
+from stayfixed.project.footprint import LOCAL_ROOT_ONLY, ROOT_ONLY
+from stayfixed.project.templates import (
     CONFIG_ARTIFACT,
     IGNORE_ARTIFACT,
     ONE_FILE,
     OWN_NAME,
 )
-from keelline.project.uninstall import (
+from stayfixed.project.uninstall import (
     ATTACHED,
     DELETED_CONFIG,
     KEPT_AFTER,
@@ -32,8 +32,8 @@ from keelline.project.uninstall import (
     UninstallReport,
     uninstall,
 )
-from keelline.project.upgrade import upgrade
-from keelline.scaffold import (
+from stayfixed.project.upgrade import upgrade
+from stayfixed.scaffold import (
     MANIFEST_PATH,
     Kind,
     LocalDigests,
@@ -47,8 +47,8 @@ from tests.gitfixture import LsRemote, needs_git, run_git
 from tests.project.repos import BEFORE, initialised, tree
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
-LOCAL_ROADMAP = f'''[keelline]
-version = "{keelline.__version__}"
+LOCAL_ROADMAP = f'''[stayfixed]
+version = "{stayfixed.__version__}"
 
 [project]
 name = "widget"
@@ -111,26 +111,26 @@ def test_text_a_person_added_around_the_region_keeps_agents_md(tmp_path: Path) -
     agents.write_text("Our preface.\n" + agents.read_text(encoding="utf-8"), encoding="utf-8")
     _uninstall(root, tmp_path)
     text = agents.read_text(encoding="utf-8")
-    assert text.startswith("Our preface.\n") and "keelline:harness" not in text
+    assert text.startswith("Our preface.\n") and "stayfixed:harness" not in text
 
 
 @needs_git
 def test_forcing_agents_md_takes_the_region_out_and_keeps_the_skeleton_s_prose(
     tmp_path: Path,
 ) -> None:
-    # `AGENTS.md` is two artifacts: Keelline's region, and the skeleton a person writes into.
+    # `AGENTS.md` is two artifacts: stayfixed's region, and the skeleton a person writes into.
     # Forcing the path is the only way to take an edited region out, and it must not reach the
     # write-once pass, where it would delete the skeleton and every line written into it.
     root = initialised(tmp_path)
     agents = root / "AGENTS.md"
     text = agents.read_text(encoding="utf-8")
     edited = text.replace(
-        "<!-- keelline:harness:begin -->\n", "<!-- keelline:harness:begin -->\nOur line.\n"
+        "<!-- stayfixed:harness:begin -->\n", "<!-- stayfixed:harness:begin -->\nOur line.\n"
     )
     agents.write_text("Our preface.\n" + edited, encoding="utf-8")
     _uninstall(root, tmp_path, force=("AGENTS.md",))
     kept = agents.read_text(encoding="utf-8")
-    assert kept.startswith("Our preface.\n") and "keelline:harness" not in kept
+    assert kept.startswith("Our preface.\n") and "stayfixed:harness" not in kept
 
 
 @needs_git
@@ -147,12 +147,12 @@ def test_a_person_s_lines_in_gitignore_stay_when_the_ignore_region_goes(
     ignore = root / ".gitignore"
     ours = "# ours\nbuild/\n"
     text = ignore.read_text(encoding="utf-8")
-    edited = text.replace(".keelline/assessment.json", ".keelline/assessment.json\nextra/")
+    edited = text.replace(".stayfixed/assessment.json", ".stayfixed/assessment.json\nextra/")
     ignore.write_text(ours + edited, encoding="utf-8")
     _uninstall(root, tmp_path, force=(".gitignore",) if forced else ())
     kept = ignore.read_text(encoding="utf-8")
     assert kept.startswith(ours)
-    assert ("keelline:ignore" in kept) is not forced
+    assert ("stayfixed:ignore" in kept) is not forced
 
 
 @needs_git
@@ -175,7 +175,7 @@ def test_an_attached_repository_is_refused_and_told_to_detach(tmp_path: Path) ->
     root = initialised(tmp_path)
     (root / LEDGER).parent.mkdir(parents=True, exist_ok=True)
     (root / LEDGER).write_text("{}", encoding="utf-8")
-    # The ledger lives under `.keelline/local/`, so without this refusal the count of files kept
+    # The ledger lives under `.stayfixed/local/`, so without this refusal the count of files kept
     # out of git would still stop the real run, with a remedy that is not the one. The dry run
     # tells them apart: it reports that count, and it refuses an attached repository. Exactly
     # this sentence, and nothing written, for both. Mutation (oracle): "an attached repository is
@@ -196,7 +196,7 @@ def test_notes_kept_out_of_git_refuse_the_run_that_would_expose_them(tmp_path: P
     # one before anything is written; neither names a note. The snapshot is compared whatever the
     # refusal says, so a run that starts removing and refuses later fails on the writes.
     root = initialised(tmp_path)
-    note = root / ".keelline" / "local" / "memory" / "developer" / "private-note.md"
+    note = root / ".stayfixed" / "local" / "memory" / "developer" / "private-note.md"
     note.parent.mkdir(parents=True)
     note.write_text("a private note\n", encoding="utf-8")
     before = snapshot(root)
@@ -211,15 +211,15 @@ def test_notes_kept_out_of_git_refuse_the_run_that_would_expose_them(tmp_path: P
 @needs_git
 def test_an_artifact_kept_out_of_git_goes_with_the_rest(tmp_path: Path) -> None:
     root = initialised(tmp_path, document=LOCAL_ROADMAP)
-    assert (root / ".keelline" / "local" / "artifacts" / "docs" / "roadmap.md").is_file()
+    assert (root / ".stayfixed" / "local" / "artifacts" / "docs" / "roadmap.md").is_file()
     _uninstall(root, tmp_path)
-    assert not (root / ".keelline").exists()
+    assert not (root / ".stayfixed").exists()
 
 
 @needs_git
 def test_an_edited_artifact_kept_out_of_git_refuses_until_it_is_forced(tmp_path: Path) -> None:
     root = initialised(tmp_path, document=LOCAL_ROADMAP)
-    local = root / ".keelline" / "local" / "artifacts" / "docs" / "roadmap.md"
+    local = root / ".stayfixed" / "local" / "artifacts" / "docs" / "roadmap.md"
     local.write_text("private plans\n", encoding="utf-8")
     dry = _uninstall(root, tmp_path, dry_run=True)
     assert [a.verb for a in dry.footprint.actions if a.artifact_id == "roadmap"] == [
@@ -230,11 +230,11 @@ def test_an_edited_artifact_kept_out_of_git_refuses_until_it_is_forced(tmp_path:
         _uninstall(root, tmp_path)
     assert_snapshot_unchanged(root, before)
     assert str(refused.value) == KEPT_LOCALLY.format(count=1)
-    _uninstall(root, tmp_path, force=(".keelline/local/artifacts/docs/roadmap.md",))
-    assert not (root / ".keelline").exists()
+    _uninstall(root, tmp_path, force=(".stayfixed/local/artifacts/docs/roadmap.md",))
+    assert not (root / ".stayfixed").exists()
 
 
-LOCAL_AGENTS = ".keelline/local/artifacts/AGENTS.md"
+LOCAL_AGENTS = ".stayfixed/local/artifacts/AGENTS.md"
 AGENTS_PLACEMENTS = {
     "committed": (),
     "region-local": ("agents-md",),
@@ -262,7 +262,7 @@ def test_a_person_s_line_in_agents_md_survives_every_placement_and_stays_ignored
     """`AGENTS.md`'s region and its skeleton can each be kept out of git, so the file a person
     writes in may be the committed one, the local one, or both, and `--force` may name the
     region's file. In every combination the person's line survives, and whatever is left under
-    `.keelline/local/` when the run ends, finished or refused, is still ignored by git.
+    `.stayfixed/local/` when the run ends, finished or refused, is still ignored by git.
 
     Mutations (declared): the force filter compares `Template.target` instead of the engine's
     effective path -> `both-local` with `region-forced` deletes the file; the check after the
@@ -279,22 +279,22 @@ def test_a_person_s_line_in_agents_md_survives_every_placement_and_stays_ignored
         _uninstall(root, tmp_path, force=(region,) if forced else ())
     for path in written:
         assert "A LINE OF OURS" in (root / path).read_text(encoding="utf-8"), path
-    kept = root / ".keelline" / "local"
+    kept = root / ".stayfixed" / "local"
     left = [p for p in kept.rglob("*") if p.is_file()] if kept.is_dir() else []
     assert all(_ignored(root, p) for p in left), left
 
 
 @needs_git
 def test_an_untouched_agents_md_kept_out_of_git_goes_whole(tmp_path: Path) -> None:
-    # Region and skeleton share `.keelline/local/artifacts/AGENTS.md`. What the region's removal
+    # Region and skeleton share `.stayfixed/local/artifacts/AGENTS.md`. What the region's removal
     # leaves is exactly the skeleton `init` wrote, so the prediction before any write counts the
     # file as going, and it goes. Mutation (advisory): the prediction never credits a remainder
     # -> the run refuses before any write, and this reddens at the call.
     root = initialised(tmp_path, document=_agents_local(("agents-md", "agents-skeleton")))
     assert (root / LOCAL_AGENTS).is_file()
     _uninstall(root, tmp_path)
-    # `keelline.toml` was written by the test before `init` adopted it, so it is the person's.
-    assert tree(root) == {"README.md", "keelline.toml"}
+    # `stayfixed.toml` was written by the test before `init` adopted it, so it is the person's.
+    assert tree(root) == {"README.md", "stayfixed.toml"}
 
 
 @needs_git
@@ -302,17 +302,17 @@ def test_a_shared_agents_md_kept_out_of_git_goes_whole_after_its_templates_chang
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The prediction before any write asks the engine's rule of what the region's removal leaves,
-    # and that rule reads the ledger: the skeleton `init` wrote is Keelline's though this build
+    # and that rule reads the ledger: the skeleton `init` wrote is stayfixed's though this build
     # renders another. Judged by the render alone, the run refused before any write over a file
-    # nobody touched. Mutation (oracle): "the ledger never vouches for bytes Keelline wrote kept
+    # nobody touched. Mutation (oracle): "the ledger never vouches for bytes stayfixed wrote kept
     # out of git" -> the refusal is raised.
-    from keelline.project import templates
+    from stayfixed.project import templates
 
     root = initialised(tmp_path, document=_agents_local(("agents-md", "agents-skeleton")))
     original = templates.read
     monkeypatch.setattr(templates, "read", lambda name: original(name) + "\nA later line.\n")
     _uninstall(root, tmp_path)
-    assert tree(root) == {"README.md", "keelline.toml"}
+    assert tree(root) == {"README.md", "stayfixed.toml"}
 
 
 @needs_git
@@ -339,7 +339,7 @@ def test_a_shared_agents_md_kept_out_of_git_that_will_stay_refuses_before_any_wr
     else:
         local.write_text(
             text.replace(
-                "<!-- keelline:harness:begin -->\n", "<!-- keelline:harness:begin -->\nX\n"
+                "<!-- stayfixed:harness:begin -->\n", "<!-- stayfixed:harness:begin -->\nX\n"
             ),
             encoding="utf-8",
         )
@@ -361,12 +361,12 @@ def test_the_disk_after_the_write_once_pass_keeps_the_ignore_block_when_the_pred
     still stop before the ignore block goes, with the file ignored and the manifest in place.
 
     The run has written by then, so what must be unchanged is what `KEPT_AFTER` says it left:
-    the ignore block, `keelline.toml`, and the manifest's record of the block, which the next run
+    the ignore block, `stayfixed.toml`, and the manifest's record of the block, which the next run
     finishes from. Mutation (oracle): "the ignore block goes while files are still under
-    .keelline/local/" -> the ignore block goes over the remainder, no refusal is raised, and the
+    .stayfixed/local/" -> the ignore block goes over the remainder, no refusal is raised, and the
     file stops being ignored.
     """
-    import keelline.project.uninstall as module
+    import stayfixed.project.uninstall as module
 
     monkeypatch.setattr(module, "ours_locally", lambda template, text, target, digests: True)
     root = initialised(tmp_path, document=_agents_local(("agents-md", "agents-skeleton")))
@@ -393,10 +393,10 @@ def test_a_dry_run_that_refuses_still_counts_what_is_kept_out_of_git(tmp_path: P
     root = initialised(tmp_path)
     agents = root / "AGENTS.md"
     agents.write_text(
-        agents.read_text(encoding="utf-8").replace("<!-- keelline:harness:begin -->\n", ""),
+        agents.read_text(encoding="utf-8").replace("<!-- stayfixed:harness:begin -->\n", ""),
         encoding="utf-8",
     )
-    note = root / ".keelline" / "local" / "memory" / "developer" / "private-note.md"
+    note = root / ".stayfixed" / "local" / "memory" / "developer" / "private-note.md"
     note.parent.mkdir(parents=True)
     note.write_text("a private note\n", encoding="utf-8")
     report = _uninstall(root, tmp_path, dry_run=True)
@@ -424,13 +424,13 @@ def test_a_remainder_kept_out_of_git_is_counted_before_anything_is_written(tmp_p
 
 
 @needs_git
-def test_a_keelline_toml_deleted_by_hand_is_refused_until_it_is_restored(tmp_path: Path) -> None:
-    # The manifest still records `keelline.toml`, and this command's own removal drops that
+def test_a_stayfixed_toml_deleted_by_hand_is_refused_until_it_is_restored(tmp_path: Path) -> None:
+    # The manifest still records `stayfixed.toml`, and this command's own removal drops that
     # record with the file, so short of a run killed inside `apply` before the manifest write,
     # something else took it: here, a person deleted it. Going on dropped the manifest and left
     # every recorded file untracked for good; now the run refuses before any write, dry run
     # included, and restoring the file is a remedy that reaches the end. Mutation (oracle):
-    # "uninstall drops the manifest when a person deleted keelline.toml" -> the run removes the
+    # "uninstall drops the manifest when a person deleted stayfixed.toml" -> the run removes the
     # ledger instead of refusing, and the first assertion reddens.
     root = initialised(tmp_path)
     config = root / CONFIG_FILE
@@ -448,10 +448,10 @@ def test_a_keelline_toml_deleted_by_hand_is_refused_until_it_is_restored(tmp_pat
 
 
 @needs_git
-def test_a_missing_keelline_toml_nothing_records_leaves_the_recorded_files_and_converges(
+def test_a_missing_stayfixed_toml_nothing_records_leaves_the_recorded_files_and_converges(
     tmp_path: Path,
 ) -> None:
-    # The state a run leaves when it stopped after removing `keelline.toml` and before the
+    # The state a run leaves when it stopped after removing `stayfixed.toml` and before the
     # manifest: `apply` dropped the `config` record with the file. Nothing can be judged without
     # the configuration, so the files stay, their count is reported, and the ledger goes: `init`
     # no longer refuses the repository, and nor does this. Mutation (advisory): the ledger kept on
@@ -497,16 +497,16 @@ def test_a_committed_path_and_record_reach_only_bytes_the_same_commit_states(
 
 
 @needs_git
-def test_a_symlinked_keelline_directory_is_refused_before_anything_is_written(
+def test_a_symlinked_stayfixed_directory_is_refused_before_anything_is_written(
     tmp_path: Path,
 ) -> None:
-    # A clone can commit `.keelline` as a symlink to a directory holding a manifest of its own.
+    # A clone can commit `.stayfixed` as a symlink to a directory holding a manifest of its own.
     # The manifest is read through `contained()`, which refuses a path through a symlink, so the
     # run stops before any write, in the repository or where the link points.
     root = initialised(tmp_path)
     elsewhere = tmp_path / "elsewhere"
-    (root / ".keelline").rename(elsewhere)
-    (root / ".keelline").symlink_to(elsewhere, target_is_directory=True)
+    (root / ".stayfixed").rename(elsewhere)
+    (root / ".stayfixed").symlink_to(elsewhere, target_is_directory=True)
     before, outside = snapshot(root), snapshot(elsewhere)
     with pytest.raises(Refusal, match="symlink"):
         _uninstall(root, tmp_path)
@@ -522,7 +522,7 @@ def test_a_force_path_in_another_case_forces_nothing(tmp_path: Path) -> None:
     agents = root / "AGENTS.md"
     text = agents.read_text(encoding="utf-8")
     edited = text.replace(
-        "<!-- keelline:harness:begin -->\n", "<!-- keelline:harness:begin -->\nOur line.\n"
+        "<!-- stayfixed:harness:begin -->\n", "<!-- stayfixed:harness:begin -->\nOur line.\n"
     )
     agents.write_text(edited, encoding="utf-8")
     _uninstall(root, tmp_path, force=("agents.md",))
@@ -530,7 +530,7 @@ def test_a_force_path_in_another_case_forces_nothing(tmp_path: Path) -> None:
 
 
 @needs_git
-def test_a_repository_keelline_never_initialised_is_refused(tmp_path: Path) -> None:
+def test_a_repository_stayfixed_never_initialised_is_refused(tmp_path: Path) -> None:
     root = tmp_path / "bare"
     root.mkdir()
     with pytest.raises(Refusal, match=re.escape(NOTHING)):
@@ -549,7 +549,7 @@ def test_a_case_variant_of_a_harness_directory_is_never_pruned(tmp_path: Path) -
     is removed and the assertion reddens.
     """
     document = (
-        f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n\n'
+        f'[stayfixed]\nversion = "{stayfixed.__version__}"\n\n[project]\nname = "widget"\n\n'
         '[paths]\nroadmap = ".Claude/roadmap.md"\n\n[ci]\nmode = "none"\n'
     )
     root = initialised(tmp_path, document=document)
@@ -568,7 +568,7 @@ def test_a_harness_directory_a_person_made_stays_when_its_rule_goes(tmp_path: Pa
     config = root / CONFIG_FILE
     config.write_text(
         config.read_text(encoding="utf-8").replace(
-            "[keelline]\n", '[keelline]\nprofile = "python"\n', 1
+            "[stayfixed]\n", '[stayfixed]\nprofile = "python"\n', 1
         ),
         encoding="utf-8",
     )
@@ -585,7 +585,7 @@ def test_an_empty_directory_a_committed_path_names_stays_when_nothing_was_remove
 ) -> None:
     # A `[paths]` value is committed, and the run used to prune every directory above every
     # place this configuration puts an artifact: `roadmap = "some/dir/x.md"` had it remove an
-    # empty `some/dir/` a person made, though nothing of Keelline's was ever in it. Only a
+    # empty `some/dir/` a person made, though nothing of stayfixed's was ever in it. Only a
     # directory above a file this run removed goes now. The roadmap's own directory still goes,
     # because its file did. Mutation (oracle): "uninstall prunes above every place the
     # configuration names" -> `some/dir` is removed and the first assertion reddens.
@@ -622,7 +622,7 @@ def test_a_relocation_with_no_old_file_prunes_no_directory_a_person_made(tmp_pat
             Location.REPO,
             "some/dir/x.md",
             "project/roadmap.md",
-            keelline.__version__,
+            stayfixed.__version__,
             digest("x"),
         )
     ).write(root)
@@ -636,10 +636,10 @@ def test_a_relocation_with_no_old_file_prunes_no_directory_a_person_made(tmp_pat
 def test_a_workflow_the_mode_no_longer_renders_still_goes(tmp_path: Path) -> None:
     # `upgrade` keeps a workflow `uvx` merely does not render; `uninstall` asks where this build
     # could have written it, and nothing else. Measured before: the workflow was left, unlisted,
-    # beside a deleted manifest, and counted as an artifact this Keelline does not produce.
+    # beside a deleted manifest, and counted as an artifact this stayfixed does not produce.
     # Mutation (oracle): "uninstall keeps a workflow the mode merely does not render, and leaves
     # it unlisted" -> `.github/` stays and the assertion reddens.
-    listing = LsRemote(stdout=f"{'a' * 40}\trefs/tags/v{keelline.__version__}\n", code=0)
+    listing = LsRemote(stdout=f"{'a' * 40}\trefs/tags/v{stayfixed.__version__}\n", code=0)
     root = initialised(tmp_path, runner=listing, ci=True)
     config = root / CONFIG_FILE
     config.write_text(
@@ -654,22 +654,22 @@ def test_a_workflow_the_mode_no_longer_renders_still_goes(tmp_path: Path) -> Non
 def test_a_directory_where_the_assessment_belongs_is_left_and_the_ledger_still_goes(
     tmp_path: Path,
 ) -> None:
-    # A clone can commit a directory at `.keelline/assessment.json`. Unlinking it fails, and a
-    # refusal there, after `keelline.toml` went, would leave every later run refusing before the
-    # manifest. It is left behind with `.keelline/` around it, and the run finishes.
+    # A clone can commit a directory at `.stayfixed/assessment.json`. Unlinking it fails, and a
+    # refusal there, after `stayfixed.toml` went, would leave every later run refusing before the
+    # manifest. It is left behind with `.stayfixed/` around it, and the run finishes.
     # Mutation (advisory): drop the directory check in `_remove_ledger` -> the run refuses with
     # "cannot be removed" and the manifest stays, and this reddens at the call.
     root = initialised(tmp_path)
-    committed = root / ".keelline" / "assessment.json"
+    committed = root / ".stayfixed" / "assessment.json"
     committed.mkdir()
     (committed / "theirs.md").write_text("theirs\n", encoding="utf-8")
     _uninstall(root, tmp_path)
     assert (committed / "theirs.md").is_file()
     assert tree(root) == {
         "README.md",
-        ".keelline",
-        ".keelline/assessment.json",
-        ".keelline/assessment.json/theirs.md",
+        ".stayfixed",
+        ".stayfixed/assessment.json",
+        ".stayfixed/assessment.json/theirs.md",
     }
 
 
@@ -697,10 +697,10 @@ def test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write(
     """
     root = initialised(
         tmp_path,
-        document=f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n'
+        document=f'[stayfixed]\nversion = "{stayfixed.__version__}"\n\n[project]\nname = "widget"\n'
         '\n[artifacts]\nlocal = ["claude-md"]\n\n[ci]\nmode = "none"\n',
     )
-    copy = ".keelline/local/artifacts/CLAUDE.md"
+    copy = ".stayfixed/local/artifacts/CLAUDE.md"
     sha = digest((root / copy).read_text(encoding="utf-8"))
     LocalDigests().with_entry("roadmap", copy, sha).write(root)
     config = root / CONFIG_FILE
@@ -734,10 +734,10 @@ def test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write(
 @needs_git
 def test_a_profile_artifact_listed_local_after_init_is_still_taken_back(tmp_path: Path) -> None:
     """`init` and `upgrade` refuse a profile artifact in `[artifacts] local`, because every
-    pointer to it names the committed path. `uninstall` must not: a `keelline.toml` that lists
+    pointer to it names the committed path. `uninstall` must not: a `stayfixed.toml` that lists
     one, written before that rule or by hand since, would otherwise be a configuration nothing
     can take back. The committed copy goes as a relocation, and what is left is the adopted
-    `keelline.toml`, the README from before, and `.claude/`, a harness's own directory that
+    `stayfixed.toml`, the README from before, and `.claude/`, a harness's own directory that
     `uninstall` never removes.
 
     Mutation (oracle): "uninstall refuses a profile artifact kept out of git, so a
@@ -745,11 +745,11 @@ def test_a_profile_artifact_listed_local_after_init_is_still_taken_back(tmp_path
     profile refusal and this reddens at the call.
     """
     document = (
-        f'[keelline]\nversion = "{keelline.__version__}"\nprofile = "python"\n'
+        f'[stayfixed]\nversion = "{stayfixed.__version__}"\nprofile = "python"\n'
         'agents = ["claude"]\n\n[project]\nname = "widget"\n\n[ci]\nmode = "none"\n'
     )
     root = initialised(tmp_path, document=document)
-    rule = ".claude/rules/keelline-python.md"
+    rule = ".claude/rules/stayfixed-python.md"
     assert (root / rule).is_file()
     config = root / CONFIG_FILE
     config.write_text(
@@ -766,10 +766,10 @@ def test_a_profile_artifact_listed_local_after_init_is_still_taken_back(tmp_path
 
 @needs_git
 @pytest.mark.parametrize("local", ["config", "gitignore"])
-def test_keelline_toml_or_the_ignore_block_kept_out_of_git_refuses_before_any_write(
+def test_stayfixed_toml_or_the_ignore_block_kept_out_of_git_refuses_before_any_write(
     tmp_path: Path, local: str
 ) -> None:
-    """Both go after the check of what is left under `.keelline/local/`, so kept out of git
+    """Both go after the check of what is left under `.stayfixed/local/`, so kept out of git
     they would be counted as removed before any write and found still there after it: the run
     removed the footprint and refused part-way, and every later run refused the same way. Neither
     works out of git anyway, so the configuration is refused before anything is planned.
@@ -784,10 +784,10 @@ def test_keelline_toml_or_the_ignore_block_kept_out_of_git_refuses_before_any_wr
         config.read_text(encoding="utf-8").replace("local = []", f'local = ["{local}"]'),
         encoding="utf-8",
     )
-    # What an earlier Keelline wrote under that configuration.
+    # What an earlier stayfixed wrote under that configuration.
     copy = (
         root
-        / ".keelline"
+        / ".stayfixed"
         / "local"
         / "artifacts"
         / (CONFIG_FILE if local == "config" else ".gitignore")
@@ -804,13 +804,13 @@ def test_keelline_toml_or_the_ignore_block_kept_out_of_git_refuses_before_any_wr
 
 def test_the_root_only_artifacts_are_the_two_uninstall_removes_after_its_check() -> None:
     # `ROOT_ONLY` must name the configuration's record and the ignore region, the two artifacts
-    # `uninstall` holds back past its check of `.keelline/local/`, so naming any other reddens
+    # `uninstall` holds back past its check of `.stayfixed/local/`, so naming any other reddens
     # here. Both ids are spelled once and pinned to what the templates build in
     # `tests/project/test_templates.py`.
     assert set(ROOT_ONLY) == {CONFIG_ARTIFACT, IGNORE_ARTIFACT}
 
 
-LOCAL_COPY = ".keelline/local/artifacts/docs/roadmap.md"
+LOCAL_COPY = ".stayfixed/local/artifacts/docs/roadmap.md"
 
 
 @needs_git
@@ -819,7 +819,7 @@ def test_a_copy_left_when_its_id_left_the_local_list_goes_with_the_rest(
     tmp_path: Path, upgraded: bool
 ) -> None:
     """`roadmap` kept out of git, then taken out of `[artifacts] local`. The copy under
-    `.keelline/local/artifacts/` was recorded nowhere, so nothing judged it again: `uninstall`
+    `.stayfixed/local/artifacts/` was recorded nowhere, so nothing judged it again: `uninstall`
     refused over it for good and suggested a `--force` no action could reach. The ledger records
     it, so it goes whether or not an `upgrade` ran in between.
 
@@ -835,7 +835,7 @@ def test_a_copy_left_when_its_id_left_the_local_list_goes_with_the_rest(
     if upgraded:
         upgrade(root, machine=tmp_path / "absent.toml", runner=LsRemote(), dry_run=False, force=())
     _uninstall(root, tmp_path)
-    assert tree(root) == {"README.md", "keelline.toml"}
+    assert tree(root) == {"README.md", "stayfixed.toml"}
 
 
 @needs_git
@@ -859,7 +859,7 @@ def test_a_changed_copy_left_by_the_local_list_is_named_and_force_is_a_remedy_th
     assert str(refused.value) == KEPT_LOCALLY.format(count=1)
     assert_snapshot_unchanged(root, before)
     _uninstall(root, tmp_path, force=(LOCAL_COPY,))
-    assert tree(root) == {"README.md", "keelline.toml"}
+    assert tree(root) == {"README.md", "stayfixed.toml"}
 
 
 @needs_git
@@ -868,7 +868,7 @@ def test_an_unedited_copy_kept_out_of_git_goes_after_its_template_changed(
 ) -> None:
     # Judged by this build's render alone, a copy nobody touched was "edited" to `uninstall`
     # after any release that changed its template, and the run refused before any write.
-    from keelline.project import templates
+    from stayfixed.project import templates
 
     root = initialised(tmp_path, document=LOCAL_ROADMAP)
     original = templates.read
@@ -876,19 +876,19 @@ def test_an_unedited_copy_kept_out_of_git_goes_after_its_template_changed(
         templates, "read", lambda name: original(name) + ("\nnew\n" if name == "roadmap.md" else "")
     )
     _uninstall(root, tmp_path)
-    assert tree(root) == {"README.md", "keelline.toml"}
+    assert tree(root) == {"README.md", "stayfixed.toml"}
 
 
 @needs_git
 def test_the_ledger_of_what_was_kept_out_of_git_is_ignored_and_goes_last(tmp_path: Path) -> None:
-    # It lives under `.keelline/local/`, which the footprint's ignore block keeps out of git, and
-    # it is Keelline's own: never counted as a file left behind, removed before the ignore block.
+    # It lives under `.stayfixed/local/`, which the footprint's ignore block keeps out of git, and
+    # it is stayfixed's own: never counted as a file left behind, removed before the ignore block.
     root = initialised(tmp_path, document=LOCAL_ROADMAP)
-    ledger = ".keelline/local/artifacts.json"
+    ledger = ".stayfixed/local/artifacts.json"
     assert (root / ledger).is_file() and _ignored(root, root / ledger)
     assert _uninstall(root, tmp_path, dry_run=True).kept_locally == 0
     _uninstall(root, tmp_path)
-    assert not (root / ".keelline").exists()
+    assert not (root / ".stayfixed").exists()
 
 
 @needs_git
@@ -908,7 +908,7 @@ def test_forcing_a_region_copy_left_by_the_local_list_never_reaches_the_skeleton
     root = initialised(tmp_path, document=_agents_local(("agents-md", "agents-skeleton")))
     local = root / LOCAL_AGENTS
     text = local.read_text(encoding="utf-8").replace(
-        "<!-- keelline:harness:begin -->\n", "<!-- keelline:harness:begin -->\nX\n"
+        "<!-- stayfixed:harness:begin -->\n", "<!-- stayfixed:harness:begin -->\nX\n"
     )
     local.write_text(text + "\nA LINE OF OURS\n", encoding="utf-8")
     config = root / CONFIG_FILE
@@ -956,10 +956,10 @@ def test_a_copy_left_when_its_path_moved_is_judged_and_force_reaches_it(
     )
     verbs = {(a.verb, a.target) for a in report.footprint.actions}
     assert ((Verb.SKIP_MODIFIED if edited else Verb.REMOVE), LOCAL_COPY) in verbs
-    assert (root / ".keelline" / "local" / "artifacts" / "docs" / "r.md").is_file()
+    assert (root / ".stayfixed" / "local" / "artifacts" / "docs" / "r.md").is_file()
     if edited:
         with pytest.raises(Refusal, match=re.escape(KEPT_LOCALLY.format(count=1))):
             _uninstall(root, tmp_path)
         assert (root / LOCAL_COPY).read_text(encoding="utf-8") == "private plans\n"
     _uninstall(root, tmp_path, force=(LOCAL_COPY,) if edited else ())
-    assert tree(root) == {"README.md", "keelline.toml"}
+    assert tree(root) == {"README.md", "stayfixed.toml"}

@@ -1,4 +1,4 @@
-"""`keelline gate` through the real parser, over a real clone: the verdict a pull request faces.
+"""`stayfixed gate` through the real parser, over a real clone: the verdict a pull request faces.
 
 Every case commits its edit, because CI checks out a committed head, except the one that asks
 about an uncommitted loosening on purpose. A refusal, a failure and an internal error all print
@@ -14,25 +14,25 @@ from pathlib import Path
 
 import pytest
 
-import keelline
-from keelline.assess import rule
-from keelline.assess.gates import STOPPED
-from keelline.assess.report import (
+import stayfixed
+from stayfixed.assess import rule
+from stayfixed.assess.gates import STOPPED
+from stayfixed.assess.report import (
     BOOTSTRAP,
     BUILTIN_FINDINGS_ELSEWHERE,
     FINDINGS_ELSEWHERE,
     NOT_ON_BASE,
 )
-from keelline.cli import build_parser, discover_registrars, run
-from keelline.config.loader import CONFIG_FILE
+from stayfixed.cli import build_parser, discover_registrars, run
+from stayfixed.config.loader import CONFIG_FILE
 from tests.assess.baserepo import AGENTS, clone, commit
 from tests.cli import cli, custom_gate
 from tests.gitfixture import git, needs_git
 
 pytestmark = needs_git
 
-BASE = f"""[keelline]
-version = "{keelline.__version__}"
+BASE = f"""[stayfixed]
+version = "{stayfixed.__version__}"
 state = "adopting"
 enforced = ["docs"]
 
@@ -55,7 +55,7 @@ def _heads(out: str) -> list[str]:
 
 
 def _change(project: Path, text: str, *, agents: str | None = None) -> None:
-    """Commit `text` as the tree's `keelline.toml`, and `agents` as its `AGENTS.md`."""
+    """Commit `text` as the tree's `stayfixed.toml`, and `agents` as its `AGENTS.md`."""
     (project / CONFIG_FILE).write_text(text, encoding="utf-8")
     if agents is not None:
         (project / "AGENTS.md").write_text(agents, encoding="utf-8")
@@ -67,7 +67,7 @@ def test_a_loosening_change_fails_the_configuration_check(tmp_path: Path) -> Non
     _change(project, LOOSENED)
     code, out, _ = cli(project, tmp_path, "gate", "--only", "config")
     assert code == 1
-    assert "keelline.enforced" in out
+    assert "stayfixed.enforced" in out
 
 
 def test_the_bare_command_judges_the_configuration_and_runs_every_configured_gate(
@@ -88,7 +88,7 @@ def test_json_carries_the_verdict_and_each_gate_s_count_and_no_finding(tmp_path:
     assert code == 1
     printed = json.loads(out)
     assert set(printed["config"]) == {"judged", "base_state", "changes", "refused", "enforcing"}
-    assert printed["config"]["changes"] == [{"key": "keelline.enforced", "verdict": "refused"}]
+    assert printed["config"]["changes"] == [{"key": "stayfixed.enforced", "verdict": "refused"}]
     assert printed["config"]["refused"] is True
     assert printed["gates"] == [
         {
@@ -186,7 +186,7 @@ def test_builtin_judges_the_configuration_whatever_only_names(tmp_path: Path) ->
     code, out, _ = cli(project, tmp_path, "gate", "--builtin", "--only", "docs")
     assert code == 1
     assert out.splitlines()[:2] == [
-        "config: 1 change(s), 1 refused: keelline.enforced",
+        "config: 1 change(s), 1 refused: stayfixed.enforced",
         "docs: enforcing, 0 finding(s)",
     ]
     # Run bare, `--only` still means only: that run is a person's own question.
@@ -264,8 +264,8 @@ def test_a_custom_gate_the_base_does_not_enforce_waits_for_its_new_command_to_la
     assert not (project / "marker").exists()
 
 
-POLICY_BASE = f"""[keelline]
-version = "{keelline.__version__}"
+POLICY_BASE = f"""[stayfixed]
+version = "{stayfixed.__version__}"
 state = "adopting"
 enforced = ["policy"]
 
@@ -442,7 +442,7 @@ def test_a_bare_run_that_has_already_failed_starts_no_custom_gate(
 
 
 def test_under_the_bootstrap_no_custom_gate_has_landed_and_none_runs(tmp_path: Path) -> None:
-    # A base with no keelline.toml at this path has no command of its own, so the change's
+    # A base with no stayfixed.toml at this path has no command of its own, so the change's
     # gates wait, the one it enforces included, and the run passes: the base enforces nothing
     # that is left unrun. `--json` names them apart from the gates that ran.
     project = clone(tmp_path, BASE, under="sub")
@@ -468,7 +468,7 @@ def test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it(
     code, out, _ = cli(project, tmp_path, "gate", "--builtin")
     assert code == 1
     assert out.splitlines()[0] == (
-        "config: 2 change(s), 2 refused: gates.custom.tests.run, keelline.enforced"
+        "config: 2 change(s), 2 refused: gates.custom.tests.run, stayfixed.enforced"
     )
     assert _heads(out) == ["config", *BUILTINS, "details"]
     assert not (project / "marker").exists()
@@ -495,14 +495,14 @@ def test_a_trail_toml_nested_past_the_parser_is_one_gate_that_could_not_run(
     assert code == 0, err
     lines = out.splitlines()
     assert lines[:2] == [
-        "config: keelline.toml unchanged from the base",
+        "config: stayfixed.toml unchanged from the base",
         "docs: enforcing, 0 finding(s)",
     ]
     assert "trail: advisory, could not run" in lines
 
 
 @pytest.mark.parametrize("side", ["tree", "base"])
-def test_a_keelline_toml_nested_past_the_parser_does_not_load_naming_the_side(
+def test_a_stayfixed_toml_nested_past_the_parser_does_not_load_naming_the_side(
     tmp_path: Path, side: str
 ) -> None:
     # "Does not load", as for any document that does not parse, and never an internal error;
@@ -515,11 +515,11 @@ def test_a_keelline_toml_nested_past_the_parser_does_not_load_naming_the_side(
     assert (code, out) == (1, ""), err
     assert "internal error" not in err
     assert "not valid TOML (nested deeper than the parser reads)" in err
-    assert ("the base's keelline.toml" in err) is (side == "base")
+    assert ("the base's stayfixed.toml" in err) is (side == "base")
 
 
-def test_a_tree_without_keelline_toml_fails_and_names_the_file(tmp_path: Path) -> None:
-    # `keelline uninstall` in a pull request: nothing says which gates run. Mutation (advice):
+def test_a_tree_without_stayfixed_toml_fails_and_names_the_file(tmp_path: Path) -> None:
+    # `stayfixed uninstall` in a pull request: nothing says which gates run. Mutation (advice):
     # drop the `tree_text is None` check -> `loads(None)` is an internal error, exit 2, and the
     # exit code reddens. Not declared: exit 2 fails the run as well.
     project = clone(tmp_path, BASE)
@@ -527,10 +527,10 @@ def test_a_tree_without_keelline_toml_fails_and_names_the_file(tmp_path: Path) -
     commit(project, "chore: uninstall")
     code, _, err = cli(project, tmp_path, "gate")
     assert code == 1
-    assert "no keelline.toml" in err
+    assert "no stayfixed.toml" in err
 
 
-def test_a_symlinked_keelline_toml_is_refused(tmp_path: Path) -> None:
+def test_a_symlinked_stayfixed_toml_is_refused(tmp_path: Path) -> None:
     project = clone(tmp_path, BASE)
     outside = tmp_path / "outside.toml"
     outside.write_text(BASE, encoding="utf-8")
@@ -622,7 +622,7 @@ def test_on_the_base_commit_the_tree_is_the_base(tmp_path: Path) -> None:
     git(project, "checkout", "-q", "main")
     code, out, _ = cli(project, tmp_path, "gate", "--only", "config")
     assert code == 0
-    assert out.strip() == "config: keelline.toml unchanged from the base"
+    assert out.strip() == "config: stayfixed.toml unchanged from the base"
 
 
 def test_an_uncommitted_loosening_on_the_base_commit_is_still_refused(tmp_path: Path) -> None:
@@ -633,7 +633,7 @@ def test_an_uncommitted_loosening_on_the_base_commit_is_still_refused(tmp_path: 
     (project / CONFIG_FILE).write_text(LOOSENED, encoding="utf-8")
     code, out, _ = cli(project, tmp_path, "gate", "--only", "config")
     assert code == 1
-    assert "keelline.enforced" in out
+    assert "stayfixed.enforced" in out
 
 
 def test_a_base_with_no_copy_at_this_path_lets_the_tree_decide(tmp_path: Path) -> None:
@@ -668,7 +668,7 @@ def test_a_base_that_does_not_load_fails_the_run_and_names_the_base_s_copy(
     code, out, err = cli(project, tmp_path, "gate")
     assert code == 1
     assert out == ""
-    assert "the base's keelline.toml" in err
+    assert "the base's stayfixed.toml" in err
     assert str(project) not in err
 
 
@@ -688,7 +688,7 @@ def test_a_change_cannot_make_the_base_s_copy_fail_to_load_and_pass(tmp_path: Pa
     assert "symlink" in err
     # Whose configuration met the link: the tree's `[paths]` does not name it. Mutation
     # (declared): the base's refusal passed through unwrapped -> the base is not named.
-    assert "the base's keelline.toml" in err
+    assert "the base's stayfixed.toml" in err
 
 
 def test_deleting_the_ledger_does_not_switch_an_enforced_bugs_gate_off(tmp_path: Path) -> None:
@@ -769,7 +769,7 @@ def test_deleting_the_ledger_and_its_index_fails_an_enforced_bugs_gate(
 
 @pytest.mark.parametrize(
     "mention",
-    ["", "# keelline:ledger:fixtures\n# workaround for BR-001\n"],
+    ["", "# stayfixed:ledger:fixtures\n# workaround for BR-001\n"],
     ids=["mention-removed", "fixtures-marker"],
 )
 def test_deleting_every_entry_but_keeping_the_directory_fails_an_enforced_bugs_gate(
@@ -907,7 +907,7 @@ def test_a_project_in_a_subdirectory_is_annotated_from_the_repository_s_root(
     _change(project / "sub", LOOSENED)
     code, out, _ = cli(project / "sub", tmp_path, "gate", "--only", "config", "--annotate")
     assert code == 1
-    assert "::error file=sub/keelline.toml::keelline.enforced may not change" in out
+    assert "::error file=sub/stayfixed.toml::stayfixed.enforced may not change" in out
 
 
 def test_what_prints_names_keys_and_rules_and_never_a_value_or_a_detail(tmp_path: Path) -> None:
@@ -928,12 +928,12 @@ def test_what_prints_names_keys_and_rules_and_never_a_value_or_a_detail(tmp_path
 
 
 def _upgrade(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, released: bool) -> Path:
-    """A base at an older Keelline pinned to one commit, and a change to the running one pinned
+    """A base at an older stayfixed pinned to one commit, and a change to the running one pinned
     to `SHA`, with the release tags answering `released` for every commit."""
-    older = BASE.replace(f'"{keelline.__version__}"', '"0.0.1"')
+    older = BASE.replace(f'"{stayfixed.__version__}"', '"0.0.1"')
     project = clone(tmp_path, older + f'\n[ci]\nref = "{"a" * 40}"\n')
     _change(project, BASE + f'\n[ci]\nref = "{SHA}"\n')
-    monkeypatch.setattr("keelline.release.api.is_released", lambda sha, runner, *, cwd: released)
+    monkeypatch.setattr("stayfixed.release.api.is_released", lambda sha, runner, *, cwd: released)
     return project
 
 
@@ -959,7 +959,7 @@ def test_an_upgrade_at_a_commit_no_release_names_is_refused(
 def test_a_local_run_without_the_workflow_sha_refuses_a_moved_pin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # On a branch `keelline upgrade` made, the moved pin is vouched for by nothing until
+    # On a branch `stayfixed upgrade` made, the moved pin is vouched for by nothing until
     # `--workflow-sha` names it, and `docs/cli.md` names that flag as the remedy.
     project = _upgrade(tmp_path, monkeypatch, released=True)
     code, out, _ = cli(project, tmp_path, "gate", "--only", "config")

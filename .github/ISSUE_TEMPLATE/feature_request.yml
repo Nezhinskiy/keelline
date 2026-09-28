@@ -1,5 +1,5 @@
 name: Feature request
-description: Something Keelline should do and does not
+description: Something stayfixed should do and does not
 labels: ["enhancement"]
 body:
   - type: textarea
@@ -21,6 +21,6 @@ body:
     id: alternatives
     attributes:
       label: What you tried instead
-      description: Existing commands, configuration, or a workaround outside Keelline.
+      description: Existing commands, configuration, or a workaround outside stayfixed.
     validations:
       required: false

@@ -1,4 +1,4 @@
-"""`keelline adopt begin` and `keelline adopt promote`: the state machine that moves one gate at a
+"""`stayfixed adopt begin` and `stayfixed adopt promote`: the state machine that moves one gate at a
 time from advisory to enforcing, over a repository `init --yes` wrote and two commits made.
 
 Every promotion is judged against the first commit, named by its full id: the fixture has an
@@ -15,16 +15,17 @@ from pathlib import Path
 
 import pytest
 
-from keelline.assess.commands import BASE_NOT_THERE, NOT_RUN, WAITING
-from keelline.assess.report import BUILTIN_FINDINGS_ELSEWHERE, FINDINGS_ELSEWHERE
-from keelline.assess.state import NO_SUCH_PLAN, begin, promote
-from keelline.config.loader import CONFIG_FILE, load, preset_defaults
-from keelline.config.owned import OwnedKeyError
-from keelline.config.schema import BUILTIN_GATES, Config
-from keelline.errors import Failure, Refusal
-from keelline.project.templates import CONFIG_ARTIFACT
-from keelline.project.upgrade import upgrade
-from keelline.scaffold import Manifest, ManifestError, digest
+from stayfixed.assess.commands import BASE_NOT_THERE, NOT_RUN, WAITING
+from stayfixed.assess.report import BUILTIN_FINDINGS_ELSEWHERE, FINDINGS_ELSEWHERE
+from stayfixed.assess.state import NO_SUCH_PLAN, Transition, begin, promote
+from stayfixed.config.loader import CONFIG_FILE, load, preset_defaults
+from stayfixed.config.owned import OwnedKeyError
+from stayfixed.config.schema import BUILTIN_GATES, Config
+from stayfixed.errors import Failure, Refusal
+from stayfixed.findings import LISTED_LIMIT
+from stayfixed.project.templates import CONFIG_ARTIFACT
+from stayfixed.project.upgrade import upgrade
+from stayfixed.scaffold import Manifest, ManifestError, digest
 from tests.cli import cli, custom_gate
 from tests.gitfixture import LsRemote, git, needs_git
 from tests.project.repos import repository
@@ -33,7 +34,7 @@ pytestmark = needs_git
 
 PLAN = "# Adoption\n\n**Scope:** adoption.\n\n**Premise:** none.\n"
 PLANS = preset_defaults("widget").paths.plans
-ADOPTION = f"{PLANS}/2026-09-23-keelline-adoption.md"
+ADOPTION = f"{PLANS}/2026-09-23-stayfixed-adoption.md"
 # Well past the preset's `AGENTS.md` budget, so the `docs` gate has a finding.
 OVER_BUDGET = "".join("word\n" for _ in range(400))
 MARKER = "marker"
@@ -53,14 +54,14 @@ def _project(tmp_path: Path, *, branch: str = "main") -> tuple[Path, str]:
     code, _, err = cli(root, tmp_path, "init", "--yes", "--no-ci", "--base-branch", branch)
     assert code == 0, err
     git(root, "add", "-A")
-    git(root, "commit", "-qm", "chore: adopt keelline")
+    git(root, "commit", "-qm", "chore: adopt stayfixed")
     (root / ADOPTION).write_text(PLAN, encoding="utf-8")
     _declare(root, "in progress")
     git(root, "add", "-A")
     code, _, err = cli(root, tmp_path, "docs", "trail")
     assert code == 0, err
     git(root, "add", "-A")
-    git(root, "commit", "-qm", "docs: the keelline adoption plan")
+    git(root, "commit", "-qm", "docs: the stayfixed adoption plan")
     return root, git(root, "rev-parse", "HEAD~1").strip()
 
 
@@ -86,7 +87,7 @@ def _document(root: Path) -> str:
 
 
 def _set(root: Path, old: str, new: str) -> None:
-    """Replace `old` in `keelline.toml`, once, by `new`."""
+    """Replace `old` in `stayfixed.toml`, once, by `new`."""
     text = _document(root)
     assert text.count(old) == 1, old
     (root / CONFIG_FILE).write_text(text.replace(old, new), encoding="utf-8")
@@ -130,13 +131,13 @@ def test_begin_refuses_a_plan_that_is_not_an_adoption_plan(tmp_path: Path) -> No
     # Mutation (declared): the name check made `if False:` -> both plans pass `plan check`, so
     # `begin` marks the project adopting instead of refusing.
     root, _ = _project(tmp_path)
-    at_root = root / "2026-09-24-keelline-adoption.md"
+    at_root = root / "2026-09-24-stayfixed-adoption.md"
     unnamed = root / PLANS / "2026-09-24-widget.md"
     for plan in (at_root, unnamed):
         plan.write_text(PLAN, encoding="utf-8")
         with pytest.raises(Refusal, match="adoption plan"):
             begin(root, _config(root, tmp_path), plan)
-        assert _config(root, tmp_path).keelline.state == "initialised"
+        assert _config(root, tmp_path).stayfixed.state == "initialised"
 
 
 def test_begin_refuses_a_plan_outside_the_root_or_absent(tmp_path: Path) -> None:
@@ -147,14 +148,14 @@ def test_begin_refuses_a_plan_outside_the_root_or_absent(tmp_path: Path) -> None
     # raises `ValueError` from `relative_to`; the file check made `if False:` -> the absent plan
     # reaches `plan check`, which fails rather than refuses.
     root, _ = _project(tmp_path)
-    outside = tmp_path / PLANS / "2026-09-24-keelline-adoption.md"
+    outside = tmp_path / PLANS / "2026-09-24-stayfixed-adoption.md"
     outside.parent.mkdir(parents=True)
     outside.write_text(PLAN, encoding="utf-8")
     with pytest.raises(Refusal, match="adoption plan must be"):
         begin(root, _config(root, tmp_path), outside)
     with pytest.raises(Refusal, match=re.escape(NO_SUCH_PLAN)):
-        begin(root, _config(root, tmp_path), root / PLANS / "2026-09-25-keelline-adoption.md")
-    assert _config(root, tmp_path).keelline.state == "initialised"
+        begin(root, _config(root, tmp_path), root / PLANS / "2026-09-25-stayfixed-adoption.md")
+    assert _config(root, tmp_path).stayfixed.state == "initialised"
 
 
 def test_begin_refuses_a_plan_whose_trail_row_declares_no_state(tmp_path: Path) -> None:
@@ -209,7 +210,7 @@ def test_a_named_gate_that_passes_is_enforced_without_begin_first(tmp_path: Path
         "adopting",
         ("docs",),
     )
-    assert _config(root, tmp_path).keelline.enforced == ("docs",)
+    assert _config(root, tmp_path).stayfixed.enforced == ("docs",)
 
 
 def test_named_gates_are_promoted_all_together_or_not_at_all(tmp_path: Path) -> None:
@@ -240,7 +241,7 @@ def test_with_no_names_every_passing_gate_is_enforced_and_the_rest_are_named(
     assert list(transition.failing) == ["docs"]
     assert transition.failing["docs"] > 0
     assert transition.unanswered == ()
-    loaded = _config(root, tmp_path).keelline
+    loaded = _config(root, tmp_path).stayfixed
     assert (loaded.state, loaded.enforced) == ("adopting", passing)
 
 
@@ -255,7 +256,7 @@ def test_promoting_every_configured_gate_installs_the_project(tmp_path: Path) ->
         {},
     )
     assert "enforced = []" in _document(root)
-    loaded = _config(root, tmp_path).keelline
+    loaded = _config(root, tmp_path).stayfixed
     assert loaded.state == "installed"
     assert loaded.enforcing == frozenset(BUILTIN_GATES)
 
@@ -303,7 +304,7 @@ def test_an_adopting_project_whose_every_gate_enforces_is_completed_to_installed
         (),
     )
     assert not (root / MARKER).exists()
-    loaded = _config(root, tmp_path).keelline
+    loaded = _config(root, tmp_path).stayfixed
     assert loaded.state == "installed"
     assert "enforced = []" in _document(root)
 
@@ -321,7 +322,7 @@ def test_a_project_with_no_gate_is_refused_rather_than_installed(
         stream.write("\n[gates]\nbuiltin = []\n")
     if begun:
         begin(root, _config(root, tmp_path), root / ADOPTION)
-        assert _config(root, tmp_path).keelline.state == "adopting"
+        assert _config(root, tmp_path).stayfixed.state == "adopting"
     before = _document(root)
     with pytest.raises(Refusal, match="configures no gate"):
         promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
@@ -353,7 +354,7 @@ def test_a_completion_the_editor_cannot_write_names_both_keys_as_they_will_be(
         ),
         encoding="utf-8",
     )
-    loaded = _config(root, tmp_path).keelline
+    loaded = _config(root, tmp_path).stayfixed
     assert loaded.state == "installed"
     assert loaded.enforcing == frozenset(BUILTIN_GATES)
 
@@ -430,9 +431,9 @@ def test_an_uneditable_document_s_remedy_names_the_list_as_it_stands(tmp_path: P
 
 
 def test_a_document_a_custom_gate_left_invalid_is_refused_as_invalid_toml(tmp_path: Path) -> None:
-    # A custom gate is a command, and one that appends `[[broken` to `keelline.toml` while it
+    # A custom gate is a command, and one that appends `[[broken` to `stayfixed.toml` while it
     # runs leaves a document that does not parse by the time the promotion writes. The editor
-    # says so with the parser's position; relabelled as "a shape Keelline does not rewrite", the
+    # says so with the parser's position; relabelled as "a shape stayfixed does not rewrite", the
     # remedy sent the person to edit two keys in a file that does not load. Mutation (declared):
     # the parse refusal relabelled again -> the shape sentence comes back.
     root, _ = _project(tmp_path)
@@ -448,13 +449,13 @@ def test_a_document_a_custom_gate_left_invalid_is_refused_as_invalid_toml(tmp_pa
 
 
 def test_a_manifest_the_write_cannot_read_is_refused_before_any_gate_runs(tmp_path: Path) -> None:
-    # The write re-stamps the manifest's record of `keelline.toml`, so a manifest that does not
+    # The write re-stamps the manifest's record of `stayfixed.toml`, so a manifest that does not
     # parse refuses the write; found only there, it was found after every gate, a custom
     # command included, had run. Mutation (declared): the pre-check's `Manifest.read` made
     # `pass` -> the marker gate runs and the marker appears.
     root, _ = _project(tmp_path)
     base = _with_marker_gate(root)
-    manifest = root / ".keelline" / "manifest.json"
+    manifest = root / ".stayfixed" / "manifest.json"
     manifest.write_text("{not json", encoding="utf-8")
     before = _document(root)
     with pytest.raises(ManifestError):
@@ -474,11 +475,11 @@ def test_a_custom_gate_runs_its_command_when_promoted(tmp_path: Path) -> None:
     )
     assert (root / MARKER).exists()
     assert transition.promoted == (MARKER,)
-    assert _config(root, tmp_path).keelline.enforced == (MARKER,)
+    assert _config(root, tmp_path).stayfixed.enforced == (MARKER,)
 
 
 def test_a_custom_gate_the_base_does_not_have_is_neither_run_nor_promoted(tmp_path: Path) -> None:
-    # `keelline gate` runs a custom gate only with the base's own command, so a promotion of
+    # `stayfixed gate` runs a custom gate only with the base's own command, so a promotion of
     # one the base lacks would enforce a command the pull request carrying it never ran. It is
     # not run here either, and waits: named beside a gate that passes it stops the whole
     # promotion, and with no names every other gate is promoted. Mutations (declared): nothing
@@ -496,7 +497,7 @@ def test_a_custom_gate_the_base_does_not_have_is_neither_run_nor_promoted(tmp_pa
     transition = promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
     assert not (root / MARKER).exists()
     assert (transition.promoted, transition.waiting) == (BUILTIN_GATES, (MARKER,))
-    assert MARKER not in _config(root, tmp_path).keelline.enforcing
+    assert MARKER not in _config(root, tmp_path).stayfixed.enforcing
 
 
 def test_a_custom_gate_waits_when_the_base_cannot_be_read(tmp_path: Path) -> None:
@@ -567,7 +568,7 @@ def test_builtin_runs_no_custom_gate_and_promotes_the_built_ins_alone(tmp_path: 
     assert not (root / MARKER).exists()
     assert (transition.promoted, transition.skipped) == (BUILTIN_GATES, (MARKER,))
     assert [r.name for r in transition.results] == list(BUILTIN_GATES)
-    loaded = _config(root, tmp_path).keelline
+    loaded = _config(root, tmp_path).stayfixed
     assert (loaded.state, loaded.enforced) == ("adopting", BUILTIN_GATES)
 
 
@@ -618,7 +619,7 @@ def test_a_promotion_is_what_the_gate_enforces_next(tmp_path: Path) -> None:
     code, out, err = cli(root, tmp_path, "adopt", "begin", str(root / ADOPTION))
     assert code == 0, err
     assert "adopting" in out
-    assert _config(root, tmp_path).keelline.state == "adopting"
+    assert _config(root, tmp_path).stayfixed.state == "adopting"
     code, out, err = cli(root, tmp_path, "gate", "--only", "docs", "--base", head)
     assert (code, out.splitlines()) == (0, ["docs: advisory, 0 finding(s)"]), err
     code, out, err = cli(root, tmp_path, "adopt", "promote", "docs", "--base", head, "--json")
@@ -710,7 +711,7 @@ def test_adopt_promote_with_no_base_judges_against_the_base_branch(tmp_path: Pat
 def test_adopt_begin_prints_no_path_and_exits_2_on_a_plan_that_is_not_one(tmp_path: Path) -> None:
     # The plan's path is caller input, and a refusal names the rule rather than echoing it.
     root, _ = _project(tmp_path)
-    stray = root / "2026-09-24-keelline-adoption.md"
+    stray = root / "2026-09-24-stayfixed-adoption.md"
     stray.write_text(PLAN, encoding="utf-8")
     code, out, err = cli(root, tmp_path, "adopt", "begin", str(stray))
     assert code == 2
@@ -724,7 +725,7 @@ def test_a_gate_that_could_not_run_is_named_and_the_command_exits_1(tmp_path: Pa
     # `run_adopt_promote` -> the summary loses the name and the command exits 0.
     root, _ = _project(tmp_path)
     with (root / CONFIG_FILE).open("a", encoding="utf-8") as stream:
-        stream.write('\n[gates.custom.absent]\nrun = ["keelline-test-no-such-command"]\n')
+        stream.write('\n[gates.custom.absent]\nrun = ["stayfixed-test-no-such-command"]\n')
     base = _land(root)
     before = _document(root)
     code, out, err = cli(root, tmp_path, "adopt", "promote", "absent", "--base", base)
@@ -740,9 +741,9 @@ def test_upgrade_after_a_promotion_plans_nothing_new(tmp_path: Path) -> None:
     # The two verbs move `state` and `enforced` and nothing `upgrade` owns, so `upgrade` moves
     # no key afterwards and plans what it planned before the adoption (the roadmap `docs trail`
     # rewrote is hand-edited to it) and nothing more. Mutation: the promotion's write also
-    # setting `[keelline] version` to an older release -> `upgrade` plans to move it back.
+    # setting `[stayfixed] version` to an older release -> `upgrade` plans to move it back.
     # Skipping the record's re-stamp does not redden this case, because `upgrade` never plans
-    # `keelline.toml` itself; `test_uninstall_after_a_promotion_takes_keelline_toml_back` holds
+    # `stayfixed.toml` itself; `test_uninstall_after_a_promotion_takes_stayfixed_toml_back` holds
     # the re-stamp.
     root, base = _project(tmp_path)
 
@@ -758,12 +759,12 @@ def test_upgrade_after_a_promotion_plans_nothing_new(tmp_path: Path) -> None:
     begin(root, _config(root, tmp_path), root / ADOPTION)
     promote(root, _config(root, tmp_path), ["docs"], base=base, machine=tmp_path / "m.toml")
     promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
-    assert _config(root, tmp_path).keelline.state == "installed"
+    assert _config(root, tmp_path).stayfixed.state == "installed"
     assert planned() == before
 
 
-def test_uninstall_after_a_promotion_takes_keelline_toml_back(tmp_path: Path) -> None:
-    # The record was re-stamped at each write, so the promoted document is still one Keelline
+def test_uninstall_after_a_promotion_takes_stayfixed_toml_back(tmp_path: Path) -> None:
+    # The record was re-stamped at each write, so the promoted document is still one stayfixed
     # wrote. Mutation: skipping `rewrite_owned`'s re-stamp -> `uninstall` keeps the file.
     root, base = _project(tmp_path)
     begin(root, _config(root, tmp_path), root / ADOPTION)
@@ -771,3 +772,29 @@ def test_uninstall_after_a_promotion_takes_keelline_toml_back(tmp_path: Path) ->
     code, _, err = cli(root, tmp_path, "uninstall")
     assert code == 0, err
     assert not (root / CONFIG_FILE).exists()
+
+
+@needs_git
+def test_adopt_promote_names_at_most_the_listed_limit_in_each_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Custom gates are the repository's to add, so both lists on the line are bounded in number
+    # by nothing: each names the first `LISTED_LIMIT` and counts the rest, and `--json` carries
+    # every name. The transition is given, since only the line is under test. Mutation (oracle):
+    # "adopt promote names every gate it promoted" or "... every gate still advisory" -> this
+    # reddens.
+    root, base = _project(tmp_path)
+    promoted = tuple(f"p{n:02}" for n in range(LISTED_LIMIT + 3))
+    skipped = tuple(f"s{n:02}" for n in range(LISTED_LIMIT + 2))
+    given = Transition("adopting", "adopting", promoted=promoted, skipped=skipped)
+    monkeypatch.setattr("stayfixed.assess.state.promote", lambda *_, **__: given)
+    code, out, err = cli(root, tmp_path, "adopt", "promote", "--builtin", "--base", base)
+    assert code == 1, err
+    advisory = ", ".join(f"{name} (not run, as --builtin asked)" for name in skipped[:LISTED_LIMIT])
+    assert out.splitlines()[0] == (
+        f"promoted: {', '.join(promoted[:LISTED_LIMIT])}, and 3 more; "
+        f"still advisory: {advisory}, and 2 more; state adopting"
+    )
+    code, out, _ = cli(root, tmp_path, "adopt", "promote", "--builtin", "--base", base, "--json")
+    printed = json.loads(out)
+    assert (printed["promoted"], printed["skipped"]) == (list(promoted), list(skipped))

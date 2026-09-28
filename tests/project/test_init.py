@@ -1,4 +1,4 @@
-"""`keelline init --yes`: the two engine passes, what it adopts, and what it refuses."""
+"""`stayfixed init --yes`: the two engine passes, what it adopts, and what it refuses."""
 
 from __future__ import annotations
 
@@ -9,25 +9,25 @@ from pathlib import Path
 
 import pytest
 
-import keelline
-from keelline.attach.api import IGNORE_REGION
-from keelline.config.loader import CONFIG_FILE, ConfigError, load
-from keelline.config.owned import OWNED, OwnedKeyError
-from keelline.errors import Failure, Refusal
-from keelline.project.footprint import LOCAL_ROOT_ONLY
-from keelline.project.init import HEADER, InitReport, init
-from keelline.project.templates import NOT_ASKED, ONE_FILE, OWN_NAME
-from keelline.project.uninstall import uninstall
-from keelline.project.upgrade import upgrade
-from keelline.release.api import Pin
-from keelline.scaffold import MANIFEST_PATH, Manifest, Style, Verb, extract
+import stayfixed
+from stayfixed.attach.api import IGNORE_REGION
+from stayfixed.config.loader import CONFIG_FILE, ConfigError, load
+from stayfixed.config.owned import OWNED, OwnedKeyError
+from stayfixed.errors import Failure, Refusal
+from stayfixed.project.footprint import LOCAL_ROOT_ONLY
+from stayfixed.project.init import HEADER, InitReport, init
+from stayfixed.project.templates import NOT_ASKED, ONE_FILE, OWN_NAME
+from stayfixed.project.uninstall import uninstall
+from stayfixed.project.upgrade import upgrade
+from stayfixed.release.api import Pin
+from stayfixed.scaffold import MANIFEST_PATH, Manifest, Style, Verb, extract
 from tests.gitfixture import LsRemote, git, needs_git
 from tests.project.repos import repository
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 SHA = "b" * 40
 # A ref a repository already recorded, and deliberately not the one the listing resolves:
-# the invariant these tests hold is that the workflow pins what `keelline.toml` says on
+# the invariant these tests hold is that the workflow pins what `stayfixed.toml` says on
 # disk, and two values that happened to be equal could not tell the two sources apart.
 ADOPTED = "a" * 40
 LISTING = f"{SHA}\trefs/tags/v0.1.0\n"
@@ -65,12 +65,12 @@ def test_a_bare_repository_gets_the_footprint_and_every_file_is_recorded(tmp_pat
     root = _repo(tmp_path)
     report = _init(root, tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
-    assert config.project.name == "widget" and config.keelline.state == "initialised"
+    assert config.project.name == "widget" and config.stayfixed.state == "initialised"
     # Read off the file and not only through the loader: `state` has a preset default, so
     # `load` answers `initialised` for a document that never mentioned it.
     document = tomllib.loads((root / CONFIG_FILE).read_text(encoding="utf-8"))
-    assert document["keelline"] == {
-        "version": keelline.__version__,
+    assert document["stayfixed"] == {
+        "version": stayfixed.__version__,
         "state": "initialised",
         "agents": ["claude", "codex"],
     }
@@ -89,15 +89,15 @@ def test_a_bare_repository_gets_the_footprint_and_every_file_is_recorded(tmp_pat
     assert agents.startswith("# widget\n") and "## Current status" in agents
     assert extract(agents, "harness", Style.MARKDOWN) is not None
     assert extract((root / ".gitignore").read_text(encoding="utf-8"), IGNORE_REGION, Style.HASH)
-    assert report.skipped["ci-workflow"].startswith("no released Keelline tag") and report.note
+    assert report.skipped["ci-workflow"].startswith("no released stayfixed tag") and report.note
 
 
 @needs_git
 def test_a_created_document_opens_with_a_header_naming_every_tool_owned_key(
     tmp_path: Path,
 ) -> None:
-    # The header is the file's own statement of which keys Keelline rewrites in place. It named
-    # `[keelline] version` and `state` while four keys are Keelline's to rewrite. Every key of
+    # The header is the file's own statement of which keys stayfixed rewrites in place. It named
+    # `[stayfixed] version` and `state` while four keys are stayfixed's to rewrite. Every key of
     # `OWNED` is looked for, as `key` or as `[table] key` in backticks, and every table it names
     # is named, so a fifth owned key or a dropped one reddens here. Mutations: restore the
     # two-key header and this reddens on `[ci] ref`, the first missing key in sorted order; drop
@@ -121,7 +121,7 @@ def test_an_adopted_document_s_gates_are_validated_before_anything_is_written(
     # `USER_OWNED` and `init` writes the footprint, so this reddens with DID NOT RAISE.
     root = _repo(tmp_path)
     hand_written = (
-        '[keelline]\nversion = "0.0.1"\n\n[project]\nname = "chosen"\n\n'
+        '[stayfixed]\nversion = "0.0.1"\n\n[project]\nname = "chosen"\n\n'
         '[gates]\nbuiltin = ["docs", "docs"]\n'
     )
     (root / CONFIG_FILE).write_text(hand_written, encoding="utf-8")
@@ -147,17 +147,17 @@ def test_an_adopted_key_that_is_not_bare_is_refused_naming_only_its_table(
     # before `loads` runs, and `dumps` refuses a key that is not bare by quoting it with `!r`.
     # A TOML key is arbitrary quoted text, so an adopted document put ESC into a refusal the
     # `init` skill relays to a model, ahead of the loader's own count-only sentence. The refusal
-    # now names the table, which is Keelline's own vocabulary, and nothing the document wrote.
+    # now names the table, which is stayfixed's own vocabulary, and nothing the document wrote.
     # Mutation: re-raise the serialiser's refusal as it was and both cases redden.
     root = _repo(tmp_path)
-    document = '[keelline]\nversion = "0.0.1"\n\n[project]\nname = "chosen"\n\n' + hand_written
+    document = '[stayfixed]\nversion = "0.0.1"\n\n[project]\nname = "chosen"\n\n' + hand_written
     (root / CONFIG_FILE).write_text(document, encoding="utf-8")
     before = snapshot(root)
     with pytest.raises(Refusal) as caught:
         _init(root, tmp_path)
     message = str(caught.value)
     assert message == (
-        f"keelline.toml's [{table}] table holds a key Keelline cannot write back as a bare TOML "
+        f"stayfixed.toml's [{table}] table holds a key stayfixed cannot write back as a bare TOML "
         "key, so nothing was written; rename it to letters, digits, `_` and `-`"
     )
     assert "\x1b" not in message and "[31m" not in message and "\\x1b" not in message
@@ -182,7 +182,7 @@ def test_a_refused_footprint_writes_nothing_at_all(tmp_path: Path) -> None:
     # the first draft write three files and exit 2. Mutation (oracle): apply the once pass
     # before the refusal check -> the snapshot reddens.
     root = _repo(tmp_path)
-    (root / "AGENTS.md").write_text("# Mine\n\n<!-- keelline:harness:end -->\n", encoding="utf-8")
+    (root / "AGENTS.md").write_text("# Mine\n\n<!-- stayfixed:harness:end -->\n", encoding="utf-8")
     before = snapshot(root)
     report = _init(root, tmp_path)
     assert report.footprint.refusals and not (root / MANIFEST_PATH).exists()
@@ -200,7 +200,7 @@ def test_an_existing_configuration_without_a_manifest_is_adopted_and_never_repla
     # `[paths]` this file declares and under none of the preset's.
     #
     # **The engine is the authority on this, not an expectation written ahead of it.** A first
-    # draft of this test asserted that `[keelline] state`, `version` and a detected `agents` were
+    # draft of this test asserted that `[stayfixed] state`, `version` and a detected `agents` were
     # written into the adopted file; `scaffold.engine.plan` skips a `Kind.ONCE` artifact whose
     # file is present, unconditionally and above every `force`, and the two rules above —
     # "created when absent", "read as the answers rather than replaced" — say the same thing the
@@ -208,7 +208,7 @@ def test_an_existing_configuration_without_a_manifest_is_adopted_and_never_repla
     root = _repo(tmp_path)
     (root / ".codex").mkdir()
     hand_written = (
-        '[keelline]\nversion = "0.0.1"\n\n[project]\nname = "chosen"\nbase_branch = "dev"\n\n'
+        '[stayfixed]\nversion = "0.0.1"\n\n[project]\nname = "chosen"\nbase_branch = "dev"\n\n'
         '[paths]\nspecs = "design/specs"\nplans = "design/plans"\n\n[memory]\nmode = "overlay"\n'
     )
     (root / CONFIG_FILE).write_text(hand_written, encoding="utf-8")
@@ -230,7 +230,7 @@ def test_an_initialised_repository_is_refused_and_offered_upgrade(tmp_path: Path
     # Mutation (oracle): drop the manifest guard -> the second call plans a second init.
     root = _repo(tmp_path)
     _init(root, tmp_path)
-    with pytest.raises(Refusal, match="re-running `init` is `keelline upgrade`") as refused:
+    with pytest.raises(Refusal, match="re-running `init` is `stayfixed upgrade`") as refused:
         _init(root, tmp_path)
     assert "ships later" not in str(refused.value)
 
@@ -242,7 +242,7 @@ def test_without_yes_and_with_a_broken_configuration_nothing_happens(tmp_path: P
     with pytest.raises(Refusal, match=re.escape("--yes")):
         _init(root, tmp_path, yes=False)
     assert_snapshot_unchanged(root, before)
-    (root / CONFIG_FILE).write_text("[keelline\n", encoding="utf-8")
+    (root / CONFIG_FILE).write_text("[stayfixed\n", encoding="utf-8")
     before = snapshot(root)
     with pytest.raises(Failure, match=re.escape(CONFIG_FILE)):
         _init(root, tmp_path)
@@ -271,7 +271,7 @@ def test_an_adopted_ref_is_what_the_workflow_pins_and_the_document_is_not_rewrit
 ) -> None:
     """The invariant: the `uses:` ref equals what `[ci] ref` says on disk after the run.
 
-    Measured before this held: an adopted `keelline.toml` recording one sha, a listing resolving
+    Measured before this held: an adopted `stayfixed.toml` recording one sha, a listing resolving
     another, and `init` writing the workflow pinned to the *resolved* one while the document — a
     create-once artifact already on disk — kept the recorded one. `doctor`'s `ci-ref` row then
     reports red ("the workflow pins a different ref from [ci] ref") on a repository whose `init`
@@ -283,12 +283,12 @@ def test_an_adopted_ref_is_what_the_workflow_pins_and_the_document_is_not_rewrit
     """
     root = _repo(tmp_path)
     (root / CONFIG_FILE).write_text(
-        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
         f'[ci]\nmode = "reusable"\nref = "{ADOPTED}"\n',
         encoding="utf-8",
     )
     report = _init(root, tmp_path, runner=LsRemote(stdout=LISTING, code=0))
-    workflow = (root / ".github" / "workflows" / "keelline.yml").read_text(encoding="utf-8")
+    workflow = (root / ".github" / "workflows" / "stayfixed.yml").read_text(encoding="utf-8")
     assert f"check.yml@{ADOPTED}" in workflow and SHA not in workflow
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == ADOPTED
     assert report.ref == ADOPTED and report.resolution.pin == Pin("v0.1.0", SHA)
@@ -301,19 +301,19 @@ def test_an_adopted_ref_is_what_the_workflow_pins_and_the_document_is_not_rewrit
 def test_an_adopted_document_with_no_ref_gets_no_workflow_at_all(tmp_path: Path) -> None:
     # The other half of the same invariant. A pin would resolve, but nothing this run resolved
     # can reach a create-once document that is already there — so a workflow pinned to it would
-    # name a ref `keelline.toml` does not record, which is the state `doctor` reports as red.
+    # name a ref `stayfixed.toml` does not record, which is the state `doctor` reports as red.
     # The remote is not asked at all: `_ci` answers this path before it reads the resolution,
     # and the ask was a network round trip, up to its whole timeout, for an answer nothing
     # printed. Mutation (oracle): "the adoption path with no ref asks the network again".
     root = _repo(tmp_path)
     (root / CONFIG_FILE).write_text(
-        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n', encoding="utf-8"
+        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n', encoding="utf-8"
     )
     runner = LsRemote(stdout=LISTING, code=0)
     report = _init(root, tmp_path, runner=runner)
     assert runner.calls == [] and report.resolution.pin is None
     assert report.ref == "" and not (root / ".github").exists()
-    assert report.skipped["ci-workflow"].startswith("the keelline.toml this repository already")
+    assert report.skipped["ci-workflow"].startswith("the stayfixed.toml this repository already")
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == ""
 
 
@@ -324,11 +324,11 @@ def test_an_adopted_run_is_never_sent_to_the_network_for_a_file_it_must_edit(
     """The flag has to travel, and it did not: `init` held `existing is None` and passed none of
     it to `project_templates`, so `_ci` could not tell an adoption from a creation.
 
-    This is the ordinary adoption path — a hand-written `keelline.toml`, the preset's
+    This is the ordinary adoption path — a hand-written `stayfixed.toml`, the preset's
     `[ci] mode = "reusable"`, no `[ci] ref` — with the remote unreachable (`git` exits 128,
     which `released` reads as "could not ask") and with it answering that no tag matches. Both
     used to print a sentence about the network; neither is the reason, and running again cannot
-    help, because `.keelline/manifest.json` is on disk after this run and `init` refuses a
+    help, because `.stayfixed/manifest.json` is on disk after this run and `init` refuses a
     repository that has one. (Neither answer is asked for any more — `init` skips the round trip
     on this path — so the two runners now hold that the sentence does not depend on them.)
 
@@ -338,13 +338,13 @@ def test_an_adopted_run_is_never_sent_to_the_network_for_a_file_it_must_edit(
     for code, stdout in ((128, ""), (2, "")):
         root = _repo(tmp_path / f"case-{code}")
         (root / CONFIG_FILE).write_text(
-            '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n', encoding="utf-8"
+            '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n', encoding="utf-8"
         )
         report = _init(root, tmp_path, runner=LsRemote(stdout=stdout, code=code))
         assert report.adopted and report.ref == "" and not (root / ".github").exists()
         reason = report.skipped["ci-workflow"]
-        assert reason.startswith("the keelline.toml this repository already"), (code, reason)
-        assert "network reachable" not in reason and "no released Keelline tag" not in reason
+        assert reason.startswith("the stayfixed.toml this repository already"), (code, reason)
+        assert "network reachable" not in reason and "no released stayfixed tag" not in reason
     # And the manifest the run just wrote is what makes "run `init` again" the wrong remedy, so
     # the sentence does not give it: this is the state an operator is actually left in.
     assert (root / MANIFEST_PATH).is_file()
@@ -357,7 +357,7 @@ def test_an_unreachable_remote_is_answered_with_a_command_that_can_act(tmp_path:
     """`NOT_ASKED` names two commands, and each is taken here by the kind of run it is for.
 
     A dry run has written nothing, so `init --yes` with the network back pins. A run that wrote
-    has persisted `.keelline/manifest.json`, so `init` refuses it and `upgrade` pins instead.
+    has persisted `.stayfixed/manifest.json`, so `init` refuses it and `upgrade` pins instead.
 
     Mutation (oracle): "an unreachable remote is answered with the adoption path's reason instead
     of its own".
@@ -374,7 +374,7 @@ def test_an_unreachable_remote_is_answered_with_a_command_that_can_act(tmp_path:
     assert written.skipped["ci-workflow"] == NOT_ASKED
     upgrade(root, machine=tmp_path / "absent.toml", runner=online, dry_run=False, force=())
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == SHA
-    assert f"check.yml@{SHA}\n" in (root / ".github" / "workflows" / "keelline.yml").read_text(
+    assert f"check.yml@{SHA}\n" in (root / ".github" / "workflows" / "stayfixed.yml").read_text(
         encoding="utf-8"
     )
 
@@ -388,7 +388,7 @@ def test_the_pin_is_written_and_the_workflow_rendered_when_a_release_matches(
     report = _init(root, tmp_path, runner=runner)
     assert report.resolution.pin == Pin("v0.1.0", SHA)
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == SHA
-    body = (root / ".github" / "workflows" / "keelline.yml").read_text(encoding="utf-8")
+    body = (root / ".github" / "workflows" / "stayfixed.yml").read_text(encoding="utf-8")
     # The bare path, unchanged by the adoption fix: this run created the document, so the
     # resolved sha is what it records and what the workflow pins.
     assert f"check.yml@{SHA}\n" in body
@@ -404,7 +404,7 @@ def test_a_gate_branch_outside_the_grammar_leaves_a_pin_with_no_workflow(tmp_pat
     # A recorded ref as well, because the branch check is reached only once there is a ref to
     # render: without one the run stops at "the document records no [ci] ref" instead.
     (root / CONFIG_FILE).write_text(
-        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
         f'[ci]\nref = "{ADOPTED}"\ngate_branch = "main\'; rm -rf"\n',
         encoding="utf-8",
     )
@@ -451,25 +451,25 @@ def test_a_python_repository_gets_the_profile_in_every_form_it_asked_for(tmp_pat
     (root / ".claude").mkdir()
     (root / "pyproject.toml").write_text("[project]\nname = 'widget'\n", encoding="utf-8")
     _init(root, tmp_path, ci=False)
-    assert load(root, machine=tmp_path / "absent.toml").keelline.profile == "python"
-    assert (root / "docs" / "keelline" / "rules" / "python.md").is_file()
-    rule = (root / ".claude" / "rules" / "keelline-python.md").read_text(encoding="utf-8")
-    assert "`docs/keelline/rules/python.md`" in rule
-    assert "`docs/keelline/rules/python.md`" in (root / "AGENTS.md").read_text(encoding="utf-8")
+    assert load(root, machine=tmp_path / "absent.toml").stayfixed.profile == "python"
+    assert (root / "docs" / "stayfixed" / "rules" / "python.md").is_file()
+    rule = (root / ".claude" / "rules" / "stayfixed-python.md").read_text(encoding="utf-8")
+    assert "`docs/stayfixed/rules/python.md`" in rule
+    assert "`docs/stayfixed/rules/python.md`" in (root / "AGENTS.md").read_text(encoding="utf-8")
     assert {"profile-rules", "claude-rules"} <= set(Manifest.read(root).records)
 
 
 @needs_git
 @pytest.mark.parametrize("local", [["config"], ["gitignore"], ["config", "gitignore"]])
-def test_keelline_toml_or_the_ignore_block_kept_out_of_git_refuses_init_before_any_write(
+def test_stayfixed_toml_or_the_ignore_block_kept_out_of_git_refuses_init_before_any_write(
     tmp_path: Path, local: list[str]
 ) -> None:
-    # Every command reads `keelline.toml` at the root, and the ignore block at the root is what
-    # keeps `.keelline/local/` out of git: a copy under `.keelline/local/artifacts/` is never
-    # read. Mutation (declared): "keelline.toml or the ignore block may be kept out of git".
+    # Every command reads `stayfixed.toml` at the root, and the ignore block at the root is what
+    # keeps `.stayfixed/local/` out of git: a copy under `.stayfixed/local/artifacts/` is never
+    # read. Mutation (declared): "stayfixed.toml or the ignore block may be kept out of git".
     root = _repo(tmp_path)
-    (root / "keelline.toml").write_text(
-        f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n\n'
+    (root / "stayfixed.toml").write_text(
+        f'[stayfixed]\nversion = "{stayfixed.__version__}"\n\n[project]\nname = "widget"\n\n'
         f'[artifacts]\nlocal = {json.dumps(local)}\n\n[ci]\nmode = "none"\n',
         encoding="utf-8",
     )
@@ -492,8 +492,8 @@ def test_a_paths_value_naming_another_artifact_s_file_refuses_init_before_any_wr
     # case folds, and is refused on every filesystem ("places are compared case-sensitively for
     # ownership" reddens that case).
     root = _repo(tmp_path)
-    (root / "keelline.toml").write_text(
-        f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n\n'
+    (root / "stayfixed.toml").write_text(
+        f'[stayfixed]\nversion = "{stayfixed.__version__}"\n\n[project]\nname = "widget"\n\n'
         f'[paths]\nroadmap = "{value}"\n\n[ci]\nmode = "none"\n',
         encoding="utf-8",
     )
@@ -513,11 +513,11 @@ def test_a_paths_value_naming_another_artifact_s_file_refuses_init_before_any_wr
 def test_a_profile_kept_out_of_git_refuses_init_before_anything_is_written(
     tmp_path: Path,
 ) -> None:
-    # The rule meets a hand-written `keelline.toml`, not only the onboarding questions. If
+    # The rule meets a hand-written `stayfixed.toml`, not only the onboarding questions. If
     # `_init` runs the CLI rather than the function, assert its exit 2 instead of the raise.
     root = _repo(tmp_path)
-    (root / "keelline.toml").write_text(
-        f'[keelline]\nversion = "{keelline.__version__}"\nprofile = "python"\n\n'
+    (root / "stayfixed.toml").write_text(
+        f'[stayfixed]\nversion = "{stayfixed.__version__}"\nprofile = "python"\n\n'
         '[project]\nname = "widget"\n\n[artifacts]\nlocal = ["profile-rules"]\n\n'
         '[ci]\nmode = "none"\n',
         encoding="utf-8",
@@ -532,7 +532,7 @@ def test_a_profile_kept_out_of_git_refuses_init_before_anything_is_written(
 def test_an_adopted_document_with_no_version_gets_one_and_keeps_every_line(
     tmp_path: Path,
 ) -> None:
-    # `[keelline] version` is the one key Keelline owns that the loader requires, so an adopted
+    # `[stayfixed] version` is the one key stayfixed owns that the loader requires, so an adopted
     # file without it was left unloadable by the very run that adopted it. The dry run plans
     # the stamp and writes nothing; the real run adds that one line through the key editor.
     # Mutation (oracle): "an adopted document without a version is left unloadable".
@@ -545,7 +545,7 @@ def test_an_adopted_document_with_no_version_gets_one_and_keeps_every_line(
     report = _init(root, tmp_path)
     assert report.adopted and report.stamped
     assert (root / CONFIG_FILE).read_text(encoding="utf-8").startswith(hand_written)
-    assert load(root, machine=tmp_path / "absent.toml").keelline.version == keelline.__version__
+    assert load(root, machine=tmp_path / "absent.toml").stayfixed.version == stayfixed.__version__
 
 
 REFUSED_HEADS = {
@@ -571,7 +571,7 @@ def test_an_adopted_document_the_loader_would_refuse_is_refused_before_anything_
     root = _repo(tmp_path)
     document = ""
     if case != "empty-file":
-        document = f'[keelline]\nversion = "0.1.0"\n{REFUSED_HEADS[case]}'
+        document = f'[stayfixed]\nversion = "0.1.0"\n{REFUSED_HEADS[case]}'
         if case != "no-project":
             document += '\n[project]\nname = "widget"\n'
         document += '\n[ci]\nmode = "none"\n'
@@ -586,13 +586,13 @@ def test_an_adopted_document_the_loader_would_refuse_is_refused_before_anything_
 
 @needs_git
 def test_a_version_the_editor_cannot_add_is_refused_by_the_dry_run_too(tmp_path: Path) -> None:
-    # The stamp is computed while planning, so the key editor's refusal of an inline `keelline`
+    # The stamp is computed while planning, so the key editor's refusal of an inline `stayfixed`
     # table meets the dry run as it would the real one. Mutation (oracle): "the adopted version
     # is checked without being added" -> the loader refuses the version-less text instead, a
     # `ConfigError` and not an `OwnedKeyError`.
     root = _repo(tmp_path)
     (root / CONFIG_FILE).write_text(
-        'keelline = { preset = "recommended" }\n\n[project]\nname = "widget"\n',
+        'stayfixed = { preset = "recommended" }\n\n[project]\nname = "widget"\n',
         encoding="utf-8",
     )
     before = snapshot(root)
@@ -604,7 +604,7 @@ def test_a_version_the_editor_cannot_add_is_refused_by_the_dry_run_too(tmp_path:
 @needs_git
 def test_uninstall_keeps_an_adopted_document_with_the_version_init_added(tmp_path: Path) -> None:
     # `init` records no `config` artifact for a file it adopted, stamped or not, so `uninstall`
-    # has nothing that says the file is Keelline's. Mutation (by hand, in the commit message):
+    # has nothing that says the file is stayfixed's. Mutation (by hand, in the commit message):
     # record the adopted document in `init`'s manifest -> `uninstall` removes it and this reddens.
     root = _repo(tmp_path)
     hand_written = '# ours\n[project]\nname = "widget"\n'
@@ -619,7 +619,7 @@ def test_a_symlinked_document_with_no_version_is_refused_by_the_dry_run_too(
     tmp_path: Path,
 ) -> None:
     # The stamp is written through `rewrite_owned`, which reads through `read_document` and so
-    # refuses a symlinked `keelline.toml`; computing the stamp while planning meets that refusal
+    # refuses a symlinked `stayfixed.toml`; computing the stamp while planning meets that refusal
     # in the dry run as well, with nothing written on either side of the link. (No single line:
     # the refusal is `contained()`'s, whose own entries hold it.)
     root = _repo(tmp_path)
@@ -639,13 +639,13 @@ def test_a_symlinked_document_is_refused_even_when_it_carries_its_version(
     tmp_path: Path,
 ) -> None:
     # A document with its version needs no stamp, and `init` read it by following the link: a
-    # clone's `keelline.toml -> /dev/zero` ended the run by exhausting memory. It is read
-    # through `read_document` now, as `keelline gate` reads it, once. Mutation (declared):
+    # clone's `stayfixed.toml -> /dev/zero` ended the run by exhausting memory. It is read
+    # through `read_document` now, as `stayfixed gate` reads it, once. Mutation (declared):
     # `_existing` reading the file by following the link -> the dry run reports a plan.
     root = _repo(tmp_path)
     elsewhere = tmp_path / "elsewhere.toml"
     elsewhere.write_text(
-        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n', encoding="utf-8"
+        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n', encoding="utf-8"
     )
     (root / CONFIG_FILE).symlink_to(elsewhere)
     before = snapshot(root)
@@ -661,13 +661,13 @@ def test_an_adopted_document_with_no_name_is_answered_by_the_loader_and_not_by_d
 ) -> None:
     # A hand-written file with no `[project]`, in a repository whose origin names no project:
     # detection used to refuse naming `--name` as the remedy, and `--name` over a
-    # `keelline.toml` is refused as an answer over the answer sheet. The file is the answer, so
+    # `stayfixed.toml` is refused as an answer over the answer sheet. The file is the answer, so
     # what it lacks is the loader's to say, and writing `[project] name` there is the remedy
     # that reaches the end. Mutation (by hand): detection strict for an adopted file again ->
     # `Refusal` (the detected-name sentence) in place of `ConfigError`.
     root = repository(tmp_path, origin="git@github.com:owner/Not A.git")
     (root / CONFIG_FILE).write_text(
-        '[keelline]\nversion = "0.1.0"\n\n[ci]\nmode = "none"\n', encoding="utf-8"
+        '[stayfixed]\nversion = "0.1.0"\n\n[ci]\nmode = "none"\n', encoding="utf-8"
     )
     before = snapshot(root)
     for dry_run in (True, False):

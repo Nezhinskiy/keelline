@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from keelline.config.layout import is_adoption_plan, rules_file
-from keelline.config.loader import loads
-from keelline.config.paths import PathEscape
-from keelline.config.schema import Config
+from stayfixed.config.layout import is_adoption_plan, rules_file
+from stayfixed.config.loader import loads
+from stayfixed.config.paths import PathEscape
+from stayfixed.config.schema import Config
 
-DOCUMENT = '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n'
+DOCUMENT = '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n'
 
 
 def _config(tmp_path: Path, paths: str = "") -> Config:
@@ -19,33 +19,33 @@ def _config(tmp_path: Path, paths: str = "") -> Config:
     return loads(text, tmp_path, machine=tmp_path / "no-machine.toml")
 
 
-def test_a_profile_s_rules_live_under_the_keelline_directory(tmp_path: Path) -> None:
-    assert rules_file(_config(tmp_path), "python") == "docs/keelline/rules/python.md"
-    moved = _config(tmp_path, 'keelline = "meta/keelline"')
-    assert rules_file(moved, "python") == "meta/keelline/rules/python.md"
+def test_a_profile_s_rules_live_under_the_stayfixed_directory(tmp_path: Path) -> None:
+    assert rules_file(_config(tmp_path), "python") == "docs/stayfixed/rules/python.md"
+    moved = _config(tmp_path, 'stayfixed = "meta/stayfixed"')
+    assert rules_file(moved, "python") == "meta/stayfixed/rules/python.md"
 
 
-def test_the_keelline_directory_is_contained_like_every_other_path(tmp_path: Path) -> None:
+def test_the_stayfixed_directory_is_contained_like_every_other_path(tmp_path: Path) -> None:
     # `validate_paths` walks every `Paths` field, so the new key needs no guard of its own; this
     # proves it reached the walk. `PATH_VALUE` refuses the spelling before `contained()` runs.
     with pytest.raises(PathEscape):
-        _config(tmp_path, 'keelline = "../elsewhere"')
+        _config(tmp_path, 'stayfixed = "../elsewhere"')
 
 
 @pytest.mark.parametrize(
     ("path", "adoption"),
     [
-        ("docs/plans/2026-09-23-keelline-adoption.md", True),
-        ("docs/plans/2026-09-23-keelline-adoption-billing.md", True),
+        ("docs/plans/2026-09-23-stayfixed-adoption.md", True),
+        ("docs/plans/2026-09-23-stayfixed-adoption-billing.md", True),
         ("docs/plans/2026-09-23-adoption.md", False),
-        ("docs/plans/2026-09-23-keellines.md", False),
-        ("docs/plans/2026-09-23-keelline-adoption.txt", False),
-        ("docs/plans/archive/2026-09-23-keelline-adoption.md", False),
-        ("docs/specs/2026-09-23-keelline-adoption-design.md", False),
+        ("docs/plans/2026-09-23-stayfixeds.md", False),
+        ("docs/plans/2026-09-23-stayfixed-adoption.txt", False),
+        ("docs/plans/archive/2026-09-23-stayfixed-adoption.md", False),
+        ("docs/specs/2026-09-23-stayfixed-adoption-design.md", False),
     ],
     ids=["dated", "with-a-slug", "no-word", "a-longer-word", "not-markdown", "nested", "a-spec"],
 )
-def test_an_adoption_plan_is_a_plan_whose_name_says_keelline(
+def test_an_adoption_plan_is_a_plan_whose_name_says_stayfixed(
     tmp_path: Path, path: str, adoption: bool
 ) -> None:
     # A plan directly in `[paths] plans`, where `plan check` and the trail look. Mutation: drop

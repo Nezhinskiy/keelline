@@ -1,8 +1,8 @@
-`keelline doctor` can no longer be stopped, or delayed for five minutes, by the repository it is
+`stayfixed doctor` can no longer be stopped, or delayed for five minutes, by the repository it is
 reporting on.
 
-The `ci-ref` row reads `.github/workflows/keelline.yml` to compare the ref the workflow pins with
-the one `keelline.toml` records, and that path is the repository's: a clone chooses what sits
+The `ci-ref` row reads `.github/workflows/stayfixed.yml` to compare the ref the workflow pins with
+the one `stayfixed.toml` records, and that path is the repository's: a clone chooses what sits
 there. The read asked nothing about what it was opening, so a committed symlink to a FIFO made it
 block with nothing to read and `doctor` never returned at all — on a command that is otherwise one
 line of output and has no timeout of its own. The path is now read only when it is a regular file
@@ -13,8 +13,8 @@ replaced rather than raised: it used to arrive as `ci-ref: red — this check co
 exit 1, which a clone could force.
 
 The same row's `git ls-remote` against the public repository's tags is bounded at 30 seconds
-instead of the five minutes every other network call in Keelline gets. Five minutes is the right
-bound for `keelline overlay create --template`, which waits on GitHub to instantiate a repository
+instead of the five minutes every other network call in stayfixed gets. Five minutes is the right
+bound for `stayfixed overlay create --template`, which waits on GitHub to instantiate a repository
 and then clones it; it was never the right one for a diagnostic that reads one tag listing, and
-`keelline init` writing a `[ci] ref` is what made that wait reachable on a freshly initialised
+`stayfixed init` writing a `[ci] ref` is what made that wait reachable on a freshly initialised
 project.

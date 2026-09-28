@@ -8,17 +8,17 @@ from pathlib import Path
 
 import pytest
 
-from keelline.config.loader import CONFIG_FILE, load
-from keelline.guards import bgcleanup
-from keelline.guards.hooks import register
-from keelline.hooks.api import EVENTS, Decision, Handler, HookEvent, Policy
-from keelline.hooks.dispatch import Recorder, dispatch
+from stayfixed.config.loader import CONFIG_FILE, load
+from stayfixed.guards import bgcleanup
+from stayfixed.guards.hooks import register
+from stayfixed.hooks.api import EVENTS, Decision, Handler, HookEvent, Policy
+from stayfixed.hooks.dispatch import Recorder, dispatch
 from tests.floor import floor_env
 from tests.gitfixture import git
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -33,10 +33,10 @@ release_branch = "main"
 
 LIST_IMPORTS = (
     "import sys\n"
-    "from keelline.hooks.registry import discover\n"
+    "from stayfixed.hooks.registry import discover\n"
     "names = [h.name for h in discover()]\n"
     "assert 'bg-cleanup' in names, names\n"
-    "print(' '.join(sorted(m for m in sys.modules if m.startswith('keelline'))))\n"
+    "print(' '.join(sorted(m for m in sys.modules if m.startswith('stayfixed'))))\n"
 )
 
 
@@ -87,7 +87,7 @@ def test_the_background_guard_is_the_closed_pre_tool_use_handler() -> None:
 
 
 def test_no_config_is_silence_for_every_handler(tmp_path: Path) -> None:
-    # With no keelline.toml, no hook handler says anything. The guard included, by design.
+    # With no stayfixed.toml, no hook handler says anything. The guard included, by design.
     for handler in register():
         result = handler.run(bash_event(tmp_path, "sleep 300 &"), None)
         assert result.decision is None and result.context is None
@@ -157,20 +157,20 @@ def test_discovery_imports_no_guards_module_but_hooks(tmp_path: Path) -> None:
     )
     assert completed.returncode == 0, completed.stderr
     imported = set(completed.stdout.split())
-    assert "keelline.guards.hooks" in imported
-    assert "keelline.guards.bgcleanup" not in imported
-    assert "keelline.guards.bashscan" not in imported
+    assert "stayfixed.guards.hooks" in imported
+    assert "stayfixed.guards.bgcleanup" not in imported
+    assert "stayfixed.guards.bashscan" not in imported
     # The test-hygiene notice's two modules, named explicitly: `hygiene` imports `bashscan`,
     # `roots` and `gitenv` at module scope, so a module-level import of it in `hooks.py` would
     # be caught by the line above too — but only by accident of what it happens to import.
-    assert "keelline.guards.hygiene" not in imported
-    assert "keelline.guards.roots" not in imported
-    assert "keelline.config" not in imported
+    assert "stayfixed.guards.hygiene" not in imported
+    assert "stayfixed.guards.roots" not in imported
+    assert "stayfixed.config" not in imported
 
 
 def hook(event: str, stdin: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, "-m", "keelline", "hook", event],
+        [sys.executable, "-m", "stayfixed", "hook", event],
         input=stdin,
         capture_output=True,
         text=True,
@@ -296,7 +296,7 @@ def test_a_hygiene_failure_is_recorded_and_never_costs_the_call(
     # and must not have one — a silent swallow is how a broken notice goes unnoticed.
     # Reddened by flipping the handler's policy to `Policy.CLOSED` (exit 2, not 0); the stderr
     # assertion is reddened by giving `_test_hygiene` its own try/except around `context_for`.
-    from keelline.guards import hygiene as module
+    from stayfixed.guards import hygiene as module
 
     def broken(command: str, root: Path, config: object) -> str | None:
         raise RuntimeError("boom")

@@ -11,21 +11,21 @@ from typing import Any
 
 import pytest
 
-from keelline import gitenv
-from keelline.attach.api import read_binding
-from keelline.errors import Failure, Refusal
-from keelline.memory.api import overlay_root
-from keelline.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
-from keelline.presets import load_preset
-from keelline.runner import Completed
-from keelline.setup.api import USER_SETTINGS, setup
-from keelline.setup.machine import read_machine, write_machine
+from stayfixed import gitenv
+from stayfixed.attach.api import read_binding
+from stayfixed.errors import Failure, Refusal
+from stayfixed.memory.api import overlay_root
+from stayfixed.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
+from stayfixed.presets import load_preset
+from stayfixed.runner import Completed
+from stayfixed.setup.api import USER_SETTINGS, setup
+from stayfixed.setup.machine import read_machine, write_machine
 from tests.gitfixture import git as _git
 
-# The minimal `keelline.toml` `attach.read_binding` needs (a project name and nothing else),
+# The minimal `stayfixed.toml` `attach.read_binding` needs (a project name and nothing else),
 # the same shape `tests/setup/test_machine.py::_initialised_project` uses for `load()`.
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -42,7 +42,7 @@ release_branch = "main"
 def _initialised_project(tmp_path: Path) -> Path:
     project = tmp_path / "project"
     project.mkdir()
-    (project / "keelline.toml").write_text(CONFIG, encoding="utf-8")
+    (project / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
     return project
 
 
@@ -88,9 +88,9 @@ def _populate_overlay(argv: list[str], cwd: Path) -> None:
         return
     target = cwd / argv[3].split("/")[-1] / ".claude-plugin"
     target.mkdir(parents=True, exist_ok=True)
-    (target / "plugin.json").write_text(json.dumps({"name": "keelline-overlay"}), encoding="utf-8")
+    (target / "plugin.json").write_text(json.dumps({"name": "stayfixed-overlay"}), encoding="utf-8")
     (target / "marketplace.json").write_text(
-        json.dumps({"name": "keelline-overlay-marketplace", "plugins": []}), encoding="utf-8"
+        json.dumps({"name": "stayfixed-overlay-marketplace", "plugins": []}), encoding="utf-8"
     )
 
 
@@ -99,9 +99,9 @@ def _seed_overlay(path: Path) -> None:
     shipped template names them, without rendering the whole template — enough for a fixture to
     read as a real overlay's root."""
     (path / ".claude-plugin").mkdir(parents=True, exist_ok=True)
-    (path / PLUGIN_MANIFEST).write_text(json.dumps({"name": "keelline-overlay"}), encoding="utf-8")
+    (path / PLUGIN_MANIFEST).write_text(json.dumps({"name": "stayfixed-overlay"}), encoding="utf-8")
     (path / MARKETPLACE_MANIFEST).write_text(
-        json.dumps({"name": "keelline-overlay-marketplace", "plugins": []}), encoding="utf-8"
+        json.dumps({"name": "stayfixed-overlay-marketplace", "plugins": []}), encoding="utf-8"
     )
 
 
@@ -135,8 +135,8 @@ def test_setup_writes_the_machine_file_and_the_deny_rules(tmp_path: Path) -> Non
 
 
 def test_a_mistyped_preset_names_the_flag_and_never_quotes_it(tmp_path: Path) -> None:
-    # `setup` is told which flag to fix rather than pointed at a `[keelline] preset` in a
-    # `keelline.toml` it never read, and the value the person typed — ESC and a line break
+    # `setup` is told which flag to fix rather than pointed at a `[stayfixed] preset` in a
+    # `stayfixed.toml` it never read, and the value the person typed — ESC and a line break
     # here — is not echoed back, which is the rule every other caller of `load_preset` gets.
     # Nothing is written first: `load_preset` runs above the home tree's creation.
     # Oracle: `mutations.toml`, "setup's preset refusal names the configuration key again".
@@ -158,7 +158,7 @@ def test_a_mistyped_preset_names_the_flag_and_never_quotes_it(tmp_path: Path) ->
 
 
 def test_an_existing_user_settings_file_keeps_the_owners_own_rules(tmp_path: Path) -> None:
-    # The owner's `~/.claude/settings.json` is theirs and predates Keelline on most machines.
+    # The owner's `~/.claude/settings.json` is theirs and predates stayfixed on most machines.
     # Merge, never replace, and record nothing about entries this run did not add. Mutation:
     # `_write_user_settings`'s `existing_deny = (...)` line changed to always start from `[]`
     # → reddens on the dropped `Read(/etc/shadow)` rule.
@@ -286,7 +286,7 @@ def test_a_harness_that_is_not_installed_is_a_note_not_a_failure(tmp_path: Path)
     # binary would surface (`Runner` turns it into `Completed(127, ...)`).
     #
     # No mutation: this is `Runner`'s own fail-soft convention (a non-zero result is a note,
-    # per `keelline.runner.Runner`'s own docstring), exercised here through the `FakeRunner`
+    # per `stayfixed.runner.Runner`'s own docstring), exercised here through the `FakeRunner`
     # script rather than guarding one line of this module's own whose removal would look like
     # a plausible bug — the "non-zero becomes a note" shape is `_install_plugins`' whole
     # structure, not a single guardable line.
@@ -408,7 +408,7 @@ def test_overlay_create_asks_github_and_records_the_new_root(
     # (`.claude-plugin`) is what tells this test the create branch, and not a no-op, ran.
     #
     # `home`, and not `Path.cwd()`, is asserted here rather than merely the leaf name: measured
-    # while writing this module, `root=Path.cwd()` created a real `keelline-private/` inside
+    # while writing this module, `root=Path.cwd()` created a real `stayfixed-private/` inside
     # this checkout the first time this branch ran under a test, because `tmp_path` was never
     # in that call at all. Mutation: change `_apply_overlay`'s `root=home` back to
     # `root=Path.cwd()` → reddens on this line without touching the `.name` check alone.
@@ -427,11 +427,11 @@ def test_overlay_create_asks_github_and_records_the_new_root(
         machine=machine,
         runner=runner,
         yes=True,
-        overlay="create:octo/keelline-private",
+        overlay="create:octo/stayfixed-private",
         project_root=tmp_path / "project",
     )
     assert any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
-    assert report.overlay == home / "keelline-private"
+    assert report.overlay == home / "stayfixed-private"
     assert overlay_root(machine) == report.overlay
 
 
@@ -450,7 +450,7 @@ def test_creating_an_overlay_without_yes_is_refused(tmp_path: Path) -> None:
             machine=tmp_path / "config.toml",
             runner=runner,
             yes=False,
-            overlay="create:octo/keelline-private",
+            overlay="create:octo/stayfixed-private",
             project_root=tmp_path / "project",
         )
     assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
@@ -582,7 +582,7 @@ def test_a_malformed_overlay_spec_is_refused(tmp_path: Path) -> None:
         )
 
 
-def test_a_missing_keelline_on_path_is_a_note(
+def test_a_missing_stayfixed_on_path_is_a_note(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `uv tool install` has no `--from`, so the positional git URL form pinned to a release tag
@@ -601,7 +601,7 @@ def test_a_missing_keelline_on_path_is_a_note(
     )
     assert report.cli_on_path is False
     assert any(
-        "uv tool install git+https://github.com/Nezhinskiy/keelline@v" in n for n in report.notes
+        "uv tool install git+https://github.com/stayfixed/stayfixed@v" in n for n in report.notes
     )
 
 
@@ -651,7 +651,7 @@ def test_a_refused_overlay_path_is_refused_before_the_first_write(tmp_path: Path
     "overlay",
     [
         pytest.param(os.fsdecode(b"/overlays/caf\xe9"), id="path"),
-        pytest.param("create:octo/keelline-private", id="create"),
+        pytest.param("create:octo/stayfixed-private", id="create"),
     ],
 )
 def test_an_overlay_root_a_utf_8_file_cannot_record_is_refused_before_the_first_write(
@@ -726,19 +726,19 @@ def test_a_created_overlay_is_refused_before_the_repository_exists(tmp_path: Pat
             machine=machine,
             runner=runner,
             yes=True,
-            overlay="create:octo/keelline-private",
+            overlay="create:octo/stayfixed-private",
             project_root=home,
         )
     assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
-    assert not (home / "keelline-private").exists()
+    assert not (home / "stayfixed-private").exists()
     assert _wrote_anything(home, machine) == []
 
 
 def test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay(tmp_path: Path) -> None:
-    # The probe was the two manifest *files* existing, which the Keelline checkout itself satisfies
+    # The probe was the two manifest *files* existing, which the stayfixed checkout itself satisfies
     # and any Claude Code plugin repository satisfies — so "carries the overlay's own layout"
     # excluded almost nothing. The manifests are now read, and have to name the tree
-    # `keelline-overlay[-<owner>]`.
+    # `stayfixed-overlay[-<owner>]`.
     #
     # Mutation ("the overlay probe stops reading what the manifests name"): `identity`'s
     # `_claims` arm is dropped → this directory is accepted and the refusal never fires.
@@ -750,7 +750,7 @@ def test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay(tmp_p
     (impostor / MARKETPLACE_MANIFEST).write_text(
         json.dumps({"name": "somebody-elses-marketplace", "plugins": []}), encoding="utf-8"
     )
-    with pytest.raises(Refusal, match="does not name a Keelline overlay"):
+    with pytest.raises(Refusal, match="does not name a stayfixed overlay"):
         setup(
             "recommended",
             home=tmp_path / "home",
@@ -883,7 +883,7 @@ def test_an_overlay_outside_every_checkout_is_still_recorded(tmp_path: Path) -> 
     project = tmp_path / "project"
     project.mkdir()
     _git(project, "init", "-q", "-b", "main")
-    overlay = tmp_path / "keelline-private"
+    overlay = tmp_path / "stayfixed-private"
     overlay.mkdir()
     _git(overlay, "init", "-q", "-b", "main")
     _seed_overlay(overlay)
@@ -946,7 +946,7 @@ GITS = ["current", "ignores-safe-bare"]
 
 def _as(git_version: str, monkeypatch: pytest.MonkeyPatch) -> None:
     if git_version == "ignores-safe-bare":
-        monkeypatch.setattr("keelline.setup.run._EXPLICIT_BARE", ())
+        monkeypatch.setattr("stayfixed.setup.run._EXPLICIT_BARE", ())
 
 
 def _record(tmp_path: Path, overlay: Path, project_root: Path) -> None:
@@ -1051,7 +1051,7 @@ def test_the_listing_refuses_a_sibling_checkout_when_git_answers_nothing_from_th
             return -1, ""
         return real(root, *args, **kwargs)
 
-    monkeypatch.setattr("keelline.setup.run.git_run", silent_off_the_project)
+    monkeypatch.setattr("stayfixed.setup.run.git_run", silent_off_the_project)
     with pytest.raises(Refusal, match="same repository"):
         _record(tmp_path, worktrees / "feature" / "ov", project)
 
@@ -1180,7 +1180,7 @@ def test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it(
     project = tmp_path / "project"
     project.mkdir()
     _git(project, "init", "-q", "-b", "main")
-    overlay = tmp_path / "keelline-private"
+    overlay = tmp_path / "stayfixed-private"
     overlay.mkdir()
     _git(overlay, "init", "-q", "-b", "main")
     _seed_overlay(overlay)
@@ -1192,7 +1192,7 @@ def test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it(
             return real(root, *args, **kwargs)
         return answer
 
-    monkeypatch.setattr("keelline.setup.run.git_run", failing)
+    monkeypatch.setattr("stayfixed.setup.run.git_run", failing)
     with pytest.raises(Refusal, match="could not list"):
         _record(tmp_path, overlay, project)
 
@@ -1244,7 +1244,7 @@ def test_git_giving_no_answer_inside_a_checkout_refuses_the_overlay(
             return -1, ""
         return real(root, *args, **kwargs)
 
-    monkeypatch.setattr("keelline.setup.run.git_run", silent_git)
+    monkeypatch.setattr("stayfixed.setup.run.git_run", silent_git)
     with pytest.raises(Refusal, match="gave no answer") as refused:
         _record(tmp_path, candidate, linked)
     assert gitenv.NO_ANSWER in str(refused.value)
@@ -1261,10 +1261,10 @@ def test_git_giving_no_answer_where_no_checkout_is_still_records_the_overlay(
     # `in_work_tree` condition is dropped → this overlay is refused and this reddens.
     project = tmp_path / "project"
     project.mkdir()
-    overlay = tmp_path / "keelline-private"
+    overlay = tmp_path / "stayfixed-private"
     overlay.mkdir()
     _seed_overlay(overlay)
-    monkeypatch.setattr("keelline.setup.run.git_run", lambda root, *args, **kwargs: (-1, ""))
+    monkeypatch.setattr("stayfixed.setup.run.git_run", lambda root, *args, **kwargs: (-1, ""))
     machine = tmp_path / "config.toml"
     report = setup(
         "recommended",
@@ -1356,7 +1356,7 @@ def test_git_refusing_every_repository_where_no_checkout_is_still_records_the_ov
     # Mutation (declared): the `in_work_tree` condition dropped from the 128 arm -> refused.
     project = tmp_path / "project"
     project.mkdir()
-    overlay = tmp_path / "keelline-private"
+    overlay = tmp_path / "stayfixed-private"
     overlay.mkdir()
     _seed_overlay(overlay)
     _dubious_git(tmp_path, monkeypatch, "true")
@@ -1375,7 +1375,7 @@ def test_an_overlay_beside_a_project_with_worktrees_is_still_recorded(
     # checkout, and on either git.
     _as(git_version, monkeypatch)
     project, worktrees = _clone_with_a_bare_shaped_directory(tmp_path)
-    overlay = tmp_path / "keelline-private"
+    overlay = tmp_path / "stayfixed-private"
     overlay.mkdir()
     _git(overlay, "init", "-q", "-b", "main")
     _seed_overlay(overlay)
@@ -1397,7 +1397,7 @@ def test_an_overlay_beside_a_project_with_worktrees_is_still_recorded(
 def test_a_symlinked_claude_directory_is_a_refusal_that_names_the_link(tmp_path: Path) -> None:
     # `fsops.write_within` walks `.claude` with `O_NOFOLLOW`, so a home managed by stow, chezmoi or
     # a synced directory raised `UnsafePath` — which `cli.run`'s final handler renders as
-    # `keelline: internal error: UnsafePath: …`, exit 2, for the most common non-default home
+    # `stayfixed: internal error: UnsafePath: …`, exit 2, for the most common non-default home
     # layout there is, and only *after* the machine file had been written. The containment rule
     # has two stages and `setup` had only the second; `config.paths.contained` is the first,
     # and it now runs above the first write and names the link and the way out.
@@ -1437,7 +1437,7 @@ def test_a_claude_directory_that_becomes_a_symlink_after_the_check_is_still_refu
     #
     # Mutation ("the write-time containment on the settings file is swallowed"): the
     # `except UnsafePath` arm stops raising → `setup` reports a settings file it never wrote.
-    monkeypatch.setattr("keelline.setup.run._check_settings_path", lambda home: None)
+    monkeypatch.setattr("stayfixed.setup.run._check_settings_path", lambda home: None)
     home = tmp_path / "home"
     home.mkdir()
     real = tmp_path / "elsewhere" / ".claude"
@@ -1458,7 +1458,7 @@ def test_a_claude_directory_that_becomes_a_symlink_after_the_check_is_still_refu
 def test_the_plugin_config_mirror_follows_the_machine_file(tmp_path: Path) -> None:
     # The mirror was written from `_new_personal_values`, which is empty on every run after the
     # first — so an owner who set `reply_language` in the machine file, the documented way
-    # (`README.md`: "Written by: you, or `keelline setup`"), kept `""` in `~/.claude/settings.json`
+    # (`README.md`: "Written by: you, or `stayfixed setup`"), kept `""` in `~/.claude/settings.json`
     # for ever, and Claude Code read that. The mirror is a projection of the machine file and is
     # recomputed from it on every run. The direction is a decision, recorded in `setup.run`: a value
     # set in Claude Code's own plugin-config UI loses to the machine file, because one file has to
@@ -1489,7 +1489,7 @@ def test_the_plugin_config_mirror_follows_the_machine_file(tmp_path: Path) -> No
         project_root=tmp_path / "project",
     )
     settings = json.loads((home / USER_SETTINGS).read_text(encoding="utf-8"))
-    options = settings["pluginConfigs"]["keelline@keelline-marketplace"]["options"]
+    options = settings["pluginConfigs"]["stayfixed@stayfixed-marketplace"]["options"]
     assert options["reply_language"] == "ru"
     assert options["artifact_language"] == "en", "a value nobody changed still round-trips"
 
@@ -1522,12 +1522,12 @@ def test_a_created_tree_that_is_not_an_overlay_says_the_repository_now_exists(
             machine=tmp_path / "config.toml",
             runner=FakeRunner(on_call=_wrong_tree),
             yes=True,
-            overlay="create:octo/keelline-private",
+            overlay="create:octo/stayfixed-private",
             project_root=tmp_path / "project",
         )
     message = str(refused.value)
-    assert "does not name a Keelline overlay" in message
-    assert "octo/keelline-private was created and cloned" in message
+    assert "does not name a stayfixed overlay" in message
+    assert "octo/stayfixed-private was created and cloned" in message
     assert "nothing was recorded in the machine configuration" in message
     assert overlay_root(tmp_path / "config.toml") is None
 
@@ -1612,7 +1612,7 @@ def test_a_home_layout_no_home_can_express_says_so_rather_than_printing_a_comman
         )
     message = str(refused.value)
     assert "no --home can name it" in message
-    assert "keelline setup --home" not in message, "a command that cannot work is worse than none"
+    assert "stayfixed setup --home" not in message, "a command that cannot work is worse than none"
     assert "adopt it" in message, "the way out has to be named, not just the refusal"
 
 
@@ -1694,7 +1694,7 @@ def test_a_settings_path_whose_directory_is_not_there_is_a_refusal_and_not_an_in
     # `_write_user_settings` caught only `UnsafePath`, and `write_within` opens the root itself
     # before the loop that wraps `ELOOP`/`ENOTDIR` into one — so a root that is not there raises a
     # bare `FileNotFoundError`, which left the library and reached `cli.run`'s final handler as
-    # `keelline: internal error`, exit 2, no remedy. A typo in `--settings`' directory component is
+    # `stayfixed: internal error`, exit 2, no remedy. A typo in `--settings`' directory component is
     # the ordinary way to get there.
     #
     # This is now the FLOOR under the case above rather than the case itself:
@@ -1705,7 +1705,7 @@ def test_a_settings_path_whose_directory_is_not_there_is_a_refusal_and_not_an_in
     #
     # Mutation (declared): the `except OSError` arm -> `except UnsafePath` (a second, dead
     # copy) -> the `OSError` escapes again and this reddens on `Refusal` not being raised.
-    monkeypatch.setattr("keelline.setup.run._check_settings_parent", lambda settings: None)
+    monkeypatch.setattr("stayfixed.setup.run._check_settings_parent", lambda settings: None)
     home = tmp_path / "home"
     missing = tmp_path / "not-there" / "settings.json"
     with pytest.raises(Refusal) as refused:
@@ -1734,7 +1734,7 @@ def test_a_settings_path_inside_a_symlinked_directory_is_a_refusal_and_not_an_in
     # rather than as `UnsafePath`, for the same reason as above. The first stage is patched out for
     # the reason the case above gives: it now refuses a symlinked directory too, and this one is the
     # floor beneath it.
-    monkeypatch.setattr("keelline.setup.run._check_settings_parent", lambda settings: None)
+    monkeypatch.setattr("stayfixed.setup.run._check_settings_parent", lambda settings: None)
     home = tmp_path / "home"
     real = tmp_path / "dotfiles" / "claude"
     real.mkdir(parents=True)

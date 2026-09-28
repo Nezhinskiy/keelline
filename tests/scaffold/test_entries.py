@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from keelline.scaffold.entries import (
+from stayfixed.scaffold.entries import (
     EntriesError,
     apply_entries,
     mark,
@@ -47,12 +47,12 @@ def wanted(event: str, entry_id: str, command: str) -> dict[str, list[dict[str, 
 
 
 def test_marker_id_reads_the_id_a_command_claims() -> None:
-    assert marker_id("run.sh hook PreToolUse  # keelline:bg-cleanup") == "bg-cleanup"
+    assert marker_id("run.sh hook PreToolUse  # stayfixed:bg-cleanup") == "bg-cleanup"
     assert marker_id("run.sh hook PreToolUse") is None
 
 
 def test_a_marker_that_is_not_at_the_end_is_not_an_id() -> None:
-    assert marker_id("run.sh  # keelline:bg-cleanup then more text") is None
+    assert marker_id("run.sh  # stayfixed:bg-cleanup then more text") is None
 
 
 def test_mark_is_idempotent() -> None:
@@ -97,7 +97,7 @@ def test_a_retired_id_is_removed() -> None:
     assert "hooks" not in json.loads(after)
 
 
-def test_an_event_with_no_keelline_entry_is_untouched() -> None:
+def test_an_event_with_no_stayfixed_entry_is_untouched() -> None:
     before = document(("PostToolUse", "theirs.sh"))
     after = apply_entries(before, wanted("PreToolUse", "bg-cleanup", "new.sh"))
     assert commands_of(after, "PostToolUse") == ["theirs.sh"]
@@ -112,7 +112,7 @@ def test_unrelated_top_level_keys_survive() -> None:
 
 def test_owned_covers_only_the_marked_entries() -> None:
     # The stamp the manifest records. A user's unrelated edit beside the hooks must not read
-    # as a hand edit of Keelline's own entries, or `upgrade` freezes them forever.
+    # as a hand edit of stayfixed's own entries, or `upgrade` freezes them forever.
     with_ours = apply_entries(
         document(("PreToolUse", "theirs.sh")), wanted("PreToolUse", "bg", "x")
     )
@@ -120,7 +120,7 @@ def test_owned_covers_only_the_marked_entries() -> None:
     raw["permissions"] = {"deny": ["Read(./.env)"]}
     assert owned(with_ours) == owned(json.dumps(raw))
     assert "theirs.sh" not in owned(with_ours)
-    assert "keelline:bg" in owned(with_ours)
+    assert "stayfixed:bg" in owned(with_ours)
 
 
 def test_owned_is_insensitive_to_the_key_order_inside_an_entry() -> None:
@@ -177,7 +177,7 @@ def test_a_group_whose_hooks_value_is_not_a_list_refuses_rather_than_vanishing()
 
 def test_owned_ids_refuses_the_shapes_apply_entries_refuses() -> None:
     # The provenance list reads the same structure. Under-reporting it silently would have
-    # `doctor` claim Keelline owns nothing in a file it does own.
+    # `doctor` claim stayfixed owns nothing in a file it does own.
     raw = {"hooks": {"PostToolUse": [{"matcher": "Bash", "hooks": 7}]}}
     with pytest.raises(EntriesError, match="not a list"):
         owned_ids(json.dumps(raw))

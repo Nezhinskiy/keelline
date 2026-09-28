@@ -1,5 +1,5 @@
 #!/bin/sh
-# Keelline hook wrapper. $1 = policy (open|closed); the rest is Keelline's own argv.
+# stayfixed hook wrapper. $1 = policy (open|closed); the rest is stayfixed's own argv.
 #
 # This file exists because a Python process cannot fail closed about its own absence:
 # a missing script exits 2 by CPython accident, a missing interpreter 127, an ImportError 1,
@@ -28,7 +28,7 @@
 #
 # **`PATH` is the chooser the tty gate did not close, and it is contained rather than dropped.**
 # The last candidate below is bare `python3`, resolved through `PATH`, and an `env` block can set
-# `PATH` — so gating `KEELLINE_PYTHON_CANDIDATES` alone moved the choice from one variable to
+# `PATH` — so gating `STAYFIXED_PYTHON_CANDIDATES` alone moved the choice from one variable to
 # another. Dropping the entry is not the answer: a spike measured the need for this last-resort
 # fall-through, and a machine whose Python lives under `pyenv`, `nix` or `asdf` has none at any
 # of the four absolute paths. What a hostile clone can actually stage is narrower than "any
@@ -50,14 +50,14 @@
 # absolute paths, and a candidate is refused if it lies under *either* anchor.
 set -u
 
-refuse() { echo "keelline: $1; refusing" >&2; exit 2; }
-degrade() { echo "keelline: $1; continuing open" >&2; exit 0; }
+refuse() { echo "stayfixed: $1; refusing" >&2; exit 2; }
+degrade() { echo "stayfixed: $1; continuing open" >&2; exit 0; }
 
 # Before `set -u` can speak for us. An entry that lost its policy argument would otherwise die
 # with the shell's own "unbound variable" and exit 1 — measured as exit 1 with no token on
 # /bin/sh (bash 3.2.57), and exit 0 under `zsh --emulate sh`, so the mapping is not even
 # portable. A disarmed guard must say so.
-[ $# -ge 1 ] || refuse "KL_ARGV no policy argument"
+[ $# -ge 1 ] || refuse "SF_ARGV no policy argument"
 policy="$1"
 shift
 
@@ -70,9 +70,9 @@ fail() {
 # The harness substitutes the plugin root into the *command string* of `hooks/hooks.json`, so
 # the wrapper that runs is always the plugin's own — but a variable of that name reaching this
 # process from somewhere else would choose the Python program we then execute, before any
-# Keelline guard runs. Whether a project `env` block can in fact shadow a plugin-provided
+# stayfixed guard runs. Whether a project `env` block can in fact shadow a plugin-provided
 # variable is unmeasured, and this does not depend on the answer.
-launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/keelline"
+launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/stayfixed"
 
 # Every entry but the dispatcher's relies on `--root` defaulting to the current directory, and
 # no harness promises to launch a hook inside the project. Resolved here, once, rather than
@@ -89,7 +89,7 @@ launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/keelline"
 #
 # `gitenv.GIT_ENV_KEEP` keeps `PATH` on purpose and says why: the machine owner's `git` must
 # answer rather than the macOS shim. That ruling holds where it is made, one layer down, where
-# `git` answers a question inside a Keelline that has already chosen its interpreter. Here its
+# `git` answers a question inside a stayfixed that has already chosen its interpreter. Here its
 # answer decides which programs may run at all, so the trade goes the other way — and the
 # ruling's concern is kept without keeping `PATH`, by asking the machine owner's own installs
 # before `/usr/bin/git`. No `$HOME`-relative entry (`~/.nix-profile/bin/git`): `HOME` is
@@ -106,7 +106,7 @@ launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/keelline"
 # further business here. `hooks/dispatch._git_toplevel` scrubs the identical call one layer down
 # and names the failure verbatim: an inherited `GIT_DIR` or `GIT_WORK_TREE` makes git answer for
 # a different repository, and every `--root`-defaulting entry then reads that repository's
-# `keelline.toml`, budgets and note store. Measured: `cd repoA; GIT_DIR=repoB/.git
+# `stayfixed.toml`, budgets and note store. Measured: `cd repoA; GIT_DIR=repoB/.git
 # GIT_WORK_TREE=repoB <wrapper>` put the launcher in repoB.
 #
 # Asked **here**, in the directory the harness launched us in, and never after the `cd` below:
@@ -114,9 +114,9 @@ launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/keelline"
 # answer for it, and the second anchor would be the first one wearing a different hat.
 #
 # Written out in the `for` rather than held in a variable, unlike the interpreter list below,
-# which has to be one because `KEELLINE_PYTHON_CANDIDATES` replaces it. An unquoted variable is
+# which has to be one because `STAYFIXED_PYTHON_CANDIDATES` replaces it. An unquoted variable is
 # not word-split by zsh outside `sh` emulation, so a list in a variable is one long word there
-# and no candidate matches; measured under native `zsh`, which refused with `KL_NO_GIT` — safe,
+# and no candidate matches; measured under native `zsh`, which refused with `SF_NO_GIT` — safe,
 # since the containment still refused and nothing ran, but the wrong reason. Literal words in a
 # `for` are words in all five shells this file is verified against.
 git_bin=
@@ -127,7 +127,7 @@ for g in /opt/homebrew/bin/git /usr/local/bin/git /home/linuxbrew/.linuxbrew/bin
     break
   fi
 done
-[ -n "$git_bin" ] || fail "KL_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"
+[ -n "$git_bin" ] || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"
 git_root=$(env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)
 
 # `CLAUDE_PROJECT_DIR` still decides the *destination*, which is the question it is allowed to
@@ -137,7 +137,7 @@ root="${CLAUDE_PROJECT_DIR:-}"
 # A root that could not be *resolved* is not fatal: the command finds no configuration and emits
 # nothing, which is the correct open degradation. A root that was resolved and cannot be entered
 # is a different state and used to be silent — the process stayed in the harness's cwd, and if
-# that was another Keelline project every entry read *its* configuration, with no token and
+# that was another stayfixed project every entry read *its* configuration, with no token and
 # nothing in the sink. One token, and `doctor`'s wrapper row surfaces it.
 #
 # `pwd -P` and not `$root`: the comparison below needs the *resolved* root, or a project reached
@@ -152,7 +152,7 @@ root="${CLAUDE_PROJECT_DIR:-}"
 # without the `--`.
 project=
 if [ -n "$root" ]; then
-  CDPATH= cd -- "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"
+  CDPATH= cd -- "$root" 2>/dev/null || fail "SF_NO_ROOT the project root this entry was given cannot be entered"
   project=$(pwd -P)
 fi
 
@@ -258,11 +258,11 @@ in_project() {
 # resolve to macOS's 3.9, and a path list alone would fall through to it on a machine with no
 # python.org or Intel-Homebrew install (a spike measured exactly that fall-through).
 #
-# `KEELLINE_PYTHON_CANDIDATES` names the *program* this script executes, and the probe asks it
+# `STAYFIXED_PYTHON_CANDIDATES` names the *program* this script executes, and the probe asks it
 # only to exit 0 for a trivial `-c` — so unguarded it is a redirect with a longer name, and the
-# repository-planted interpreter was measured running `<plugin>/scripts/keelline hook PreToolUse`
+# repository-planted interpreter was measured running `<plugin>/scripts/stayfixed hook PreToolUse`
 # on every tool call. It is therefore honoured exactly where `config/machine.py` honours
-# `KEELLINE_CONFIG`: from an interactive terminal. A hook's stdin is the harness's JSON payload
+# `STAYFIXED_CONFIG`: from an interactive terminal. A hook's stdin is the harness's JSON payload
 # on a pipe and `doctor` hands its own probe `/dev/null`, so neither path can be redirected by an
 # `env` block, while a machine owner debugging the probe by hand still gets their list.
 #
@@ -271,11 +271,11 @@ in_project() {
 # afterwards would already have run. This is the same order the launcher check follows, and the
 # reason the original defect was reachable with three lines of `sh`.
 candidates='/Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3 python3'
-if [ -t 0 ] && [ -n "${KEELLINE_PYTHON_CANDIDATES:-}" ]; then candidates="$KEELLINE_PYTHON_CANDIDATES"; fi
+if [ -t 0 ] && [ -n "${STAYFIXED_PYTHON_CANDIDATES:-}" ]; then candidates="$STAYFIXED_PYTHON_CANDIDATES"; fi
 p=
 skipped_in_project=
 # `set -f` for the split: a candidate is a program name or a path, never a pattern, and without
-# it a `*` in `KEELLINE_PYTHON_CANDIDATES` would expand against the cwd before `command -v` saw
+# it a `*` in `STAYFIXED_PYTHON_CANDIDATES` would expand against the cwd before `command -v` saw
 # it. It also covers `in_project`'s split of the checkout list. Restored after the loop so
 # nothing below inherits the setting.
 set -f
@@ -304,20 +304,20 @@ set +f
 # arm names it here.
 if [ -z "$p" ]; then
   if [ -n "$skipped_in_project" ]; then
-    fail "KL_NO_PY every python3 candidate found is inside the project root, which this wrapper never runs; install a python3 3.11 or newer outside the checkout, or put one on PATH from outside it"
+    fail "SF_NO_PY every python3 candidate found is inside the project root, which this wrapper never runs; install a python3 3.11 or newer outside the checkout, or put one on PATH from outside it"
   fi
-  fail "KL_NO_PY no python3 of 3.11 or newer among the candidates"
+  fail "SF_NO_PY no python3 of 3.11 or newer among the candidates"
 fi
 
 # Readable and not merely present. `-f` alone let a launcher at mode 000 reach CPython, which
 # printed its own `Permission denied` and exited 2 with no token of ours — the unattributed exit
 # 2 this file's header is about, and a state `doctor`'s wrapper row read as green because it
 # keys on finding a token (measured with `chmod 000`).
-[ -f "$launcher" ] && [ -r "$launcher" ] || fail "KL_NO_LAUNCHER launcher missing or unreadable at ${launcher}"
+[ -f "$launcher" ] && [ -r "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"
 
 "$p" "$launcher" "$@"
 rc=$?
 case "$rc" in
   0|2) exit "$rc" ;;
-  *) fail "KL_RC keelline exited rc=$rc" ;;
+  *) fail "SF_RC stayfixed exited rc=$rc" ;;
 esac

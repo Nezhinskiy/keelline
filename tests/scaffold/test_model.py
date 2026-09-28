@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from keelline.scaffold.manifest import Kind
-from keelline.scaffold.model import Action, Plan, Refused, Template, Verb
+from stayfixed.scaffold.manifest import Kind
+from stayfixed.scaffold.model import Action, Plan, Refused, Template, Verb
 
 
 def test_the_six_verbs_are_exactly_the_frozen_set() -> None:

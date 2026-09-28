@@ -8,10 +8,9 @@ from __future__ import annotations
 
 import os
 import pty
-import time
 from pathlib import Path
 
-from keelline.runner import (
+from stayfixed.runner import (
     _ENV_DROP,
     _ENV_FORCE,
     NETWORK_TIMEOUT_SECONDS,
@@ -35,10 +34,10 @@ def test_a_launched_command_gets_no_stdin_and_no_credential_prompt(tmp_path: Pat
     # on an inherited stdin is invisible and blocks for the whole of NETWORK_TIMEOUT_SECONDS.
     # What makes that a finding rather than an annoyance is which callers reach the network
     # through this seam: `overlay create --template` launches `gh` with the machine owner's own
-    # authentication, and `release.pins.released` runs `git ls-remote` for `keelline init` and
+    # authentication, and `release.pins.released` runs `git ls-remote` for `stayfixed init` and
     # for `doctor`'s `ci-ref` row — a write meant to be non-interactive and a read-only
     # diagnostic. (This used to cite that row's URL as repository-authored; it is
-    # `keelline.REPOSITORY_URL`, a module constant. See `keelline.runner._ENV_FORCE`.)
+    # `stayfixed.REPOSITORY_URL`, a module constant. See `stayfixed.runner._ENV_FORCE`.)
     #
     # The pty is the point of the case: without it this process's own stdin is already not a
     # terminal under pytest, and the assertion would pass with the guard deleted.
@@ -77,7 +76,7 @@ def test_a_command_that_hangs_is_not_reported_as_one_that_is_missing(tmp_path: P
     # `TimeoutExpired` is a `SubprocessError`, so a `gh` that hung for the full five minutes
     # arrived as NOT_FOUND — which every caller reads as "gh is not installed". A wrong finding
     # is worse than a slow one, and the two have different remedies.
-    import keelline.runner as runner
+    import stayfixed.runner as runner
 
     before = runner.NETWORK_TIMEOUT_SECONDS
     runner.NETWORK_TIMEOUT_SECONDS = 1
@@ -88,7 +87,7 @@ def test_a_command_that_hangs_is_not_reported_as_one_that_is_missing(tmp_path: P
     assert hung.code == TIMED_OUT
     # Non-vacuous: a binary that really is missing still answers NOT_FOUND, which is the mapping
     # an optional binary needs — a missing one is a finding, never a traceback.
-    assert _SubprocessRunner().run(["keelline-no-such-binary"], tmp_path).code == NOT_FOUND
+    assert _SubprocessRunner().run(["stayfixed-no-such-binary"], tmp_path).code == NOT_FOUND
 
 
 def test_a_caller_that_asks_for_a_narrower_bound_gets_it(tmp_path: Path) -> None:
@@ -96,25 +95,32 @@ def test_a_caller_that_asks_for_a_narrower_bound_gets_it(tmp_path: Path) -> None
 
     Five minutes bounds `gh repo create --clone` waiting on GitHub and the clone behind it. It
     also bounded `doctor`'s `ci-ref` row, which reads one tag listing on a command documented as
-    one line of output — and `keelline init` recording a `[ci] ref` is what made that block
+    one line of output — and `stayfixed init` recording a `[ci] ref` is what made that block
     reachable at all. The bound belongs to the caller that knows how big its question is, so it
     is a keyword on the factory rather than a second module constant: the protocol is untouched
     and no stub in the suite grows a parameter it would ignore.
 
-    Measured against the wall rather than against the constant, because the claim is that the
-    subprocess is really cut off: `sleep 5` under a one-second bound answers `TIMED_OUT`, and the
-    sentence it carries names the bound that was applied and not the module's.
+    Judged by what the subprocess did rather than by the wall: under a one-second bound, a
+    command that would write a marker after five seconds answers `TIMED_OUT`, the marker is not
+    there when the runner returns, and the sentence it carries names the bound that was applied
+    and not the module's. The marker proves the call returned before the command's end, which is
+    what a clock used to prove with a margin load can spend. That it never gets written later
+    rests on `subprocess.run(timeout=)`, which kills `sh` before it reaches `: > finished`; the
+    `sleep` it started outlives the test by about four seconds, writing nothing.
 
     Mutation (oracle entry "the runner ignores the bound its caller asked for"): `timeout=bound`
-    back to `timeout=NETWORK_TIMEOUT_SECONDS`. Measured: `sleep 5` runs to completion and the
-    runner answers `Completed(code=0)` after 5.45s, so the code assertion is what reddens and the
-    elapsed one is the floor under it — a bound of five minutes cannot cut a five-second sleep.
+    back to `timeout=NETWORK_TIMEOUT_SECONDS`. Measured: the command runs to completion and the
+    runner answers `Completed(code=0)`, so the code assertion is what reddens and the marker is
+    the floor under it — a bound of five minutes cannot cut a five-second sleep.
     """
-    started = time.monotonic()
-    hung = subprocess_runner(timeout=1).run(["sh", "-c", "sleep 5"], tmp_path)
-    elapsed = time.monotonic() - started
+    # The sleep's own output goes to /dev/null, so once the shell is killed nothing holds the
+    # runner's pipes open for the rest of it.
+    marker = tmp_path / "finished"
+    hung = subprocess_runner(timeout=1).run(
+        ["sh", "-c", "sleep 5 >/dev/null 2>&1; : > finished"], tmp_path
+    )
     assert hung.code == TIMED_OUT
-    assert elapsed < 5, elapsed
+    assert not marker.exists(), "the command ran to its end under a one-second bound"
     assert "within 1s" in hung.stderr and str(NETWORK_TIMEOUT_SECONDS) not in hung.stderr
     # Non-vacuous: the default is still the module's, and a runner asked for nothing in particular
     # is the one every other caller gets.
@@ -129,7 +135,7 @@ def test_output_that_is_not_text_is_read_with_replacement_characters_not_raised(
     # and never as a path. Decoded strictly, one byte that was not text ended the command as
     # `internal error: UnicodeDecodeError`: `test attribute` over a test run whose output
     # quoted a latin-1 filename, measured. A byte the codec cannot read is U+FFFD instead, which
-    # every stream and every UTF-8 file Keelline writes can hold. Mutation (declared): decode
+    # every stream and every UTF-8 file stayfixed writes can hold. Mutation (declared): decode
     # strictly again -> this reddens.
     done = subprocess_runner().run(["sh", "-c", "printf 'caf\\351'; printf 'x\\351' >&2"], tmp_path)
     assert done == Completed(0, "caf\ufffd", "x\ufffd")

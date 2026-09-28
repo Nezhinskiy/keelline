@@ -19,17 +19,17 @@ from pathlib import Path
 
 import pytest
 
-from keelline.attach.write import _worktrees, attach
-from keelline.errors import Refusal
-from keelline.guards.commit import commits_in
-from keelline.guards.githooks import hooks_dir
-from keelline.guards.hygiene import inspect
-from keelline.hooks.dispatch import _git_toplevel
-from keelline.ledger.scan import TOP_LEVEL, _committed_files
-from keelline.memory.store import origin_remote
-from keelline.overlay.sync import overlay_sync
-from keelline.project.detect import NOT_DERIVABLE, detect
-from keelline.setup.run import _repository
+from stayfixed.attach.write import _worktrees, attach
+from stayfixed.errors import Refusal
+from stayfixed.guards.commit import commits_in
+from stayfixed.guards.githooks import hooks_dir
+from stayfixed.guards.hygiene import inspect
+from stayfixed.hooks.dispatch import _git_toplevel
+from stayfixed.ledger.scan import TOP_LEVEL, _committed_files
+from stayfixed.memory.store import origin_remote
+from stayfixed.overlay.sync import overlay_sync
+from stayfixed.project.detect import NOT_DERIVABLE, detect
+from stayfixed.setup.run import _repository
 from tests.attach.test_write import RULE, FakeRunner, _attachable
 from tests.cli import cli
 from tests.gitfixture import git, needs_git, plant_path
@@ -74,7 +74,7 @@ def test_the_hook_path_reads_a_checkout_path_that_is_not_utf_8_as_that_path(
 @needs_git
 def test_an_origin_url_that_is_not_utf_8_is_answered_as_itself(tmp_path: Path) -> None:
     # Reproduced: `printf '[remote "origin"]\n\turl = https://x/caf\xe9\n' >> .git/config`, then
-    # `keelline init --questions` and `init --yes` both ended as `internal error:
+    # `stayfixed init --questions` and `init --yes` both ended as `internal error:
     # UnicodeDecodeError`. The answer is the URL as the filesystem's codec spells it, so it can
     # still be compared with a recorded one; it never equals one read out of a TOML file.
     # Mutation (declared, on `gitenv`): the decode made strict again -> this reddens.

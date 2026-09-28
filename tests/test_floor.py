@@ -8,32 +8,32 @@ from pathlib import Path
 
 import pytest
 
-from keelline import gitenv
+from stayfixed import gitenv
 from tests.floor import SUITE_GIT_FLOOR_SECONDS, developer_free_environ, is_developers
 
 ROOT = Path(__file__).resolve().parents[1]
-LAUNCHER = ROOT / "scripts" / "keelline"
+LAUNCHER = ROOT / "scripts" / "stayfixed"
 
 
 def test_a_spawner_strips_the_developers_variables_and_keeps_the_floor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # One predicate for both halves, so a spawner cannot take the strip without the floor: the
-    # floor is a `KEELLINE_*` name, and the strip used to take it with the developer's own
+    # floor is a `STAYFIXED_*` name, and the strip used to take it with the developer's own
     # configuration. Mutation (oracle): "the suite's developer strip drops the floor" -> this
     # reddens, and so does the launcher case below.
-    monkeypatch.setenv("KEELLINE_CONFIG", "/developer/keelline.toml")
+    monkeypatch.setenv("STAYFIXED_CONFIG", "/developer/stayfixed.toml")
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", "/developer/project")
     env = developer_free_environ()
     assert env[gitenv.FLOOR_VARIABLE] == str(SUITE_GIT_FLOOR_SECONDS)
-    assert "KEELLINE_CONFIG" not in env
+    assert "STAYFIXED_CONFIG" not in env
     assert "CLAUDE_PROJECT_DIR" not in env
     assert not is_developers(gitenv.FLOOR_VARIABLE)
 
 
-def test_a_keelline_the_suite_starts_runs_its_git_under_the_floor(tmp_path: Path) -> None:
+def test_a_stayfixed_the_suite_starts_runs_its_git_under_the_floor(tmp_path: Path) -> None:
     # The case the floor exists for. It used to be an assignment in the test's own process, so a
-    # `keelline` a test started as a separate process ran under the product's bare bounds, and
+    # `stayfixed` a test started as a separate process ran under the product's bare bounds, and
     # under load one of them ran out and failed a test that passed alone.
     #
     # The shipped launcher, started the way the suite's spawners start it, runs a hook outside

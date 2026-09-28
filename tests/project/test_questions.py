@@ -1,4 +1,4 @@
-"""`keelline init --questions`' schema: six questions, each default what `init --yes` alone
+"""`stayfixed init --questions`' schema: six questions, each default what `init --yes` alone
 writes, each source one of `detect`'s phrases, and no byte a grammar rejected."""
 
 from __future__ import annotations
@@ -9,11 +9,11 @@ from typing import Any
 
 import pytest
 
-from keelline.config.loader import load
-from keelline.config.schema import MEMORY_MODES
-from keelline.errors import Refusal
-from keelline.project.init import init
-from keelline.project.questions import (
+from stayfixed.config.loader import load
+from stayfixed.config.schema import MEMORY_MODES
+from stayfixed.errors import Refusal
+from stayfixed.project.init import init
+from stayfixed.project.questions import (
     BRANCH_PATTERN,
     FLAGS,
     NAME_PATTERN,
@@ -22,7 +22,7 @@ from keelline.project.questions import (
     card,
     questions,
 )
-from keelline.scaffold import MANIFEST_PATH
+from stayfixed.scaffold import MANIFEST_PATH
 from tests.gitfixture import LsRemote, git, needs_git
 from tests.project.repos import DOCUMENT, repository
 
@@ -33,7 +33,7 @@ def _schema(tmp_path: Path, root: Path) -> dict[str, Any]:
 
 def _defaults(schema: dict[str, Any]) -> dict[str, tuple[object, str]]:
     return {
-        key: (question.get("default"), question["x-keelline-source"])
+        key: (question.get("default"), question["x-stayfixed-source"])
         for key, question in schema["properties"].items()
     }
 
@@ -61,15 +61,15 @@ def test_each_default_is_what_init_yes_alone_writes(tmp_path: Path, key: str) ->
 
 
 @needs_git
-def test_the_schema_keys_are_the_keelline_toml_keys_the_answers_write(tmp_path: Path) -> None:
-    # Mutation (by hand): the loop that sets `x-keelline-flag` dropped -> the last assertion
+def test_the_schema_keys_are_the_stayfixed_toml_keys_the_answers_write(tmp_path: Path) -> None:
+    # Mutation (by hand): the loop that sets `x-stayfixed-flag` dropped -> the last assertion
     # reddens on a `KeyError`.
     schema = _schema(tmp_path, repository(tmp_path))
     assert schema["type"] == "object"
     assert tuple(schema["properties"]) == PROPERTIES == tuple(schema["required"])
     assert len(PROPERTIES) == 6
     for key, question in schema["properties"].items():
-        assert question["x-keelline-flag"] == FLAGS[key], key
+        assert question["x-stayfixed-flag"] == FLAGS[key], key
 
 
 @needs_git
@@ -84,8 +84,8 @@ def test_each_default_says_where_it_came_from(tmp_path: Path) -> None:
     assert defaults["project.base_branch"] == ("main", "default")
     no_origin = _defaults(_schema(tmp_path / "b", repository(tmp_path / "b", origin=None)))
     assert no_origin["project.base_branch"] == ("main", "current branch")
-    assert defaults["keelline.agents"] == (["claude", "codex"], "default")
-    assert defaults["keelline.profile"] == ("", "no profile markers")
+    assert defaults["stayfixed.agents"] == (["claude", "codex"], "default")
+    assert defaults["stayfixed.profile"] == ("", "no profile markers")
 
 
 def test_the_free_text_patterns_are_anchored_for_ecma_262() -> None:
@@ -150,7 +150,7 @@ def test_a_name_outside_the_grammar_is_left_to_ask_and_never_printed(tmp_path: P
     # and the `not in` assertions redden.
     schema = _schema(tmp_path, repository(tmp_path, origin="git@github.com:owner/Not A Name.git"))
     name = schema["properties"]["project.name"]
-    assert "default" not in name and name["x-keelline-source"] == "not derivable"
+    assert "default" not in name and name["x-stayfixed-source"] == "not derivable"
     shown = card(schema)
     assert "not a name" not in repr(schema).lower() and "not a name" not in shown.lower()
     assert "  project.name: none; asked (not derivable; --name)\n" in shown
@@ -158,14 +158,14 @@ def test_a_name_outside_the_grammar_is_left_to_ask_and_never_printed(tmp_path: P
 
 @needs_git
 def test_the_questions_are_refused_where_init_would_refuse(tmp_path: Path) -> None:
-    # A `keelline.toml` already answers every question, and a manifest means `init` has run:
+    # A `stayfixed.toml` already answers every question, and a manifest means `init` has run:
     # asking in either case would collect answers nothing could write. Mutation (oracle): the
-    # `keelline.toml` check disabled -> the first `raises` reddens.
+    # `stayfixed.toml` check disabled -> the first `raises` reddens.
     root = repository(tmp_path)
-    (root / "keelline.toml").write_text(DOCUMENT, encoding="utf-8")
-    with pytest.raises(Refusal, match=re.escape("already has a keelline.toml")):
+    (root / "stayfixed.toml").write_text(DOCUMENT, encoding="utf-8")
+    with pytest.raises(Refusal, match=re.escape("already has a stayfixed.toml")):
         _schema(tmp_path, root)
     (root / MANIFEST_PATH).parent.mkdir(parents=True)
     (root / MANIFEST_PATH).write_text("{}", encoding="utf-8")
-    with pytest.raises(Refusal, match="keelline upgrade"):
+    with pytest.raises(Refusal, match="stayfixed upgrade"):
         _schema(tmp_path, root)

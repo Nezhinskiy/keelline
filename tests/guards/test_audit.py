@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from keelline.guards.audit import (
+from stayfixed.guards.audit import (
     _KNOWN_BAD_EXPECTED,
     SHAPES,
     Finding,

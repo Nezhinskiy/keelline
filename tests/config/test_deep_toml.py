@@ -1,8 +1,8 @@
 """Every reader of a TOML document somebody else wrote, handed one nested past the parser.
 
 `tomllib` reads nested arrays by recursion, so `a = [[[…]]]` a few thousand levels deep raises
-`RecursionError`, not `TOMLDecodeError`. Uncaught, that is an internal error, the class Keelline
-keeps for its own defects; in a gate run it ended every gate, and in `keelline.toml` it replaced
+`RecursionError`, not `TOMLDecodeError`. Uncaught, that is an internal error, the class stayfixed
+keeps for its own defects; in a gate run it ended every gate, and in `stayfixed.toml` it replaced
 "does not load" with a traceback's name. So each reader answers it as it answers a document that
 does not parse, and each case below holds one reader to its own answer.
 """
@@ -14,20 +14,20 @@ from pathlib import Path
 
 import pytest
 
-from keelline.attach import binding, write
-from keelline.config.loader import TOO_DEEP, ConfigError, MachineConfigError, loads
-from keelline.config.owned import UnparsedDocument, rewrite
-from keelline.docs.trail import read_trail
-from keelline.errors import Failure
-from keelline.memory import store
-from keelline.project import init
-from keelline.release import versions
-from keelline.setup.machine import read_machine
+from stayfixed.attach import binding, write
+from stayfixed.config.loader import TOO_DEEP, ConfigError, MachineConfigError, loads
+from stayfixed.config.owned import UnparsedDocument, rewrite
+from stayfixed.docs.trail import read_trail
+from stayfixed.errors import Failure
+from stayfixed.memory import store
+from stayfixed.project import init
+from stayfixed.release import versions
+from stayfixed.setup.machine import read_machine
 
 # Past the interpreter's default recursion limit of 1000 with room to spare, on 3.11 to 3.13.
 DEPTH = 2000
 DEEP = "a = " + "[" * DEPTH + "]" * DEPTH + "\n"
-FINE = '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n'
+FINE = '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n'
 
 
 def _file(tmp_path: Path, relative: str, text: str = DEEP) -> Path:
@@ -64,7 +64,7 @@ Case = Callable[[Path], object]
             id="personal",
         ),
         pytest.param(
-            lambda t: rewrite(DEEP, {("keelline", "state"): "adopting"}),
+            lambda t: rewrite(DEEP, {("stayfixed", "state"): "adopting"}),
             UnparsedDocument,
             id="owned-rewrite",
         ),
@@ -88,7 +88,7 @@ Case = Callable[[Path], object]
             id="versions-pyproject",
         ),
         pytest.param(
-            lambda t: init._existing(_file(t, "keelline.toml").parent), Failure, id="init"
+            lambda t: init._existing(_file(t, "stayfixed.toml").parent), Failure, id="init"
         ),
         pytest.param(
             lambda t: read_machine(_file(t, "machine.toml")), MachineConfigError, id="machine"
@@ -127,4 +127,4 @@ def test_the_refusal_names_the_file_and_says_why_without_a_position() -> None:
     # nested past the parser has none, and the message says what it has instead.
     with pytest.raises(ConfigError) as refused:
         loads(DEEP, Path("/nowhere"), machine=Path("/nowhere/absent.toml"))
-    assert str(refused.value).endswith(f"keelline.toml is not valid TOML {TOO_DEEP}")
+    assert str(refused.value).endswith(f"stayfixed.toml is not valid TOML {TOO_DEEP}")

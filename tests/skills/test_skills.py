@@ -12,15 +12,15 @@ from pathlib import Path
 
 import pytest
 
-from keelline.cli import build_parser, discover_registrars, split_json_flag
+from stayfixed.cli import build_parser, discover_registrars, split_json_flag
 
 ROOT = Path(__file__).resolve().parents[2]
 SKILLS = ROOT / "skills"
-# The skills that ship *into* an overlay. They moved under `src/keelline/templates/` with the
+# The skills that ship *into* an overlay. They moved under `src/stayfixed/templates/` with the
 # overlay template and this walk did not follow, so the one document the invocation lint exists
 # for -- that file once shipped an invocation that does not parse -- was walked by nothing while
 # a model read it in every overlay a user creates.
-TEMPLATE_SKILLS = ROOT / "src" / "keelline" / "templates" / "overlay" / "skills"
+TEMPLATE_SKILLS = ROOT / "src" / "stayfixed" / "templates" / "overlay" / "skills"
 AGENTS = ROOT / "agents"
 # The plugin's own skill_lines lint: a SKILL.md is an entry point, and detail belongs in
 # `references/`. Not a config key — it bounds a file this repository ships, not a project's.
@@ -51,7 +51,7 @@ _TOOL = re.compile(r"\b(?:" + "|".join(TOOL_NAMES) + r")\b")
 # of its command.
 NOT_YET_SHIPPED: dict[str, str] = {}
 PACKAGES = {"onboarding", "upgrade", "attach", "setup", "hooks-core"}
-_INVOCATION = re.compile(r"`keelline ([^`\n]+)`")
+_INVOCATION = re.compile(r"`stayfixed ([^`\n]+)`")
 _FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.DOTALL)
 
 
@@ -195,13 +195,13 @@ def test_every_invocation_parses_or_is_allowlisted(path: Path) -> None:
                 parsed = False
         if argv[0] in NOT_YET_SHIPPED:
             assert not parsed, (
-                f"`keelline {invocation}` parses now; delete its NOT_YET_SHIPPED entry "
+                f"`stayfixed {invocation}` parses now; delete its NOT_YET_SHIPPED entry "
                 f"({NOT_YET_SHIPPED[argv[0]]} shipped it) and re-read this skill against the "
                 f"flags that actually shipped — this test proves the command parses, never "
                 f"that the skill describes it correctly"
             )
         else:
-            assert parsed, f"`keelline {invocation}` does not parse against the real parser"
+            assert parsed, f"`stayfixed {invocation}` does not parse against the real parser"
 
 
 def test_the_allowlist_names_only_packages_the_design_defines() -> None:
@@ -229,31 +229,31 @@ def test_the_agent_file_carries_its_frontmatter_and_names_no_product() -> None:
 
 
 def test_the_init_skill_asks_before_it_runs_a_kept_file_s_custom_gates() -> None:
-    # `init` adopts a clone's `keelline.toml`, and the adoption's first command, `keelline
+    # `init` adopts a clone's `stayfixed.toml`, and the adoption's first command, `stayfixed
     # assess`, runs every command its `[gates.custom]` names. `init` says so in a note, and the
-    # skill names that note by its words and asks before the first `keelline assess`. Mutation
+    # skill names that note by its words and asks before the first `stayfixed assess`. Mutation
     # (by hand): the step's question removed -> the ask no longer comes first and this reddens.
-    from keelline.project.commands import CUSTOM_GATES
+    from stayfixed.project.commands import CUSTOM_GATES
 
     text = (SKILLS / "init" / "references" / "adoption.md").read_text(encoding="utf-8")
     adoption = " ".join(text.split())
     lead = CUSTOM_GATES.split("{count}", 1)[0].strip()
-    first_run = adoption.index("run `keelline assess`")
+    first_run = adoption.index("run `stayfixed assess`")
     assert adoption.index(lead) < adoption.index("explicit yes") < first_run
     # A no still produces an assessment, through the flag that runs none of those commands:
     # before it, the only way to honour a no was to stop. Mutation (by hand): the no's command
-    # back to plain `keelline assess` -> this reddens.
-    assert "`keelline assess --builtin` on a no" in adoption[first_run:]
+    # back to plain `stayfixed assess` -> this reddens.
+    assert "`stayfixed assess --builtin` on a no" in adoption[first_run:]
     # Without the note there is nothing to ask, and the assessment still runs: that run was the
     # tail of the if-sentence, where an agent reading "if" could skip it. It is its own branch,
     # and the relay follows both. Mutation (by hand): the `Otherwise` branch deleted -> reddens.
-    otherwise = adoption.index("- Otherwise, run `keelline assess`.")
+    otherwise = adoption.index("- Otherwise, run `stayfixed assess`.")
     assert first_run < otherwise < adoption.index("Either way, relay the summary")
 
 
 def test_the_init_skill_keeps_a_no_to_the_clone_s_commands_through_the_whole_adoption() -> None:
     # After a no, the first step assessed with `--builtin`, and the closing message then handed
-    # over `keelline adopt promote`, which runs every custom gate the clone configures: in a
+    # over `stayfixed adopt promote`, which runs every custom gate the clone configures: in a
     # clone the base is the clone author's, so its having the command is no brake. Every command
     # the skill names that runs gates is named with `--builtin` for a no as well. Mutation
     # (oracle): the closing step's `--builtin` dropped -> `adopt promote` has no such form and
@@ -264,9 +264,9 @@ def test_the_init_skill_keeps_a_no_to_the_clone_s_commands_through_the_whole_ado
     )
     words = " ".join(text.split())
     named = [
-        c for c in ("keelline assess", "keelline adopt promote", "keelline gate") if c in words
+        c for c in ("stayfixed assess", "stayfixed adopt promote", "stayfixed gate") if c in words
     ]
-    assert named == ["keelline assess", "keelline adopt promote"]
+    assert named == ["stayfixed assess", "stayfixed adopt promote"]
     for command in named:
         assert f"`{command} --builtin`" in words, command
     assert "A no holds for the whole adoption" in words

@@ -1,0 +1,136 @@
+"""The `bugs` group: `new`, `index [--check]`, `check`, `renumber OLD NEW`."""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import asdict
+
+from stayfixed import fsops
+from stayfixed.areas import SubParsers
+from stayfixed.command import CHECK_HELP, common_flags, root_and_config
+from stayfixed.findings import labels, listed
+from stayfixed.ledger.entries import SEVERITIES
+from stayfixed.printed import printable
+from stayfixed.result import Result
+
+_OK = "OK: bug ledger entries, index freshness, and identifier references"
+_INERT = "nothing to check: no ledger directory and no generated index"
+BASE_HELP = (
+    "also fail when a commit HEAD forked from this base ref at carries the ledger and the tree "
+    "has none, or carries an entry the tree lacks, so a change that deletes the ledger or an "
+    "entry of it answers for it; without it the tree alone is judged"
+)
+
+
+def run_bugs_index(args: argparse.Namespace) -> Result:
+    from stayfixed.ledger.entries import load_entries
+    from stayfixed.ledger.index import index_text, refuse_index_overwrite, render_index
+
+    root, config = root_and_config(args)
+    current = index_text(root, config)
+    refuse_index_overwrite(root, config, current)
+    entries = load_entries(root, config)
+    rendered = render_index(entries, config)
+    index = config.paths.bug_index
+    if args.check:
+        if current != rendered:
+            return Result(
+                f"{index} is stale; run: stayfixed bugs index", {"stale": True}, exit_code=1
+            )
+        return Result(f"OK: {index} is current ({len(entries)} entries)", {"stale": False})
+    if current == rendered:
+        return Result(
+            f"{index} is current ({len(entries)} entries)",
+            {"written": False, "entries": len(entries)},
+        )
+    fsops.write_within(root, index, rendered)
+    return Result(
+        f"rewrote {index} ({len(entries)} entries)", {"written": True, "entries": len(entries)}
+    )
+
+
+def run_bugs_check(args: argparse.Namespace) -> Result:
+    from stayfixed.ledger.check import bugs_gate, uninitialised
+
+    root, config = root_and_config(args)
+    found = bugs_gate(root, config, args.base or "")
+    # Before a ledger exists only a reference to an entry, or a ledger the change forked with, is
+    # a finding, and there is none.
+    if not found and uninitialised(root, config):
+        return Result(_INERT, {"checked": False, "findings": []})
+    data = {"checked": True, "findings": [asdict(p) for p in found]}
+    if not found:
+        return Result(_OK, data)
+    # Labels only on the line: a path, a line number and a rule are this command's; the detail
+    # may quote the repository and stays in `data`.
+    return Result(f"FAIL: {len(found)} ledger problem(s): {labels(found)}", data, exit_code=1)
+
+
+def run_bugs_new(args: argparse.Namespace) -> Result:
+    from stayfixed.ledger.write import file_entry
+
+    root, config = root_and_config(args)
+    filed = file_entry(
+        root,
+        config,
+        title=args.title,
+        severity=args.severity,
+        area=args.area,
+        source=args.source,
+        related=tuple(args.related),
+        fetch=not args.no_fetch,
+    )
+    relative = filed.path.relative_to(root).as_posix()
+    summary = f"filed {relative}" + (f"; {filed.warning}" if filed.warning else "")
+    return Result(summary, {"id": filed.identifier, "path": relative, "warning": filed.warning})
+
+
+def run_bugs_renumber(args: argparse.Namespace) -> Result:
+    from stayfixed.ledger.write import renumber
+
+    root, config = root_and_config(args)
+    result = renumber(root, config, args.old, args.new)
+    void = result.void.relative_to(root).as_posix()
+    # Each file as `{path, reason}`, and the line names each by its `path`: a path may hold
+    # `": "`, so a `"path: reason"` string could not be split back into the two.
+    data = {
+        "old": args.old,
+        "new": args.new,
+        "void": void,
+        "unswept": [asdict(u) for u in result.unswept],
+    }
+    if result.unswept:
+        return Result(
+            f"FAIL: {args.old} moved to {args.new}, but {len(result.unswept)} file(s) still "
+            f"reference {args.old} and must be fixed by hand "
+            f"({listed([printable(u.path) for u in result.unswept])}); "
+            f"a void pointer remains at {void}",
+            data,
+            exit_code=1,
+        )
+    return Result(f"{args.old} -> {args.new}; a void pointer remains at {void}", data)
+
+
+def register(groups: SubParsers) -> None:
+    bugs = groups.add_parser("bugs", help="the bug ledger")
+    sub = bugs.add_subparsers(dest="command", metavar="<command>")
+    new = common_flags(sub.add_parser("new", help="file a new entry and regenerate the index"))
+    new.add_argument("title")
+    new.add_argument("--severity", required=True, choices=SEVERITIES)
+    new.add_argument("--area", required=True)
+    new.add_argument("--source", default="")
+    new.add_argument("--related", nargs="*", default=[])
+    new.add_argument("--no-fetch", action="store_true", help="skip the pre-allocation fetch")
+    new.set_defaults(func=run_bugs_new)
+    index = common_flags(sub.add_parser("index", help="regenerate the index from the entry files"))
+    index.add_argument("--check", action="store_true", help=CHECK_HELP)
+    index.set_defaults(func=run_bugs_index)
+    check = common_flags(
+        sub.add_parser("check", help="validate the ledger, the index and every reference")
+    )
+    check.add_argument("--base", default=None, help=BASE_HELP)
+    check.set_defaults(func=run_bugs_check)
+    renumber = common_flags(sub.add_parser("renumber", help="move an entry to a free identifier"))
+    renumber.add_argument("old")
+    renumber.add_argument("new")
+    renumber.set_defaults(func=run_bugs_renumber)

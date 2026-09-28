@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from keelline.config.loader import CONFIG_FILE, load
-from keelline.config.schema import Config
-from keelline.memory import bundles as bundles_module
-from keelline.memory.bundles import (
+from stayfixed.config.loader import CONFIG_FILE, load
+from stayfixed.config.schema import Config
+from stayfixed.memory import bundles as bundles_module
+from stayfixed.memory.bundles import (
     CAP_MARGIN,
     SLOTS,
     STANDING_LEAD,
@@ -20,13 +20,13 @@ from keelline.memory.bundles import (
     render,
     split,
 )
-from keelline.memory.index import INDEX_NAME
-from keelline.memory.store import Store, resolve
-from keelline.memory.trust import DELIMITER, record
+from stayfixed.memory.index import INDEX_NAME
+from stayfixed.memory.store import Store, resolve
+from stayfixed.memory.trust import DELIMITER, record
 from tests.gitfixture import git
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -92,7 +92,7 @@ def a_store(
     )
     config = load(root, machine=tmp_path / "absent.toml")
     # A machine file of this test's own. Without one the store carries `machine=None`, and
-    # `may_inject` would consult the developer's real `~/.config/keelline/trust.json`.
+    # `may_inject` would consult the developer's real `~/.config/stayfixed/trust.json`.
     store = Store(base, mode, root, {g: base / g for g in GROUPS}, machine=a_machine(tmp_path))
     return store, config
 
@@ -443,7 +443,7 @@ def test_the_declared_slot_counts_are_the_ones_hooks_json_has_to_ship() -> None:
     # entries a session actually gets. The mapping is the contract, so the mapping is pinned —
     # a bundle added or dropped fails this too.
     #
-    # The other side of that contract, `hooks/hooks.json` itself, belongs to `keelline.hooks`:
+    # The other side of that contract, `hooks/hooks.json` itself, belongs to `stayfixed.hooks`:
     # `tests/hooks/test_hooks_json.py` cross-checks these counts against the entries that file
     # declares, which is not a check this file can fake.
     assert SLOTS == {
@@ -498,7 +498,7 @@ def test_the_margin_is_additive_because_the_text_is_emitted_raw(tmp_path: Path) 
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 OVERLAY_CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -611,7 +611,7 @@ def test_an_index_over_one_part_fills_the_second_slot(tmp_path: Path) -> None:
     # `_index` returned the whole file as one block and `split` never breaks a block, so slot 2
     # was dead: a 22,816-byte index — inside `memory_index_bytes` (25600) and inside every
     # other configured cap — packed into one part of 23,126 characters that the harness
-    # truncated at 10,000, with part 2 `None` and `keelline memory index` exiting 0 saying
+    # truncated at 10,000, with part 2 `None` and `stayfixed memory index` exiting 0 saying
     # "index is current".
     store, config = a_store(tmp_path)
     text = _an_index_of(sections=6, per_section=90)

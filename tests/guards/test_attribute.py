@@ -20,11 +20,12 @@ from typing import Any
 
 import pytest
 
-from keelline import gitenv
-from keelline.errors import Failure
-from keelline.gitenv import GIT_TIMEOUT_SECONDS, NO_ANSWER, SHALLOW, git_run
-from keelline.guards.attribute import VERDICTS, attribute
-from keelline.runner import NOT_FOUND, TIMED_OUT, Completed
+from stayfixed import gitenv
+from stayfixed.errors import Failure
+from stayfixed.findings import LISTED_LIMIT
+from stayfixed.gitenv import GIT_TIMEOUT_SECONDS, NO_ANSWER, SHALLOW, git_run
+from stayfixed.guards.attribute import VERDICTS, attribute
+from stayfixed.runner import NOT_FOUND, TIMED_OUT, Completed
 from tests import gitfixture
 
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -372,7 +373,7 @@ def test_the_tree_listing_is_not_bounded_by_the_argument_free_cap(
         bounds[args[0]] = timeout
         return real(where, *args, timeout=timeout, stdin=stdin)
 
-    monkeypatch.setattr("keelline.guards.attribute.git_run", recorded)
+    monkeypatch.setattr("stayfixed.guards.attribute.git_run", recorded)
     attribute(root, command="true", base="main", runner=_Coded({}))
     # The walk's floor before the bound is read: a run that never reached `ls-tree` would make
     # a `.get` comparison vacuously true, and the archive is here to show the two agree.
@@ -404,7 +405,7 @@ def test_a_listing_git_gave_no_answer_for_skips_the_comparison(
             return -1, ""
         return real(where, *args, timeout=timeout, stdin=stdin)
 
-    monkeypatch.setattr("keelline.guards.attribute.git_run", unanswered)
+    monkeypatch.setattr("stayfixed.guards.attribute.git_run", unanswered)
     result = attribute(root, command="true", base="main", runner=_Coded({}))
     assert result.verdict == VERDICTS[4]
 
@@ -505,7 +506,23 @@ def test_an_archive_git_gave_no_answer_for_is_a_failure_and_not_an_exit_code(
             return -1, ""
         return real(where, *args, timeout=timeout, stdin=stdin)
 
-    monkeypatch.setattr("keelline.guards.attribute.git_run", unanswered)
+    monkeypatch.setattr("stayfixed.guards.attribute.git_run", unanswered)
     with pytest.raises(Failure, match=re.escape(f"{NO_ANSWER}, so `git archive")) as caught:
         attribute(root, command="true", base="main", runner=_Coded({}))
     assert "exited" not in str(caught.value)
+
+
+def test_many_merge_bases_are_counted_and_named_at_most_to_the_listed_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The merge bases are the history's, bounded in number by nothing: the refusal counts every
+    # one and names the first `LISTED_LIMIT`. Git is not asked, since only the message is under
+    # test. Mutation (oracle): "the attribution names every merge base" -> this reddens.
+    forks = [f"{n:040x}" for n in range(LISTED_LIMIT + 3)]
+    monkeypatch.setattr("stayfixed.guards.attribute.fork_points", lambda *_: forks)
+    runner = _Coded({})
+    with pytest.raises(Failure) as caught:
+        attribute(tmp_path, command="true", base="main", runner=runner)
+    shown = ", ".join(forks[:LISTED_LIMIT])
+    assert f"have {len(forks)} merge bases ({shown}, and 3 more), each" in str(caught.value)
+    assert runner.calls == []

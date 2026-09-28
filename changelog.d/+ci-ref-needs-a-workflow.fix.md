@@ -1,6 +1,6 @@
-`keelline doctor`'s `ci-ref` row no longer reports green for a repository with no CI workflow in
+`stayfixed doctor`'s `ci-ref` row no longer reports green for a repository with no CI workflow in
 it. With `[ci] mode = "reusable"`, a released commit recorded in `[ci] ref` and no
-`.github/workflows/keelline.yml`, the row said "[ci] ref is a released Keelline commit" — which
+`.github/workflows/stayfixed.yml`, the row said "[ci] ref is a released stayfixed commit" — which
 reads as "my gate is pinned correctly" when no gate exists at all. That is the state `init`
 itself leaves whenever it reports the workflow under `skipped`, and the state you reach by
 deleting the file.

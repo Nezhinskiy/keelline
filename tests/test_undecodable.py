@@ -1,6 +1,6 @@
 """A file a person or a repository owns that is not UTF-8 is its area's answer, never a crash.
 
-Keelline reads every such file as UTF-8, and `read_text` raises `UnicodeDecodeError` for one
+stayfixed reads every such file as UTF-8, and `read_text` raises `UnicodeDecodeError` for one
 that is not: a `ValueError`, so an `except OSError` beside it caught nothing and the command
 ended in `internal error: UnicodeDecodeError` (exit 2) instead of the failure the same file
 gets when it cannot be read or parsed. Each case below plants the bytes `\\xff\\xfe` at one
@@ -10,7 +10,7 @@ unreadable file as absent, the same absent answer.
 
 Mutation (by hand, per case): take `UnicodeDecodeError` out of the reader's `except` -> that
 case reddens on the decode error itself. The two readers `mutations.toml` declares are the ones
-a command's first read meets, `keelline.toml` and the machine file.
+a command's first read meets, `stayfixed.toml` and the machine file.
 """
 
 from __future__ import annotations
@@ -21,18 +21,24 @@ from pathlib import Path
 
 import pytest
 
-from keelline.attach import binding, permissions, write
-from keelline.attach.binding import Binding
-from keelline.config.loader import CONFIG_FILE, ConfigError, MachineConfigError, load, read_document
-from keelline.errors import Failure, Refusal
-from keelline.memory import bundles, index, store, trust
-from keelline.overlay import create, identity
-from keelline.overlay.api import COMMON_CODEX
-from keelline.overlay.layout import PLUGIN_MANIFEST
-from keelline.project.init import _existing
-from keelline.release import versions
-from keelline.setup.machine import read_machine
-from keelline.setup.run import _read_document
+from stayfixed.attach import binding, permissions, write
+from stayfixed.attach.binding import Binding
+from stayfixed.config.loader import (
+    CONFIG_FILE,
+    ConfigError,
+    MachineConfigError,
+    load,
+    read_document,
+)
+from stayfixed.errors import Failure, Refusal
+from stayfixed.memory import bundles, index, store, trust
+from stayfixed.overlay import create, identity
+from stayfixed.overlay.api import COMMON_CODEX
+from stayfixed.overlay.layout import PLUGIN_MANIFEST
+from stayfixed.project.init import _existing
+from stayfixed.release import versions
+from stayfixed.setup.machine import read_machine
+from stayfixed.setup.run import _read_document
 from tests.cli import cli
 from tests.gitfixture import git, needs_git
 from tests.project.repos import DOCUMENT, repository
@@ -53,16 +59,16 @@ def _config(root: Path) -> Path:
 # (id, what to plant under `tmp_path`, the call, the exception the reader answers with)
 RAISING: list[tuple[str, Callable[[Path], Callable[[], object]], type[Exception]]] = [
     (
-        "keelline.toml, as every command loads it",
+        "stayfixed.toml, as every command loads it",
         lambda t: (_config(t), lambda: load(t, machine=t / "absent.toml"))[1],
         ConfigError,
     ),
     (
-        "keelline.toml, as the editors read it",
+        "stayfixed.toml, as the editors read it",
         lambda t: (_config(t), lambda: read_document(t))[1],
         ConfigError,
     ),
-    ("keelline.toml, as init adopts it", lambda t: (_config(t), lambda: _existing(t))[1], Failure),
+    ("stayfixed.toml, as init adopts it", lambda t: (_config(t), lambda: _existing(t))[1], Failure),
     (
         "the machine file, under the loader",
         lambda t: (
@@ -236,13 +242,13 @@ def test_an_undecodable_worktree_back_pointer_is_no_registered_worktree(tmp_path
         (("init", "--yes", "--dry-run", "--no-ci"), CONFIG_FILE),
         (("bugs", "check"), CONFIG_FILE),
     ],
-    ids=["init-machine", "init-keelline-toml", "bugs-check-keelline-toml"],
+    ids=["init-machine", "init-stayfixed-toml", "bugs-check-stayfixed-toml"],
 )
 def test_a_command_meeting_an_undecodable_file_fails_and_does_not_crash(
     tmp_path: Path, argv: tuple[str, ...], planted: str
 ) -> None:
     # Through the real parser: the exit code and the frame's own word for it are what a person
-    # and a relaying agent read, and `internal error` told them the fault was Keelline's.
+    # and a relaying agent read, and `internal error` told them the fault was stayfixed's.
     root = repository(tmp_path)
     machine = _plant(tmp_path / "machine.toml") if planted == "machine" else None
     if planted == CONFIG_FILE:
@@ -266,11 +272,11 @@ def test_the_questions_read_an_undecodable_machine_file_as_recording_no_overlay(
     assert "internal error" not in stderr
 
 
-# The neighbour the same probe found: `keelline.toml` and the machine file are the first thing
+# The neighbour the same probe found: `stayfixed.toml` and the machine file are the first thing
 # most commands read, and one that cannot be read at all — a directory at the path, or a
 # permission bit — also ended in `internal error`. Mutation (by hand, per case): the `except
 # OSError` taken out of that reader -> the case reddens on the `OSError` itself.
-def test_a_keelline_toml_that_is_a_directory_cannot_be_read_and_says_so(tmp_path: Path) -> None:
+def test_a_stayfixed_toml_that_is_a_directory_cannot_be_read_and_says_so(tmp_path: Path) -> None:
     (tmp_path / CONFIG_FILE).mkdir()
     with pytest.raises(ConfigError, match=r"cannot be read \(IsADirectoryError\)"):
         load(tmp_path, machine=tmp_path / "absent.toml")
@@ -302,7 +308,7 @@ def test_a_file_without_read_permission_cannot_be_read_and_says_so(
 
 def test_a_machine_file_setup_cannot_parse_is_the_loaders_failure(tmp_path: Path) -> None:
     # The same reader's other broken shape: `read_machine` parsed with no answer for a file that
-    # is not TOML either, so `keelline setup` crashed on the stray bracket the loader names by
+    # is not TOML either, so `stayfixed setup` crashed on the stray bracket the loader names by
     # position. Mutation (by hand): the `TOMLDecodeError` arm removed -> this reddens on it.
     machine = tmp_path / "machine.toml"
     machine.write_text("[overlay\n", encoding="utf-8")

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from keelline.findings import LISTED_LIMIT, Finding, labels, listed
-from keelline.printed import UNPRINTABLE
+from stayfixed.findings import LISTED_LIMIT, Finding, labels, listed
+from stayfixed.printed import UNPRINTABLE
 from tests.crafted import CRAFTED, assert_never_raw
 
 

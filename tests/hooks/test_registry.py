@@ -6,12 +6,12 @@ from typing import cast
 
 import pytest
 
-from keelline.hooks.api import EVENTS, Handler, HookEvent, HookResult, Policy
-from keelline.hooks.registry import UnknownHookEvent, UnknownHookPolicy, discover
+from stayfixed.hooks.api import EVENTS, Handler, HookEvent, HookResult, Policy
+from stayfixed.hooks.registry import UnknownHookEvent, UnknownHookPolicy, discover
 
 
 class Area:
-    """Stands in for `keelline.<area>.hooks`, which no shipped area provides yet."""
+    """Stands in for `stayfixed.<area>.hooks`, which no shipped area provides yet."""
 
     def __init__(self, name: str, handlers: list[Handler]) -> None:
         self.__name__ = name
@@ -29,8 +29,8 @@ def guard(event: str, policy: Policy = Policy.CLOSED) -> Handler:
 
 
 def area_of(monkeypatch: pytest.MonkeyPatch, *handlers: Handler) -> None:
-    area = Area("keelline.example.hooks", list(handlers))
-    monkeypatch.setattr("keelline.hooks.registry.area_modules", lambda submodule: [area])
+    area = Area("stayfixed.example.hooks", list(handlers))
+    monkeypatch.setattr("stayfixed.hooks.registry.area_modules", lambda submodule: [area])
 
 
 def test_a_mistyped_event_name_is_refused_and_named(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -38,7 +38,7 @@ def test_a_mistyped_event_name_is_refused_and_named(monkeypatch: pytest.MonkeyPa
     with pytest.raises(UnknownHookEvent) as raised:
         discover()
     message = str(raised.value)
-    assert "keelline.example.hooks" in message
+    assert "stayfixed.example.hooks" in message
     assert "'background-cleanup'" in message
     assert "'PreToolUSe'" in message
 
@@ -72,7 +72,7 @@ def test_a_policy_dispatch_cannot_read_is_refused_and_named(
     with pytest.raises(UnknownHookPolicy) as raised:
         discover()
     message = str(raised.value)
-    assert "keelline.example.hooks" in message
+    assert "stayfixed.example.hooks" in message
     assert "'background-cleanup'" in message
     assert repr(policy) in message
 

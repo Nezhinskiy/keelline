@@ -1,6 +1,6 @@
 """Every rule `bugs check` reports, one fixture each.
 
-keelline:ledger:fixtures — the identifiers below are sample data, not claims about a ledger.
+stayfixed:ledger:fixtures — the identifiers below are sample data, not claims about a ledger.
 """
 
 from __future__ import annotations
@@ -12,19 +12,20 @@ from typing import Any
 
 import pytest
 
-from keelline.config.loader import load
-from keelline.config.schema import Config
-from keelline.errors import Failure, Refusal
-from keelline.gitenv import NO_ANSWER, git_run
-from keelline.ledger import check
-from keelline.ledger.check import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, problems, uninitialised
-from keelline.ledger.entries import load_entries
-from keelline.ledger.index import render_index
-from keelline.ledger.write import renumber
+from stayfixed.config.loader import load
+from stayfixed.config.schema import Config
+from stayfixed.errors import Failure, Refusal
+from stayfixed.findings import LISTED_LIMIT
+from stayfixed.gitenv import NO_ANSWER, git_run
+from stayfixed.ledger import check
+from stayfixed.ledger.check import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, problems, uninitialised
+from stayfixed.ledger.entries import load_entries
+from stayfixed.ledger.index import render_index
+from stayfixed.ledger.write import renumber
 from tests.gitfixture import answer_shallow_check, criss_cross, dated, git, needs_git
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -41,7 +42,7 @@ release_branch = "main"
 def project(tmp_path: Path, extra: str = "") -> tuple[Path, Config]:
     root = tmp_path / "widget"
     root.mkdir()
-    (root / "keelline.toml").write_text(CONFIG + extra, encoding="utf-8")
+    (root / "stayfixed.toml").write_text(CONFIG + extra, encoding="utf-8")
     for name in ("src", "tests", "scripts", "docs"):
         (root / name).mkdir()
     return root, load(root, machine=tmp_path / "m.toml")
@@ -186,7 +187,7 @@ def _drop(root: Path, config: Config, *names: str) -> None:
 @needs_git
 @pytest.mark.parametrize(
     "mentions",
-    ["", "# keelline:ledger:fixtures\n# workaround for BR-001\n"],
+    ["", "# stayfixed:ledger:fixtures\n# workaround for BR-001\n"],
     ids=["mentions-removed", "fixtures-marker"],
 )
 def test_an_entry_the_base_carries_and_the_tree_lacks_is_entry_removed(
@@ -614,7 +615,7 @@ def test_a_stale_index_is_reported_with_the_command_that_repairs_it(tmp_path: Pa
     (root / "docs" / "bugs" / "BR-002.md").write_text(entry(2), encoding="utf-8")
     found = problems(root, config)
     assert [p.rule for p in found] == ["stale-index"]
-    assert "keelline bugs index" in found[0].detail
+    assert "stayfixed bugs index" in found[0].detail
 
 
 def test_a_mention_with_no_entry_is_reported_at_its_first_location(tmp_path: Path) -> None:
@@ -679,3 +680,43 @@ def test_an_entry_that_is_not_utf8_is_reported_rather_than_crashing_the_check(
     assert "docs/bugs/BR-002.md [unreadable-entry]" in [p.label for p in found]
     unreadable = next(p for p in found if p.rule == "unreadable-entry")
     assert "is not valid UTF-8" in unreadable.detail
+
+
+def test_a_duplicate_identifier_names_at_most_the_listed_limit_of_its_files(
+    tmp_path: Path,
+) -> None:
+    # The files claiming one identifier are bounded in number by nothing but the ledger, so the
+    # detail names the first `LISTED_LIMIT` and counts the rest. Nothing is lost from `--json`:
+    # only one file's name can be its identifier, so every other holder is named by an
+    # `id-mismatch` finding of its own. Mutation (oracle): "a duplicate identifier names every
+    # file that claims it" -> the detail equality reddens.
+    root, config = project(tmp_path)
+    names = [f"BR-{n:03}" for n in range(1, LISTED_LIMIT + 4)]
+    ledger(root, config, dict.fromkeys(names, entry(1)))
+    found = problems(root, config)
+    duplicate = [p for p in found if p.rule == "duplicate-id"]
+    shown = ", ".join(f"docs/bugs/{name}.md" for name in names[:LISTED_LIMIT])
+    assert [p.detail for p in duplicate] == [
+        f"BR-001 is claimed by more than one file: {shown}, and 3 more"
+    ]
+    mismatched = {p.path for p in found if p.rule == "id-mismatch"}
+    assert mismatched == {f"docs/bugs/{name}.md" for name in names[1:]}
+
+
+def test_a_duplicate_identifier_names_its_own_file_first_whatever_the_sort(
+    tmp_path: Path,
+) -> None:
+    # The one holder with no `id-mismatch` finding is the file named after the identifier, so
+    # the capped detail names it first: otherwise, sorted last past the cap, it was named nowhere
+    # in `--json`. Every other holder is named by a finding of its own. Mutation (oracle): "a
+    # duplicate identifier names its holders in path order" -> this reddens.
+    root, config = project(tmp_path)
+    names = [f"BR-{n:03}" for n in range(1, LISTED_LIMIT + 4)]
+    ledger(root, config, dict.fromkeys(names, entry(len(names))))
+    found = problems(root, config)
+    shown = ", ".join(f"docs/bugs/{name}.md" for name in [names[-1], *names[: LISTED_LIMIT - 1]])
+    assert [p.detail for p in found if p.rule == "duplicate-id"] == [
+        f"{names[-1]} is claimed by more than one file: {shown}, and 3 more"
+    ]
+    mismatched = {p.path for p in found if p.rule == "id-mismatch"}
+    assert mismatched == {f"docs/bugs/{name}.md" for name in names[:-1]}

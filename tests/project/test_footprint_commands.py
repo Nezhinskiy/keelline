@@ -1,5 +1,5 @@
-"""`keelline upgrade` and `keelline uninstall` through the real parser: flags, exit codes, and what
-prints.
+"""`stayfixed upgrade` and `stayfixed uninstall` through the real parser: flags, exit codes, and
+what prints.
 
 `tests/project/repos.initialised` runs `init` with `[ci] mode = "none"`, so no case here asks the
 network for a pin.
@@ -16,11 +16,11 @@ from typing import Any
 
 import pytest
 
-import keelline
-from keelline.cli import build_parser, discover_registrars, run
-from keelline.project.commands import CI_LEFT, CI_PINNED
-from keelline.runner import Completed
-from keelline.scaffold import Kind, Location, Manifest, Record, digest
+import stayfixed
+from stayfixed.cli import build_parser, discover_registrars, run
+from stayfixed.project.commands import CI_LEFT, CI_PINNED
+from stayfixed.runner import Completed
+from stayfixed.scaffold import Kind, Location, Manifest, Record, digest
 from tests.gitfixture import git, needs_git
 from tests.project.repos import forge_record, initialised, tree
 from tests.snapshot import assert_snapshot_unchanged, snapshot
@@ -141,10 +141,10 @@ def test_the_ci_line_never_says_a_workflow_it_left_pins_the_ref(
     Mutation (advisory): key the line on the skip reason alone again -> both cases print
     `CI_PINNED` and the first assertion reddens.
     """
-    from keelline import runner as runner_module
+    from stayfixed import runner as runner_module
 
     sha = "a" * 40
-    listing = f"{sha}\trefs/tags/v{keelline.__version__}\n"
+    listing = f"{sha}\trefs/tags/v{stayfixed.__version__}\n"
     monkeypatch.setattr(runner_module, "subprocess_runner", lambda: _Listing(listing))
     root = tmp_path / "widget"
     root.mkdir()
@@ -152,17 +152,17 @@ def test_the_ci_line_never_says_a_workflow_it_left_pins_the_ref(
     git(root, "remote", "add", "origin", "git@github.com:owner/widget.git")
     code, data = _run(root, tmp_path, "init", "--yes")
     assert code == 0, data["summary"]
-    workflow = root / ".github" / "workflows" / "keelline.yml"
+    workflow = root / ".github" / "workflows" / "stayfixed.yml"
     workflow.write_text(workflow.read_text(encoding="utf-8") + "# ours\n", encoding="utf-8")
     if newer:
-        monkeypatch.setattr(keelline, "__version__", "9.9.9")
+        monkeypatch.setattr(stayfixed, "__version__", "9.9.9")
         listing = f"{'c' * 40}\trefs/tags/v9.9.9\n"
     code, data = _run(root, tmp_path, "upgrade")
     assert code == 0, data["summary"]
     lines = data["summary"].splitlines()
     assert CI_LEFT in lines and CI_PINNED not in lines
     assert bool(data["held"]) is newer
-    code, data = _run(root, tmp_path, "upgrade", "--force", ".github/workflows/keelline.yml")
+    code, data = _run(root, tmp_path, "upgrade", "--force", ".github/workflows/stayfixed.yml")
     assert code == 0, data["summary"]
     assert CI_PINNED in data["summary"].splitlines()
 
@@ -180,7 +180,7 @@ def test_a_region_record_this_build_does_not_produce_is_an_orphan_and_its_host_f
     # region record this build does not produce is retired as a whole file" -> the forced run
     # removes the host file, and the first assertion reddens for both commands.
     root = initialised(tmp_path)
-    target = "docs/keelline/rules/python.md"
+    target = "docs/stayfixed/rules/python.md"
     host = root / target
     host.parent.mkdir(parents=True, exist_ok=True)
     host.write_text("Our own rules.\n", encoding="utf-8")
@@ -191,7 +191,7 @@ def test_a_region_record_this_build_does_not_produce_is_an_orphan_and_its_host_f
         location=Location.REPO,
         target=target,
         template="profile/python/rules.md",
-        version=keelline.__version__,
+        version=stayfixed.__version__,
         sha256=digest("a region body"),
     )
     Manifest.read(root).with_record(record).write(root)
@@ -217,14 +217,14 @@ def test_uninstall_lists_what_it_leaves_and_exits_zero(tmp_path: Path) -> None:
 def test_a_file_a_later_pass_deletes_is_never_reported_left_in_place(
     tmp_path: Path, dry_run: bool
 ) -> None:
-    # Keelline's region taken out of `AGENTS.md` by hand: the footprint pass lists the file
+    # stayfixed's region taken out of `AGENTS.md` by hand: the footprint pass lists the file
     # `skip_modified`, and the write-once pass then removes the untouched skeleton. The file was
     # counted as "left in place, yours now" after it was deleted. Mutation (advisory): drop the
     # `not in gone` filter -> `left` names `AGENTS.md` and the first assertion reddens.
     root = initialised(tmp_path)
     agents = root / "AGENTS.md"
     text = agents.read_text(encoding="utf-8")
-    begin, end = "<!-- keelline:harness:begin -->", "<!-- keelline:harness:end -->\n"
+    begin, end = "<!-- stayfixed:harness:begin -->", "<!-- stayfixed:harness:end -->\n"
     agents.write_text(text[: text.index(begin)] + text[text.index(end) + len(end) :])
     code, data = _run(root, tmp_path, "uninstall", *(("--dry-run",) if dry_run else ()))
     assert code == 0, data["summary"]
@@ -234,8 +234,8 @@ def test_a_file_a_later_pass_deletes_is_never_reported_left_in_place(
 
 
 # One removal from each pass: the footprint's body, the write-once pass, the ignore pass, and
-# `keelline.toml` itself, which goes last of all.
-FAILING = ["docs/roadmap.md", "CLAUDE.md", ".gitignore", "keelline.toml"]
+# `stayfixed.toml` itself, which goes last of all.
+FAILING = ["docs/roadmap.md", "CLAUDE.md", ".gitignore", "stayfixed.toml"]
 
 
 @needs_git
@@ -244,16 +244,16 @@ def test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_f
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing: str
 ) -> None:
     """Exit 2 is not "nothing was written", and it is never a dead end. Wherever a removal fails,
-    what ran stays applied and recorded, `keelline.toml` and the manifest are still there, and
+    what ran stays applied and recorded, `stayfixed.toml` and the manifest are still there, and
     the next run finishes to the state an uninterrupted run leaves. The failure is the one the
     engine translates: an `OSError` from the removal, which `_remove` turns into a refusal.
 
-    Mutation (declared): `keelline.toml` removed in the write-once pass again -> a failure on
+    Mutation (declared): `stayfixed.toml` removed in the write-once pass again -> a failure on
     `CLAUDE.md` or `.gitignore` leaves no configuration, the next run keeps what the manifest
     still records and drops the manifest, and the last assertion reddens.
     """
-    import keelline.scaffold.engine as engine
-    from keelline import fsops
+    import stayfixed.scaffold.engine as engine
+    from stayfixed import fsops
 
     root = initialised(tmp_path)
     real = fsops.remove_within
@@ -268,8 +268,8 @@ def test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_f
     assert code == 2, data
     assert (root / failing).is_file()
     # Read now and asserted last, so the converged end state is what a wrong order reddens.
-    resumable = (root / "keelline.toml").is_file() and (
-        root / ".keelline" / "manifest.json"
+    resumable = (root / "stayfixed.toml").is_file() and (
+        root / ".stayfixed" / "manifest.json"
     ).is_file()
     monkeypatch.setattr(engine, "remove_within", real)
     code, data = _run(root, tmp_path, "uninstall")
@@ -305,7 +305,7 @@ def test_a_plan_that_refuses_exits_one_heads_the_report_refused_and_changes_noth
     if refusing == "footprint":
         agents = root / "AGENTS.md"
         agents.write_text(
-            agents.read_text(encoding="utf-8").replace("<!-- keelline:harness:begin -->\n", ""),
+            agents.read_text(encoding="utf-8").replace("<!-- stayfixed:harness:begin -->\n", ""),
             encoding="utf-8",
         )
     else:

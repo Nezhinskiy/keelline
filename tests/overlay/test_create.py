@@ -8,10 +8,10 @@ from typing import NoReturn
 
 import pytest
 
-from keelline.errors import Failure, Refusal
-from keelline.overlay.api import create, init_instance
-from keelline.overlay.create import RETRY_WAIT_SECONDS
-from keelline.runner import Completed
+from stayfixed.errors import Failure, Refusal
+from stayfixed.overlay.api import create, init_instance
+from stayfixed.overlay.create import RETRY_WAIT_SECONDS
+from stayfixed.runner import Completed
 
 
 @dataclass
@@ -35,14 +35,14 @@ def _populate(argv: list[str], cwd: Path) -> None:
         return
     target = cwd / argv[3].split("/")[-1] / ".claude-plugin"
     target.mkdir(parents=True, exist_ok=True)
-    (target / "plugin.json").write_text(json.dumps({"name": "keelline-overlay"}), encoding="utf-8")
+    (target / "plugin.json").write_text(json.dumps({"name": "stayfixed-overlay"}), encoding="utf-8")
 
 
 def test_creating_from_the_template_asks_github_for_a_private_repository(tmp_path: Path) -> None:
     # A template rather than a fork, because a fork's visibility is bound to the
     # upstream network and cannot be made private. The `--private` flag is that decision.
     runner = FakeRunner(on_call=_populate)
-    create("octo", "keelline-private", source="template", root=tmp_path, runner=runner)
+    create("octo", "stayfixed-private", source="template", root=tmp_path, runner=runner)
     assert runner.calls[0][:3] == ["gh", "repo", "create"]
     assert "--private" in runner.calls[0]
     assert "--template" in runner.calls[0]
@@ -55,7 +55,7 @@ def test_a_clone_that_raced_generation_is_retried_once_before_failing(tmp_path: 
     # — so it is asserted here rather than left to be discovered by whoever hits it.
     empty = FakeRunner()
     with pytest.raises(Failure):
-        create("octo", "keelline-private", source="template", root=tmp_path, runner=empty)
+        create("octo", "stayfixed-private", source="template", root=tmp_path, runner=empty)
     verbs = [argv[:3] for argv in empty.calls]
     assert ["gh", "repo", "view"] in verbs, "must distinguish 'not created' from 'raced'"
     assert ["git", "clone", "--"] in verbs
@@ -64,12 +64,12 @@ def test_a_clone_that_raced_generation_is_retried_once_before_failing(tmp_path: 
 def test_an_existing_populated_clone_is_left_alone(tmp_path: Path) -> None:
     # `create` is idempotent because `gh` may give up on the clone with the repository already
     # created — so the second run finds a tree and must not re-create.
-    (tmp_path / "keelline-private" / ".claude-plugin").mkdir(parents=True)
-    (tmp_path / "keelline-private" / ".claude-plugin" / "plugin.json").write_text(
+    (tmp_path / "stayfixed-private" / ".claude-plugin").mkdir(parents=True)
+    (tmp_path / "stayfixed-private" / ".claude-plugin" / "plugin.json").write_text(
         "{}", encoding="utf-8"
     )
     runner = FakeRunner()
-    created = create("octo", "keelline-private", source="template", root=tmp_path, runner=runner)
+    created = create("octo", "stayfixed-private", source="template", root=tmp_path, runner=runner)
     assert runner.calls == []
     assert "exists" in " ".join(created.notes)
 
@@ -78,7 +78,7 @@ def test_the_local_source_touches_no_network(tmp_path: Path) -> None:
     # The documented fallback when the template repository is unreachable, and the only mode a
     # test may exercise end to end.
     runner = FakeRunner()
-    created = create("octo", "keelline-private", source="local", root=tmp_path, runner=runner)
+    created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=runner)
     assert runner.calls == []
     assert (created.root / ".claude-plugin" / "plugin.json").is_file()
     assert (created.root / "hooks" / "hooks.json").is_file()
@@ -97,18 +97,22 @@ def test_init_renames_the_plugin_and_marketplace_for_the_owner(tmp_path: Path) -
     # The owner's suffix is what keeps two overlays installed into one harness from colliding.
     # A measured trial added and installed an owner-suffixed pair, pushed to a private SSH
     # remote, without error under a scratch CLAUDE_CONFIG_DIR.
-    created = create("octo", "keelline-private", source="local", root=tmp_path, runner=FakeRunner())
+    created = create(
+        "octo", "stayfixed-private", source="local", root=tmp_path, runner=FakeRunner()
+    )
     init_instance(created.root, "OctoCat", runner=FakeRunner())
     plugin = json.loads((created.root / ".claude-plugin" / "plugin.json").read_text())
     market = json.loads((created.root / ".claude-plugin" / "marketplace.json").read_text())
-    assert plugin["name"] == "keelline-overlay-octocat"
-    assert market["name"] == "keelline-overlay-marketplace-octocat"
+    assert plugin["name"] == "stayfixed-overlay-octocat"
+    assert market["name"] == "stayfixed-overlay-marketplace-octocat"
 
 
 def test_init_installs_pre_commit_and_says_so_when_it_cannot(tmp_path: Path) -> None:
     # gitleaks runs twice over the overlay, and one of the two is this hook. A missing
     # `pre-commit` is a reported finding, never a traceback — the binary is optional.
-    created = create("octo", "keelline-private", source="local", root=tmp_path, runner=FakeRunner())
+    created = create(
+        "octo", "stayfixed-private", source="local", root=tmp_path, runner=FakeRunner()
+    )
     missing = FakeRunner(answers={"pre-commit": Completed(127, "", "not found")})
     result = init_instance(created.root, "octo", runner=missing)
     # "did not run" and not merely "pre-commit": the success note names the tool too, so the
@@ -120,7 +124,7 @@ def test_init_installs_pre_commit_and_says_so_when_it_cannot(tmp_path: Path) -> 
 def test_init_refuses_a_directory_that_is_not_an_overlay_before_touching_it(
     tmp_path: Path,
 ) -> None:
-    # `--root` defaults to `.`, and `init` asked nothing of it: run inside the Keelline checkout
+    # `--root` defaults to `.`, and `init` asked nothing of it: run inside the stayfixed checkout
     # itself, it renamed all three plugin manifests and installed a commit hook there. `upgrade`
     # had the guard and `setup` uses it twice; this is the caller `identity.py` was written for
     # that it did not list. Mutation: the `require_overlay` line removed → the manifest below is
@@ -138,7 +142,9 @@ def test_init_refuses_a_directory_that_is_not_an_overlay_before_touching_it(
 
 
 def test_init_is_idempotent(tmp_path: Path) -> None:
-    created = create("octo", "keelline-private", source="local", root=tmp_path, runner=FakeRunner())
+    created = create(
+        "octo", "stayfixed-private", source="local", root=tmp_path, runner=FakeRunner()
+    )
     first = init_instance(created.root, "octo", runner=FakeRunner())
     second = init_instance(created.root, "octo", runner=FakeRunner())
     assert first.renamed != () and second.renamed == ()
@@ -151,8 +157,8 @@ def test_the_cli_never_picks_the_github_source_for_you() -> None:
     # express confirmation only by naming the source. Mutation:
     # `source="template"` in that parser's `set_defaults` and this reddens; it is declared in
     # `mutations.toml`, because the failure creates a repository nobody asked for.
-    from keelline.cli import build_parser, discover_registrars
-    from keelline.overlay.commands import run_overlay_create
+    from stayfixed.cli import build_parser, discover_registrars
+    from stayfixed.overlay.commands import run_overlay_create
 
     args = build_parser(discover_registrars()).parse_args(["overlay", "create", "--owner", "octo"])
     with pytest.raises(Refusal) as refused:
@@ -168,11 +174,11 @@ def test_the_wait_before_the_retry_is_spent_only_on_the_race(tmp_path: Path) -> 
     # the branch the retry test above never reaches. Mutation: make the wait unconditional and
     # the second half reddens; drop it entirely and the first half does.
     named: list[float] = []
-    answering = FakeRunner(answers={"gh": Completed(0, "keelline-private\n", "")})
+    answering = FakeRunner(answers={"gh": Completed(0, "stayfixed-private\n", "")})
     with pytest.raises(Failure):
         create(
             "octo",
-            "keelline-private",
+            "stayfixed-private",
             source="template",
             root=tmp_path,
             runner=answering,
@@ -184,7 +190,7 @@ def test_the_wait_before_the_retry_is_spent_only_on_the_race(tmp_path: Path) -> 
     with pytest.raises(Failure):
         create(
             "octo",
-            "keelline-private",
+            "stayfixed-private",
             source="template",
             root=tmp_path,
             runner=FakeRunner(),
@@ -204,12 +210,12 @@ def test_a_render_that_cannot_start_leaves_no_probe_behind(
     # move the `plan(...)` call back below `mkdirs_within` and this reddens on the second
     # assertion, with a directory on disk and no repository anywhere.
     def _unavailable() -> NoReturn:
-        raise Failure("this Keelline was installed without the template tree")
+        raise Failure("this stayfixed was installed without the template tree")
 
-    monkeypatch.setattr("keelline.overlay.create.templates", _unavailable)
+    monkeypatch.setattr("stayfixed.overlay.create.templates", _unavailable)
     with pytest.raises(Failure):
-        create("octo", "keelline-private", source="local", root=tmp_path, runner=FakeRunner())
-    assert not (tmp_path / "keelline-private").exists()
+        create("octo", "stayfixed-private", source="local", root=tmp_path, runner=FakeRunner())
+    assert not (tmp_path / "stayfixed-private").exists()
 
 
 def test_a_mixed_case_owner_gets_one_answer_from_both_commands(tmp_path: Path) -> None:
@@ -222,17 +228,19 @@ def test_a_mixed_case_owner_gets_one_answer_from_both_commands(tmp_path: Path) -
     remote = tmp_path / "remote"
     remote.mkdir()
     runner = FakeRunner(on_call=_populate)
-    create("OctoCat", "keelline-private", source="template", root=remote, runner=runner)
+    create("OctoCat", "stayfixed-private", source="template", root=remote, runner=runner)
     # And the fold reaches the argv, not just the validator: GitHub is case-insensitive about a
     # login, but the value is also a directory name and a manifest suffix, and those are not.
-    assert "octocat/keelline-private" in runner.calls[0]
+    assert "octocat/stayfixed-private" in runner.calls[0]
 
     local = tmp_path / "local"
     local.mkdir()
-    created = create("OctoCat", "keelline-private", source="local", root=local, runner=FakeRunner())
+    created = create(
+        "OctoCat", "stayfixed-private", source="local", root=local, runner=FakeRunner()
+    )
     init_instance(created.root, "OctoCat", runner=FakeRunner())
     plugin = json.loads((created.root / ".claude-plugin" / "plugin.json").read_text())
-    assert plugin["name"] == "keelline-overlay-octocat"
+    assert plugin["name"] == "stayfixed-overlay-octocat"
 
 
 def test_a_gh_that_is_not_installed_is_named_as_the_cause_and_costs_one_subprocess(
@@ -252,7 +260,7 @@ def test_a_gh_that_is_not_installed_is_named_as_the_cause_and_costs_one_subproce
     with pytest.raises(Failure) as failed:
         create(
             "octo",
-            "keelline-private",
+            "stayfixed-private",
             source="template",
             root=tmp_path,
             runner=absent,
@@ -273,14 +281,14 @@ def test_a_gh_that_is_not_installed_is_named_as_the_cause_and_costs_one_subproce
 
 def test_a_gh_that_ran_and_declined_quotes_its_own_answer(tmp_path: Path) -> None:
     # The other arm of the same defect, and the one `docs/cli.md` names as the likeliest
-    # reason `--template` fails: `<owner>/keelline-overlay-template` does not exist, because
-    # this owner has never run `keelline overlay publish-template`. `gh`'s own stderr says so,
+    # reason `--template` fails: `<owner>/stayfixed-overlay-template` does not exist, because
+    # this owner has never run `stayfixed overlay publish-template`. `gh`'s own stderr says so,
     # and is quoted rather than replaced by a guess about authentication.
     declined = FakeRunner(
         answers={"gh": Completed(1, "", "GraphQL: Could not resolve to a Repository")}
     )
     with pytest.raises(Failure) as failed:
-        create("octo", "keelline-private", source="template", root=tmp_path, runner=declined)
+        create("octo", "stayfixed-private", source="template", root=tmp_path, runner=declined)
     message = str(failed.value)
     assert "Could not resolve to a Repository" in message
     assert "publishes at each release" in message
@@ -297,7 +305,9 @@ def test_init_names_the_codex_manifest_after_the_owner_too(tmp_path: Path) -> No
     #
     # Mutation (`mutations.toml`, "overlay init leaves the Codex manifest unsuffixed"):
     # `CODEX_PLUGIN_MANIFEST` is dropped from `MANIFESTS` → this reddens on the third name.
-    created = create("octo", "keelline-private", source="local", root=tmp_path, runner=FakeRunner())
+    created = create(
+        "octo", "stayfixed-private", source="local", root=tmp_path, runner=FakeRunner()
+    )
     init_instance(created.root, "OctoCat", runner=FakeRunner())
     names = {
         relative: json.loads((created.root / relative).read_text(encoding="utf-8"))["name"]
@@ -308,9 +318,9 @@ def test_init_names_the_codex_manifest_after_the_owner_too(tmp_path: Path) -> No
         )
     }
     assert names == {
-        ".claude-plugin/plugin.json": "keelline-overlay-octocat",
-        ".claude-plugin/marketplace.json": "keelline-overlay-marketplace-octocat",
-        ".codex-plugin/plugin.json": "keelline-overlay-octocat",
+        ".claude-plugin/plugin.json": "stayfixed-overlay-octocat",
+        ".claude-plugin/marketplace.json": "stayfixed-overlay-marketplace-octocat",
+        ".codex-plugin/plugin.json": "stayfixed-overlay-octocat",
     }
 
 
@@ -319,7 +329,9 @@ def test_a_manifest_this_overlay_does_not_carry_is_a_note_not_a_failure(tmp_path
     # and refusing to name the other two over it would make `init` unusable on exactly the
     # overlays that most need running it. A manifest that *exists* and cannot be read is still
     # a failure — that is a file saying something this command cannot act on.
-    created = create("octo", "keelline-private", source="local", root=tmp_path, runner=FakeRunner())
+    created = create(
+        "octo", "stayfixed-private", source="local", root=tmp_path, runner=FakeRunner()
+    )
     (created.root / ".codex-plugin" / "plugin.json").unlink()
     result = init_instance(created.root, "octo", runner=FakeRunner())
     assert ".codex-plugin/plugin.json" not in result.renamed

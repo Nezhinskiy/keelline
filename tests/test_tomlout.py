@@ -7,8 +7,8 @@ import tomllib
 
 import pytest
 
-from keelline.errors import Refusal
-from keelline.tomlout import dumps
+from stayfixed.errors import Refusal
+from stayfixed.tomlout import dumps
 
 
 def test_a_value_with_a_quote_and_a_newline_round_trips() -> None:
@@ -49,7 +49,7 @@ def test_every_value_a_toml_document_can_hold_round_trips() -> None:
     # The contract widened when a third input arrived: `setup` rewrites the machine
     # configuration, a file `README.md` documents the owner as writing by hand, so what reaches
     # this serialiser is no longer only a caller's own dict. Refusing a float or a sub-table
-    # merely because no caller of ours produces one wedged `keelline setup` permanently — the
+    # merely because no caller of ours produces one wedged `stayfixed setup` permanently — the
     # file is read back at the top of every run. A nested dict becomes a sub-table header; a
     # dict inside a list becomes an inline table, the one spelling that survives being nested.
     #

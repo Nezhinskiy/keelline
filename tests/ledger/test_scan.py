@@ -1,6 +1,6 @@
 """One traversal for three readers, and the two readers that use it.
 
-keelline:ledger:fixtures — the identifiers below are sample data, not claims about a ledger.
+stayfixed:ledger:fixtures — the identifiers below are sample data, not claims about a ledger.
 """
 
 from __future__ import annotations
@@ -12,10 +12,10 @@ from typing import Any
 
 import pytest
 
-from keelline.config.loader import load
-from keelline.config.schema import Config
-from keelline.gitenv import git_run
-from keelline.ledger.scan import (
+from stayfixed.config.loader import load
+from stayfixed.config.schema import Config
+from stayfixed.gitenv import git_run
+from stayfixed.ledger.scan import (
     FIXTURE_MARKER,
     FIXTURE_MARKER_WINDOW,
     citation_pattern,
@@ -28,7 +28,7 @@ from keelline.ledger.scan import (
 from tests.gitfixture import git, plant_path
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -47,7 +47,7 @@ needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not i
 def project(tmp_path: Path, extra: str = "") -> tuple[Path, Config]:
     root = tmp_path / "widget"
     root.mkdir()
-    (root / "keelline.toml").write_text(CONFIG + extra, encoding="utf-8")
+    (root / "stayfixed.toml").write_text(CONFIG + extra, encoding="utf-8")
     for name in ("src", "tests", "scripts", "docs"):
         (root / name).mkdir()
     return root, load(root, machine=tmp_path / "m.toml")
@@ -106,7 +106,7 @@ def test_a_directory_name_is_excluded_only_inside_the_repository(tmp_path: Path)
     # A repository kept under a directory called `build` is an ordinary thing.
     root = tmp_path / "build"
     root.mkdir()
-    (root / "keelline.toml").write_text(CONFIG, encoding="utf-8")
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
     (root / "src").mkdir()
     config = load(root, machine=tmp_path / "m.toml")
     write(root, "src/a.py", "# BR-404\n")
@@ -183,7 +183,7 @@ def test_a_listing_git_gave_no_answer_for_falls_back_to_the_walk_and_not_to_noth
     # prevent. Only the listing is diverted, so the top-level probe still answers and the case
     # reaches the listing's own arm. Mutation (declared): answer the failed listing with the
     # empty string again — the scan finds nothing and this reddens.
-    from keelline.ledger import scan as module
+    from stayfixed.ledger import scan as module
 
     root, config = project(tmp_path)
     git(root, "init", "-q")

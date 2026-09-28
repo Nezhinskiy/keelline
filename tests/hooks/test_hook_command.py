@@ -12,9 +12,9 @@ from typing import cast
 
 import pytest
 
-from keelline.guards.hygiene import LEAD
-from keelline.hooks.api import Decision, Handler, HookEvent, HookResult, Policy
-from keelline.hooks.commands import LINKED, _output_cap, run_hook
+from stayfixed.guards.hygiene import LEAD
+from stayfixed.hooks.api import Decision, Handler, HookEvent, HookResult, Policy
+from stayfixed.hooks.commands import LINKED, _output_cap, run_hook
 from tests.floor import floor_env
 from tests.gitfixture import git
 
@@ -32,7 +32,7 @@ needs_git = pytest.mark.skipif(
 )
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -49,7 +49,7 @@ release_branch = "main"
 def hook(
     event: str, stdin: str, cwd: Path, *args: str, data: Path | None = None
 ) -> subprocess.CompletedProcess[str]:
-    """Spawn `keelline hook <event> [args…]` with a fixed environment.
+    """Spawn `stayfixed hook <event> [args…]` with a fixed environment.
 
     `data` sets `CLAUDE_PLUGIN_DATA`, which is what makes the dispatcher's sink durable. The
     parameters are widened in place rather than a second spawner added beside this one, so
@@ -59,13 +59,13 @@ def hook(
         "PATH": "/usr/bin:/bin",
         "PYTHONPATH": str(ROOT / "src"),
         "CLAUDE_PROJECT_DIR": str(cwd),
-        "KEELLINE_CONFIG": str(cwd / "no-machine.toml"),
+        "STAYFIXED_CONFIG": str(cwd / "no-machine.toml"),
         **floor_env(),
     }
     if data is not None:
         env["CLAUDE_PLUGIN_DATA"] = str(data)
     return subprocess.run(
-        [sys.executable, "-m", "keelline", "hook", event, *args],
+        [sys.executable, "-m", "stayfixed", "hook", event, *args],
         input=stdin,
         capture_output=True,
         text=True,
@@ -90,14 +90,14 @@ def test_malformed_stdin_on_pre_tool_use_refuses(tmp_path: Path) -> None:
 def test_malformed_stdin_on_session_start_degrades_open(tmp_path: Path) -> None:
     completed = hook("SessionStart", "{not json", tmp_path)
     assert completed.returncode == 0
-    assert "keelline" in completed.stderr
+    assert "stayfixed" in completed.stderr
 
 
 def test_a_broken_repository_config_on_pre_tool_use_refuses(tmp_path: Path) -> None:
     # Valid everywhere the loader checks before [ci], so the not-a-table shape is the defect
     # this reaches (a top-level key must precede every table header in TOML).
-    (tmp_path / "keelline.toml").write_text(
-        'ci = "not-a-table"\n\n[keelline]\nversion = "0.1.0"\n\n[project]\nname = "demo"\n',
+    (tmp_path / "stayfixed.toml").write_text(
+        'ci = "not-a-table"\n\n[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "demo"\n',
         encoding="utf-8",
     )
     completed = hook("PreToolUse", json.dumps({"hook_event_name": "PreToolUse"}), tmp_path)
@@ -113,18 +113,18 @@ def test_a_symlinked_config_gets_one_named_verdict_whatever_it_points_at(
     tmp_path: Path, target: str, event: str, code: int, verdict: str
 ) -> None:
     # The presence check followed the link: one to a regular file reached the loader's refusal
-    # and printed `internal error: PathEscape`, one to `/dev/zero` read as no keelline.toml at
+    # and printed `internal error: PathEscape`, one to `/dev/zero` read as no stayfixed.toml at
     # all and ran every handler with no project configuration. Both now meet the rule by name,
-    # with the verdict a keelline.toml that does not load gets on that event. Mutation
+    # with the verdict a stayfixed.toml that does not load gets on that event. Mutation
     # (declared): the link check dropped -> the regular file is an internal error again and
     # `/dev/zero` exits 0 with the handlers' output.
     project = tmp_path / "project"
     project.mkdir()
     if target == "regular-file":
         (tmp_path / "real.toml").write_text(CONFIG, encoding="utf-8")
-        (project / "keelline.toml").symlink_to(tmp_path / "real.toml")
+        (project / "stayfixed.toml").symlink_to(tmp_path / "real.toml")
     else:
-        (project / "keelline.toml").symlink_to(target)
+        (project / "stayfixed.toml").symlink_to(target)
     completed = hook(event, json.dumps({"hook_event_name": event}), project)
     assert completed.returncode == code
     assert completed.stdout == ""
@@ -166,7 +166,7 @@ def test_a_base_exception_inside_the_wrapper_keeps_the_event_aware_verdict(
     def interrupted() -> list[object]:
         raise raised
 
-    monkeypatch.setattr("keelline.hooks.commands.discover", interrupted)
+    monkeypatch.setattr("stayfixed.hooks.commands.discover", interrupted)
     monkeypatch.setattr("sys.stdin", io.StringIO("{}"))
     assert run_hook(argparse.Namespace(event=event)) == code
     assert type(raised).__name__ in capsys.readouterr().err
@@ -188,7 +188,7 @@ def test_a_deny_with_a_malformed_context_still_refuses_through_the_wrapper(
         )
 
     probe = Handler(name="probe", event=event, policy=Policy.OPEN, run=deny)
-    monkeypatch.setattr("keelline.hooks.commands.discover", lambda: [probe])
+    monkeypatch.setattr("stayfixed.hooks.commands.discover", lambda: [probe])
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"hook_event_name": event})))
     assert run_hook(argparse.Namespace(event=event)) == 2
     assert "refused: probe: rm -rf / is refused" in capsys.readouterr().err
@@ -197,13 +197,13 @@ def test_a_deny_with_a_malformed_context_still_refuses_through_the_wrapper(
 def _initialised_project(tmp_path: Path) -> Path:
     """Every condition `test-hygiene` needs to fire, and nothing more.
 
-    A `keelline.toml`, because both handlers are silent without a configuration; a git
+    A `stayfixed.toml`, because both handlers are silent without a configuration; a git
     repository, because the notice's one reportable fault here is `hygiene.DIRTY`'s — and
-    `keelline.toml` itself is the uncommitted change that produces it.
+    `stayfixed.toml` itself is the uncommitted change that produces it.
     """
     project = tmp_path / "project"
     project.mkdir()
-    (project / "keelline.toml").write_text(CONFIG, encoding="utf-8")
+    (project / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
     git(project, "init", "-q")
     return project
 

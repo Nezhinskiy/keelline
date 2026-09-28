@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from keelline.cli import build_parser, discover_registrars, run
-from keelline.docs.trail import END_MARKER, MARKER
-from keelline.findings import Finding
-from keelline.printed import UNPRINTABLE
+from stayfixed.cli import build_parser, discover_registrars, run
+from stayfixed.docs.trail import END_MARKER, MARKER
+from stayfixed.findings import LISTED_LIMIT, Finding
+from stayfixed.printed import CLIPPED_CHARS, UNPRINTABLE
 from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -44,7 +44,7 @@ def project(tmp_path: Path) -> tuple[Path, list[str]]:
     root = tmp_path / "widget"
     for name in ("docs/specs", "docs/plans", "notes/developer"):
         (root / name).mkdir(parents=True)
-    (root / "keelline.toml").write_text(CONFIG, encoding="utf-8")
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
     (root / "AGENTS.md").write_text(AGENTS, encoding="utf-8")
     (root / "docs" / "guide.md").write_text("g\n", encoding="utf-8")
     (root / "docs" / "roadmap.md").write_text(f"# R\n\n{MARKER}\n{END_MARKER}\n", encoding="utf-8")
@@ -112,7 +112,7 @@ def test_docs_check_without_a_store_is_silent_about_the_graph(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root, common = project(tmp_path)
-    (root / "keelline.toml").write_text(
+    (root / "stayfixed.toml").write_text(
         CONFIG.replace('mode = "in-repo"', 'mode = "local-only"'), encoding="utf-8"
     )
     assert invoke(["docs", "check", "--memory-graph", *common]) == 0
@@ -182,6 +182,91 @@ def test_docs_trail_never_prints_a_crafted_trail_toml_key_raw(
     assert "no longer exist" in captured.err
     assert_never_raw(captured.out, captured.err)
     assert repr(f"plans/{CRAFTED}.md") in captured.err
+
+
+def test_the_undeclared_report_names_at_most_the_listed_limit_and_json_names_every_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A batch of new designs entering the trail at once — an imported plan directory — named every
+    # one of them on the line, a plain `', '.join` beside `findings.listed`, the one cap every
+    # other summary line takes. The line is capped and counts the rest; `--json` still carries
+    # every name, which is what the operator declares from. Mutation: join `undeclared` uncapped
+    # in `run_docs_trail` — this reddens.
+    root, common = project(tmp_path)
+    (root / "docs" / "plans" / "2026-01-01-x.md").write_text("# p\n", encoding="utf-8")
+    assert invoke(["docs", "trail", *common]) == 0
+    added = [f"plans/2026-02-{day:02d}-n.md" for day in range(1, LISTED_LIMIT + 4)]
+    for row in added:
+        (root / "docs" / row).write_text("# p\n", encoding="utf-8")
+    capsys.readouterr()
+    assert invoke(["docs", "trail", "--json", *common]) == 1
+    data = json.loads(capsys.readouterr().out)
+    line = data["summary"]
+    assert f"{len(added)} document(s) entered the trail" in line
+    assert [row for row in added if row in line] == added[:LISTED_LIMIT]
+    assert line.endswith(f"{added[LISTED_LIMIT - 1]}, and 3 more")
+    assert data["undeclared"] == added
+
+
+def test_the_stale_key_refusal_counts_every_key_and_names_at_most_the_listed_limit(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The refusal is the only channel — a `Failure` carries no `--json` — and it named every
+    # stale key: a `trail.toml` is committed and bounded in keys by nothing, and this message is
+    # what `docs trail --check` prints in CI. So it counts every key, names the first
+    # `LISTED_LIMIT` in sorted order, and says that a re-run names the rest: the map is the
+    # operator's own file, and each run after updating the named keys names the next ones.
+    # Mutation: join `stale` uncapped in `render_listing` — this reddens.
+    root, common = project(tmp_path)
+    (root / "docs" / "plans" / "2026-01-01-x.md").write_text("# p\n", encoding="utf-8")
+    stale = [f"plans/gone-{number:02d}.md" for number in range(LISTED_LIMIT + 3)]
+    (root / "docs" / "trail.toml").write_text(
+        "[states]\n" + "".join(f'"{key}" = "planned"\n' for key in stale), encoding="utf-8"
+    )
+    assert invoke(["docs", "trail", *common]) == 1
+    err = capsys.readouterr().err
+    assert f"names {len(stale)} document(s) that no longer exist" in err
+    assert [key for key in stale if key in err] == stale[:LISTED_LIMIT]
+    assert f"{stale[LISTED_LIMIT - 1]}, and 3 more" in err
+    assert "re-run" in err
+
+
+def test_a_stale_key_of_any_length_prints_clipped_to_its_start_and_its_length(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The cap bounds how many keys the refusal names and not how long one is: a single key of
+    # 200 000 characters printed a stderr line of 200 185 bytes, on the one line `docs trail
+    # --check` prints in CI. No key that long can name a document, and its start and its length
+    # still say which one it is. Mutation: print each key through `quoted` alone in
+    # `render_listing` — this reddens.
+    root, common = project(tmp_path)
+    (root / "docs" / "plans" / "2026-01-01-x.md").write_text("# p\n", encoding="utf-8")
+    key = "plans/" + "x" * 200_000
+    (root / "docs" / "trail.toml").write_text(f'[states]\n"{key}" = "planned"\n', encoding="utf-8")
+    assert invoke(["docs", "trail", "--check", *common]) == 1
+    err = capsys.readouterr().err
+    assert f"{key[:CLIPPED_CHARS]}…({len(key)} chars)" in err
+    assert len(err) < 1_000
+
+
+@pytest.mark.parametrize("count", [1, LISTED_LIMIT], ids=["one", "exactly-the-limit"])
+def test_stale_keys_up_to_the_limit_are_all_named_with_no_re_run_note(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], count: int
+) -> None:
+    # The note that a re-run names the rest is said only when there is a rest, and at exactly
+    # `LISTED_LIMIT` keys there is none: every key is on the line. Mutation: add the note
+    # whatever the count in `render_listing` — both cases redden; add it from `LISTED_LIMIT`
+    # keys on (`>=`) — the boundary case reddens.
+    root, common = project(tmp_path)
+    (root / "docs" / "plans" / "2026-01-01-x.md").write_text("# p\n", encoding="utf-8")
+    stale = [f"plans/gone-{number:02d}.md" for number in range(count)]
+    (root / "docs" / "trail.toml").write_text(
+        "[states]\n" + "".join(f'"{key}" = "planned"\n' for key in stale), encoding="utf-8"
+    )
+    assert invoke(["docs", "trail", *common]) == 1
+    err = capsys.readouterr().err
+    assert err.rstrip("\n").endswith(f"update the map before regenerating: {', '.join(stale)}")
+    assert "re-run" not in err
 
 
 @pytest.mark.parametrize("route", ["a trail.toml label", "a document filename"])
@@ -263,15 +348,15 @@ def test_a_non_utf8_roadmap_or_plan_exits_1_through_the_frame_and_never_2(
 @pytest.mark.parametrize(
     ("command", "module", "gate"),
     [
-        (["docs", "check"], "keelline.docs.hygiene", "docs_gate"),
-        (["docs", "trail", "--check"], "keelline.docs.trail", "trail_gate"),
+        (["docs", "check"], "stayfixed.docs.hygiene", "docs_gate"),
+        (["docs", "trail", "--check"], "stayfixed.docs.trail", "trail_gate"),
     ],
     ids=["docs check", "docs trail --check"],
 )
 def test_the_command_answers_with_its_gate_s_own_function(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: list[str], module: str, gate: str
 ) -> None:
-    # The gate `keelline assess` runs and the command a person runs are one function, so the
+    # The gate `stayfixed assess` runs and the command a person runs are one function, so the
     # two cannot drift apart. Mutations (advisory): `problems = docs_gate(root, config)` becomes
     # `problems = check_budgets(root, config) + check_links(root, config)` in `run_docs_check`
     # (first case); `trail_gate(root, config)` replaced by an inline comparison in

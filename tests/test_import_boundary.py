@@ -1,4 +1,4 @@
-"""Every runtime module imports only the standard library and keelline itself.
+"""Every runtime module imports only the standard library and stayfixed itself.
 
 Hooks run under whatever python3 the wrapper finds, before any environment exists, so a
 third-party import works on the developer's machine and fails inside a hook on the next one.
@@ -13,8 +13,8 @@ import ast
 import sys
 from pathlib import Path
 
-SRC = Path(__file__).resolve().parents[1] / "src" / "keelline"
-ALLOWED = set(sys.stdlib_module_names) | {"keelline"}
+SRC = Path(__file__).resolve().parents[1] / "src" / "stayfixed"
+ALLOWED = set(sys.stdlib_module_names) | {"stayfixed"}
 
 
 def imported_roots(path: Path) -> set[str]:

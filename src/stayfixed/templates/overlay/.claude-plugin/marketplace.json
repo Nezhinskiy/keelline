@@ -1,0 +1,11 @@
+{
+  "name": "stayfixed-overlay-marketplace",
+  "description": "One private overlay, published from its own repository.",
+  "plugins": [
+    {
+      "name": "stayfixed-overlay",
+      "source": "./",
+      "description": "A private overlay for stayfixed: personal standing rules, cross-project notes, and the per-project records that bind a repository to them."
+    }
+  ]
+}

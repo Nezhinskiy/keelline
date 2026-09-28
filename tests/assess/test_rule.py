@@ -15,14 +15,14 @@ from typing import Any
 
 import pytest
 
-import keelline
-from keelline.assess.rule import ConfigVerdict, Verdict, judge
-from keelline.config.loader import preset_defaults
-from keelline.config.paths import PathEscape
+import stayfixed
+from stayfixed.assess.rule import ConfigVerdict, Verdict, judge
+from stayfixed.config.loader import preset_defaults
+from stayfixed.config.paths import PathEscape
 
 SHA = "d" * 40
-STRICT = f"""[keelline]
-version = "{keelline.__version__}"
+STRICT = f"""[stayfixed]
+version = "{stayfixed.__version__}"
 state = "adopting"
 enforced = ["plan"]
 
@@ -45,7 +45,7 @@ def _judge(
     tree: str,
     tmp_path: Path,
     *,
-    running: str = keelline.__version__,
+    running: str = stayfixed.__version__,
     workflow_sha: str | None = None,
     released: bool | None = True,
 ) -> ConfigVerdict:
@@ -66,12 +66,12 @@ def _verdicts(verdict: ConfigVerdict) -> dict[str, Verdict]:
 
 def _second_preset(monkeypatch: pytest.MonkeyPatch, edit: Callable[[dict[str, Any]], None]) -> None:
     """Every preset name but `recommended` loads as `recommended` with `edit` applied."""
-    import keelline.config.loader as loader
-    from keelline import presets
+    import stayfixed.config.loader as loader
+    from stayfixed import presets
 
     real = presets.load_preset
 
-    def load(name: str, *, key: str = "[keelline] preset") -> dict[str, Any]:
+    def load(name: str, *, key: str = "[stayfixed] preset") -> dict[str, Any]:
         preset = copy.deepcopy(real("recommended", key=key))
         if name != "recommended":
             edit(preset)
@@ -81,8 +81,8 @@ def _second_preset(monkeypatch: pytest.MonkeyPatch, edit: Callable[[dict[str, An
 
 
 def _with(document: str, line: str) -> str:
-    """`document` with `line` added to its `[keelline]` table."""
-    return document.replace("[keelline]\n", f"[keelline]\n{line}", 1)
+    """`document` with `line` added to its `[stayfixed]` table."""
+    return document.replace("[stayfixed]\n", f"[stayfixed]\n{line}", 1)
 
 
 def _state(document: str, lines: str) -> str:
@@ -91,7 +91,7 @@ def _state(document: str, lines: str) -> str:
 
 
 def _version(document: str, version: str) -> str:
-    return document.replace(f'version = "{keelline.__version__}"', f'version = "{version}"')
+    return document.replace(f'version = "{stayfixed.__version__}"', f'version = "{version}"')
 
 
 def _ref(document: str, ref: str) -> str:
@@ -153,17 +153,17 @@ def test_what_no_reader_can_tell_apart_is_no_change(base: str, tree: str, tmp_pa
         ),
         pytest.param(
             _state(STRICT, 'state = "adopting"\nenforced = ["plan", "docs"]\n'),
-            "keelline.enforced",
+            "stayfixed.enforced",
             Verdict.TIGHTENED,
             id="gate-promoted",
         ),
         pytest.param(
             _state(STRICT, 'state = "adopting"\n'),
-            "keelline.enforced",
+            "stayfixed.enforced",
             Verdict.REFUSED,
             id="gate-dropped",
         ),
-        pytest.param(INSTALLED, "keelline.state", Verdict.TIGHTENED, id="installed"),
+        pytest.param(INSTALLED, "stayfixed.state", Verdict.TIGHTENED, id="installed"),
         pytest.param(
             STRICT.replace('name = "widget"', 'name = "gadget"'),
             "project.name",
@@ -172,13 +172,13 @@ def test_what_no_reader_can_tell_apart_is_no_change(base: str, tree: str, tmp_pa
         ),
         pytest.param(
             _with(STRICT, 'profile = "python"\n'),
-            "keelline.profile",
+            "stayfixed.profile",
             Verdict.NEUTRAL,
             id="profile-chosen",
         ),
         pytest.param(
             _with(STRICT, 'agents = ["codex"]\n'),
-            "keelline.agents",
+            "stayfixed.agents",
             Verdict.NEUTRAL,
             id="harnesses-chosen",
         ),
@@ -199,7 +199,7 @@ def test_what_no_reader_can_tell_apart_is_no_change(base: str, tree: str, tmp_pa
 def test_each_row_of_the_table_while_a_gate_enforces(
     tree: str, key: str, expected: Verdict, tmp_path: Path
 ) -> None:
-    # Refusing more is not declared as a mutation, and reddens a case each: `keelline.agents` out
+    # Refusing more is not declared as a mutation, and reddens a case each: `stayfixed.agents` out
     # of `ROWS` reddens `harnesses-chosen`, and a custom gate's addition refused reddens
     # `custom-gate-added`.
     verdict = _judge(STRICT, tree, tmp_path)
@@ -217,15 +217,15 @@ def test_adopting_to_installed_with_the_list_dropped_is_one_tightening(tmp_path:
     # move together and both forward.
     verdict = _judge(STRICT, INSTALLED, tmp_path)
     assert _verdicts(verdict) == {
-        "keelline.enforced": Verdict.TIGHTENED,
-        "keelline.state": Verdict.TIGHTENED,
+        "stayfixed.enforced": Verdict.TIGHTENED,
+        "stayfixed.state": Verdict.TIGHTENED,
     }
 
 
 def test_state_cannot_move_back_even_when_every_gate_still_enforces(tmp_path: Path) -> None:
     tree = _state(STRICT, f'state = "adopting"\n{ALL_FIVE}')
     verdict = _judge(INSTALLED, tree, tmp_path)
-    assert _verdicts(verdict) == {"keelline.state": Verdict.REFUSED}
+    assert _verdicts(verdict) == {"stayfixed.state": Verdict.REFUSED}
 
 
 @pytest.mark.parametrize(
@@ -253,7 +253,7 @@ def test_a_gate_the_base_enforces_cannot_be_removed_or_given_another_command(
     base: str, tree: str, key: str, tmp_path: Path
 ) -> None:
     # The key's own verdict, not only `refused`: under `installed` the loader fills `enforced`
-    # from the gates, so a removal also moves `keelline.enforced`, whose refusal alone would let
+    # from the gates, so a removal also moves `stayfixed.enforced`, whose refusal alone would let
     # a gate row that answered `neutral` through unseen.
     verdict = _judge(base, tree, tmp_path)
     assert _verdicts(verdict)[key] is Verdict.REFUSED
@@ -315,7 +315,7 @@ def test_a_preset_switch_is_judged_by_every_value_it_moves(
     # by effective value, so a budget the preset raises is a raised budget.
     _second_preset(monkeypatch, edit)
     verdict = _judge(STRICT, _with(STRICT, 'preset = "other"\n'), tmp_path)
-    assert _verdicts(verdict) == {"keelline.preset": Verdict.NEUTRAL, key: expected}
+    assert _verdicts(verdict) == {"stayfixed.preset": Verdict.NEUTRAL, key: expected}
 
 
 def test_a_path_moved_while_nothing_enforces_is_noted_and_the_run_uses_it(tmp_path: Path) -> None:
@@ -349,16 +349,16 @@ def test_an_upgrade_to_the_running_release_at_the_workflow_s_commit_is_admitted(
 ) -> None:
     base = _ref(_version(STRICT, "0.0.1"), "a" * 40)
     verdict = _judge(base, _ref(STRICT, SHA), tmp_path, workflow_sha=SHA)
-    assert _verdicts(verdict) == {"ci.ref": Verdict.UPGRADE, "keelline.version": Verdict.UPGRADE}
+    assert _verdicts(verdict) == {"ci.ref": Verdict.UPGRADE, "stayfixed.version": Verdict.UPGRADE}
     assert not verdict.refused
 
 
 def test_a_version_move_under_a_ref_that_is_not_a_commit_is_an_upgrade(tmp_path: Path) -> None:
-    # What `keelline upgrade` writes for a project pinned to `v1`: the version moves, the ref does
+    # What `stayfixed upgrade` writes for a project pinned to `v1`: the version moves, the ref does
     # not. Dropping `pin == sides.base.ci.ref or` refuses this, which refuses more.
     base = _ref(_version(STRICT, "0.0.1"), "v1")
     verdict = _judge(base, _ref(STRICT, "v1"), tmp_path)
-    assert _verdicts(verdict) == {"keelline.version": Verdict.UPGRADE}
+    assert _verdicts(verdict) == {"stayfixed.version": Verdict.UPGRADE}
 
 
 @pytest.mark.parametrize(
@@ -382,14 +382,14 @@ def test_a_pin_the_platform_does_not_vouch_for_is_refused_while_enforcing(
 
 def test_a_version_moving_down_is_not_an_upgrade(tmp_path: Path) -> None:
     verdict = _judge(_version(STRICT, "99.0.0"), STRICT, tmp_path)
-    assert _verdicts(verdict) == {"keelline.version": Verdict.REFUSED}
+    assert _verdicts(verdict) == {"stayfixed.version": Verdict.REFUSED}
 
 
 def test_a_release_moved_to_its_own_pre_release_is_not_an_upgrade(tmp_path: Path) -> None:
-    # `keelline upgrade` refuses this move; a reader that compared the triples alone admitted it.
+    # `stayfixed upgrade` refuses this move; a reader that compared the triples alone admitted it.
     base, tree = _version(STRICT, "9.9.9"), _version(STRICT, "9.9.9rc1")
     verdict = _judge(base, tree, tmp_path, running="9.9.9rc1")
-    assert _verdicts(verdict) == {"keelline.version": Verdict.REFUSED}
+    assert _verdicts(verdict) == {"stayfixed.version": Verdict.REFUSED}
 
 
 def test_a_pre_release_moved_to_its_release_is_an_upgrade(tmp_path: Path) -> None:
@@ -397,19 +397,19 @@ def test_a_pre_release_moved_to_its_release_is_an_upgrade(tmp_path: Path) -> Non
     # refuses more, so it is not declared as a mutation.
     base, tree = _version(STRICT, "9.9.9rc1"), _version(STRICT, "9.9.9")
     verdict = _judge(base, tree, tmp_path, running="9.9.9")
-    assert _verdicts(verdict) == {"keelline.version": Verdict.UPGRADE}
+    assert _verdicts(verdict) == {"stayfixed.version": Verdict.UPGRADE}
 
 
-def test_a_version_pair_keelline_does_not_order_is_not_an_upgrade(tmp_path: Path) -> None:
+def test_a_version_pair_stayfixed_does_not_order_is_not_an_upgrade(tmp_path: Path) -> None:
     base, tree = _version(STRICT, "9.9.9rc1"), _version(STRICT, "9.9.9rc2")
     verdict = _judge(base, tree, tmp_path, running="9.9.9rc2")
-    assert _verdicts(verdict) == {"keelline.version": Verdict.REFUSED}
+    assert _verdicts(verdict) == {"stayfixed.version": Verdict.REFUSED}
 
 
-def test_a_version_that_is_not_the_running_keelline_s_is_not_an_upgrade(tmp_path: Path) -> None:
+def test_a_version_that_is_not_the_running_stayfixed_s_is_not_an_upgrade(tmp_path: Path) -> None:
     base, tree = _version(STRICT, "0.0.1"), _version(STRICT, "0.0.9")
     verdict = _judge(base, tree, tmp_path, running="0.1.0")
-    assert _verdicts(verdict) == {"keelline.version": Verdict.REFUSED}
+    assert _verdicts(verdict) == {"stayfixed.version": Verdict.REFUSED}
 
 
 def test_no_base_copy_is_the_bootstrap_and_the_tree_decides(tmp_path: Path) -> None:

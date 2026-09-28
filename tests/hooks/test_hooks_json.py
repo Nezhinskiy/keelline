@@ -4,14 +4,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-from keelline.cli import build_parser, discover_registrars
-from keelline.guards.hooks import BASH
-from keelline.hooks.api import EVENTS
-from keelline.hooks.registry import discover
+from stayfixed.cli import build_parser, discover_registrars
+from stayfixed.guards.hooks import BASH
+from stayfixed.hooks.api import EVENTS
+from stayfixed.hooks.registry import discover
 
-# `keelline.memory.api` and not `keelline.memory.bundles`: an area is imported through its
+# `stayfixed.memory.api` and not `stayfixed.memory.bundles`: an area is imported through its
 # published surface, never through a private module, and `SLOTS` is on that surface.
-from keelline.memory.api import SLOTS
+from stayfixed.memory.api import SLOTS
 
 ROOT = Path(__file__).resolve().parents[2]
 HOOKS = json.loads((ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
@@ -59,7 +59,7 @@ def test_every_command_parses_against_the_real_parser() -> None:
 
 
 def test_no_entry_passes_json() -> None:
-    # `bundles.py`'s CAP_MARGIN comment, addressing `keelline.hooks` by name: "the `hooks.json`
+    # `bundles.py`'s CAP_MARGIN comment, addressing `stayfixed.hooks` by name: "the `hooks.json`
     # entries must not pass `--json`. The margin is additive only because `memory
     # session-context` prints the text raw." `memory/commands.py` records that this invariant
     # is owned outside `memory` and asserted by no test there. This is that test.

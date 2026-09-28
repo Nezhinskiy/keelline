@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pytest
 
-from keelline.cli import build_parser, discover_registrars, split_json_flag
+from stayfixed.cli import build_parser, discover_registrars, split_json_flag
 
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
@@ -271,11 +271,11 @@ _COMMANDS_BLOCK = re.compile(r"^## Commands\n.*?^```text\n(.*?)^```", re.MULTILI
 
 
 def readme_invocations() -> list[str]:
-    """Every `keelline …` line in the README's Commands block, comments stripped."""
+    """Every `stayfixed …` line in the README's Commands block, comments stripped."""
     match = _COMMANDS_BLOCK.search(README.read_text(encoding="utf-8"))
     assert match is not None, "README has no `## Commands` section with a ```text block"
     lines = (line.split("#", 1)[0].strip() for line in match.group(1).splitlines())
-    return [line for line in lines if line.startswith("keelline ")]
+    return [line for line in lines if line.startswith("stayfixed ")]
 
 
 def registered_commands() -> set[str]:
@@ -312,7 +312,7 @@ def test_the_parser_registers_what_this_test_expects_to_walk() -> None:
 
 
 def test_every_registered_command_has_a_readme_row() -> None:
-    # Mutation: delete the `keelline docs trail` line from the README → reddens naming it.
+    # Mutation: delete the `stayfixed docs trail` line from the README → reddens naming it.
     # This is the test that makes the README a shared file every command owes a line to.
     named = {" ".join(line.split()[1:3]) for line in readme_invocations()}
     named |= {line.split()[1] for line in readme_invocations()}
@@ -441,11 +441,11 @@ _TABLE_ROW = re.compile(r"^\| (?!Flag |Command and flag |---)(.+?) \| (.+?) \|$"
 def test_the_shared_flag_tables_are_the_constants_and_not_a_second_spelling() -> None:
     # No shared-flag sentence is spelled by hand, and that section of `docs/cli.md` spelled all nine
     # of them a second time in a document nothing checked — re-creating, one file over, exactly the
-    # drift one constant per flag exists to remove. Held row by row to `keelline.command`'s
+    # drift one constant per flag exists to remove. Held row by row to `stayfixed.command`'s
     # constants, the same way the README's Commands block is held to the real parser above.
     #
     # Mutation: change the `--machine` row's cell in `docs/cli.md` → reddens naming the row.
-    from keelline.command import (
+    from stayfixed.command import (
         ATTACH_CHECK_HELP,
         CHECK_HELP,
         DRY_RUN_HELP,
@@ -466,11 +466,11 @@ def test_the_shared_flag_tables_are_the_constants_and_not_a_second_spelling() ->
         "`--dry-run`": DRY_RUN_HELP,
         "`--home`": HOME_HELP,
         "`--check`": CHECK_HELP,
-        "`keelline overlay create --root`": INSTANCE_DIR_HELP,
-        "`keelline overlay init --root`, `keelline overlay upgrade --root`": OVERLAY_ROOT_HELP,
-        "`keelline setup --root`": SETUP_ROOT_HELP,
-        "`keelline setup --machine`": SETUP_MACHINE_HELP,
-        "`keelline attach --check`": ATTACH_CHECK_HELP,
+        "`stayfixed overlay create --root`": INSTANCE_DIR_HELP,
+        "`stayfixed overlay init --root`, `stayfixed overlay upgrade --root`": OVERLAY_ROOT_HELP,
+        "`stayfixed setup --root`": SETUP_ROOT_HELP,
+        "`stayfixed setup --machine`": SETUP_MACHINE_HELP,
+        "`stayfixed attach --check`": ATTACH_CHECK_HELP,
     }
     section = _SHARED_FLAGS_SECTION.search(CLI_REFERENCE.read_text(encoding="utf-8"))
     assert section is not None, "docs/cli.md has no `## Shared flags` section"
@@ -498,7 +498,7 @@ SETTINGS = (
     "the `check / gates` status check required",
     "expected source set to GitHub Actions",
     "branches required to be up to date before merging, or a merge queue",
-    "a `v*` tag ruleset on the Keelline repository",
+    "a `v*` tag ruleset on the stayfixed repository",
 )
 
 
@@ -516,7 +516,7 @@ def test_the_reusable_workflow_names_every_setting_the_verdict_binds_under() -> 
 # *refuses* an unknown section — so a section the block leaves out reads to a reader as a key
 # that is invalid. Three of the nine were missing (`[artifacts]`, `[ci]`, `[commit_messages]`),
 # which is the drift a binding prevents. `## Configuration` down to the next `## ` heading.
-# The FIRST fenced `toml` block under `## Configuration` — the `keelline.toml` one. The section
+# The FIRST fenced `toml` block under `## Configuration` — the `stayfixed.toml` one. The section
 # carries a second block, the machine file, whose `[personal]` and `[overlay]` are not sections
 # of this grammar at all; scoping to the first block is what keeps the two apart.
 _CONFIGURATION_BLOCK = re.compile(
@@ -527,7 +527,7 @@ _TOML_HEADER = re.compile(r"^\[([a-z_]+)\]", re.MULTILINE)
 
 def test_the_configuration_block_shows_every_section_the_loader_accepts() -> None:
     # Mutation: drop the `[ci]` header from `docs/cli.md`'s block -> reddens naming it.
-    from keelline.config.loader import SECTIONS
+    from stayfixed.config.loader import SECTIONS
 
     section = _CONFIGURATION_BLOCK.search(CLI_REFERENCE.read_text(encoding="utf-8"))
     assert section is not None, "docs/cli.md's `## Configuration` has no ```toml block"
@@ -542,7 +542,7 @@ def test_the_configuration_block_lists_the_built_in_gates_in_their_one_order() -
     # The reference is prose and cannot import the tuple, so its one spelling of the built-in
     # gates is pinned here. Mutation: reorder `builtin` in `docs/cli.md`'s block and this
     # reddens.
-    from keelline.config.schema import BUILTIN_GATES
+    from stayfixed.config.schema import BUILTIN_GATES
 
     section = _CONFIGURATION_BLOCK.search(CLI_REFERENCE.read_text(encoding="utf-8"))
     assert section is not None, "docs/cli.md's `## Configuration` has no ```toml block"
@@ -561,7 +561,7 @@ PLAN_REFUSAL_CODE = "base-unresolvable"
 def test_the_plan_rule_count_is_the_number_of_rules_plan_check_emits() -> None:
     # Mutation: change `Five rules` back to `Four rules` in `docs/cli.md` -> reddens naming
     # both numbers.
-    source = (ROOT / "src" / "keelline" / "docs" / "plans.py").read_text(encoding="utf-8")
+    source = (ROOT / "src" / "stayfixed" / "docs" / "plans.py").read_text(encoding="utf-8")
     codes = {c for c in _PLAN_FINDING_CODE.findall(source)} - {PLAN_REFUSAL_CODE}
     # The floor first: a regex that stopped matching would compare zero against a number word.
     assert len(codes) >= 5, sorted(codes)
@@ -577,7 +577,9 @@ def test_the_plan_rule_count_is_the_number_of_rules_plan_check_emits() -> None:
 # guard cannot see, and a renamed check would leave this page green and wrong. That the unbound
 # ones drift is not a hypothesis: `len(OVERLAY_FILES)` is sixteen and four comments one directory
 # over still said fourteen.
-_DOCTOR_SECTION = re.compile(r"^## `keelline doctor[^\n]*\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL)
+_DOCTOR_SECTION = re.compile(
+    r"^## `stayfixed doctor[^\n]*\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL
+)
 # `| `name` | what it answers | what it reads |` — the first cell only, backticked.
 _CHECK_ROW = re.compile(r"^\| `([a-z-]+)` \| [^|]+ \| [^|]+ \|$", re.MULTILINE)
 
@@ -586,10 +588,10 @@ def test_the_doctor_table_is_the_registry_and_not_a_second_spelling() -> None:
     # Mutation: rename one check in `docs/cli.md`'s table -> reddens naming the row. In order
     # and not as a set, because the table's order is the report's order and the document says
     # so.
-    from keelline.doctor.checks import CHECKS
+    from stayfixed.doctor.checks import CHECKS
 
     section = _DOCTOR_SECTION.search(CLI_REFERENCE.read_text(encoding="utf-8"))
-    assert section is not None, "docs/cli.md has no `keelline doctor` section"
+    assert section is not None, "docs/cli.md has no `stayfixed doctor` section"
     rows = _CHECK_ROW.findall(section.group(1))
     # The walk's floor before anything is compared, for the reason the Shared flags test gives:
     # a regex that matched nothing would make the comparison below vacuously true, and a
@@ -601,13 +603,13 @@ def test_the_doctor_table_is_the_registry_and_not_a_second_spelling() -> None:
     ]
 
 
-# The five verdict sentences are `VERDICTS` in `keelline.guards.attribute` and are reproduced by
+# The five verdict sentences are `VERDICTS` in `stayfixed.guards.attribute` and are reproduced by
 # hand in `docs/cli.md`'s table; every test that had them read the expectation back out of
 # `VERDICTS`, which is shape 9 of the `sweep-defect-class` skill's own reference — both sides move
 # together under any reword. This is the same rule the Shared flags tables are held to, one section
 # over.
 _ATTRIBUTE_SECTION = re.compile(
-    r"^## `keelline test attribute[^\n]*\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL
+    r"^## `stayfixed test attribute[^\n]*\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL
 )
 # `| fails | passes | — | `sentence` |`: the three code columns, then the sentence in backticks.
 _VERDICT_ROW = re.compile(r"^\| (?:fails|passes) \| [^|]+ \| [^|]+ \| `(.+?)` \|$", re.MULTILINE)
@@ -615,10 +617,10 @@ _VERDICT_ROW = re.compile(r"^\| (?:fails|passes) \| [^|]+ \| [^|]+ \| `(.+?)` \|
 
 def test_the_verdict_table_is_the_shipped_sentences_and_not_a_second_spelling() -> None:
     # Mutation: reword one sentence in `docs/cli.md`'s table — reddens naming the row.
-    from keelline.guards.attribute import VERDICTS
+    from stayfixed.guards.attribute import VERDICTS
 
     section = _ATTRIBUTE_SECTION.search(CLI_REFERENCE.read_text(encoding="utf-8"))
-    assert section is not None, "docs/cli.md has no `keelline test attribute` section"
+    assert section is not None, "docs/cli.md has no `stayfixed test attribute` section"
     rows = _VERDICT_ROW.findall(section.group(1))
     # The walk's floor before anything is compared, for the reason the Shared flags test gives:
     # a regex that matched nothing would make the comparison below vacuously true, and a

@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from keelline.assess import gates
-from keelline.assess.gates import (
+from stayfixed.assess import gates
+from stayfixed.assess.gates import (
     BASE,
     BUILTIN,
     GateContext,
@@ -23,10 +23,10 @@ from keelline.assess.gates import (
     run_gates,
     stopped,
 )
-from keelline.cli import build_parser, discover_registrars
-from keelline.config.loader import load
-from keelline.config.schema import BUILTIN_GATES, Config, CustomGate, Gates
-from keelline.errors import Failure
+from stayfixed.cli import build_parser, discover_registrars
+from stayfixed.config.loader import load
+from stayfixed.config.schema import BUILTIN_GATES, Config, CustomGate, Gates
+from stayfixed.errors import Failure
 from tests.assess.smoke import BASE as SMOKE_BASE
 from tests.assess.smoke import FIXTURE, smoke_repo
 from tests.gitfixture import git, needs_git
@@ -176,7 +176,7 @@ def test_a_commit_range_git_cannot_read_is_a_gate_that_did_not_answer(tmp_path: 
     [commit] = results(root, config, "commit", base="no-such-ref")
     assert not commit.answered
     assert commit.failing
-    assert "`keelline commit check --range <base>..HEAD`" in commit.reason
+    assert "`stayfixed commit check --range <base>..HEAD`" in commit.reason
     assert "no-such-ref" not in commit.reason
 
 
@@ -208,11 +208,11 @@ def test_a_gate_that_raises_did_not_answer_and_every_gate_after_it_still_runs(
     def raising(*args: object) -> list[object]:
         raise Failure("a message that quotes the repository")
 
-    monkeypatch.setattr("keelline.docs.hygiene.check_budgets", raising)
+    monkeypatch.setattr("stayfixed.docs.hygiene.check_budgets", raising)
     found = results(root, config)
     [docs] = [result for result in found if result.name == "docs"]
     assert not docs.answered
-    assert "`keelline docs check`" in docs.reason
+    assert "`stayfixed docs check`" in docs.reason
     assert "quotes" not in docs.reason
     assert [result.name for result in found if not result.answered] == ["docs"]
     assert [result.name for result in found] == list(BUILTIN_GATES)
@@ -230,7 +230,7 @@ def test_a_gate_that_recurses_past_the_limit_did_not_answer_and_the_rest_still_r
     def recursing(*args: object) -> list[object]:
         raise RecursionError("maximum recursion depth exceeded")
 
-    monkeypatch.setattr("keelline.docs.hygiene.check_budgets", recursing)
+    monkeypatch.setattr("stayfixed.docs.hygiene.check_budgets", recursing)
     found = results(root, config)
     assert [result.name for result in found if not result.answered] == ["docs"]
     assert [result.name for result in found] == list(BUILTIN_GATES)
@@ -241,9 +241,9 @@ def test_the_configured_set_is_the_kept_built_ins_then_the_custom_gates(tmp_path
     # `[gates] builtin` keeps — this reddens.
     root = tmp_path / "project"
     root.mkdir()
-    fixture = (FIXTURE / "keelline.toml").read_text(encoding="utf-8")
+    fixture = (FIXTURE / "stayfixed.toml").read_text(encoding="utf-8")
     gates = '\n[gates]\nbuiltin = ["docs"]\n\n[gates.custom.probe]\nrun = ["true"]\n'
-    (root / "keelline.toml").write_text(fixture + gates, encoding="utf-8")
+    (root / "stayfixed.toml").write_text(fixture + gates, encoding="utf-8")
     config = load(root, machine=tmp_path / "m.toml")
     assert list(configured(config)) == ["docs", "probe"]
 
@@ -263,7 +263,7 @@ def test_a_custom_gate_that_exits_non_zero_is_one_finding_and_its_output_passes_
     # The command's bytes are the project's own and reach the terminal untouched — on standard
     # error, so `--json` on standard output stays one object — and reach no result: nothing
     # in the module reads them. One property per assertion below.
-    marker = "keelline-probe-output"
+    marker = "stayfixed-probe-output"
     script = f"import sys; sys.stdout.write('\\x1b[31m{marker}\\n'); sys.exit(3)"
     config = with_custom(fixture_config(tmp_path), [sys.executable, "-c", script])
     [probe] = results(tmp_path, config)
@@ -318,7 +318,7 @@ def test_a_custom_gate_past_its_time_limit_leaves_nothing_running(
 def test_an_interrupted_custom_gate_leaves_nothing_running(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A terminal's Ctrl-C reaches Keelline's process group and not the command's own session,
+    # A terminal's Ctrl-C reaches stayfixed's process group and not the command's own session,
     # so nothing but the gate itself can end the command's tree on the way out.
     # The interrupt arrives once the child has written `started`, so there is a descendant to
     # end; the wait for it is bounded, and a child that never starts fails the assertion below.
@@ -406,7 +406,7 @@ def test_a_group_the_gate_may_not_signal_still_leaves_the_exit_status(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str
 ) -> None:
     # macOS answers `PermissionError` for a group left with only the exited, unreaped command,
-    # and any platform does for a descendant Keelline may not signal (a sudo or setuid one),
+    # and any platform does for a descendant stayfixed may not signal (a sudo or setuid one),
     # which is then not ended. Either way the command's own exit is the gate's answer. Driven
     # portably: every `killpg` refuses. Mutation (oracle): "a group the gate may not signal ends
     # the gate run" -> `PermissionError` escapes `run_gates` and this reddens.
@@ -424,7 +424,7 @@ def test_a_group_the_gate_may_not_signal_still_leaves_the_exit_status(
 
 
 def test_custom_gates_named_first_run_before_every_other_custom_gate(tmp_path: Path) -> None:
-    # `keelline gate` names the base's enforced gates first, so no other custom gate runs files
+    # `stayfixed gate` names the base's enforced gates first, so no other custom gate runs files
     # before they do. The built-ins keep their place: they run nothing the repository wrote.
     # Mutation (declared): every gate in configured order -> `first` is ignored and this reddens.
     ran = tmp_path / "ran"
