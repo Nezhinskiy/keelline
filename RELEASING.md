@@ -59,6 +59,28 @@ step 7's sentence true.
    claude plugin tag --dry-run .
    ```
 
+   **And read back the three settings a tag relies on**, because none of them lives in the
+   tree and a repository transfer carries each one over as it was rather than as section 3
+   says it should be:
+
+   ```bash
+   gh api repos/stayfixed/stayfixed/rulesets \
+     --jq '.[] | select(.name == "release tags") | .id' |
+     xargs -I{} gh api repos/stayfixed/stayfixed/rulesets/{} \
+     --jq '[.enforcement, (.conditions.ref_name.include | sort)]'
+   # ["active",["refs/tags/stayfixed--v*","refs/tags/v*.*.*"]]
+   gh api repos/stayfixed/stayfixed/private-vulnerability-reporting --jq .enabled
+   # true
+   curl -sS -o /dev/null -w '%{http_code}\n' https://pypi.org/pypi/stayfixed/json
+   # 404 before the first release; from then on 200, with you listed as owner at
+   # https://pypi.org/project/stayfixed/
+   ```
+
+   Any other answer stops the release here. A ruleset that lists other patterns leaves the
+   tag step 6 pushes movable; reporting that is off sends every reporter `SECURITY.md` directs
+   to the advisory form back to a public issue; and a PyPI project somebody else owns is one
+   step 5's README would tell every reader to install.
+
 2. **Decide the version.** This is a judgement, not a command. The first release is `0.1.0`,
    an alpha, and the tree already says so, with "Development Status :: 3 - Alpha". Every
    mechanism in this file works with whatever number you pick — the gate compares the tag to
@@ -140,11 +162,18 @@ step 7's sentence true.
    `0.1.0rc1`), so the six-source rule cannot be satisfied by an `rc` today. `release.yml`
    triggers on finals only, deliberately.
 
+   **Push the tags, not `main`.** A pending publisher does not reserve the PyPI name: until a
+   distribution exists under it anyone may upload one, and the release commit's README already
+   tells a reader to `uv tool install stayfixed`. That text has to be in the release commit,
+   because the README is the package's long description and the wheel is built from the tag,
+   so what waits is `main`: it moves in step 7, once `publish` has put the name in your hands,
+   and not before.
+
    ```bash
    claude plugin tag .
    git tag vX.Y.Z
    uv run stayfixed release check --tag vX.Y.Z
-   git push origin main --tags
+   git push origin vX.Y.Z stayfixed--vX.Y.Z
    ```
 
 7. **Watch the workflow.**
@@ -160,12 +189,22 @@ step 7's sentence true.
    declined PyPI still leaves you a Release. Without that environment both jobs run straight
    through the name GitHub invents for them, and nothing on this tag waits for a human.
 
+   When `publish` is green and `https://pypi.org/project/stayfixed/` lists you as owner, move
+   `main` to the release commit:
+
+   ```bash
+   git push origin main
+   ```
+
+   If `publish` failed because the name was taken in the meantime, `main` still says nothing
+   is released; leave it there and settle the name with PyPI before anything else.
+
 8. **Publish the overlay template**, from this checkout, with an authenticated `gh` and an SSH
    key GitHub knows:
 
    ```bash
-   uv run stayfixed overlay publish-template --owner Nezhinskiy        # read the plan
-   uv run stayfixed overlay publish-template --owner Nezhinskiy --yes  # do it
+   uv run stayfixed overlay publish-template --owner stayfixed        # read the plan
+   uv run stayfixed overlay publish-template --owner stayfixed --yes  # do it
    ```
 
    Without `--yes` nothing outward-facing happens: it renders, asks `gh` what is there, and
@@ -204,7 +243,7 @@ than a stored secret, which requires a one-time registration on PyPI:
 
 | Field | Value |
 |---|---|
-| Owner | `Nezhinskiy` |
+| Owner | `stayfixed` |
 | Repository | `stayfixed` |
 | Workflow | `release.yml` |
 | Environment | `pypi` |
@@ -234,14 +273,29 @@ and its reviewer exist.
 
 **Tag protection.** A repository ruleset over `refs/tags/v*.*.*` and `refs/tags/stayfixed--v*`
 with `deletion` and `update` rules, so a semver tag is immutable while the `v1` alias, once a
-`1.x` release creates it — it matches neither pattern — can still move:
+`1.x` release creates it — it matches neither pattern — can still move. The same body creates
+the ruleset or, when one named `release tags` already exists, replaces it in place; a second
+`POST` beside an existing one would leave two rulesets and fix neither:
 
 ```bash
-gh api -X POST repos/stayfixed/stayfixed/rulesets --input - <<'JSON'
+cat > "${TMPDIR:-/tmp}/release-tags.json" <<'JSON'
 {"name": "release tags", "target": "tag", "enforcement": "active",
  "conditions": {"ref_name": {"include": ["refs/tags/v*.*.*", "refs/tags/stayfixed--v*"], "exclude": []}},
  "rules": [{"type": "deletion"}, {"type": "update"}]}
 JSON
+id=$(gh api repos/stayfixed/stayfixed/rulesets --jq '.[] | select(.name == "release tags") | .id')
+if [ -n "$id" ]; then
+  gh api -X PUT "repos/stayfixed/stayfixed/rulesets/$id" --input "${TMPDIR:-/tmp}/release-tags.json"
+else
+  gh api -X POST repos/stayfixed/stayfixed/rulesets --input "${TMPDIR:-/tmp}/release-tags.json"
+fi
+```
+
+**Private vulnerability reporting.** `SECURITY.md`, `CODE_OF_CONDUCT.md` and both issue-template
+files send reporters to the advisory form, which exists only while the repository setting is on:
+
+```bash
+gh api -X PUT repos/stayfixed/stayfixed/private-vulnerability-reporting
 ```
 
 **A conduct contact address.** `CODE_OF_CONDUCT.md` still routes a report through the security
