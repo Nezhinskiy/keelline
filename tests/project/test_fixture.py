@@ -4,8 +4,9 @@ The fixture is grown rather than generated at smoke time: `stayfixed init --yes 
 copy of it once, and the manifest and the footprint it wrote were committed back. So the claims
 this module holds are the ones that can go stale — that planning both passes over the fixture
 today has nothing left to *create*, that every artifact its manifest records is one the plan
-recognises as already correct, and that every provenance the manifest records is the one this
-build would write for that artifact.
+recognises as already correct, that every provenance the manifest records is the one this
+build would write for that artifact, and that every digest it records is the one `upgrade` will
+recognise as its own when a template changes.
 
 `stayfixed.toml` itself was kept exactly as hand-written rather than let that same `init --yes
 --no-ci` run replace it, and deliberately so: a fixture built fresh at smoke time would need a
@@ -39,12 +40,13 @@ commit. The honest claim is the narrow one, and it is the one asserted here.
 from __future__ import annotations
 
 import shutil
+from dataclasses import replace
 from pathlib import Path
 
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.project.api import project_templates
 from stayfixed.release.api import Resolution
-from stayfixed.scaffold import Manifest, Verb, plan
+from stayfixed.scaffold import Manifest, Template, Verb, plan
 
 ROOT = Path(__file__).resolve().parents[2]
 SMOKE = ROOT / "tests" / "fixtures" / "smoke-project"
@@ -85,4 +87,34 @@ def test_the_smoke_fixture_is_a_project_init_has_nothing_left_to_create_in(tmp_p
     built = {t.id: t.source for t in (*prepared.once, *prepared.footprint)}
     assert {key: record.template for key, record in records.items()} == {
         key: built[key] for key in records
+    }
+
+
+def test_every_recorded_footprint_artifact_follows_a_template_change(tmp_path: Path) -> None:
+    # Mutation (by hand, the manifest is data): put back one record's `sha256` from before a
+    # change to its template's bytes, as the rename left four of them -> that artifact's reason
+    # becomes "hand-edited" and the assertion reddens. A record whose digest is not the bytes on
+    # disk makes `upgrade` call the fixture's own files hand-edited and skip them, which is the
+    # regression the fixture exists to catch; `test_the_smoke_fixture_is_a_project_init_has_
+    # nothing_left_to_create_in` cannot see it, because with the templates unchanged the plan
+    # compares the render and never reads the record.
+    root = tmp_path / "smoke"
+    shutil.copytree(SMOKE, root)
+    config = load(root, machine=tmp_path / "absent.toml")
+    prepared = project_templates(
+        config,
+        resolution=Resolution(None, True),
+        document=(root / CONFIG_FILE).read_text(encoding="utf-8"),
+        adopted=True,
+    )
+    records = Manifest.read(root).records
+
+    def changed(template: Template) -> Template:
+        return replace(template, render=lambda: template.render() + "\nchanged\n")
+
+    recorded = [changed(t) for t in prepared.footprint if t.id in records]
+    assert len(recorded) >= 7
+    footprint = plan(root, config, recorded)
+    assert {a.artifact_id: a.reason for a in footprint.actions} == {
+        t.id: "refreshed" for t in recorded
     }
