@@ -27,6 +27,7 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed import __version__
 from stayfixed.cli import build_parser, discover_registrars, split_json_flag
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -386,41 +387,36 @@ def test_the_readme_names_every_command_whose_json_carries_findings() -> None:
 
 
 RELEASING = ROOT / "RELEASING.md"
-INSTALL_BEGIN = "<!-- release-install:begin -->"
-INSTALL_END = "<!-- release-install:end -->"
+# `README.md`'s `## Install` section: everything between its heading and the next `## ` heading.
+_INSTALL_SECTION = re.compile(r"^## Install\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL)
 
 
-def test_the_release_step_and_the_readme_agree_on_what_it_replaces() -> None:
-    """The release commit is meant to be an edit, and the edit had no stated extent.
+def test_the_readme_installs_the_release_the_tree_carries() -> None:
+    """The Install section is what a new adopter copies, so it names this release and no other.
 
-    `RELEASING.md` step 5 said to replace "the **Nothing is released yet.** paragraph" with the
-    text in the HTML comment above it — but that replacement carries its own two code blocks
-    and says "Both commands below install that release". Swapping only the paragraph left the
-    untagged `/plugin marketplace add …` and `uv tool install git+https://…` blocks standing
-    underneath the tagged ones, plus a "From the first release on, the same command takes the
-    tag" paragraph that the release had just made false: two competing install commands and a
-    stale promise, in the first screen a new adopter reads. `release check` cannot see README
-    examples, and `RELEASING.md` says so, so nothing else catches it.
+    Before 0.1.0 the section described the untagged install forms and a marked region the release
+    commit replaced; `RELEASING.md` step 5 now bumps the two places the section names the
+    version, and this holds them to the version `release check` holds everywhere else, which it
+    cannot see in a README example. An untagged `git+` install or a promise about "the first
+    release" would put a second install command beside the released one.
 
-    The extent is markers now, and this holds the three things that make markers work.
-
-    Mutation (declared): the begin marker is dropped from `README.md` -> this reddens.
+    Mutation (declared): the PyPI form becomes an untagged `git+` install -> this reddens.
     """
-    readme = README.read_text(encoding="utf-8")
-    releasing = RELEASING.read_text(encoding="utf-8")
-    # One of each, in order, so the region is a region.
-    assert readme.count(INSTALL_BEGIN) == 1, readme.count(INSTALL_BEGIN)
-    assert readme.count(INSTALL_END) == 1, readme.count(INSTALL_END)
-    assert readme.index(INSTALL_BEGIN) < readme.index(INSTALL_END)
-    # The region really holds the untagged install commands — the bytes the release replaces.
-    region = readme[readme.index(INSTALL_BEGIN) : readme.index(INSTALL_END)]
-    assert "Nothing is released yet." in region, region[:200]
-    assert "/plugin marketplace add" in region, region[:200]
-    assert "uv tool install git+" in region, region[:200]
-    assert "From the first release on" in region, region[:200]
-    # And the step names the markers, rather than describing an extent in prose.
-    assert INSTALL_BEGIN in releasing, "RELEASING.md step 5 no longer names the begin marker"
-    assert INSTALL_END in releasing, "RELEASING.md step 5 no longer names the end marker"
+    match = _INSTALL_SECTION.search(README.read_text(encoding="utf-8"))
+    assert match, "README.md has no ## Install section"
+    section = match.group(1)
+    version = __version__
+    assert f"**Released as {version}.**" in section, section[:300]
+    assert f"/plugin marketplace add stayfixed/stayfixed@v{version}" in section, section[:300]
+    assert "uv tool install stayfixed\n" in section, section[:300]
+    for stale in (
+        "uv tool install git+",
+        "Nothing is released yet",
+        "first release",
+        "release-install",
+    ):
+        assert stale not in section, stale
+    assert "set both to the new version" in RELEASING.read_text(encoding="utf-8")
 
 
 def test_the_readme_points_at_the_methodology_and_the_reference() -> None:

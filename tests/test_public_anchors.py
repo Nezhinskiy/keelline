@@ -305,7 +305,6 @@ def test_the_citation_walk_reads_every_tracked_file_but_the_exemptions() -> None
         ".claude-plugin/plugin.json",
         ".codex-plugin/plugin.json",
         ".github/workflows/ci.yml",
-        "changelog.d/+assess.feature.md",
         "src/stayfixed/cli.py",
         "src/stayfixed/presets/recommended.toml",
         "docs/cli.md",
