@@ -2403,7 +2403,7 @@ Codex — and no command in that row's gift changes it.
 **The one to read first is the plugin root**, because it is the quietest and the worst. When
 this process can find no plugin root at all, `files` and `wrapper` both skip — two rows, no red,
 and every hook entry on this machine silent. Both carry a remedy: run `stayfixed doctor` from the
-plugin's own stayfixed so its root answers for itself, or set `CLAUDE_PLUGIN_ROOT` to where the
+plugin's own launcher, so its root answers for itself, or set `CLAUDE_PLUGIN_ROOT` to where the
 plugin is installed, which lets `files` read the wrapper even though `wrapper` still will not
 run it.
 

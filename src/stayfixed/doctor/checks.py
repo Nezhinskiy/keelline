@@ -158,11 +158,14 @@ CI_REF_TIMEOUT_SECONDS = 30
 # `skills/doctor/SKILL.md` tells the model not to treat as red — so the two together said
 # nothing about the loudest fault `doctor` can meet. One constant because both rows must say
 # the same thing, and because the two halves of it are not interchangeable: only the first
-# gives a root `wrapper` will execute.
+# gives a root `wrapper` will execute, which is why `wrapper`'s skip for a root the environment
+# names carries that first half alone, and takes it from here rather than from a copy.
+RUN_FROM_OWN_ROOT = (
+    "run `stayfixed doctor` from the plugin's own launcher, so its root answers for itself"
+)
 PLUGIN_ROOT_REMEDY = (
-    "run `stayfixed doctor` from the plugin's own stayfixed so its root answers for itself, or "
-    "set CLAUDE_PLUGIN_ROOT to where the plugin is installed, which lets `files` read the "
-    "wrapper without making it runnable here"
+    f"{RUN_FROM_OWN_ROOT}, or set CLAUDE_PLUGIN_ROOT to where the plugin is installed, which "
+    "lets `files` read the wrapper without making it runnable here"
 )
 NAMED_ROOT_CAVEAT = (
     "; this is the plugin root the environment names, whose files are read here and run nowhere"
@@ -527,8 +530,7 @@ def _wrapper(context: Context) -> Row:
             "the only plugin root here is one the environment names, and a root this process "
             "cannot vouch for is never executed: its wrapper would run before any stayfixed "
             "guard does",
-            "run `stayfixed doctor` from the plugin's own stayfixed, "
-            "so its root answers for itself",
+            RUN_FROM_OWN_ROOT,
         )
     env = {
         key: value

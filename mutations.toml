@@ -4064,13 +4064,25 @@ reddens = [
 name = "the plugin-root skips go back to an empty remedy"
 file = "src/stayfixed/doctor/checks.py"
 before = '''PLUGIN_ROOT_REMEDY = (
-    "run `stayfixed doctor` from the plugin's own stayfixed so its root answers for itself, or "
-    "set CLAUDE_PLUGIN_ROOT to where the plugin is installed, which lets `files` read the "
-    "wrapper without making it runnable here"
+    f"{RUN_FROM_OWN_ROOT}, or set CLAUDE_PLUGIN_ROOT to where the plugin is installed, which "
+    "lets `files` read the wrapper without making it runnable here"
 )'''
 after = 'PLUGIN_ROOT_REMEDY = ""'
 reddens = [
   "tests/doctor/test_checks.py::test_the_two_plugin_root_skips_both_carry_a_remedy",
+]
+
+# The named-root skip carried a hand copy of the remedy's first half, and the copy had already
+# drifted from it by a comma before the constant was extracted.
+[[mutation]]
+name = "the named-root skip carries its own copy of the remedy"
+file = "src/stayfixed/doctor/checks.py"
+before = '''            "guard does",
+            RUN_FROM_OWN_ROOT,'''
+after = '''            "guard does",
+            "run `stayfixed doctor` from the plugin's own launcher so its root answers for itself",'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_plugin_root_the_environment_named_is_read_and_never_executed",
 ]
 
 # The count `doctor/__init__.py` states and `docs/cli.md` repeats. It was "exactly two" and the

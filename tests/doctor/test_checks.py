@@ -619,6 +619,9 @@ def test_a_plugin_root_the_environment_named_is_read_and_never_executed(
     # one thing that must never be said about it is that it works.
     assert _by_name(rows, "wrapper").status == "skip"
     assert "never executed" in _by_name(rows, "wrapper").detail
+    # Its remedy is the first half of the no-root skips' remedy, taken from the same constant: a
+    # hand copy of it had already drifted from the original by a comma.
+    assert _by_name(rows, "wrapper").remedy == checks.RUN_FROM_OWN_ROOT
     # The file-presence half stays — that needs only the path — and says whose root it measured,
     # so `executable` is never read as a clean bill of health for the installation.
     assert _by_name(rows, "files").status == "skip"
