@@ -12,7 +12,7 @@ uv run pytest -n auto --cov --cov-fail-under=92   # the suite across workers, at
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run python scripts/mutation_oracle.py          # every declared mutation still reddens
-uv run stayfixed release check                     # version discipline
+uv run stayfixed release check                    # version discipline
 ```
 
 All five run in CI on Linux for Python 3.11, 3.12 and 3.13, and on macOS for 3.13 — including

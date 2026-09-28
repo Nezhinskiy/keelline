@@ -1150,8 +1150,8 @@ def _cli_path(context: Context) -> Row:
     """Whether `stayfixed` resolves by name on this machine.
 
     Codex performs no `${CLAUDE_PLUGIN_ROOT}` substitution in skill content, as the spike record's
-    *plugin-root substitution and executable bits* trial measured, so a skill that says `stayfixed
-    …` needs the name to resolve on PATH there.
+    *plugin-root substitution and executable bits* trial measured, so a skill that says
+    `stayfixed …` needs the name to resolve on PATH there.
 
     **Asked of `context.env`, like every other check that reads the environment.** It used to
     call `shutil.which("stayfixed")`, which reads `os.environ["PATH"]` directly — the one check

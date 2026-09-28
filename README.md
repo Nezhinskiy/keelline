@@ -289,8 +289,8 @@ stayfixed overlay create --owner you --name stayfixed-private --local   # render
 stayfixed overlay create --owner you --name stayfixed-private --template  # from <owner>/stayfixed-overlay-template, which you publish yourself
 stayfixed overlay init --owner you --root ../stayfixed-private   # name it after you; install the secret scan
 stayfixed overlay upgrade --root ../stayfixed-private --dry-run  # what a release would refresh
-stayfixed overlay publish-template --owner you                  # what it would create, mark and push; nothing leaves yet
-stayfixed overlay publish-template --owner you --yes            # publish the template repository from this checkout
+stayfixed overlay publish-template --owner you                   # what it would create, mark and push; nothing leaves yet
+stayfixed overlay publish-template --owner you --yes             # publish the template repository from this checkout
 
 # Binding a repository to the overlay
 stayfixed attach --store ../stayfixed-private/projects/widget/memory --check   # the binding and the permission diff, writing nothing
@@ -302,9 +302,9 @@ stayfixed detach                                       # remove what attach adde
 stayfixed setup --preset recommended                   # the machine configuration, deny rules and preset plugins
 stayfixed setup --preset recommended --overlay ../stayfixed-private   # record an existing overlay; no --yes needed
 stayfixed setup --preset recommended --overlay create:you/stayfixed-private --yes  # create one on GitHub; --yes is the consent
-stayfixed setup --preset recommended --settings ~/dotfiles/claude/settings.json   # a linked settings file, written where it really is
-stayfixed setup --git-hooks                             # install the commit-message hook into this repository
-stayfixed setup --git-hooks --uninstall                 # remove it; restore the hook it chained to
+stayfixed setup --preset recommended --settings ~/dotfiles/claude/settings.json    # a linked settings file, written where it really is
+stayfixed setup --git-hooks                            # install the commit-message hook into this repository
+stayfixed setup --git-hooks --uninstall                # remove it; restore the hook it chained to
 
 # Assessing a repository
 stayfixed assess                                       # every gate and probe; the whole inventory in .stayfixed/assessment.json

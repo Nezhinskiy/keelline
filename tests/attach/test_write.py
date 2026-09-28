@@ -401,9 +401,9 @@ def test_the_merged_rules_are_recorded_where_they_can_be_removed_again(tmp_path:
 def test_attach_writes_the_ignore_region_that_keeps_the_ledger_untracked(tmp_path: Path) -> None:
     # The repository has no `.stayfixed` line today and nothing under `templates/project/` ships
     # one, so an earlier revision's confidentiality argument rested on a file that does not exist.
-    # Assert the region exists after attach, and assert `git check-ignore -q
-    # .stayfixed/local/attach.json` succeeds — not that nothing is tracked, which passes on a
-    # fixture that has committed nothing.
+    # Assert the region exists after attach, and assert
+    # `git check-ignore -q .stayfixed/local/attach.json` succeeds — not that nothing is tracked,
+    # which passes on a fixture that has committed nothing.
     root, store, machine = _attachable(tmp_path)
     assert not _check_ignore(root, LEDGER)
     attach(

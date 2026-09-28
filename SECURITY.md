@@ -66,7 +66,7 @@ Out of scope:
 - A repository being able to make stayfixed **refuse** — suppressing memory, failing a hook
   closed. Undesirable, and an ordinary bug, but not a vulnerability: the whole design fails
   closed on purpose.
-- Findings in a dependency that stayfixed does not reach. stayfixed has no runtime dependencies.
+- Findings in a dependency that stayfixed does not reach; it has no runtime dependencies.
 
 ## Supported versions
 

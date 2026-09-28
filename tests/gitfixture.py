@@ -68,8 +68,7 @@ ENV_KEEP = ("PATH", "LANG", "LC_ALL", "SYSTEMROOT", "TMPDIR")
 
 @dataclass
 class LsRemote:
-    """A `stayfixed.runner.Runner` that answers `git ls-remote` from a string and reaches no
-    network.
+    """A `stayfixed.runner.Runner` answering `git ls-remote` from a string, with no network.
 
     Here rather than in one module because two already share it, and they shared it by importing
     a *private* name across test modules — `tests/project/test_gates.py` took `_Git` from
