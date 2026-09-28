@@ -1,4 +1,4 @@
-`keelline test audit-entrypoints` no longer reports a test as asserting on a double when the
+`stayfixed test audit-entrypoints` no longer reports a test as asserting on a double when the
 value it checks comes from its real subject under a name that was a double somewhere else. Two
 cases were reported:
 

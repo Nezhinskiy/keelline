@@ -3,8 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from keelline.cli import build_parser, discover_registrars
-from keelline.command import (
+from stayfixed.cli import build_parser, discover_registrars
+from stayfixed.command import (
     ATTACH_CHECK_HELP,
     CHECK_HELP,
     DRY_RUN_HELP,
@@ -46,7 +46,7 @@ EXCEPTIONS = {
 }
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -76,7 +76,7 @@ def test_root_and_config_resolves_the_root_and_loads_under_the_named_machine_fil
 ) -> None:
     root = tmp_path / "widget"
     root.mkdir()
-    (root / "keelline.toml").write_text(CONFIG, encoding="utf-8")
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
     args = common_flags(argparse.ArgumentParser()).parse_args(
         ["--root", str(root), "--machine", str(tmp_path / "m.toml")]
     )

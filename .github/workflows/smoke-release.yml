@@ -4,7 +4,7 @@
 # created and `uses:` takes no expression, so `@dev` resolves only once this work has merged,
 # and the release tag only once the release that carries this file has been tagged. That tag is
 # written here by hand in the release commit, and `tests/test_fixtures.py` holds it to the
-# version the tree carries. Both callers are Keelline calling Keelline, so what is exercised is
+# version the tree carries. Both callers are stayfixed calling stayfixed, so what is exercised is
 # ref resolution, for a branch and for a tag, and the `job.workflow_sha` checkout assertion
 # inside check.yml — not a second repository or a token that cannot reach one. Neither is the
 # form the reference recommends, a full-length sha: `@dev` moves on purpose and against
@@ -22,12 +22,12 @@ permissions:
 
 jobs:
   at-the-development-branch:
-    uses: Nezhinskiy/keelline/.github/workflows/check.yml@dev
+    uses: stayfixed/stayfixed/.github/workflows/check.yml@dev
     with:
       path: tests/fixtures/smoke-project
       base: main
   at-the-release:
-    uses: Nezhinskiy/keelline/.github/workflows/check.yml@v0.1.0
+    uses: stayfixed/stayfixed/.github/workflows/check.yml@v0.1.0
     with:
       path: tests/fixtures/smoke-project
       base: main

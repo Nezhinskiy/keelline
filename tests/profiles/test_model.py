@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from keelline.errors import Refusal
-from keelline.findings import Severity
-from keelline.profiles import load_profile, shipped
-from keelline.profiles.model import CheckKind, ProfileError, parse
+from stayfixed.errors import Refusal
+from stayfixed.findings import Severity
+from stayfixed.profiles import load_profile, shipped
+from stayfixed.profiles.model import CheckKind, ProfileError, parse
 
 GOOD = """
 detect = ["manifest.cfg", "lock-*.txt"]
@@ -91,7 +91,7 @@ def test_a_profile_without_its_rules_is_a_defect_not_an_empty_rule(tmp_path: Pat
 
 
 def test_a_profile_error_is_a_refusal_so_it_exits_2() -> None:
-    # Exit 1 means findings; a defect in Keelline's own data is exit 2 with every refusal.
+    # Exit 1 means findings; a defect in stayfixed's own data is exit 2 with every refusal.
     # Mutation: derive `ProfileError` from `Failure` (import `Failure as Refusal` in the model)
     # -> reddens.
     assert issubclass(ProfileError, Refusal)
@@ -127,7 +127,7 @@ def test_a_profile_error_is_a_refusal_so_it_exits_2() -> None:
 def test_a_malformed_shipped_profile_is_refused_naming_what_is_wrong(
     change: tuple[str, str], fault: str
 ) -> None:
-    # A shipped profile is Keelline's own data, so a fault here is a defect in the build, raised
+    # A shipped profile is stayfixed's own data, so a fault here is a defect in the build, raised
     # rather than skipped: a check that silently vanished would read as a repository passing it.
     # `./lock.txt` and `lock.txt/` are the spellings `contained()` refuses at every run, so a
     # check written with one would be dead rather than wrong. Mutation: drop `_root_relative`'s

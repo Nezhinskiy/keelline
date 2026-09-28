@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from keelline.prose import (
+from stayfixed.prose import (
     blank_code_spans,
     blank_fences,
     path_references,

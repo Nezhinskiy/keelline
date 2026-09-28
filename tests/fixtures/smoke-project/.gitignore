@@ -1,5 +1,5 @@
-# keelline:ignore:begin
-# Keelline's local state: yours, never a collaborator's.
-.keelline/local/
-.keelline/assessment.json
-# keelline:ignore:end
+# stayfixed:ignore:begin
+# stayfixed's local state: yours, never a collaborator's.
+.stayfixed/local/
+.stayfixed/assessment.json
+# stayfixed:ignore:end

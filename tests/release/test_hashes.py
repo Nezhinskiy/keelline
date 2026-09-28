@@ -11,10 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from keelline.cli import build_parser, run
-from keelline.errors import Failure
-from keelline.release.commands import register
-from keelline.release.hashes import (
+from stayfixed.cli import build_parser, run
+from stayfixed.errors import Failure
+from stayfixed.release.commands import register
+from stayfixed.release.hashes import (
     HASHED_FILES,
     RECORD,
     UnreadableRecord,
@@ -40,7 +40,7 @@ def test_a_written_record_has_no_drift_and_one_changed_byte_is_named(tmp_path: P
     assert drift(root) == []
     (root / "hooks" / "run-hook.sh").write_text("# changed\n", encoding="utf-8")
     assert drift(root) == [
-        f"{RECORD} does not match hooks/run-hook.sh; run `keelline release hashes`"
+        f"{RECORD} does not match hooks/run-hook.sh; run `stayfixed release hashes`"
     ]
 
 
@@ -66,10 +66,10 @@ def test_the_record_is_json_with_a_format_and_one_digest_per_file(tmp_path: Path
 def test_no_record_reads_as_none_and_a_missing_file_is_drift(tmp_path: Path) -> None:
     root = _plugin(tmp_path)
     assert read_record(root) is None
-    assert drift(root) == [f"{RECORD} is missing; run `keelline release hashes`"]
+    assert drift(root) == [f"{RECORD} is missing; run `stayfixed release hashes`"]
     write_record(root)
-    (root / "scripts" / "keelline").unlink()
-    assert drift(root) == [f"{RECORD} names scripts/keelline, which is not in the tree"]
+    (root / "scripts" / "stayfixed").unlink()
+    assert drift(root) == [f"{RECORD} names scripts/stayfixed, which is not in the tree"]
 
 
 def test_the_cli_writes_the_record_and_check_exits_one_on_drift(
@@ -114,7 +114,7 @@ def test_the_check_json_object_has_the_same_shape_whether_or_not_there_is_drift(
     assert set(on_success) == set(on_drift) == {"summary", "problems", "files"}
     assert on_success["problems"] == []
     assert on_drift["problems"] == [
-        f"{RECORD} does not match hooks/hooks.json; run `keelline release hashes`"
+        f"{RECORD} does not match hooks/hooks.json; run `stayfixed release hashes`"
     ]
     assert on_drift["files"] == sorted(HASHED_FILES)
 
@@ -143,8 +143,8 @@ def test_a_record_that_is_not_utf8_is_unreadable_rather_than_an_internal_error(
 
         printf '{"format": 1, "files": {"hooks/hooks.json": "\xff\xfe"}}\n' > hooks/hashes.json
 
-    `keelline release hashes --check`, `keelline release check` and `doctor files` all printed
-    `keelline: internal error: UnicodeDecodeError: …` and exited **2** — the refusal code,
+    `stayfixed release hashes --check`, `stayfixed release check` and `doctor files` all printed
+    `stayfixed: internal error: UnicodeDecodeError: …` and exited **2** — the refusal code,
     where a finding is 1 — and `doctor`'s `except UnreadableRecord` arm did not catch it.
 
     Mutation (declared): the `UnicodeDecodeError` arm is removed -> both raises redden.

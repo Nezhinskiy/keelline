@@ -1,12 +1,12 @@
 {
-  "name": "keelline",
+  "name": "stayfixed",
   "version": "0.1.0",
   "description": "A methodology harness for coding agents: bug ledger, curated working memory behind a trust gate, and fail-closed guards.",
   "author": { "name": "Nezhinskiy" },
-  "repository": "https://github.com/Nezhinskiy/keelline",
+  "repository": "https://github.com/stayfixed/stayfixed",
   "license": "MIT",
   "interface": {
-    "displayName": "Keelline",
+    "displayName": "stayfixed",
     "shortDescription": "Bug ledger, working memory behind a trust gate, and fail-closed guards for coding agents",
     "developerName": "Nezhinskiy",
     "category": "Developer Tools"

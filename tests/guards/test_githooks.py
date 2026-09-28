@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from keelline.errors import Refusal
-from keelline.guards.commit import offending_lines
-from keelline.guards.githooks import HOOK_MARKER, HOOK_NAME, hooks_dir, install, uninstall
+from stayfixed.errors import Refusal
+from stayfixed.guards.commit import offending_lines
+from stayfixed.guards.githooks import HOOK_MARKER, HOOK_NAME, hooks_dir, install, uninstall
 from tests import gitfixture
 from tests.floor import floor_env
 
@@ -41,19 +41,19 @@ def _scrubbed_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def launching(tmp_path: Path) -> dict[str, str]:
     """What this module layers on `tests/gitfixture.py`'s sealed environment.
 
-    A `keelline` shim leading `PATH`, so the hook's first branch is the one exercised — the same
+    A `stayfixed` shim leading `PATH`, so the hook's first branch is the one exercised — the same
     branch a `uv tool install` user takes. The shim runs this checkout's package, and it has to
     be first because the `git commit` below runs the commit-msg hook this test just installed,
-    and that hook is what invokes `keelline`. The suite's floor under the product's own `git`
+    and that hook is what invokes `stayfixed`. The suite's floor under the product's own `git`
     (`tests/floor.py`) is layered on too: git hands it on to the hook, and the hook to that
-    `keelline`.
+    `stayfixed`.
     """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
-    shim = bin_dir / "keelline"
+    shim = bin_dir / "stayfixed"
     if not shim.exists():
         shim.write_text(
-            f'#!/bin/sh\nPYTHONPATH="{ROOT / "src"}" exec "{sys.executable}" -m keelline "$@"\n',
+            f'#!/bin/sh\nPYTHONPATH="{ROOT / "src"}" exec "{sys.executable}" -m stayfixed "$@"\n',
             encoding="utf-8",
         )
         shim.chmod(0o755)
@@ -103,7 +103,7 @@ CANONICAL_BLOCK = (
     "Co-Authored-By: Claude <noreply@anthropic.com>"
 )
 CLEAN = "fix: thing"
-FAILED_LINE = "keelline: commit strip failed"
+FAILED_LINE = "stayfixed: commit strip failed"
 
 
 def test_install_writes_an_executable_hook_carrying_the_marker(tmp_path: Path) -> None:
@@ -170,7 +170,7 @@ def test_a_hook_the_developer_switched_off_stays_off(tmp_path: Path) -> None:
 
 def test_a_stray_local_hook_is_refused_even_with_no_hook_at_the_name(tmp_path: Path) -> None:
     # The chain `exec`s `$0.local`; a file this installer never preserved must not be run
-    # under Keelline's name, so the refusal cannot live inside the preserve branch alone.
+    # under stayfixed's name, so the refusal cannot live inside the preserve branch alone.
     root = repo(tmp_path)
     directory = hooks_dir(root)
     directory.mkdir(parents=True, exist_ok=True)
@@ -208,11 +208,11 @@ def test_the_hook_reports_a_failed_strip_and_still_lets_the_commit_through(
     # Behaviours 3 and 4: the failure line belongs to `commit strip` exiting non-zero and to
     # nothing else, and no outcome of it may cost the developer their commit. The shim `env`
     # would write is pre-empted here by one that fails, which is the only way to reach that
-    # branch without a genuinely broken `keelline`.
+    # branch without a genuinely broken `stayfixed`.
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
-    shim = bin_dir / "keelline"
-    shim.write_text("#!/bin/sh\necho 'keelline: refused' >&2\nexit 2\n", encoding="utf-8")
+    shim = bin_dir / "stayfixed"
+    shim.write_text("#!/bin/sh\necho 'stayfixed: refused' >&2\nexit 2\n", encoding="utf-8")
     shim.chmod(0o755)
     root = repo(tmp_path)
     install(root)
@@ -393,6 +393,6 @@ def test_the_hook_text_carries_the_marker_the_installer_looks_for() -> None:
     # survives any edit to the marker by construction. It is here as the mutation guard for
     # `install`'s `_ours` check — the marker the installer greps for and the one the hook
     # carries are the same string, and this is what says so.
-    from keelline.guards.githooks import HOOK_TEXT
+    from stayfixed.guards.githooks import HOOK_TEXT
 
     assert HOOK_TEXT.splitlines()[1] == HOOK_MARKER

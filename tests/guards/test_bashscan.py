@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from keelline.guards import bashscan
+from stayfixed.guards import bashscan
 
 
 def test_quoted_heredoc_bodies_are_stripped_but_the_command_remains() -> None:

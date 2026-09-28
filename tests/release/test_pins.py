@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from keelline import REPOSITORY_URL
-from keelline.release.api import Pin, Resolution, is_released, released, resolve_pin
-from keelline.runner import NOT_FOUND, Completed
+from stayfixed import REPOSITORY_URL
+from stayfixed.release.api import Pin, Resolution, is_released, released, resolve_pin
+from stayfixed.runner import NOT_FOUND, Completed
 
 LIGHT, TAG_OBJECT, COMMIT, ALIAS = "1" * 40, "2" * 40, "3" * 40, "9" * 40
 # The per-plugin tag `claude plugin tag` writes beside every release (`RELEASING.md` step 6). It
@@ -17,7 +17,7 @@ LISTING = (
     f"{TAG_OBJECT}\trefs/tags/v1.0.0\n"
     f"{COMMIT}\trefs/tags/v1.0.0^{{}}\n"
     f"{ALIAS}\trefs/tags/v1\n"
-    f"{PLUGIN_TAG_SHA}\trefs/tags/keelline--v1.0.0\n"
+    f"{PLUGIN_TAG_SHA}\trefs/tags/stayfixed--v1.0.0\n"
 )
 
 
@@ -66,9 +66,9 @@ def test_is_released_judges_semver_tags_and_never_the_alias(tmp_path: Path) -> N
     assert pins is not None
     assert "v1" in pins
     # And the per-plugin tag is not a tag this module answers about. `_LINE` is what drops it — the
-    # pattern requires `refs/tags/v`, so `keelline--v1.0.0` never reaches the dictionary at all —
+    # pattern requires `refs/tags/v`, so `stayfixed--v1.0.0` never reaches the dictionary at all —
     # and `_SEMVER` would drop it a second time downstream. Asserted on both sides, because the
     # fixture line was inert until now: a `uses:` pin resolved to this sha would check out a ref
     # the reusable workflow's own gate never ran on.
-    assert "keelline--v1.0.0" not in pins
+    assert "stayfixed--v1.0.0" not in pins
     assert is_released(PLUGIN_TAG_SHA, _Stub(), cwd=tmp_path) is False

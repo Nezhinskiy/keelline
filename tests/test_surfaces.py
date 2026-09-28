@@ -4,14 +4,14 @@ CONTRIBUTING states the contract once for all of them: "`api.py` is the area's i
 Other areas import from it and from nothing else, and its `__all__` must equal exactly what it
 imports — a test parses the file and checks." Nine modules each carried a copy of that parse,
 eight of them byte-identical; six carried a copy of the derived signature check and four did
-not; and `keelline.hooks.api` had no surface test at all, because a contract enforced by ten
+not; and `stayfixed.hooks.api` had no surface test at all, because a contract enforced by ten
 hand-written copies is enforced only where somebody remembered to write the eleventh.
 
 What stays in `tests/<area>/test_surface.py` is the one thing that is genuinely the area's own:
 the list of names it publishes, with the argument for each beside it. That list is a decision
 per area. These three checks are not.
 
-`keelline.scaffold` is not here. It publishes from the package rather than from an `api.py` —
+`stayfixed.scaffold` is not here. It publishes from the package rather than from an `api.py` —
 the scaffold engine's contract, frozen — and `tests/scaffold/test_surface.py` holds it to its
 own shape.
 """
@@ -28,10 +28,10 @@ from types import ModuleType
 
 import pytest
 
-from keelline.config.schema import Config
+from stayfixed.config.schema import Config
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "src" / "keelline"
+SOURCE = ROOT / "src" / "stayfixed"
 
 # Derived from the tree rather than listed, so an area added tomorrow is covered the day it
 # arrives — which is the whole of what went wrong with `hooks`.
@@ -39,7 +39,7 @@ AREAS = sorted(path.parent.name for path in SOURCE.glob("*/api.py"))
 
 # The one area whose `api.py` **defines** rather than re-exports, named rather than skipped
 # silently — for `tests/test_areas.py`'s stated reason, that an exemption nobody can see is how
-# the violation a guard exists to catch gets merged green. `keelline.hooks.api`'s own docstring
+# the violation a guard exists to catch gets merged green. `stayfixed.hooks.api`'s own docstring
 # argues it and CONTRIBUTING records it: the handler vocabulary is what `registry`, `dispatch`,
 # `sink` and every area's `hooks.py` import, so re-exporting a name defined in one of those
 # would be an import cycle. The back-door half of the rule still applies to it in full.
@@ -97,7 +97,7 @@ def test_every_area_with_a_surface_is_walked() -> None:
 
 
 def _surface(area: str) -> ModuleType:
-    return importlib.import_module(f"keelline.{area}.api")
+    return importlib.import_module(f"stayfixed.{area}.api")
 
 
 @pytest.mark.parametrize("area", AREAS)
@@ -120,13 +120,13 @@ def test_the_export_list_is_exactly_what_the_module_imports_from_its_area(area: 
         # The back-door half, and it holds for every area including the one that defines its
         # own: a surface that reached into another area would make this module a way past that
         # area's `api.py` with none of the crossings `tests/test_areas.py` counts. Scoped to
-        # the other areas and not to every `keelline.` name, for that walk's own reason — the
-        # configuration layer and the leaves are not areas, and `keelline.hooks.api` names
-        # `keelline.config.schema.Config` in `HandlerFn` because that is the handler signature.
+        # the other areas and not to every `stayfixed.` name, for that walk's own reason — the
+        # configuration layer and the leaves are not areas, and `stayfixed.hooks.api` names
+        # `stayfixed.config.schema.Config` in `HandlerFn` because that is the handler signature.
         parts = node.module.split(".")
-        elsewhere = parts[0] == "keelline" and parts[1:2] and parts[1] in set(AREAS) - {area}
+        elsewhere = parts[0] == "stayfixed" and parts[1:2] and parts[1] in set(AREAS) - {area}
         assert not elsewhere, node.module
-        if node.module.startswith(f"keelline.{area}."):
+        if node.module.startswith(f"stayfixed.{area}."):
             imported |= {alias.asname or alias.name for alias in node.names}
     defined = _defined_here(tree) if area in DEFINES_ITS_OWN else set()
     if area not in DEFINES_ITS_OWN:
@@ -154,7 +154,7 @@ def test_every_type_the_surface_names_in_a_signature_is_on_the_surface(area: str
 
     def area_types(annotation: object) -> set[str]:
         found: set[str] = set()
-        if isinstance(annotation, type) and annotation.__module__.startswith(f"keelline.{area}"):
+        if isinstance(annotation, type) and annotation.__module__.startswith(f"stayfixed.{area}"):
             found.add(annotation.__name__)
         for argument in typing.get_args(annotation):
             found |= area_types(argument)
@@ -186,7 +186,7 @@ def test_the_surface_is_a_module_not_the_package_init(area: str) -> None:
     # Measured: with the re-export list in `__init__.py`, `discover()` imports the whole area —
     # configuration layer included — on every call, because area discovery imports a package
     # before it imports the submodule it wants, and `tests/test_areas.py` goes red.
-    package = importlib.import_module(f"keelline.{area}")
+    package = importlib.import_module(f"stayfixed.{area}")
     init = Path(next(iter(package.__path__))) / "__init__.py"
     tree = ast.parse(init.read_text(encoding="utf-8"))
     assert not [n for n in ast.walk(tree) if isinstance(n, ast.Import | ast.ImportFrom)]

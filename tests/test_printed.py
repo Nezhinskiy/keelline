@@ -6,7 +6,7 @@ import ast
 
 import pytest
 
-from keelline.printed import CLIPPED_CHARS, UNPRINTABLE, clipped, printable, quoted
+from stayfixed.printed import CLIPPED_CHARS, UNPRINTABLE, clipped, printable, quoted
 from tests.crafted import CRAFTED
 
 # Names the path grammar admits: each prints as itself under both bounds, so ordinary output is

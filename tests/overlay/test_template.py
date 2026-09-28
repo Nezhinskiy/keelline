@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from keelline import __version__
-from keelline.config.loader import preset_defaults
-from keelline.hooks.api import EVENTS
-from keelline.overlay.layout import OVERLAY_FILES, PLACEHOLDER_NAMES
-from keelline.overlay.template import template_root, templates
-from keelline.presets import load_preset
-from keelline.scaffold import MANIFEST_PATH
+from stayfixed import __version__
+from stayfixed.config.loader import preset_defaults
+from stayfixed.hooks.api import EVENTS
+from stayfixed.overlay.layout import OVERLAY_FILES, PLACEHOLDER_NAMES
+from stayfixed.overlay.template import template_root, templates
+from stayfixed.presets import load_preset
+from stayfixed.scaffold import MANIFEST_PATH
 
 
 def _json_files() -> list[Path]:
@@ -212,23 +212,23 @@ def test_no_file_in_the_tree_is_undeclared() -> None:
 
 
 def test_the_templates_plan_cleanly_into_an_empty_directory(tmp_path: Path) -> None:
-    from keelline.scaffold import apply, plan
+    from stayfixed.scaffold import apply, plan
 
     # The overlay writes through the scaffold engine like every other area, which is what makes
     # `overlay upgrade` the engine's hash-and-skip rule rather than a second implementation of it.
-    planned = plan(tmp_path, preset_defaults("keelline-private"), templates())
+    planned = plan(tmp_path, preset_defaults("stayfixed-private"), templates())
     assert planned.refusals == ()
     assert len(planned.actions) == len(OVERLAY_FILES)
     apply(tmp_path, planned)
-    assert (tmp_path / ".keelline" / "manifest.json").is_file()
+    assert (tmp_path / ".stayfixed" / "manifest.json").is_file()
 
 
 def test_the_manifest_records_a_comparable_version(tmp_path: Path) -> None:
-    from keelline.scaffold import Manifest, apply, plan
+    from stayfixed.scaffold import Manifest, apply, plan
 
-    # `[defaults.keelline]` carries no `version`, and the engine stamps one into every Record.
+    # `[defaults.stayfixed]` carries no `version`, and the engine stamps one into every Record.
     # A record written with "" is a record `upgrade` and `doctor` can never compare against.
-    apply(tmp_path, plan(tmp_path, preset_defaults("keelline-private"), templates()))
+    apply(tmp_path, plan(tmp_path, preset_defaults("stayfixed-private"), templates()))
     records = Manifest.read(tmp_path).records
     assert records and {record.version for record in records.values()} == {__version__}
 
@@ -271,7 +271,7 @@ def _rendered_paths() -> tuple[str, ...]:
     """Every file `overlay create` leaves in a fresh instance, as the README has to describe it.
 
     `OVERLAY_FILES` plus the scaffold manifest, which is the one path the template tree does not
-    hold: `scaffold.apply` writes `.keelline/manifest.json` as the record `overlay upgrade` keys
+    hold: `scaffold.apply` writes `.stayfixed/manifest.json` as the record `overlay upgrade` keys
     on, so it is in the instance without ever having been in `templates/overlay/`. That is
     exactly how it went missing from a README that counts them.
     """
@@ -280,7 +280,7 @@ def _rendered_paths() -> tuple[str, ...]:
 
 def test_the_overlay_readme_counts_the_files_a_create_actually_leaves() -> None:
     # The template README said "renders fifteen files here" and a rendered overlay has sixteen —
-    # `.keelline/manifest.json`, the file the project README advertises as the overlay's "own
+    # `.stayfixed/manifest.json`, the file the project README advertises as the overlay's "own
     # upgrade manifest", in neither of that README's two tables. The count was written by hand
     # against `OVERLAY_FILES` and nothing read the document, which is how a file the scaffold
     # engine adds slips past a sentence that counts them.
@@ -299,7 +299,7 @@ def test_the_capability_files_are_spelled_once_and_are_shipped_files() -> None:
     # while the tuple was built by filtering `OVERLAY_FILES` against a second spelling of
     # them. One spelling now: `CAPABILITY_NAMES` is unpacked into `OVERLAY_FILES` and
     # `CAPABILITY_FILES` is that same tuple.
-    from keelline.overlay.layout import CAPABILITY_FILES, CAPABILITY_NAMES, OVERLAY_FILES
+    from stayfixed.overlay.layout import CAPABILITY_FILES, CAPABILITY_NAMES, OVERLAY_FILES
 
     # Against the SHIPPED tree, not against `OVERLAY_FILES`: with one spelling the subset
     # holds by construction, so the assertion that can fail is that each name is a file the
@@ -370,6 +370,6 @@ def test_the_template_ships_a_dependabot_configuration_for_its_pinned_actions() 
 def test_the_overlay_tree_is_the_shared_resolvers_answer() -> None:
     # One resolver for both shipped trees. Mutation (comment): make `template_root`
     # join the path itself -> equal today, and the two drift the day one changes.
-    from keelline.templates import tree
+    from stayfixed.templates import tree
 
     assert template_root() == tree("overlay")

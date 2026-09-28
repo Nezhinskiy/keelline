@@ -1,4 +1,4 @@
-"""Which commit a change is judged against, and where in it the base's `keelline.toml` is.
+"""Which commit a change is judged against, and where in it the base's `stayfixed.toml` is.
 
 Every case reads a real clone, because each defect here is git resolving a name or a path to
 something other than what the caller meant: a tag answering for a remote-tracking ref, a
@@ -18,26 +18,26 @@ from typing import Any
 
 import pytest
 
-import keelline
-from keelline import gitenv
-from keelline.assess import rule
-from keelline.assess.rule import (
+import stayfixed
+from stayfixed import gitenv
+from stayfixed.assess import rule
+from stayfixed.assess.rule import (
     BASE_NOT_UTF8,
     NOT_A_REPOSITORY,
     ROOT_UNANSWERED,
     read_base,
     repository_prefix,
 )
-from keelline.config.layout import local_base
-from keelline.config.loader import load
-from keelline.errors import Failure, Refusal
+from stayfixed.config.layout import local_base
+from stayfixed.config.loader import load
+from stayfixed.errors import Failure, Refusal
 from tests.assess.baserepo import clone, commit, shadow
 from tests.gitfixture import git, needs_git
 
 pytestmark = needs_git
 
-BASE = f"""[keelline]
-version = "{keelline.__version__}"
+BASE = f"""[stayfixed]
+version = "{stayfixed.__version__}"
 state = "initialised"
 
 [project]
@@ -54,7 +54,7 @@ def test_the_default_base_is_the_remote_tracking_ref_whatever_a_tag_is_called(
     tmp_path: Path,
 ) -> None:
     # A tag spelled `origin/main` wins git's lookup of the short name over the remote-tracking
-    # ref, and it carries no `keelline.toml`: read by the short name, the base would be the
+    # ref, and it carries no `stayfixed.toml`: read by the short name, the base would be the
     # bootstrap. The default names the ref in full, so no tag can stand in for it.
     project = clone(tmp_path, BASE)
     shadow(project, "origin/main")
@@ -70,7 +70,7 @@ def test_a_short_name_is_refused_because_a_tag_can_take_its_place(tmp_path: Path
 
 def test_a_full_ref_name_must_exist_as_itself(tmp_path: Path) -> None:
     # With no `refs/remotes/origin/gone`, git would resolve the name to the tag
-    # `refs/tags/refs/remotes/origin/gone`, whose commit has no `keelline.toml`.
+    # `refs/tags/refs/remotes/origin/gone`, whose commit has no `stayfixed.toml`.
     project = clone(tmp_path, BASE)
     shadow(project, "refs/remotes/origin/gone")
     with pytest.raises(Failure, match=re.escape("fetch-depth: 0")):
@@ -89,7 +89,7 @@ def test_a_base_id_that_names_no_commit_is_a_failure_and_never_the_bootstrap(
     tmp_path: Path,
 ) -> None:
     # A 40-hex id is taken as given, so it must name a commit: read as a tree, the empty tree
-    # lists no `keelline.toml`, and the change would govern itself.
+    # lists no `stayfixed.toml`, and the change would govern itself.
     project = clone(tmp_path, BASE)
     empty = git(project, "hash-object", "-t", "tree", "-w", os.devnull).strip()
     with pytest.raises(Failure, match=re.escape("fetch-depth: 0")):
@@ -109,7 +109,7 @@ def test_a_project_under_a_directory_named_like_pathspec_magic_reads_its_own_cop
     tmp_path: Path,
 ) -> None:
     # git reads a pathspec starting `:/` as "from the top": without `--literal-pathspecs`,
-    # `ls-tree -- :/x/keelline.toml` looks for `x/keelline.toml`, exits 0 and lists nothing, so a
+    # `ls-tree -- :/x/stayfixed.toml` looks for `x/stayfixed.toml`, exits 0 and lists nothing, so a
     # project kept under `:/x` would be the bootstrap and govern its own change.
     project = clone(tmp_path, BASE, under=":/x")
     assert repository_prefix(project / ":" / "x") == ":/x/"
@@ -128,7 +128,7 @@ def test_a_file_named_like_the_separator_is_not_listed_as_the_base_s_copy(tmp_pa
 def test_a_project_under_a_directory_named_like_an_option_reads_its_own_copy(
     tmp_path: Path,
 ) -> None:
-    # With no `--`, `--end-of-options` is what keeps `-x/keelline.toml` a path: dropping it makes
+    # With no `--`, `--end-of-options` is what keeps `-x/stayfixed.toml` a path: dropping it makes
     # `ls-tree` refuse the argument as an option, a false failure that refuses more, so it is
     # not declared as a mutation.
     project = clone(tmp_path, BASE, under="-x")
@@ -137,7 +137,7 @@ def test_a_project_under_a_directory_named_like_an_option_reads_its_own_copy(
 
 def test_a_project_root_moved_behind_a_symlink_is_refused(tmp_path: Path) -> None:
     # The change moves the project and leaves a link where it was: git resolves the link and
-    # looks for `newdir/keelline.toml` on the base, which has none, so the change would be the
+    # looks for `newdir/stayfixed.toml` on the base, which has none, so the change would be the
     # bootstrap and decide its own configuration.
     project = clone(tmp_path, BASE, under="sub")
     git(project, "mv", "sub", "newdir")
@@ -214,7 +214,7 @@ def test_a_root_spelled_otherwise_than_git_spells_it_is_refused(
     project = clone(tmp_path, BASE, under="sub")
     if not (project / "SUB").exists():
         pytest.skip("this file system tells `SUB` from `sub`")
-    # On a case-folding disk `SUB` is `sub`, but the base has no `SUB/keelline.toml`. Spelled
+    # On a case-folding disk `SUB` is `sub`, but the base has no `SUB/stayfixed.toml`. Spelled
     # otherwise at the top itself, no ancestor of the root resolves to git's top at all. Both
     # skip on Linux; the two cases above hold the same refusals there.
     with pytest.raises(Refusal, match="symlink"):
@@ -243,17 +243,17 @@ def test_a_base_copy_that_is_not_utf8_is_a_failure_and_never_the_bootstrap(
     # configuration. It is refused in the loader's words, and without the shallow-checkout
     # remedy, which would send the owner to fetch history they already have. Mutation
     # (declared): drop the refusal -> the base is returned and this reddens.
-    project = clone(tmp_path, b'[keelline]\nversion = "\xff"\n')
-    (project / "keelline.toml").write_text(BASE, encoding="utf-8")
+    project = clone(tmp_path, b'[stayfixed]\nversion = "\xff"\n')
+    (project / "stayfixed.toml").write_text(BASE, encoding="utf-8")
     with pytest.raises(Failure, match=re.escape(BASE_NOT_UTF8)) as caught:
         read_base(project, default_base(project), branch="main")
     assert "fetch-depth" not in str(caught.value)
 
 
 # A base copy whose one non-ASCII character is valid UTF-8, and the same copy with a byte that
-# is not: the one Keelline reads as the tree's own copy reads it, and the one it refuses.
+# is not: the one stayfixed reads as the tree's own copy reads it, and the one it refuses.
 NON_ASCII_BASE = BASE.replace('name = "widget"', 'name = "widget"\n# caf\u00e9')
-NOT_UTF8_BASE = b'[keelline]\nversion = "\xff"\n'
+NOT_UTF8_BASE = b'[stayfixed]\nversion = "\xff"\n'
 
 
 @pytest.mark.parametrize("base", [NON_ASCII_BASE, NOT_UTF8_BASE], ids=["utf-8", "not-utf-8"])
@@ -271,7 +271,7 @@ def test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answer
     # surrogates again instead of decoding the bytes -> both cases redden.
     monkeypatch.setattr(gitenv, "pipe_encoding", lambda: "latin-1")
     project = clone(tmp_path, base)
-    (project / "keelline.toml").write_text(BASE, encoding="utf-8")
+    (project / "stayfixed.toml").write_text(BASE, encoding="utf-8")
     if isinstance(base, bytes):
         with pytest.raises(Failure, match=re.escape(BASE_NOT_UTF8)):
             read_base(project, default_base(project), branch="main")
@@ -291,8 +291,8 @@ def test_a_real_latin_1_locale_reads_the_base_copy_as_utf_8(
     script = (
         "import sys\n"
         "from pathlib import Path\n"
-        "from keelline.assess.rule import read_base\n"
-        "from keelline.errors import Failure\n"
+        "from stayfixed.assess.rule import read_base\n"
+        "from stayfixed.errors import Failure\n"
         "for root in sys.argv[1:]:\n"
         "    try:\n"
         "        print(ascii(read_base(Path(root), 'refs/remotes/origin/main', branch='main')))\n"

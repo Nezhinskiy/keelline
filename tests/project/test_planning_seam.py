@@ -3,7 +3,7 @@ project area plans at all.
 
 `Passes` binds the ownership relation into every plan and runs the ignore guard over every
 prediction, so a command that plans through it cannot leave either behind. The engine's own `plan`
-keeps its `owners` keyword optional, because `keelline.overlay` keeps nothing out of git and has no
+keeps its `owners` keyword optional, because `stayfixed.overlay` keeps nothing out of git and has no
 relation to pass; so the seam is what holds the project area, and this is what holds the seam.
 Required instead, the keyword would make every overlay call and a hundred engine tests say
 `owners=None`, and would still let a new command (`adopt`) pass `None` beside them: the bypass is
@@ -17,26 +17,26 @@ from pathlib import Path
 
 import pytest
 
-from keelline.config.loader import CONFIG_FILE, load
-from keelline.errors import Refusal
-from keelline.project.footprint import prepare
-from keelline.release.api import Resolution
+from stayfixed.config.loader import CONFIG_FILE, load
+from stayfixed.errors import Refusal
+from stayfixed.project.footprint import prepare
+from stayfixed.release.api import Resolution
 from tests.project.repos import DOCUMENT, repository
 
 ROOT = Path(__file__).resolve().parents[2]
-AREA = ROOT / "src" / "keelline" / "project"
+AREA = ROOT / "src" / "stayfixed" / "project"
 SEAM = AREA / "footprint.py"
 # The planner and what binds its guards: the engine's plan and the two lookups that take the
 # relation, and the ignore guard. The seam module binds all four at its top level, so importing
 # one from it is the same bypass as importing it from where it is defined.
 PLANNERS = {
-    "keelline.scaffold": {"plan", "left_copies", "local_copies"},
-    "keelline.scaffold.engine": {"plan", "left_copies", "local_copies"},
-    "keelline.project.ignored": {"refuse_ignored"},
-    "keelline.project.footprint": {"plan", "left_copies", "local_copies", "refuse_ignored"},
+    "stayfixed.scaffold": {"plan", "left_copies", "local_copies"},
+    "stayfixed.scaffold.engine": {"plan", "left_copies", "local_copies"},
+    "stayfixed.project.ignored": {"refuse_ignored"},
+    "stayfixed.project.footprint": {"plan", "left_copies", "local_copies", "refuse_ignored"},
 }
 # The package every checked module sits in, which a relative import is resolved against.
-PACKAGE = "keelline.project"
+PACKAGE = "stayfixed.project"
 
 
 def _absolute(node: ast.ImportFrom) -> str:
@@ -59,7 +59,7 @@ def _chain(node: ast.expr) -> list[str]:
 def _planners_reached(path: Path) -> set[str]:
     """Each planner name `path` imports, or reaches as an attribute of a module it imports: one
     attribute deep (`scaffold.plan`) or at the end of a dotted chain rooted at an imported
-    package (`keelline.scaffold.engine.plan`)."""
+    package (`stayfixed.scaffold.engine.plan`)."""
     tree = ast.parse(path.read_text(encoding="utf-8"))
     found: set[str] = set()
     # Each name the module binds by an import, and the dotted module it stands for.
@@ -119,19 +119,19 @@ def test_the_checker_sees_a_planner_reached_through_the_seam_module(tmp_path: Pa
     # checker stops knowing the seam module binds the planner" -> the seam's row in
     # `PLANNERS` deleted, and this finds nothing.
     module = tmp_path / "bypass.py"
-    module.write_text("from keelline.project.footprint import plan\n", encoding="utf-8")
+    module.write_text("from stayfixed.project.footprint import plan\n", encoding="utf-8")
     assert _planners_reached(module) == {"plan"}
 
 
 def test_the_checker_sees_a_fully_dotted_planner(tmp_path: Path) -> None:
-    # `import keelline.scaffold.engine` binds only `keelline`, so a check that looked one
-    # attribute deep saw `keelline.scaffold`, never the planner at the chain's end. Mutation
+    # `import stayfixed.scaffold.engine` binds only `stayfixed`, so a check that looked one
+    # attribute deep saw `stayfixed.scaffold`, never the planner at the chain's end. Mutation
     # (oracle): "the planning seam's checker stops resolving a dotted chain" -> the dotted
     # branch records nothing, and this finds nothing.
     module = tmp_path / "dotted.py"
     module.write_text(
-        "import keelline.scaffold.engine\n\n\ndef f(root):\n"
-        "    return keelline.scaffold.engine.plan(root)\n",
+        "import stayfixed.scaffold.engine\n\n\ndef f(root):\n"
+        "    return stayfixed.scaffold.engine.plan(root)\n",
         encoding="utf-8",
     )
     assert _planners_reached(module) == {"plan"}

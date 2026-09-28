@@ -1,4 +1,4 @@
-"""`keelline init --yes`'s answers: each reaches the document this run creates, a fresh
+"""`stayfixed init --yes`'s answers: each reaches the document this run creates, a fresh
 repository gates the branch it chose, and every file `--local` offers leaves every gate green.
 
 The answers are given here as `Given` straight to `init`; `tests/project/test_command.py` gives
@@ -11,23 +11,23 @@ from pathlib import Path
 
 import pytest
 
-import keelline
-from keelline.assess.gates import GateContext, run_gates
-from keelline.config.loader import CONFIG_FILE, load, preset_defaults
-from keelline.project.init import Given, InitReport, init
-from keelline.project.templates import LOCAL_ELIGIBLE
-from keelline.scaffold import Verb
-from keelline.scaffold.local import LOCAL_ARTIFACTS
+import stayfixed
+from stayfixed.assess.gates import GateContext, run_gates
+from stayfixed.config.loader import CONFIG_FILE, load, preset_defaults
+from stayfixed.project.init import Given, InitReport, init
+from stayfixed.project.templates import LOCAL_ELIGIBLE
+from stayfixed.scaffold import Verb
+from stayfixed.scaffold.local import LOCAL_ARTIFACTS
 from tests.gitfixture import LsRemote, git, needs_git
 from tests.project.repos import repository
 
 SHA = "c" * 40
 # A released tag at the running version, so a pin resolves and the caller is rendered.
-LISTING = f"{SHA}\trefs/tags/v{keelline.__version__}\n"
+LISTING = f"{SHA}\trefs/tags/v{stayfixed.__version__}\n"
 # A ref an adopted document already records, deliberately not the one the listing resolves.
 ADOPTED = "a" * 40
-FOREIGN = "bytes a person wrote before Keelline\n"
-WORKFLOW = Path(".github") / "workflows" / "keelline.yml"
+FOREIGN = "bytes a person wrote before stayfixed\n"
+WORKFLOW = Path(".github") / "workflows" / "stayfixed.yml"
 
 
 def _init(
@@ -69,7 +69,7 @@ def test_every_file_offered_as_local_leaves_every_gate_green(
     _init(root, tmp_path, Given(local=(artifact_id,)))
     kept = [p for p in (root / LOCAL_ARTIFACTS).rglob("*") if p.is_file()]
     assert len(kept) == 1, kept
-    base = _commit(root, "chore: initialise keelline")
+    base = _commit(root, "chore: initialise stayfixed")
     (root / "README.md").write_text("# widget\n\nA line the second commit adds.\n")
     _commit(root, "docs: say what widget is")
     config = load(root, machine=tmp_path / "absent.toml")
@@ -99,7 +99,7 @@ def test_each_answer_reaches_the_document_this_run_creates(tmp_path: Path) -> No
     config = load(root, machine=tmp_path / "absent.toml")
     assert config.project.name == "gadget"
     assert (config.project.base_branch, config.project.release_branch) == ("develop", "develop")
-    assert config.keelline.agents == ("codex",)
+    assert config.stayfixed.agents == ("codex",)
     assert config.memory.mode == "in-repo"
     assert config.artifacts.local == ("roadmap-history",)
 
@@ -120,7 +120,7 @@ def test_a_profile_answer_replaces_what_the_markers_suggest(
     if markers:
         (root / "pyproject.toml").write_text("[project]\nname = 'widget'\n", encoding="utf-8")
     _init(root, tmp_path, Given(profile=profile))
-    assert load(root, machine=tmp_path / "absent.toml").keelline.profile == expected
+    assert load(root, machine=tmp_path / "absent.toml").stayfixed.profile == expected
 
 
 @needs_git
@@ -158,7 +158,7 @@ def test_a_fresh_repository_gates_the_branch_it_chose(tmp_path: Path, how: str) 
 def test_an_adopted_document_s_workflow_gates_the_branch_its_file_names(
     tmp_path: Path, ci_table: str, gated: str
 ) -> None:
-    # A `keelline.toml` a person wrote, whose base branch is `develop`. Left out, `[ci]
+    # A `stayfixed.toml` a person wrote, whose base branch is `develop`. Left out, `[ci]
     # gate_branch` is that base branch: a fixed `main` rendered a caller that never ran for a
     # pull request into `develop`, while `assess` and `adopt promote` judged against `develop`,
     # and nothing said so. Written out, it is the person's choice and is kept. The file comes
@@ -166,7 +166,7 @@ def test_an_adopted_document_s_workflow_gates_the_branch_its_file_names(
     # out gates main, not its base branch" -> the `left-out` case reddens.
     root = repository(tmp_path)
     hand_written = (
-        f'[keelline]\nversion = "{keelline.__version__}"\n\n'
+        f'[stayfixed]\nversion = "{stayfixed.__version__}"\n\n'
         '[project]\nname = "widget"\nbase_branch = "develop"\n\n'
         f'[ci]\nref = "{ADOPTED}"\n{ci_table}'
     )

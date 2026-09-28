@@ -194,7 +194,7 @@ def test_the_loader_aims_every_deletion_this_module_drives_at_its_own_scratch(
 
     `main` sweeps `TEMPDIR` for leaked scratch checkouts and removes what it finds. With the
     real temporary directory in place, every test here that calls `main` swept the developer's
-    own — measured by planting a `keelline-oracle-canary` directory in it and running this
+    own — measured by planting a `stayfixed-oracle-canary` directory in it and running this
     module, which removed it — and a concurrently running oracle would have lost its checkout
     mid-run. A suite that can delete a developer's files is a defect whatever it is testing.
 
@@ -921,7 +921,7 @@ def test_the_housekeeping_sweep_leaves_the_lock_alone(tmp_path: Path) -> None:
     # wrong.** `sweep_stale_scratch` has two halves: the `tempdir` glob, which `tempdir=` aims
     # wherever a caller says, and a walk over `git worktree list` run in `ROOT`, which `tempdir=`
     # does not scope at all. With `ROOT` left at the real repository, the second half removed
-    # every registered `keelline-oracle-*/tree` — including the live checkout of the oracle
+    # every registered `stayfixed-oracle-*/tree` — including the live checkout of the oracle
     # running this very test. It passed locally, where no oracle was running, and CI reported
     # `0 test(s) ran` on the clean tree: this test destroyed the run that was executing it, which
     # is precisely the hazard the lock it is testing exists to prevent. The loader above states

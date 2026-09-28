@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import keelline.ledger.api as ledger
+import stayfixed.ledger.api as ledger
 
 
 def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
@@ -12,8 +12,8 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     # Measured by hand instead — re-exporting `write.file_entry` reddens this test and this
     # test alone.
     #
-    # Outside this area, `keelline.assess.gates` imports `bugs_gate` and
-    # `keelline.project.templates` imports `render_index`; the other names stay on the argument
+    # Outside this area, `stayfixed.assess.gates` imports `bugs_gate` and
+    # `stayfixed.project.templates` imports `render_index`; the other names stay on the argument
     # written beside them in `api.py`: the two artifacts this area leaves on a project's disk.
     required = {
         # the entry file's grammar, and the error a file that will not parse raises
@@ -25,7 +25,7 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         # overwriting a file a person wrote
         "render_index",
         "is_generated_index",
-        # the bugs gate keelline.assess.gates runs, bugs check's own function
+        # the bugs gate stayfixed.assess.gates runs, bugs check's own function
         "bugs_gate",
     }
     assert required == set(ledger.__all__)

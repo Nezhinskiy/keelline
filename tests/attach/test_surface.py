@@ -7,7 +7,7 @@ imports — a test parses the file and checks."
 
 from __future__ import annotations
 
-import keelline.attach.api as attach
+import stayfixed.attach.api as attach
 
 
 def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
@@ -18,7 +18,7 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     # vocabulary requires it — rather than freezing whatever the list happened to hold.
     #
     # `attach` and `detach` are not on it: `tests/test_install_path.py` drives them through the
-    # argument parser and imports only `keelline.doctor.api` and `keelline.memory.api`.
+    # argument parser and imports only `stayfixed.doctor.api` and `stayfixed.memory.api`.
     #
     # No mutation entry: the mutation is adding an export, which is two lines in `api.py` (the
     # import and the `__all__` entry) and not one substituted line. Measured by hand instead —

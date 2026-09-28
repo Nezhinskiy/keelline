@@ -1,6 +1,6 @@
 """The reader and the writer helpers for one entry file.
 
-keelline:ledger:fixtures — the identifiers below are sample data, not claims about a ledger.
+stayfixed:ledger:fixtures — the identifiers below are sample data, not claims about a ledger.
 """
 
 from __future__ import annotations
@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from keelline.identifiers import Identifiers
-from keelline.ledger.entries import (
+from stayfixed.identifiers import Identifiers
+from stayfixed.ledger.entries import (
     KEYS,
     STATUSES,
     Entry,

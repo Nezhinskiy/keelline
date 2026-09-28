@@ -1,6 +1,6 @@
 """`new` and `renumber`: every rejection leaves the tree untouched; every write is enumerated.
 
-keelline:ledger:fixtures — the identifiers below are sample data, not claims about a ledger.
+stayfixed:ledger:fixtures — the identifiers below are sample data, not claims about a ledger.
 """
 
 from __future__ import annotations
@@ -12,19 +12,19 @@ from typing import Any
 
 import pytest
 
-from keelline.config.loader import load
-from keelline.config.schema import Config
-from keelline.errors import Refusal
-from keelline.gitenv import NO_ANSWER, git_run
-from keelline.ledger.check import EVIDENCE_LABEL, problems
-from keelline.ledger.entries import LedgerError, load_entries
-from keelline.ledger.index import render_index
-from keelline.ledger.scan import FIXTURE_MARKER
-from keelline.ledger.write import file_entry, next_identifier, renumber
+from stayfixed.config.loader import load
+from stayfixed.config.schema import Config
+from stayfixed.errors import Refusal
+from stayfixed.gitenv import NO_ANSWER, git_run
+from stayfixed.ledger.check import EVIDENCE_LABEL, problems
+from stayfixed.ledger.entries import LedgerError, load_entries
+from stayfixed.ledger.index import render_index
+from stayfixed.ledger.scan import FIXTURE_MARKER
+from stayfixed.ledger.write import file_entry, next_identifier, renumber
 from tests.gitfixture import git, plant_path
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -43,7 +43,7 @@ needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not i
 def project(tmp_path: Path) -> tuple[Path, Config]:
     root = tmp_path / "widget"
     root.mkdir()
-    (root / "keelline.toml").write_text(CONFIG, encoding="utf-8")
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
     for name in ("src", "tests", "scripts", "docs", "docs/bugs"):
         (root / name).mkdir()
     return root, load(root, machine=tmp_path / "m.toml")
@@ -138,7 +138,7 @@ def test_new_never_writes_over_an_entry_file_whatever_the_allocator_returns(
     # decides. Mutation: drop the `path.exists()` refusal — this reddens.
     root, config = project(tmp_path)
     seed(root, config, 1)
-    from keelline.ledger import write as module
+    from stayfixed.ledger import write as module
 
     monkeypatch.setattr(
         module, "next_identifier", lambda *a, **k: module.Allocation("BR-001", None)
@@ -214,7 +214,7 @@ def test_a_history_git_gave_no_answer_for_is_named_and_not_read_as_empty(
     root, config = project(tmp_path)
     git(root, "init", "-q", "-b", "main")
     seed(root, config, 1)
-    from keelline.ledger import write as module
+    from stayfixed.ledger import write as module
 
     real = git_run
 
@@ -291,7 +291,7 @@ def test_a_repository_git_refuses_to_read_is_not_mistaken_for_no_repository(
 @needs_git
 def test_the_allocator_reads_the_git_source_with_the_shared_digit_rule(tmp_path: Path) -> None:
     # The `git log` reader used to respell the digit rule inline as `(\d{3,})` instead of
-    # taking `DIGITS` from `keelline.identifiers`, which owns it. A third spelling is one the
+    # taking `DIGITS` from `stayfixed.identifiers`, which owns it. A third spelling is one the
     # `mutations.toml` entry over that constant cannot reach, so widening the rule would have
     # left the allocator counting by the old one and handing out a number some ref already
     # holds. Mutation: `DIGITS = r"\d+"` — `BR-42.md` becomes an identifier the reader counts
@@ -312,7 +312,7 @@ def test_a_failed_fetch_is_reported_not_raised(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root, config = project(tmp_path)
-    from keelline.ledger import write as module
+    from stayfixed.ledger import write as module
 
     real = git_run
 
@@ -335,7 +335,7 @@ def test_a_fetch_that_gave_no_answer_names_every_cause_and_not_only_two(
     # than with one cause of its own choosing. Mutation (advisory): word `-1` as "could not run
     # or timed out" again — this reddens.
     root, config = project(tmp_path)
-    from keelline.ledger import write as module
+    from stayfixed.ledger import write as module
 
     monkeypatch.setattr(module, "git_run", lambda *a, **k: (-1, ""))
     warning = next_identifier(root, config, fetch=True).warning
@@ -515,7 +515,7 @@ def test_a_successful_fetch_leaves_no_warning(
     # The other side of `test_a_failed_fetch_is_reported_not_raised`: a fetch that worked says
     # nothing, so the command line carries a warning only when one is true.
     root, config = project(tmp_path)
-    from keelline.ledger import write as module
+    from stayfixed.ledger import write as module
 
     monkeypatch.setattr(module, "git_run", lambda *a, **k: (0, ""))
     assert next_identifier(root, config, fetch=True).warning is None

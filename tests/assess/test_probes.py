@@ -17,10 +17,10 @@ from pathlib import Path
 
 import pytest
 
-import keelline
-from keelline.assess import probes
-from keelline.assess.model import WHERE_CAP, Item
-from keelline.assess.probes import (
+import stayfixed
+from stayfixed.assess import probes
+from stayfixed.assess.model import WHERE_CAP, Item
+from stayfixed.assess.probes import (
     CODEOWNERS_MAX_BYTES,
     COULD_NOT_LOOK,
     COULD_NOT_LOOK_REMEDY,
@@ -32,11 +32,11 @@ from keelline.assess.probes import (
     _pattern,
     run_probes,
 )
-from keelline.config.loader import load, preset_defaults
-from keelline.findings import Severity
-from keelline.gitenv import QUERY_TIMEOUT_SECONDS, git_run
-from keelline.presets import load_preset
-from keelline.project.api import CI_WORKFLOW
+from stayfixed.config.loader import load, preset_defaults
+from stayfixed.findings import Severity
+from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run
+from stayfixed.presets import load_preset
+from stayfixed.project.api import CI_WORKFLOW
 from tests.assess.baserepo import commit
 from tests.assess.smoke import smoke_repo
 from tests.gitfixture import git, needs_git, plant_path, run_git
@@ -54,17 +54,17 @@ TO_DO, FIX_ME, TRIPLE_X = "TO" + "DO", "FIX" + "ME", "X" + "XX"
 
 def _document(extra: str = "") -> str:
     return (
-        f'[keelline]\nversion = "{keelline.__version__}"\n{extra}\n\n[project]\nname = "widget"\n'
+        f'[stayfixed]\nversion = "{stayfixed.__version__}"\n{extra}\n\n[project]\nname = "widget"\n'
     )
 
 
 def _repo(tmp_path: Path, extra: str = "", *, tail: str = "") -> Path:
-    """A fresh `git init` holding a minimal `keelline.toml`; `extra` goes into `[keelline]` and
+    """A fresh `git init` holding a minimal `stayfixed.toml`; `extra` goes into `[stayfixed]` and
     `tail` after `[project]`. Nothing is committed."""
     root = tmp_path / "widget"
     root.mkdir()
     git(root, "init", "-q", "-b", "main")
-    (root / "keelline.toml").write_text(_document(extra) + tail, encoding="utf-8")
+    (root / "stayfixed.toml").write_text(_document(extra) + tail, encoding="utf-8")
     return root
 
 
@@ -203,14 +203,14 @@ def test_foreign_hook_entries_are_counted_for_the_selected_harnesses_only(
     ]
 
 
-def test_keelline_s_own_hook_entries_are_not_foreign(tmp_path: Path) -> None:
+def test_stayfixed_s_own_hook_entries_are_not_foreign(tmp_path: Path) -> None:
     # Mutation (advisory): `marker_id(e["command"]) is None` becomes `True` -> reddens.
     root = _repo(tmp_path, 'agents = ["claude"]')
-    _write(root, ".claude/settings.json", _settings("keelline hook x  # keelline:guard"))
+    _write(root, ".claude/settings.json", _settings("stayfixed hook x  # stayfixed:guard"))
     assert _items(root, tmp_path, "foreign-hooks") == []
 
 
-def test_a_settings_file_keelline_cannot_read_is_named_and_not_fatal(tmp_path: Path) -> None:
+def test_a_settings_file_stayfixed_cannot_read_is_named_and_not_fatal(tmp_path: Path) -> None:
     # The engine's own shape check refuses `hooks` as a list; that is "could not look", never
     # "no foreign hook". Mutation (advisory): `EntriesError` dropped from the probe's `except`
     # -> `run_probes` raises and this reddens.
@@ -327,10 +327,10 @@ def test_workflows_through_a_symlinked_github_are_not_listed(tmp_path: Path) -> 
     ]
 
 
-def test_foreign_workflows_are_listed_and_keelline_s_own_is_not(tmp_path: Path) -> None:
-    # Mutation (advisory): `if p.name != own` dropped -> `keelline.yml` is listed, reddens.
+def test_foreign_workflows_are_listed_and_stayfixed_s_own_is_not(tmp_path: Path) -> None:
+    # Mutation (advisory): `if p.name != own` dropped -> `stayfixed.yml` is listed, reddens.
     root = _repo(tmp_path)
-    for name in ("keelline.yml", "tests.yml", "lint.yaml", "notes.txt"):
+    for name in ("stayfixed.yml", "tests.yml", "lint.yaml", "notes.txt"):
         _write(root, f".github/workflows/{name}", "on: push\n")
     items = _items(root, tmp_path, "foreign-workflows")
     assert [(i.rule, i.severity, i.principle, i.where) for i in items] == [
@@ -421,7 +421,7 @@ def test_codeowners_is_reported_unless_a_line_owns_the_workflows(
 
 @pytest.mark.parametrize(
     ("pattern", "reported"),
-    [(f"/{CI_WORKFLOW}/", True), ("/.github/**/**/keelline.yml", False)],
+    [(f"/{CI_WORKFLOW}/", True), ("/.github/**/**/stayfixed.yml", False)],
     ids=["directory-only", "a-file-below"],
 )
 def test_a_trailing_slash_owns_a_directory_and_never_a_file_of_that_name(
@@ -436,7 +436,7 @@ def test_a_trailing_slash_owns_a_directory_and_never_a_file_of_that_name(
 
 @pytest.mark.parametrize(
     "pattern",
-    ["/.github/workflows/**/keelline.yml", "/.github/**/**/workflows/keelline.yml"],
+    ["/.github/workflows/**/stayfixed.yml", "/.github/**/**/workflows/stayfixed.yml"],
     ids=["zero-directories", "adjacent"],
 )
 def test_a_recursive_wildcard_matches_zero_directories_adjacent_ones_included(
@@ -458,36 +458,36 @@ GRAMMAR = [
     "*.yml",
     "/.github/",
     "/.github/workflows/",
-    "/.github/workflows/keelline.yml",
-    "/.github/workflows/keelline.yml/",
+    "/.github/workflows/stayfixed.yml",
+    "/.github/workflows/stayfixed.yml/",
     "/.github/**",
     "/.github/**/",
-    "/.github/**/keelline.yml",
-    "/.github/**/**/keelline.yml",
-    "/.github/workflows/**/keelline.yml",
-    "/.github/**/**/workflows/keelline.yml",
-    "**/keelline.yml",
-    "keelline.yml",
+    "/.github/**/stayfixed.yml",
+    "/.github/**/**/stayfixed.yml",
+    "/.github/workflows/**/stayfixed.yml",
+    "/.github/**/**/workflows/stayfixed.yml",
+    "**/stayfixed.yml",
+    "stayfixed.yml",
     "workflows/",
-    "workflows/keelline.yml",
+    "workflows/stayfixed.yml",
     ".github/workflows/*.yml",
-    "/.github/*/keelline.yml",
+    "/.github/*/stayfixed.yml",
     "docs/",
     "/.git*/",
     "/.github/workflow?/",
     "**/workflows/**",
     "/.github/**yml",
     ".github/**yml",
-    "/.github/workflows/keelline.yml/**",
+    "/.github/workflows/stayfixed.yml/**",
     "**",
     "/.github/workflows*/",
-    "keelline.yml*",
+    "stayfixed.yml*",
     "/.github/*/*/",
     "/.github/*/",
     "*/",
     "/*/",
-    "/***/keelline.yml",
-    "***/keelline.yml",
+    "/***/stayfixed.yml",
+    "***/stayfixed.yml",
     "/.github/****/",
     "/.github/***",
     "/.github/***yml",
@@ -511,19 +511,19 @@ def test_the_matcher_agrees_with_git_on_its_grammar(tmp_path: Path) -> None:
     # the directory-only rule, `**` as zero or more components, and `**` special only as a
     # whole component (`**yml` is `*yml`) each make some pattern disagree. A whole component of
     # three or more `*` is git's `**` (found by fuzzing against git; GitHub documents nothing
-    # here, so git decides). Mutation (advisory): that reading dropped -> `/***/keelline.yml`
+    # here, so git decides). Mutation (advisory): that reading dropped -> `/***/stayfixed.yml`
     # and its siblings disagree, and this reddens.
     ours = {p: _owns(p, CI_WORKFLOW) for p in GRAMMAR}
     theirs = {p: _git_ignores(tmp_path, p) for p in GRAMMAR}
     assert ours == theirs
     assert {p for p, owned in theirs.items() if not owned} == {
         "*.md",
-        "/.github/workflows/keelline.yml/",
-        "workflows/keelline.yml",
+        "/.github/workflows/stayfixed.yml/",
+        "workflows/stayfixed.yml",
         "docs/",
         "/.github/**yml",
         ".github/**yml",
-        "/.github/workflows/keelline.yml/**",
+        "/.github/workflows/stayfixed.yml/**",
         "/.github/*/*/",
         "/.github/***yml",
     }
@@ -557,10 +557,10 @@ def test_a_directory_only_last_star_owns_what_is_below_each_directory_it_matches
 # Each runs in a child with a deadline, so a matcher that backtracks fails this case instead of
 # hanging the suite. Every pattern is the repository's to write: a run of `*`, a run of `**`
 # components long enough to exhaust a recursion, a component of alternating stars, and one whose
-# ends and runs `keelline.yml` all holds, which only the walk answers.
+# ends and runs `stayfixed.yml` all holds, which only the walk answers.
 BOUNDED = (
-    "from keelline.assess.probes import _owns\n"
-    "from keelline.project.api import CI_WORKFLOW\n"
+    "from stayfixed.assess.probes import _owns\n"
+    "from stayfixed.project.api import CI_WORKFLOW\n"
     "for pattern in ('*' * 100_000 + 'z', '**/' * 100_000 + 'z', '*e' * 50_000 + 'z',\n"
     "                '/'.join(['*'] * 100_000), 'k*l?e*l'):\n"
     "    print(_owns(pattern, CI_WORKFLOW))\n"
@@ -572,7 +572,7 @@ DEADLINE_SECONDS = 20
 
 def test_a_pattern_of_many_wildcards_is_answered_promptly() -> None:
     # A regex with one `[^/]*` per `*` backtracks exponentially, so one CODEOWNERS line could
-    # hold `keelline assess` for good. The matcher has none: `_glob` keeps one resumption point
+    # hold `stayfixed assess` for good. The matcher has none: `_glob` keeps one resumption point
     # and moves it on at every retry, and the component table visits each cell once. Mutation
     # (declared): `resume += 1` becomes `resume += 0` -> `_glob` retries the same position for
     # ever on the last pattern, the child runs past its deadline, and this reddens with the
@@ -641,7 +641,7 @@ def test_a_codeowners_file_through_a_symlink_is_could_not_look(tmp_path: Path) -
     assert _shapes(_items(root, tmp_path, "codeowners")) == [(COULD_NOT_LOOK, ("CODEOWNERS",))]
 
 
-def test_codeowners_is_not_judged_when_keelline_renders_no_workflow(tmp_path: Path) -> None:
+def test_codeowners_is_not_judged_when_stayfixed_renders_no_workflow(tmp_path: Path) -> None:
     # Mutation (advisory): the `ci.mode == "none"` early return dropped -> reddens. The scope
     # probe's own return: dropped, a caller-only line reports under `mode = "none"` and reddens.
     root = _repo(tmp_path, tail='\n[ci]\nmode = "none"\n')
@@ -668,7 +668,7 @@ def test_codeowners_is_not_judged_when_keelline_renders_no_workflow(tmp_path: Pa
         (".github/CODEOWNERS", f"/.github/ @owner\n/{CI_WORKFLOW}\n", ()),
         (
             ".github/CODEOWNERS",
-            "/.github/workflows/keelline* @owner\n/.github/CODEOWNERS @owner\n",
+            "/.github/workflows/stayfixed* @owner\n/.github/CODEOWNERS @owner\n",
             (OWNED_WORKFLOWS,),
         ),
         (
@@ -693,25 +693,25 @@ def test_codeowners_is_not_judged_when_keelline_renders_no_workflow(tmp_path: Pa
         "a-root-file-under-everything",
         "the-caller-unowned",
         "the-caller-left-without-an-owner",
-        "keelline-s-prefix",
+        "stayfixed-s-prefix",
         "one-extension",
         "both-extensions",
     ],
 )
-def test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_reported(
+def test_a_line_owning_only_stayfixed_s_workflow_leaves_the_rest_of_github_reported(
     tmp_path: Path, relative: str, codeowners: str, unowned: tuple[str, ...]
 ) -> None:
     # The verdict binds only when CODEOWNERS covers `/.github/`: a line owning only
-    # `keelline.yml` left a pull request free to add a workflow with a job named like the
+    # `stayfixed.yml` left a pull request free to add a workflow with a job named like the
     # required check, and `codeowners` reported nothing. The scope probe asks about a workflow
     # no project names and about the code-owners file itself, and stays silent where
     # `codeowners` already reports, so one gap is one warning. The workflow probed carries no
-    # prefix of Keelline's and is asked under both extensions GitHub runs: a single
-    # `keelline-….yml` read as owned under `keelline*` and under `*.yml`, while a pull request
+    # prefix of stayfixed's and is asked under both extensions GitHub runs: a single
+    # `stayfixed-….yml` read as owned under `stayfixed*` and under `*.yml`, while a pull request
     # could add `ci.yaml` or `other.yml`. Mutations (oracle): "the scope probe never asks past
-    # Keelline's workflow" -> `the-caller-alone` is clean and reddens; "the scope probe asks
+    # stayfixed's workflow" -> `the-caller-alone` is clean and reddens; "the scope probe asks
     # about one extension" -> `one-extension` is clean and reddens; "the scope probe asks at a
-    # name under Keelline's prefix" -> `keelline-s-prefix` is clean and reddens.
+    # name under stayfixed's prefix" -> `stayfixed-s-prefix` is clean and reddens.
     root = _repo(tmp_path)
     _write(root, relative, codeowners)
     items = _items(root, tmp_path, "codeowners-scope")
@@ -727,7 +727,7 @@ def test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_report
         ("* @owner\n.github/workflows/ci.yml\n", (".github/workflows/ci.yml",)),
         ("/.github/ @owner\n*.yaml\n", (OWNED_WORKFLOWS, ".github/workflows/lint.yaml")),
         (
-            "/.github/ @owner\n/.github/workflows/*\n/.github/workflows/keelline.yml @owner\n",
+            "/.github/ @owner\n/.github/workflows/*\n/.github/workflows/stayfixed.yml @owner\n",
             (OWNED_WORKFLOWS, ".github/workflows/ci.yml", ".github/workflows/lint.yaml"),
         ),
         ("/.github/ @owner\n/.github/workflows/ci.yml\n/.github/workflows/ci.yml @owner\n", ()),
@@ -747,14 +747,14 @@ def test_a_workflow_the_repository_has_is_reported_where_no_one_owns_it(
     tmp_path: Path, codeowners: str, unowned: tuple[str, ...]
 ) -> None:
     # GitHub reads the last matching line, and a pattern with no owner leaves the file unowned:
-    # `/.github/ @owner` then `/.github/workflows/ci.yml` owns Keelline's workflow and every
+    # `/.github/ @owner` then `/.github/workflows/ci.yml` owns stayfixed's workflow and every
     # workflow a pull request could add, while `ci.yml` itself is owned by no one. A pull request
     # can edit that workflow and name a job like the required check with no code-owner review,
     # and the scope probe asked only about two names no project uses. Mutation (oracle): "the
     # scope probe never asks about a workflow the repository has" -> each case naming a file is
     # clean and reddens.
     root = _repo(tmp_path)
-    for name in ("keelline.yml", "ci.yml", "lint.yaml"):
+    for name in ("stayfixed.yml", "ci.yml", "lint.yaml"):
         _write(root, f".github/workflows/{name}", "on: push\n")
     _write(root, ".github/CODEOWNERS", codeowners)
     items = _items(root, tmp_path, "codeowners-scope")
@@ -813,7 +813,7 @@ def test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns(
     # comment only at the line's start -> `# restored` is read as owners that are not owners,
     # `a-comment-after-a-blank` names `ci.yml`, and it reddens.
     root = _repo(tmp_path)
-    for name in ("keelline.yml", "ci.yml", "lint.yaml"):
+    for name in ("stayfixed.yml", "ci.yml", "lint.yaml"):
         _write(root, f".github/workflows/{name}", "on: push\n")
     (root / ".github").mkdir(exist_ok=True)
     (root / ".github/CODEOWNERS").write_bytes(codeowners.encode("utf-8"))
@@ -827,12 +827,12 @@ def test_an_unowned_workflow_outside_the_path_grammar_is_reported_under_the_dire
 ) -> None:
     # A workflow's name is the repository's, and `where` names a path only inside the grammar a
     # path may print in: one outside it is reported under `.github/workflows/`, once, and never
-    # quoted. The owner-less lines leave Keelline's workflow and the probed names owned, so the
+    # quoted. The owner-less lines leave stayfixed's workflow and the probed names owned, so the
     # directory label here comes from the two unprintable names alone. Mutation (oracle): "the
     # scope probe names an unowned workflow outside the path grammar" -> the raw names land in
     # `where` and this reddens.
     root = _repo(tmp_path)
-    for name in ("keelline.yml", "x b.yml", "y‮z.yml", "ok.yml"):
+    for name in ("stayfixed.yml", "x b.yml", "y‮z.yml", "ok.yml"):
         _write(root, f".github/workflows/{name}", "on: push\n")
     _write(
         root,
@@ -855,7 +855,7 @@ def test_workflows_past_the_step_budget_are_could_not_look_and_never_owned(
     # scope probe asks every workflow whatever the budget" -> `c.yaml` is named, nothing is could
     # not look, and this reddens.
     root = _repo(tmp_path)
-    for name in ("keelline.yml", "a.yaml", "b.yaml", "c.yaml"):
+    for name in ("stayfixed.yml", "a.yaml", "b.yaml", "c.yaml"):
         _write(root, f".github/workflows/{name}", "on: push\n")
     text = "/.github/ @owner\n" + "*" * 100_000 + ".yaml\n"
     _write(root, ".github/CODEOWNERS", text)
@@ -917,7 +917,7 @@ def test_a_file_built_to_walk_every_rule_stops_at_the_step_budget(
     # not count the walk" -> every workflow is asked, nothing is could not look, and this
     # reddens.
     root = _repo(tmp_path)
-    for name in ("keelline.yml", *(f"{c}{'a' * 235}.yml" for c in "bcdef")):
+    for name in ("stayfixed.yml", *(f"{c}{'a' * 235}.yml" for c in "bcdef")):
         _write(root, f".github/workflows/{name}", "on: push\n")
     lines = [
         "*" + "".join("a?"[n >> bit & 1] for bit in range(60)) + ".yml? @o" for n in range(100)
@@ -939,7 +939,7 @@ def test_a_monorepo_s_code_owners_file_is_asked_about_every_workflow(tmp_path: P
     root = _repo(tmp_path)
     names = [f"wf-{n:03d}-build-and-test-pipeline.yml" for n in range(299)]
     names.append("zz-deploy-production-environment.yml")
-    for name in ("keelline.yml", *names):
+    for name in ("stayfixed.yml", *names):
         _write(root, f".github/workflows/{name}", "on: push\n")
     lines = ["# monorepo owners", "/.github/ @org/platform"]
     while sum(len(line) + 1 for line in lines) < 20_000:
@@ -1011,8 +1011,8 @@ def test_a_profile_check_git_could_not_answer_is_could_not_look_not_untracked(
     # A `tracked` check git gave no answer for has not passed and has not failed. Mutation
     # (advisory): `if outcome.located:` becomes `if True:` -> the unanswered outcome is an
     # item under its check's id, read as an untracked lockfile, and this reddens.
-    # `keelline.profiles.evaluate` is the function on the package; the module is asked for.
-    profile_evaluate = importlib.import_module("keelline.profiles.evaluate")
+    # `stayfixed.profiles.evaluate` is the function on the package; the module is asked for.
+    profile_evaluate = importlib.import_module("stayfixed.profiles.evaluate")
     root = _repo(tmp_path, 'profile = "python"')
     _write(root, "pyproject.toml", '[project]\nname = "widget"\n')
     _write(root, "uv.lock", "version = 1\n")
@@ -1024,7 +1024,7 @@ def test_a_profile_check_git_could_not_answer_is_could_not_look_not_untracked(
     ]
 
 
-def test_a_profile_this_keelline_does_not_ship_is_one_warning_and_the_rest_still_runs(
+def test_a_profile_this_stayfixed_does_not_ship_is_one_warning_and_the_rest_still_runs(
     tmp_path: Path,
 ) -> None:
     # Mutation (advisory): the `shipped()` check dropped -> `ProfileError` ends `run_probes`.
@@ -1032,7 +1032,7 @@ def test_a_profile_this_keelline_does_not_ship_is_one_warning_and_the_rest_still
     items = _all(root, tmp_path)
     profile = [i for i in items if i.probe == PROFILE]
     assert [(i.rule, i.severity, i.where) for i in profile] == [
-        (PROFILE_NOT_SHIPPED, Severity.WARNING, ("[keelline] profile",))
+        (PROFILE_NOT_SHIPPED, Severity.WARNING, ("[stayfixed] profile",))
     ]
     assert "python" in profile[0].remedy
     assert [i.probe for i in items if i.probe != PROFILE] == ["codeowners"]
@@ -1042,7 +1042,7 @@ def test_no_profile_configured_reports_no_profile_item(tmp_path: Path) -> None:
     # The preset's `profile = ""` is no profile. Mutation (advisory): the empty-name return
     # dropped -> `""` is not shipped, a `profile-not-shipped` item appears and this reddens.
     root = _repo(tmp_path)
-    assert load(root, machine=tmp_path / "m.toml").keelline.profile == ""
+    assert load(root, machine=tmp_path / "m.toml").stayfixed.profile == ""
     assert _items(root, tmp_path, PROFILE) == []
 
 

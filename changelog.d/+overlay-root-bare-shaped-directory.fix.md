@@ -1,4 +1,4 @@
-`keelline setup --overlay <path>` no longer records an overlay root that a repository staged inside
+`stayfixed setup --overlay <path>` no longer records an overlay root that a repository staged inside
 one of its own sibling worktrees. The check that an overlay root lies outside every checkout of the
 project asked `git` where the repository was from inside the candidate directory, and `git` reads
 any directory holding `HEAD`, `objects/` and `refs/` as a bare repository of its own — three paths

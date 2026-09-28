@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from keelline.findings import Severity
-from keelline.profiles.evaluate import detects, evaluate
-from keelline.profiles.model import Check, CheckKind, Locator, Profile
+from stayfixed.findings import Severity
+from stayfixed.profiles.evaluate import detects, evaluate
+from stayfixed.profiles.model import Check, CheckKind, Locator, Profile
 from tests.gitfixture import git, needs_git
 
 
@@ -168,7 +168,7 @@ def test_tracked_names_a_located_file_git_gave_no_answer_for_rather_than_passing
     (tmp_path / "lock.txt").write_text("", encoding="utf-8")
     # The package re-exports the function `evaluate` under the submodule's name, so the module
     # is taken from the import system rather than by attribute.
-    module = importlib.import_module("keelline.profiles.evaluate")
+    module = importlib.import_module("stayfixed.profiles.evaluate")
     monkeypatch.setattr(module, "git_run", lambda *args, **kwargs: (-1, ""))
     check = _check(CheckKind.TRACKED, Locator("lock.txt"), Locator("other.txt"))
     outcomes = evaluate(_profile(check), tmp_path)

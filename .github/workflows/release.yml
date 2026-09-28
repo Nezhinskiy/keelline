@@ -50,7 +50,7 @@ jobs:
         # The tag is the claim; the six sources, the changelog and the hash record are what
         # the claim has to agree with, and `release check --tag` holds all of them. A tag that
         # names a version no source carries is the one release mistake PyPI will not let you undo.
-        run: uv run keelline release check --tag "$GITHUB_REF_NAME"
+        run: uv run stayfixed release check --tag "$GITHUB_REF_NAME"
       - name: Tests
         run: uv run pytest -q
       - name: Build
@@ -170,4 +170,4 @@ jobs:
         # alias at whatever it pointed to, and the alias exists to move.
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "keelline ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/notes.md" dist/*
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "stayfixed ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/notes.md" dist/*

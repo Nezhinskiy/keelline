@@ -1,7 +1,7 @@
 """The index is a pure function of the entry files, and regenerating it must never destroy
 content that exists nowhere else.
 
-keelline:ledger:fixtures — the identifiers below are sample data, not claims about a ledger.
+stayfixed:ledger:fixtures — the identifiers below are sample data, not claims about a ledger.
 """
 
 from __future__ import annotations
@@ -11,12 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from keelline.config.loader import load
-from keelline.config.schema import Config
-from keelline.errors import Refusal
-from keelline.ledger.check import problems
-from keelline.ledger.entries import LedgerError, load_entries
-from keelline.ledger.index import (
+from stayfixed.config.loader import load
+from stayfixed.config.schema import Config
+from stayfixed.errors import Refusal
+from stayfixed.ledger.check import problems
+from stayfixed.ledger.entries import LedgerError, load_entries
+from stayfixed.ledger.index import (
     GENERATED_BY,
     SECTIONS,
     foreign_index_lines,
@@ -29,7 +29,7 @@ from keelline.ledger.index import (
 )
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -46,7 +46,7 @@ release_branch = "main"
 def project(tmp_path: Path, extra: str = "") -> tuple[Path, Config]:
     root = tmp_path / "widget"
     root.mkdir()
-    (root / "keelline.toml").write_text(CONFIG + extra, encoding="utf-8")
+    (root / "stayfixed.toml").write_text(CONFIG + extra, encoding="utf-8")
     return root, load(root, machine=tmp_path / "m.toml")
 
 
@@ -129,7 +129,7 @@ def test_render_index_groups_by_status_and_counts_each_section(tmp_path: Path) -
 
 
 def test_every_status_has_a_section_to_be_rendered_into() -> None:
-    from keelline.ledger.entries import STATUSES
+    from stayfixed.ledger.entries import STATUSES
 
     # Every status the reader accepts has a section to be rendered into, and no section
     # renders a status the reader would reject: a set equality, because the index's reading
@@ -232,7 +232,7 @@ def test_a_row_whose_entry_file_is_gone_is_foreign_and_not_a_stale_index(tmp_pat
     # The reproduction: delete one entry file — the shape a merge resolved to the wrong side
     # leaves behind — and its index row is the last record that bug ever existed. Classified by
     # the line's leading `|` it read as tool-generated, so `bugs check` reported
-    # `stale-index; run: keelline bugs index` and that command deleted the record, no diff,
+    # `stale-index; run: stayfixed bugs index` and that command deleted the record, no diff,
     # exit 0. `ENTRIES_MISSING` never fires here: the ledger directory is still there.
     # Mutation: allow any `|` line in `foreign_index_lines` — every assertion reddens.
     root, config = project(tmp_path)

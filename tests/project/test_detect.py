@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from keelline.errors import Refusal
-from keelline.project.detect import Detected, detect
+from stayfixed.errors import Refusal
+from stayfixed.project.detect import Detected, detect
 from tests.gitfixture import git, needs_git
 from tests.project.repos import repository
 
@@ -119,7 +119,7 @@ def test_with_no_remote_head_the_base_branch_is_the_branch_checked_out(tmp_path:
     assert not found.head_refused
 
 
-FEATURE = "chore/adopt-keelline"
+FEATURE = "chore/adopt-stayfixed"
 
 
 def _adopting(tmp_path: Path, shape: str) -> Path:
@@ -183,14 +183,14 @@ def test_a_repository_whose_remotes_git_cannot_list_keeps_the_default(
     # remote` that gave no answer is not "no remote": the default stands, flagged for a note of
     # its own. Mutation (oracle): "remotes git cannot list read as none" -> the feature branch
     # comes back.
-    from keelline.gitenv import git_run as real
+    from stayfixed.gitenv import git_run as real
 
     root = _adopting(tmp_path, "unpushed")
 
     def unanswered(where: Path, *args: str, **kwargs: object) -> tuple[int, str]:
         return (-1, "") if args[0] == "remote" else real(where, *args, **kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr("keelline.project.detect.git_run", unanswered)
+    monkeypatch.setattr("stayfixed.project.detect.git_run", unanswered)
     found = detect(root)
     assert (found.base_branch, found.sources["base_branch"]) == ("main", "default")
     assert (found.remotes_unknown, found.head_unrecorded) == (True, False)

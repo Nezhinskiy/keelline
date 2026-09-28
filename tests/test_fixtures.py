@@ -3,7 +3,7 @@
 `smoke-project` is a project every gate passes on, with `state = "installed"` so the gates
 enforce; `hostile-project` is the clone the clone-to-exfiltration scenario runs. Both are read
 by CI from this tree, so a fixture that drifted from what a gate accepts would fail the smoke
-workflow with a message about the fixture rather than about Keelline.
+workflow with a message about the fixture rather than about stayfixed.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from keelline.cli import build_parser, discover_registrars, run
+from stayfixed.cli import build_parser, discover_registrars, run
 from tests.gitfixture import git
 from tests.workflow_yaml import load, runs
 
@@ -79,7 +79,7 @@ def test_every_gate_the_workflow_runs_passes_on_the_smoke_fixture(
     # `--base HEAD~1` and not the default: `plan check` defaults to
     # `refs/remotes/origin/<base_branch>`, and this copy is a fresh repository with no remote,
     # where an unresolvable base is a finding (`docs/cli.md`: "A base that does not resolve is a
-    # finding (1), never an OK"). CI's `keelline gate` passes the base as the commit it
+    # finding (1), never an OK"). CI's `stayfixed gate` passes the base as the commit it
     # resolved; the fixture's own two commits are the equivalent here.
     root = _copy_as_repository(tmp_path)
     code, printed = _invoke(root, tmp_path, argv)
@@ -128,7 +128,7 @@ def test_docs_check_on_the_fixture_reads_the_documents_it_is_about(tmp_path: Pat
     # The fifth row's companion, and it has to be a planted violation rather than a count:
     # `docs check` reports `findings: []` and the same `OK:` line whether it examined the
     # documents or returned early, so no field of its success answer can tell the two apart.
-    # Measured: `check_budgets` and `check_links` in `src/keelline/docs/hygiene.py` each given
+    # Measured: `check_budgets` and `check_links` in `src/stayfixed/docs/hygiene.py` each given
     # `return []` as their first statement left `tests/test_fixtures.py` 30 green.
     #
     # Two plants and not one, because they are two walks: an always-loaded document blown past
@@ -167,8 +167,8 @@ def test_plan_check_on_the_fixture_lints_the_plan_it_touched(tmp_path: Path) -> 
 def test_the_smoke_fixture_is_installed_so_the_gates_enforce() -> None:
     import tomllib
 
-    config = tomllib.loads((SMOKE / "keelline.toml").read_text(encoding="utf-8"))
-    assert config["keelline"]["state"] == "installed"
+    config = tomllib.loads((SMOKE / "stayfixed.toml").read_text(encoding="utf-8"))
+    assert config["stayfixed"]["state"] == "installed"
     assert config["project"]["name"] == "smoke"
 
 
@@ -179,12 +179,12 @@ def test_the_hostile_fixture_carries_the_three_properties_the_scenario_depends_o
     import json
     import tomllib
 
-    raw = (HOSTILE / "keelline.toml").read_text(encoding="utf-8")
+    raw = (HOSTILE / "stayfixed.toml").read_text(encoding="utf-8")
     config = tomllib.loads(raw)
     # The literal and not only the loaded value: `installed` is not the loader's default, and
     # a fixture that relied on a default would stop being the hostile case the day it moved.
     assert 'state = "installed"' in raw
-    assert config["keelline"]["state"] == "installed"
+    assert config["stayfixed"]["state"] == "installed"
     # The clone names ANOTHER project, which is the whole of the `mismatch` row.
     assert config["project"]["name"] == "smoke"
     assert config["memory"]["mode"] == "in-repo"
@@ -194,7 +194,7 @@ def test_the_hostile_fixture_carries_the_three_properties_the_scenario_depends_o
     assert "CANARY-IN-REPO-RULE" in note
 
     settings = json.loads((HOSTILE / ".claude" / "settings.json").read_text(encoding="utf-8"))
-    assert "KEELLINE_CONFIG" in settings["env"]
+    assert "STAYFIXED_CONFIG" in settings["env"]
     assert "PATH" in settings["env"]
 
 
@@ -295,7 +295,7 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
         "ruff check .",
         "ruff format --check .",
         "mypy",
-        "keelline release check",
+        "stayfixed release check",
     )
     for name, text in blocks.items():
         assert text.strip(), name
@@ -531,7 +531,7 @@ def test_a_step_s_script_is_never_read_from_the_step_after_it(tmp_path: Path) ->
 
 
 def _project_with_a_base(tmp_path: Path, *, on_base: str | None) -> Path:
-    """A clone whose `origin/main` carries `on_base` as `keelline.toml`, or carries none.
+    """A clone whose `origin/main` carries `on_base` as `stayfixed.toml`, or carries none.
 
     The upstream also has a branch `a-branch-the-author-pushed`, so the clone tracks it: the
     disagreement case then meets a `base:` naming a branch that exists, which is the attack,
@@ -544,7 +544,7 @@ def _project_with_a_base(tmp_path: Path, *, on_base: str | None) -> Path:
     git(upstream, "init", "-q", "-b", "main")
     (upstream / "README.md").write_text("# a project\n", encoding="utf-8")
     if on_base is not None:
-        (upstream / "keelline.toml").write_text(on_base, encoding="utf-8")
+        (upstream / "stayfixed.toml").write_text(on_base, encoding="utf-8")
     git(upstream, "add", "-A")
     git(upstream, "commit", "-qm", "chore: base")
     git(upstream, "branch", "a-branch-the-author-pushed")
@@ -580,7 +580,7 @@ def _run_base_step(
     return done.returncode, written, done.stdout + done.stderr
 
 
-INSTALLED = '[keelline]\nversion = "0.1.0"\nstate = "installed"\n\n[project]\nname = "p"\n'
+INSTALLED = '[stayfixed]\nversion = "0.1.0"\nstate = "installed"\n\n[project]\nname = "p"\n'
 
 
 def _main(project: Path) -> str:
@@ -601,7 +601,7 @@ def test_a_tag_named_like_the_tracking_branch_does_not_choose_the_base(tmp_path:
     `base_sha` is the tag's commit.
     """
     project = _project_with_a_base(tmp_path, on_base=INSTALLED)
-    (project / "keelline.toml").write_text(
+    (project / "stayfixed.toml").write_text(
         INSTALLED.replace('state = "installed"', 'state = "initialised"'), encoding="utf-8"
     )
     git(project, "add", "-A")
@@ -624,8 +624,8 @@ def test_a_base_input_that_disagrees_with_the_pull_requests_own_base_is_refused(
 
     On a `pull_request` event the platform runs the workflow file from the merge commit — the
     author's copy — and `with: base:` lives in it. So a pull request could point `base:` at a
-    branch it had pushed, whose `keelline.toml` enforces nothing, and be judged against that
-    without touching the tree's own `keelline.toml`.
+    branch it had pushed, whose `stayfixed.toml` enforces nothing, and be judged against that
+    without touching the tree's own `stayfixed.toml`.
 
     The platform's `github.base_ref` is the answer that cannot be written from the branch, so
     where both are present and they disagree the step refuses, and never echoes the author's
@@ -711,7 +711,7 @@ def test_a_project_root_below_the_checkout_is_where_the_gates_run(tmp_path: Path
 
 
 SMOKE_RELEASE = WORKFLOWS / "smoke-release.yml"
-CALLED = "Nezhinskiy/keelline/.github/workflows/check.yml"
+CALLED = "stayfixed/stayfixed/.github/workflows/check.yml"
 
 
 @pytest.mark.skipif(not SMOKE_RELEASE.is_file(), reason="smoke-release.yml is not in the sdist")
@@ -726,7 +726,7 @@ def test_the_release_smoke_calls_the_release_this_tree_carries() -> None:
     does not exist fails the whole dispatch before any job runs. Mutation (declared): the
     release job calls `@v1` again.
     """
-    import keelline
+    import stayfixed
 
     document = load(SMOKE_RELEASE.read_text(encoding="utf-8"))
     assert isinstance(document, dict) and isinstance(document["jobs"], dict), document
@@ -735,7 +735,7 @@ def test_the_release_smoke_calls_the_release_this_tree_carries() -> None:
     }
     assert uses == {
         "at-the-development-branch": f"{CALLED}@dev",
-        "at-the-release": f"{CALLED}@v{keelline.__version__}",
+        "at-the-release": f"{CALLED}@v{stayfixed.__version__}",
     }, uses
 
 

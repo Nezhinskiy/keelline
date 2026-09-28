@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from keelline.memory import notes
-from keelline.memory.notes import (
+from stayfixed.memory import notes
+from stayfixed.memory.notes import (
     NAME_NOT_UTF_8,
     UNRANKED,
     NoteError,

@@ -29,11 +29,11 @@ def _plugin_root(
 
     The wrapper is **copied in** rather than invoked out of the checkout, because it now finds
     its launcher relative to its own path. A plugin root is therefore a real directory pair —
-    `hooks/run-hook.sh` and `scripts/keelline` — which is what an installed plugin is, and what
+    `hooks/run-hook.sh` and `scripts/stayfixed` — which is what an installed plugin is, and what
     the harness substitutes into the command string of `hooks/hooks.json`.
 
     A fake launcher, not the real one: this test is about the wrapper's own exit-code mapping
-    and its argv contract, and a real `keelline` run would couple it to every command in the
+    and its argv contract, and a real `stayfixed` run would couple it to every command in the
     package.
 
     Python and not `#!/bin/sh`, because the wrapper hands the launcher to the interpreter it
@@ -64,7 +64,7 @@ def _plugin_root(
     (root / "hooks" / WRAPPER.name).chmod(0o755)
     if not with_launcher:
         return root
-    launcher = root / "scripts" / "keelline"
+    launcher = root / "scripts" / "stayfixed"
     # `os.getcwd()` rather than the shell's `pwd`: it reports the physical directory, which is
     # what `Path.resolve()` names, so the assertion is about the directory and not about which
     # of its spellings the shell kept.
@@ -80,11 +80,11 @@ def _env(plugin_root: Path, env_root: Path | None, candidates: str | None) -> di
     env = dict(os.environ)
     env.pop("CLAUDE_PLUGIN_ROOT", None)
     env.pop("CLAUDE_PROJECT_DIR", None)
-    env.pop("KEELLINE_PYTHON_CANDIDATES", None)
+    env.pop("STAYFIXED_PYTHON_CANDIDATES", None)
     if env_root is not None:
         env["CLAUDE_PLUGIN_ROOT"] = str(env_root)
     if candidates is not None:
-        env["KEELLINE_PYTHON_CANDIDATES"] = candidates
+        env["STAYFIXED_PYTHON_CANDIDATES"] = candidates
     return env
 
 
@@ -105,7 +105,7 @@ def _run(
 
     **`cwd` defaults to `plugin_root`, which is under `tmp_path` and is not a repository.** It
     used to inherit pytest's own, which is this checkout — so the wrapper's `git rev-parse`
-    named *Keelline's own tree* as the project root, and `sys.executable` under `uv run` is
+    named *stayfixed's own tree* as the project root, and `sys.executable` under `uv run` is
     `<checkout>/.venv/bin/python3`, inside it. Every case passing `candidates=sys.executable`
     was therefore one edit away from being about the interpreter containment instead of what it
     says it is about. The same hermeticity `tests/doctor/test_checks.py::_env` enforces, for the
@@ -113,7 +113,7 @@ def _run(
 
     **`candidates` arrives over a pty, because the wrapper honours that variable only from an
     interactive terminal.** It names the *program* the wrapper executes, so it is gated where
-    `config/machine.py` gates `KEELLINE_CONFIG` — and a hook's stdin is the harness's JSON
+    `config/machine.py` gates `STAYFIXED_CONFIG` — and a hook's stdin is the harness's JSON
     payload on a pipe, never a terminal. Every case below that passes one is therefore about
     the probe itself and says nothing about what an `env` block can reach;
     `test_an_interpreter_the_environment_names_is_ignored_off_a_terminal` is that case, and it
@@ -175,11 +175,11 @@ def test_an_interpreter_below_the_floor_is_rejected(tmp_path: Path) -> None:
     # than a fake that exits non-zero for every argument. A fake cannot exercise
     # `sys.version_info >= (3, 11)` at all: mutate the predicate to `True` and the fake still
     # refuses, so the row would duplicate the one above and prove nothing. `_old_python` is the
-    # tree's own seam for this, and CI pins it through KEELLINE_OLD_PYTHON so the row runs there
+    # tree's own seam for this, and CI pins it through STAYFIXED_OLD_PYTHON so the row runs there
     # rather than skipping everywhere.
     old = _old_python()
     if old is None:
-        pytest.skip("no interpreter below 3.11 on this machine; set KEELLINE_OLD_PYTHON")
+        pytest.skip("no interpreter below 3.11 on this machine; set STAYFIXED_OLD_PYTHON")
     result = _run(
         "closed",
         "hook",
@@ -212,7 +212,7 @@ def test_a_plugin_root_in_the_environment_does_not_choose_the_launcher(tmp_path:
     # plugin's own, and the program it hands to Python is derived from that wrapper's path. A
     # variable of the same name arriving from anywhere else — a committed `.claude/settings.json`
     # `env` block is the case `config/machine.py` gates two other variables against — must change
-    # nothing, because this choice is made before any Keelline guard runs.
+    # nothing, because this choice is made before any stayfixed guard runs.
     #
     # The two roots are told apart by their exit codes, not by a message: `theirs` exits 3,
     # which under `closed` policy becomes a KL_RC refusal and exit 2.
@@ -245,9 +245,9 @@ def test_an_interpreter_the_environment_names_is_ignored_off_a_terminal(tmp_path
     # below itself: closing *which file* the wrapper hands Python, while the environment still
     # chose *which Python*, is the same class of hole with a different name.
     # Measured on the shipped wrapper: with the `env`-block equivalent of
-    # KEELLINE_PYTHON_CANDIDATES=<repo>/evil-python, the wrapper ran
-    # `<repo>/evil-python <plugin>/scripts/keelline hook PreToolUse` and exited 0 — arbitrary
-    # code on every PreToolUse, before any Keelline guard. `config/machine.py`'s ruling is the
+    # STAYFIXED_PYTHON_CANDIDATES=<repo>/evil-python, the wrapper ran
+    # `<repo>/evil-python <plugin>/scripts/stayfixed hook PreToolUse` and exited 0 — arbitrary
+    # code on every PreToolUse, before any stayfixed guard. `config/machine.py`'s ruling is the
     # one followed here: "Gating one of a pair of equivalent inputs is not a partial defence, it
     # is a redirect with a longer name", so the gate is that module's own — an interactive
     # terminal — and a hook's stdin is the harness's payload on a pipe.
@@ -290,7 +290,7 @@ def _clone_shipping_an_interpreter(tmp_path: Path) -> tuple[Path, Path, Path]:
 
 
 def test_an_interpreter_inside_the_project_root_is_never_used(tmp_path: Path) -> None:
-    # Gating `KEELLINE_PYTHON_CANDIDATES` on a terminal moved the program chooser from one
+    # Gating `STAYFIXED_PYTHON_CANDIDATES` on a terminal moved the program chooser from one
     # variable to another: the hook path then always uses the built-in list, whose last entry is
     # a `PATH` lookup, and `PATH` reaches this process from the same committed `env` block. The
     # entry is not droppable -- it is the fall-through the fail-closed matrix's "only 3.9 available"
@@ -398,7 +398,7 @@ def test_the_project_root_is_never_taken_from_an_inherited_git_environment(tmp_p
     # `hooks/dispatch._git_toplevel` scrubs this exact call one layer down and names the failure
     # verbatim; the wrapper did not. Measured: `cd repoA` with GIT_DIR/GIT_WORK_TREE naming
     # repoB put the launcher in repoB, and every entry but the dispatcher's relies on `--root`
-    # defaulting to `.` — so the whole hook then read another repository's keelline.toml,
+    # defaulting to `.` — so the whole hook then read another repository's stayfixed.toml,
     # budgets and note store. This is the Codex hot path, where CLAUDE_PROJECT_DIR is unset.
     here, there = tmp_path / "here", tmp_path / "there"
     for repository in (here, there):
@@ -427,11 +427,11 @@ def test_a_launcher_that_cannot_be_read_refuses_with_a_token(tmp_path: Path) -> 
     # impossible, and a state `doctor`'s wrapper row reported green for, because it keys on
     # finding a token.
     root = _plugin_root(tmp_path, 0)
-    (root / "scripts" / "keelline").chmod(0o000)
+    (root / "scripts" / "stayfixed").chmod(0o000)
     try:
         result = _run("closed", "hook", "PreToolUse", plugin_root=root)
     finally:
-        (root / "scripts" / "keelline").chmod(0o755)
+        (root / "scripts" / "stayfixed").chmod(0o755)
     assert result.returncode == 2
     assert "KL_NO_LAUNCHER" in result.stderr
 
@@ -443,7 +443,7 @@ def test_a_project_root_that_cannot_be_entered_says_so(
     # The silent half of the same line. A root that cannot be *resolved* is a correct open
     # degradation — nothing is configured, nothing is emitted. A root that WAS named and cannot
     # be entered is not: the process stayed in the harness's cwd, and if that happened to be
-    # another Keelline project every `--root`-defaulting entry read *that* project's
+    # another stayfixed project every `--root`-defaulting entry read *that* project's
     # configuration, with no token and nothing in the sink.
     root = _plugin_root(tmp_path, 0, echo_cwd=True)
     env = _env(root, None, None)
@@ -493,10 +493,10 @@ def test_the_two_platform_codes_pass_through_untouched(tmp_path: Path, rc: int) 
     # a handler's deny, and the wrapper must not relabel it as its own failure.
     result = _run("closed", "hook", "PreToolUse", plugin_root=_plugin_root(tmp_path, rc))
     assert result.returncode == rc
-    assert "keelline:" not in result.stderr
+    assert "stayfixed:" not in result.stderr
 
 
-def test_keelline_runs_from_the_project_root(tmp_path: Path) -> None:
+def test_stayfixed_runs_from_the_project_root(tmp_path: Path) -> None:
     # Every hooks.json entry but the dispatcher's relies on `--root` defaulting to `.`, and the
     # harness does not promise to launch a hook in the project. The wrapper resolves the root —
     # CLAUDE_PROJECT_DIR, else git — and changes into it, so one rule serves every entry.
@@ -558,7 +558,7 @@ def test_the_wrapper_never_runs_a_git_the_environment_put_on_path(tmp_path: Path
     # hot path where `CLAUDE_PROJECT_DIR` is unset and `git` is the only anchor: a clone that
     # ships a `git` had that binary EXECUTED on every hook invocation, before any guard of ours,
     # and its stdout became the root every `--root`-defaulting entry then ran against. Gating
-    # `KEELLINE_PYTHON_CANDIDATES` and containing the interpreter while the anchor itself was
+    # `STAYFIXED_PYTHON_CANDIDATES` and containing the interpreter while the anchor itself was
     # an environment-chosen program is the "pair of equivalent inputs" defect a third time.
     decoy = tmp_path / "decoy"
     decoy.mkdir()

@@ -1,4 +1,4 @@
-"""The inventory `keelline assess` writes: every configured gate over the smoke fixture, each
+"""The inventory `stayfixed assess` writes: every configured gate over the smoke fixture, each
 gate finding as an item, the one serialisation, and a summary that prints counts and never a
 path."""
 
@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from keelline.assess.assessment import (
+from stayfixed.assess.assessment import (
     FORMAT,
     NOT_IGNORED,
     SKIPPED,
@@ -20,10 +20,10 @@ from keelline.assess.assessment import (
     render,
     write,
 )
-from keelline.assess.gates import BUILTIN, GateResult
-from keelline.attach.api import IGNORE_BODY
-from keelline.findings import LISTED_LIMIT, Finding
-from keelline.project.api import ASSESSMENT
+from stayfixed.assess.gates import BUILTIN, GateResult
+from stayfixed.attach.api import IGNORE_BODY
+from stayfixed.findings import LISTED_LIMIT, Finding
+from stayfixed.project.api import ASSESSMENT
 from tests.assess.smoke import BASE, smoke_repo
 from tests.cli import cli
 from tests.gitfixture import git, needs_git

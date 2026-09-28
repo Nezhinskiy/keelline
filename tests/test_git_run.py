@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from keelline import gitenv
-from keelline.gitenv import NO_ANSWER, git_run
+from stayfixed import gitenv
+from stayfixed.gitenv import NO_ANSWER, git_run
 from tests.gitfixture import plant_path
 
 SRC = Path(__file__).resolve().parents[1] / "src"
@@ -254,7 +254,7 @@ def test_the_product_ships_with_no_floor_under_its_bounds() -> None:
     # a floor under every git bound" -> this reddens.
     env = {key: value for key, value in os.environ.items() if key != gitenv.FLOOR_VARIABLE}
     shipped = subprocess.run(
-        [sys.executable, "-P", "-c", "from keelline import gitenv; print(gitenv.bound_floor())"],
+        [sys.executable, "-P", "-c", "from stayfixed import gitenv; print(gitenv.bound_floor())"],
         capture_output=True,
         text=True,
         check=False,
@@ -306,16 +306,16 @@ def test_the_floor_variable_is_capped(
 # latency, so a bound shrunk below it — `QUERY_TIMEOUT_SECONDS = 0.001` — passed every test
 # that runs through it, and only an owner's machine would have met a `git` never given the time.
 GIT_RUN_BOUNDS = (
-    "keelline.gitenv.GIT_TIMEOUT_SECONDS",
-    "keelline.gitenv.QUERY_TIMEOUT_SECONDS",
-    "keelline.ledger.write.FETCH_TIMEOUT_SECONDS",
-    "keelline.overlay.sync.SYNC_TIMEOUT_SECONDS",
-    "keelline.guards.commit.LOG_TIMEOUT_SECONDS",
-    "keelline.guards.hygiene.STATUS_TIMEOUT_SECONDS",
+    "stayfixed.gitenv.GIT_TIMEOUT_SECONDS",
+    "stayfixed.gitenv.QUERY_TIMEOUT_SECONDS",
+    "stayfixed.ledger.write.FETCH_TIMEOUT_SECONDS",
+    "stayfixed.overlay.sync.SYNC_TIMEOUT_SECONDS",
+    "stayfixed.guards.commit.LOG_TIMEOUT_SECONDS",
+    "stayfixed.guards.hygiene.STATUS_TIMEOUT_SECONDS",
 )
 # The doctor's `git ls-remote` goes through the `Runner` seam rather than `git_run`, and every
 # test stubs that seam, so a bound shrunk there passes the suite the same way.
-GIT_BOUNDS = (*GIT_RUN_BOUNDS, "keelline.doctor.checks.CI_REF_TIMEOUT_SECONDS")
+GIT_BOUNDS = (*GIT_RUN_BOUNDS, "stayfixed.doctor.checks.CI_REF_TIMEOUT_SECONDS")
 
 
 @pytest.mark.parametrize("bound", GIT_BOUNDS)
@@ -367,7 +367,7 @@ def test_every_bound_a_git_run_call_passes_is_one_the_table_pins() -> None:
     pinned = {bound.rsplit(".", 1)[1] for bound in GIT_RUN_BOUNDS}
     reached = {"GIT_TIMEOUT_SECONDS"}  # `git_run`'s own default, for a call that passes none
     unpinned = []
-    for path in sorted((SRC / "keelline").rglob("*.py")):
+    for path in sorted((SRC / "stayfixed").rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         enclosing = {
             id(node): function

@@ -13,8 +13,8 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-import keelline
-from keelline.scaffold import Manifest, digest
+import stayfixed
+from stayfixed.scaffold import Manifest, digest
 from tests.floor import developer_free_environ
 from tests.gitfixture import git, needs_git
 from tests.project.repos import tree
@@ -23,11 +23,11 @@ ROOT = Path(__file__).resolve().parents[2]
 OLDER = "0.0.1"
 
 
-def _keelline(root: Path, home: Path, *argv: str) -> subprocess.CompletedProcess[str]:
+def _stayfixed(root: Path, home: Path, *argv: str) -> subprocess.CompletedProcess[str]:
     env = developer_free_environ()
     env["HOME"] = str(home)
     return subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "keelline"), *argv, "--root", str(root)],
+        [sys.executable, str(ROOT / "scripts" / "stayfixed"), *argv, "--root", str(root)],
         cwd=root,
         stdin=subprocess.DEVNULL,
         capture_output=True,
@@ -37,7 +37,7 @@ def _keelline(root: Path, home: Path, *argv: str) -> subprocess.CompletedProcess
     )
 
 
-def _as_an_older_keelline_left_it(root: Path, record_id: str, text: str) -> None:
+def _as_an_older_stayfixed_left_it(root: Path, record_id: str, text: str) -> None:
     """Write `text` where `record_id` lives, and record it, as a release ago would have."""
     manifest = Manifest.read(root)
     record = manifest.get(record_id)
@@ -57,34 +57,34 @@ def test_init_upgrade_and_uninstall_round_trip_and_keep_every_hand_edit(tmp_path
     git(root, "init", "-q", "-b", "main")
     git(root, "remote", "add", "origin", "git@github.com:owner/widget.git")
 
-    done = _keelline(root, home, "init", "--yes", "--no-ci")
+    done = _stayfixed(root, home, "init", "--yes", "--no-ci")
     assert done.returncode == 0, done.stdout + done.stderr
 
-    # A release ago Keelline recorded an older version and wrote other bytes into the
-    # documentation policy; the user has since edited the roadmap. An older Keelline cannot be
+    # A release ago stayfixed recorded an older version and wrote other bytes into the
+    # documentation policy; the user has since edited the roadmap. An older stayfixed cannot be
     # run through a subprocess, so the repository is written as one would have left it.
     policy = root / "docs" / "architecture" / "documentation.md"
     current = policy.read_text(encoding="utf-8")
-    config = (root / "keelline.toml").read_text(encoding="utf-8")
-    running = keelline.__version__
-    _as_an_older_keelline_left_it(
+    config = (root / "stayfixed.toml").read_text(encoding="utf-8")
+    running = stayfixed.__version__
+    _as_an_older_stayfixed_left_it(
         root, "config", config.replace(f'version = "{running}"', f'version = "{OLDER}"')
     )
-    _as_an_older_keelline_left_it(root, "documentation-policy", "an older release's policy\n")
+    _as_an_older_stayfixed_left_it(root, "documentation-policy", "an older release's policy\n")
     roadmap = root / "docs" / "roadmap.md"
     roadmap.write_text(roadmap.read_text(encoding="utf-8") + "\nOur own line.\n", encoding="utf-8")
 
-    done = _keelline(root, home, "upgrade", "--json")
+    done = _stayfixed(root, home, "upgrade", "--json")
     assert done.returncode == 0, done.stdout + done.stderr
     assert json.loads(done.stdout)["moved"] == [
-        {"key": "keelline.version", "before": OLDER, "after": running}
+        {"key": "stayfixed.version", "before": OLDER, "after": running}
     ]
     assert policy.read_text(encoding="utf-8") == current
-    assert (root / "keelline.toml").read_text(encoding="utf-8") == config
+    assert (root / "stayfixed.toml").read_text(encoding="utf-8") == config
     assert "Our own line." in roadmap.read_text(encoding="utf-8")
 
-    # `keelline.toml` was re-stamped by the upgrade, so uninstall recognises it as Keelline's.
-    done = _keelline(root, home, "uninstall", "--json")
+    # `stayfixed.toml` was re-stamped by the upgrade, so uninstall recognises it as stayfixed's.
+    done = _stayfixed(root, home, "uninstall", "--json")
     assert done.returncode == 0, done.stdout + done.stderr
     assert json.loads(done.stdout)["left"] == ["docs/roadmap.md"]
     assert tree(root) == {"docs", "docs/roadmap.md"}

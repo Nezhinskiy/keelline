@@ -1,4 +1,4 @@
-"""What `keelline attach` writes, and the three refusals it owes before it writes anything.
+"""What `stayfixed attach` writes, and the three refusals it owes before it writes anything.
 
 The third of the rules that keep the overlay trusted is here: a write that would widen a permission
 refuses without an explicit confirmation. It is a parameter and a `Refusal` rather than a step in a
@@ -16,14 +16,14 @@ from pathlib import Path
 
 import pytest
 
-from keelline import fsops
-from keelline.attach.api import ledger
-from keelline.attach.write import GROUP_ESCAPES, REAL_DIRECTORIES, attach
-from keelline.errors import Failure, Refusal
-from keelline.memory.api import PROJECT_RECORD
-from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX
-from keelline.runner import Completed
-from keelline.scaffold import Style, extract, owned_ids
+from stayfixed import fsops
+from stayfixed.attach.api import ledger
+from stayfixed.attach.write import GROUP_ESCAPES, REAL_DIRECTORIES, attach
+from stayfixed.errors import Failure, Refusal
+from stayfixed.memory.api import PROJECT_RECORD
+from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
+from stayfixed.runner import Completed
+from stayfixed.scaffold import Style, extract, owned_ids
 
 # The fixture the binding tests already build, reused rather than copied: one spelling of the
 # overlay layout keeps the two modules from drifting apart about what `--store` names.
@@ -38,7 +38,7 @@ from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
-LEDGER = ".keelline/local/attach.json"
+LEDGER = ".stayfixed/local/attach.json"
 SETTINGS = ".claude/settings.local.json"
 RULE = "Bash(uv run pytest:*)"
 ENTRY = {"type": "command", "command": "echo hello"}
@@ -119,7 +119,7 @@ def _attachable(
 
 def _check_ignore(root: Path, relative: str) -> bool:
     # `run_git` and not `git`: `check-ignore` answers 1 for "nothing matched", which is an
-    # answer and not a failure — the same distinction `keelline.gitenv.git_run` makes.
+    # answer and not a failure — the same distinction `stayfixed.gitenv.git_run` makes.
     return run_git(root, "check-ignore", "-q", "--", relative).returncode == 0
 
 
@@ -152,7 +152,7 @@ def test_an_unconfirmed_attach_that_would_widen_a_permission_refuses(tmp_path: P
     # after a printed diff and an explicit confirmation, and an earlier revision implemented that
     # rule with nothing at all: the only mechanism was a Markdown step telling a model to run
     # `--check` first. A repository that says "setup requires
-    # `keelline attach --store <path it names>`" gets a compliant agent to grant it tool
+    # `stayfixed attach --store <path it names>`" gets a compliant agent to grant it tool
     # permissions, and no human sees the diff.
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     with pytest.raises(Refusal):
@@ -220,7 +220,7 @@ def test_an_entry_the_overlay_stopped_granting_is_taken_back_out(tmp_path: Path)
     # rule, no wanted entry — so it used to return the document untouched, leaving a marked
     # entry that still FIRES while the ledger (rebuilt from the overlay) forgot it. `doctor`
     # then reads an entry claiming the marker and named in no ledger, goes red, and tells the
-    # owner to remove an entry Keelline installed: a false red with actively wrong advice.
+    # owner to remove an entry stayfixed installed: a false red with actively wrong advice.
     #
     # `apply_entries(document, {})` is the engine's removal path and is what now runs.
     hooks = {"SessionStart": [{"hooks": [ENTRY]}]}
@@ -294,7 +294,7 @@ def test_a_group_mixing_a_marked_entry_with_a_foreign_one_is_split_not_replaced(
                                 {"type": "command", "command": "mine.sh"},
                                 {
                                     "type": "command",
-                                    "command": "stale.sh  # keelline:overlay-SessionStart-1",
+                                    "command": "stale.sh  # stayfixed:overlay-SessionStart-1",
                                 },
                             ]
                         }
@@ -320,8 +320,8 @@ def test_a_group_mixing_a_marked_entry_with_a_foreign_one_is_split_not_replaced(
         for entry in group["hooks"]
     ]
     assert "mine.sh" in commands
-    assert "stale.sh  # keelline:overlay-SessionStart-1" not in commands
-    assert "echo hello  # keelline:overlay-SessionStart-1" in commands
+    assert "stale.sh  # stayfixed:overlay-SessionStart-1" not in commands
+    assert "echo hello  # stayfixed:overlay-SessionStart-1" in commands
 
 
 def test_a_first_attach_records_the_remote_and_the_date(tmp_path: Path) -> None:
@@ -379,7 +379,7 @@ def test_a_record_that_already_binds_this_repository_is_left_alone(tmp_path: Pat
 
 
 def test_the_merged_rules_are_recorded_where_they_can_be_removed_again(tmp_path: Path) -> None:
-    # The ledger lives under .keelline/local/, because the committed manifest would
+    # The ledger lives under .stayfixed/local/, because the committed manifest would
     # publish a digest of the owner's personal allow rules to collaborators.
     hooks = {"SessionStart": [{"hooks": [ENTRY]}]}
     root, store, machine = _attachable(tmp_path, allow=(RULE,), hooks=hooks)
@@ -399,10 +399,11 @@ def test_the_merged_rules_are_recorded_where_they_can_be_removed_again(tmp_path:
 
 
 def test_attach_writes_the_ignore_region_that_keeps_the_ledger_untracked(tmp_path: Path) -> None:
-    # The repository has no `.keelline` line today and nothing under `templates/project/` ships one,
-    # so an earlier revision's confidentiality argument rested on a file that does not exist. Assert
-    # the region exists after attach, and assert `git check-ignore -q .keelline/local/attach.json`
-    # succeeds — not that nothing is tracked, which passes on a fixture that has committed nothing.
+    # The repository has no `.stayfixed` line today and nothing under `templates/project/` ships
+    # one, so an earlier revision's confidentiality argument rested on a file that does not exist.
+    # Assert the region exists after attach, and assert `git check-ignore -q
+    # .stayfixed/local/attach.json` succeeds — not that nothing is tracked, which passes on a
+    # fixture that has committed nothing.
     root, store, machine = _attachable(tmp_path)
     assert not _check_ignore(root, LEDGER)
     attach(
@@ -415,7 +416,7 @@ def test_attach_writes_the_ignore_region_that_keeps_the_ledger_untracked(tmp_pat
         home=tmp_path / "home",
     )
     body = extract((root / ".gitignore").read_text(encoding="utf-8"), "ignore", Style.HASH)
-    assert body is not None and ".keelline/local/" in body
+    assert body is not None and ".stayfixed/local/" in body
     assert _check_ignore(root, LEDGER)
 
 
@@ -493,8 +494,8 @@ def test_attach_refuses_when_the_ignore_region_cannot_be_written(tmp_path: Path)
 
 
 def _with_groups(root: Path, listed: str) -> None:
-    text = (root / "keelline.toml").read_text(encoding="utf-8")
-    (root / "keelline.toml").write_text(
+    text = (root / "stayfixed.toml").read_text(encoding="utf-8")
+    (root / "stayfixed.toml").write_text(
         text.replace('groups = ["developer", "project-stable"]', f"groups = {listed}"),
         encoding="utf-8",
     )
@@ -827,7 +828,7 @@ def test_an_overlay_hooks_file_with_an_unreadable_shape_is_refused(tmp_path: Pat
 
 def test_a_ledger_that_is_not_json_is_a_failure_and_not_an_empty_one(tmp_path: Path) -> None:
     # An empty ledger reads as "attach added nothing", which makes `detach` a no-op on a
-    # repository that has Keelline's rules in it — the quiet half of the failure this file is
+    # repository that has stayfixed's rules in it — the quiet half of the failure this file is
     # the only witness to.
     root, store, machine = _attachable(tmp_path)
     attach(
@@ -934,7 +935,7 @@ def test_a_pre_commit_that_cannot_run_is_a_note_and_never_a_traceback(tmp_path: 
 def _committed_ledger(root: Path, store: Path, **fields: object) -> None:
     """The ledger a clone committed, as a fresh checkout can genuinely hold one.
 
-    `.gitignore` does not untrack a file a clone committed, and the `keelline:ignore` region
+    `.gitignore` does not untrack a file a clone committed, and the `stayfixed:ignore` region
     `attach` writes does not either — so this path can be populated before `attach` has ever run
     here, which is the state both cases below are about.
     """
@@ -958,7 +959,7 @@ def test_a_ledger_no_attach_could_have_written_is_refused_before_the_first_write
     # door over, and introduced by the commit that wrote that rule down. `ledger()` refuses a
     # ledger naming files or settings keys `attach` could not have written, and `_write_ledger`
     # used to be the thing that asked for it — from the fourth write of the run. So a clone
-    # committing such a ledger got `attach` to write the `keelline:ignore` region, copy
+    # committing such a ledger got `attach` to write the `stayfixed:ignore` region, copy
     # `.codex/rules/*` and merge `.claude/settings.local.json`, and only then exit 2 — with the
     # committed ledger still on disk, which `doctor._attached` keys on. `attach --check` reports
     # clean beforehand, because it does not read the ledger at all.
@@ -1134,7 +1135,7 @@ def test_a_worktree_listing_git_gave_no_answer_for_is_a_failure_about_this_machi
     # them. A worktree path that is not UTF-8 is no longer a cause — the listing is decoded
     # losslessly — so the message does not send the owner looking for one. Mutation
     # (advisory): put the UTF-8 clause back — the last assertion reddens.
-    from keelline.attach import write as module
+    from stayfixed.attach import write as module
 
     monkeypatch.setattr(module, "git_run", lambda *a, **k: (-1, ""))
     with pytest.raises(Failure, match="check that `git` runs here") as caught:

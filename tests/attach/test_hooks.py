@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-import keelline
-from keelline.attach.hooks import (
+import stayfixed
+from stayfixed.attach.hooks import (
     MEMORY_PATH_REFUSED,
     NO_OVERLAY,
     NO_UPSTREAM,
@@ -27,15 +27,15 @@ from keelline.attach.hooks import (
     UNPUSHED,
     register,
 )
-from keelline.config.loader import CONFIG_FILE, load
-from keelline.hooks.api import EVENTS, HookEvent, HookResult, Policy
-from keelline.hooks.registry import discover
+from stayfixed.config.loader import CONFIG_FILE, load
+from stayfixed.hooks.api import EVENTS, HookEvent, HookResult, Policy
+from stayfixed.hooks.registry import discover
 from tests.gitfixture import git, needs_git
 from tests.overlay.test_requires import overlay_with
 
 ORIGIN = "git@github.com:owner/widget.git"
 CONFIG = (
-    '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+    '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
     '[memory]\nmode = "{mode}"\ngroups = ["developer", "project-stable"]\n'
 )
 
@@ -55,13 +55,13 @@ def _event(root: Path, source: str | None = None) -> HookEvent:
 
 
 def _machine_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """The hook path reads `<home>/.config/keelline/config.toml` and nothing else; HOME is
+    """The hook path reads `<home>/.config/stayfixed/config.toml` and nothing else; HOME is
     pinned so nothing of the developer's is read. `tests/doctor/test_command.py` pins it the same
     way, for the same reason and with the same one call."""
     home = tmp_path / "home"
-    (home / ".config" / "keelline").mkdir(parents=True)
+    (home / ".config" / "stayfixed").mkdir(parents=True)
     monkeypatch.setenv("HOME", str(home))
-    return home / ".config" / "keelline" / "config.toml"
+    return home / ".config" / "stayfixed" / "config.toml"
 
 
 def _project(tmp_path: Path, *, mode: str = "overlay") -> Path:
@@ -225,22 +225,22 @@ def test_an_upstream_that_is_behind_still_reports_both_counts(
 
 
 @needs_git
-def test_an_overlay_that_requires_a_newer_keelline_says_so(
+def test_an_overlay_that_requires_a_newer_stayfixed_says_so(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root, overlay, machine = _recorded(tmp_path, monkeypatch, requires=">=99.0.0")
     _bind(overlay)
     assert _run(root, machine, None) == REQUIRES.format(
-        spec=">=99.0.0", running=keelline.__version__
+        spec=">=99.0.0", running=stayfixed.__version__
     )
 
 
 @needs_git
-def test_a_requirement_this_keelline_cannot_read_is_its_own_line(
+def test_a_requirement_this_stayfixed_cannot_read_is_its_own_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Unreadable is not unsatisfied: a spec `satisfies` answers `None` for is a declaration this
-    # Keelline has no verdict on, so it is named as unreadable and — this is the half that
+    # stayfixed has no verdict on, so it is named as unreadable and — this is the half that
     # matters — the declaration itself is never quoted into the context.
     # Mutation (comment): `if verdict is None` -> `if verdict is not None` -> this reddens.
     root, overlay, machine = _recorded(tmp_path, monkeypatch, requires="~=1.0")
@@ -260,7 +260,7 @@ def test_other_modes_no_config_and_a_broken_machine_file_are_silence_or_one_fixe
     assert _run(_project(tmp_path, mode="local-only"), machine, None) is None
     root = _project(tmp_path / "two")
     # No machine file at all is "no overlay recorded", which is the ordinary state before
-    # `keelline setup` has run and is not the same event as a file that will not parse.
+    # `stayfixed setup` has run and is not the same event as a file that will not parse.
     assert handler.run(_event(root), load(root, machine=root / "absent.toml")).context == NO_OVERLAY
     machine.write_text("[overlay\n", encoding="utf-8")
     result = handler.run(_event(root), load(root, machine=root / "absent.toml"))
@@ -306,8 +306,8 @@ def test_the_budget_this_module_documents_is_the_one_it_pays(
     `test_a_context_that_has_already_been_asked_does_not_re_pay_the_sync` holds. This case carries
     no `source` at all, which is the invocation that pays.
     """
-    from keelline.attach import hooks as attach_hooks
-    from keelline.overlay import api as overlay_api
+    from stayfixed.attach import hooks as attach_hooks
+    from stayfixed.overlay import api as overlay_api
 
     asked: list[Path] = []
     real = overlay_api.overlay_sync
@@ -363,7 +363,7 @@ def test_a_context_that_has_already_been_asked_does_not_re_pay_the_sync(
 
     Mutation: `mutations.toml`'s "a compacted session re-pays the overlay sync".
     """
-    from keelline.overlay import api as overlay_api
+    from stayfixed.overlay import api as overlay_api
 
     asked: list[Path] = []
     real = overlay_api.overlay_sync
@@ -391,7 +391,7 @@ def test_a_context_that_has_already_been_asked_does_not_re_pay_the_sync(
         assert _run(root, machine, None, source=source) is None, source
     assert asked == [overlay] * len(fresh)
     # The cost, asserted rather than only documented: work that arrives mid-session is not
-    # reported to that session's own compaction. `keelline doctor` is what answers on demand.
+    # reported to that session's own compaction. `stayfixed doctor` is what answers on demand.
     (overlay / "later.md").write_text("more\n", encoding="utf-8")
     assert _run(root, machine, None, source="compact") is None
     # And the case the gate used to swallow: the conversation resumed later hears it. The overlay
@@ -413,7 +413,7 @@ def test_a_failure_with_no_except_of_its_own_is_silence_not_an_exception(
     with the `try/except` removed, so the call the handler makes has to be forced to fail outright.
 
     `unlinked_groups` is that call here. Only `PathEscape` is caught around it, and the handler
-    imports it from `keelline.attach.binding` inside its own body, so the module attribute is the
+    imports it from `stayfixed.attach.binding` inside its own body, so the module attribute is the
     seam a monkeypatch reaches. The assertion is silence, and this is deliberately the case where
     the backstop *loses* a line: `NOT_ATTACHED` is already in `lines` and goes with the result,
     which is the cost an open handler accepts and the reason this is a floor and not a filter — the
@@ -422,7 +422,7 @@ def test_a_failure_with_no_except_of_its_own_is_silence_not_an_exception(
 
     Mutation: `mutations.toml`'s "an open session handler lets an unforeseen failure out".
     """
-    from keelline.attach import binding as binding_module
+    from stayfixed.attach import binding as binding_module
 
     def raising(*_args: object, **_kwargs: object) -> object:
         raise RuntimeError("something no except of its own covers")
@@ -457,8 +457,8 @@ def test_the_registration_is_what_the_dispatcher_acts_on(
     `registry.discover` already refuses a value outside `EVENTS`, and a valid-but-wrong one is
     what this assertion is for.
     """
-    from keelline.attach import hooks as attach_hooks
-    from keelline.hooks.dispatch import Recorder, dispatch
+    from stayfixed.attach import hooks as attach_hooks
+    from stayfixed.hooks.dispatch import Recorder, dispatch
 
     seen: list[str] = []
 

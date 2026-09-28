@@ -9,3 +9,7 @@ it consumes and produces; a plan the owner cut across several packages — a wav
 one delivery spanning a lane — names all of them on that line and says why they ship together.
 The two P0 documents here were copied from that repository, which keeps its own copies as
 history.
+
+The project was renamed to stayfixed on 2026-09-28, before its first release. Plans dated
+earlier were written under the former name and keep it, as the record of the work as it was
+argued; their module paths and commands read `stayfixed` today.

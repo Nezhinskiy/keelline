@@ -52,7 +52,7 @@ jobs:
           enable-cache: true
           python-version: ${{ matrix.python }}
       - name: An interpreter below the floor, for the launcher's version guard
-        # `scripts/keelline` is the only thing between a Python 3.9 user and a SyntaxError, and
+        # `scripts/stayfixed` is the only thing between a Python 3.9 user and a SyntaxError, and
         # `test_an_old_interpreter_is_refused_with_a_reason` skipped for want of one on every
         # machine that has ever run it — so the guard was asserted nowhere, ever. The test is
         # handed this one by path rather than by searching, and fails rather than skips when it
@@ -82,13 +82,13 @@ jobs:
         # which containment branches are exercised is how an untested `..` argument stayed
         # invisible: the walk's loop was covered, just never with an escaping path.
         env:
-          KEELLINE_OLD_PYTHON: ${{ steps.old-python.outputs.python-path }}
+          STAYFIXED_OLD_PYTHON: ${{ steps.old-python.outputs.python-path }}
         run: uv run pytest -n auto --cov --cov-report=term-missing --cov-fail-under=92
       - name: Version discipline
-        run: uv run keelline release check
+        run: uv run stayfixed release check
       - name: Build
         run: uv build
-      - name: The artifacts carry what an installed Keelline needs
+      - name: The artifacts carry what an installed stayfixed needs
         # Every earlier test resolves the template tree to the checkout; only an artifact
         # can say whether the build backend shipped it.
         run: uv run python scripts/check_artifacts.py dist
@@ -99,7 +99,7 @@ jobs:
         run: |
           uv venv "$RUNNER_TEMP/wheel"
           uv pip install --python "$RUNNER_TEMP/wheel/bin/python" dist/*.whl
-          "$RUNNER_TEMP/wheel/bin/keelline" overlay create --owner ci --name rendered --local --root "$RUNNER_TEMP"
+          "$RUNNER_TEMP/wheel/bin/stayfixed" overlay create --owner ci --name rendered --local --root "$RUNNER_TEMP"
           uv run python scripts/check_artifacts.py rendered "$RUNNER_TEMP/rendered"
 
   # The mutation oracle, in a job of its own and on one configuration.

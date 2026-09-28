@@ -3,7 +3,7 @@ configuration.
 
 `tests/gitfixture.py` seals the `git` a fixture runs (`GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM`
 at `os.devnull`, `GIT_CONFIG_NOSYSTEM` set, `HOME` under `tmp_path`). The `git` the product
-runs is another matter: `keelline.gitenv.scrubbed_env` keeps `HOME` on purpose, because a real
+runs is another matter: `stayfixed.gitenv.scrubbed_env` keeps `HOME` on purpose, because a real
 user's global excludes and configuration are theirs to have honoured, and it drops every
 `GIT_CONFIG_*` variable. So
 under test that `git` read the developer's `~/.gitconfig` and `~/.config/git/ignore`: with
@@ -27,13 +27,13 @@ from pathlib import Path
 
 import pytest
 
-from keelline import gitenv
+from stayfixed import gitenv
 from tests.floor import SUITE_GIT_FLOOR_SECONDS
 
 
 @pytest.fixture(autouse=True)
 def _git_outlasts_the_machines_load(monkeypatch: pytest.MonkeyPatch) -> None:
-    # The floor under every `git` the product runs, in this process and in every `keelline` a
+    # The floor under every `git` the product runs, in this process and in every `stayfixed` a
     # test starts (`tests/floor.py` says why it is an environment variable). A test about a bound
     # running out removes it and passes a small bound of its own.
     monkeypatch.setenv(gitenv.FLOOR_VARIABLE, str(SUITE_GIT_FLOOR_SECONDS))

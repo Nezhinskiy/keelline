@@ -1,6 +1,6 @@
 # Asking across harnesses
 
-The questions come from `keelline init --questions --json`: each property under
+The questions come from `stayfixed init --questions --json`: each property under
 `questions.properties` is one question, its `oneOf` or `items.enum` are its options, and its
 `default` is the recommendation, offered first and marked so. `project.name` and
 `project.base_branch` are free text held to the property's `pattern`; the command refuses a

@@ -1,10 +1,10 @@
 {
-  "name": "keelline-marketplace",
-  "description": "Keelline, a methodology harness for coding agents, published from its own repository.",
-  "owner": { "name": "Nezhinskiy" },
+  "name": "stayfixed-marketplace",
+  "description": "stayfixed, a methodology harness for coding agents, published from its own repository.",
+  "owner": { "name": "stayfixed" },
   "plugins": [
     {
-      "name": "keelline",
+      "name": "stayfixed",
       "source": "./",
       "description": "A methodology harness for coding agents: bug ledger, curated working memory behind a trust gate, and fail-closed guards."
     }

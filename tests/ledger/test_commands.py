@@ -1,6 +1,6 @@
 """The `bugs` group through the real frame: one line out, three exit codes, `--json`.
 
-keelline:ledger:fixtures — the identifiers below are sample data, not claims about a ledger.
+stayfixed:ledger:fixtures — the identifiers below are sample data, not claims about a ledger.
 """
 
 from __future__ import annotations
@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from keelline.cli import build_parser, discover_registrars, run
-from keelline.findings import Finding
-from keelline.printed import UNPRINTABLE
+from stayfixed.cli import build_parser, discover_registrars, run
+from stayfixed.findings import Finding
+from stayfixed.printed import UNPRINTABLE
 from tests.crafted import CRAFTED, assert_never_raw
 from tests.gitfixture import git, needs_git
 
@@ -22,7 +22,7 @@ from tests.gitfixture import git, needs_git
 DENIED = os.strerror(errno.EACCES)
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -43,7 +43,7 @@ def invoke(argv: list[str]) -> int:
 def project(tmp_path: Path) -> tuple[Path, list[str]]:
     root = tmp_path / "widget"
     root.mkdir()
-    (root / "keelline.toml").write_text(CONFIG, encoding="utf-8")
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
     for name in ("src", "docs", "docs/bugs"):
         (root / name).mkdir()
     return root, ["--root", str(root), "--machine", str(tmp_path / "m.toml")]
@@ -213,7 +213,7 @@ def test_index_check_reports_staleness_and_index_repairs_it(
     invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
     (root / "docs" / "bug-reports.md").write_text("", encoding="utf-8")
     assert invoke(["bugs", "index", "--check", *common]) == 1
-    assert "is stale; run: keelline bugs index" in capsys.readouterr().out
+    assert "is stale; run: stayfixed bugs index" in capsys.readouterr().out
     assert invoke(["bugs", "index", *common]) == 0
     assert capsys.readouterr().out == "rewrote docs/bug-reports.md (1 entries)\n"
     assert invoke(["bugs", "index", "--check", *common]) == 0
@@ -338,12 +338,12 @@ def test_check_answers_with_the_bugs_gate_s_own_function(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `bugs check` and the `bugs` gate are one function. Mutation
-    # (advisory): the import in `run_bugs_check` becomes `from keelline.ledger.check import
+    # (advisory): the import in `run_bugs_check` becomes `from stayfixed.ledger.check import
     # problems as bugs_gate, uninitialised` — the patch is unseen and this reddens.
     _root, common = project(tmp_path)
     argv = ["bugs", "new", "a title", "--severity", "low", "--area", "an area", "--no-fetch"]
     assert invoke([*argv, *common]) == 0
     assert invoke(["bugs", "check", *common]) == 0
     planted = [Finding("planted", "", None, "")]
-    monkeypatch.setattr("keelline.ledger.check.bugs_gate", lambda *args, **kwargs: planted)
+    monkeypatch.setattr("stayfixed.ledger.check.bugs_gate", lambda *args, **kwargs: planted)
     assert invoke(["bugs", "check", *common]) == 1

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from keelline.profiles import detects, evaluate, load_profile, shipped
+from stayfixed.profiles import detects, evaluate, load_profile, shipped
 from tests.gitfixture import git, needs_git
 
 CONFIGURED = """\

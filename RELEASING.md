@@ -1,6 +1,6 @@
-# Releasing Keelline
+# Releasing stayfixed
 
-Version discipline itself is enforced — `keelline release check` cross-checks six sources, a
+Version discipline itself is enforced — `stayfixed release check` cross-checks six sources, a
 tag and the record of the shipped files, and runs in CI. What was undocumented is everything
 around it: how to cut a release at all. This file is that, so the bus factor of the release
 process is not one.
@@ -8,29 +8,29 @@ process is not one.
 The sequence, once, before the detail: `release check` → `claude plugin tag` → towncrier
 assembles `CHANGELOG.md` from the `changelog.d/` fragments → the `vX.Y.Z` tag → the GitHub
 Release, attached to `vX.Y.Z` only and never to the floating `v1`, which immutable releases
-would freeze → `keelline overlay publish-template`, which renders `templates/overlay/` and
+would freeze → `stayfixed overlay publish-template`, which renders `templates/overlay/` and
 pushes it to the template repository from your own authenticated checkout, so the public
 repository's CI holds no credential that can write a second repository → from `1.0.0` on, the
 `v1` alias moves → the cross-repository smoke runs at the new tag.
 
 ## 1. The sources
 
-`uv run keelline release check` refuses unless these agree:
+`uv run stayfixed release check` refuses unless these agree:
 
 | Source | Where the version lives |
 |---|---|
 | `pyproject.toml` | `project.version` |
-| `uv.lock` | the `keelline` package entry — stale unless `uv sync` has run |
-| `src/keelline/__init__.py` | `__version__` |
+| `uv.lock` | the `stayfixed` package entry — stale unless `uv sync` has run |
+| `src/stayfixed/__init__.py` | `__version__` |
 | `.claude-plugin/plugin.json` | `version` |
 | `.codex-plugin/plugin.json` | `version` |
 | `CHANGELOG.md` | the first `## <version>` heading after the towncrier marker |
-| `hooks/hashes.json` | **not a version.** The record of the three files the harness runs — `hooks/run-hook.sh`, `hooks/hooks.json` and `scripts/keelline`. `release check` fails while it is stale and `keelline release hashes` refreshes it, in whichever commit changed one of them. Nothing touches it at release time. |
+| `hooks/hashes.json` | **not a version.** The record of the three files the harness runs — `hooks/run-hook.sh`, `hooks/hooks.json` and `scripts/stayfixed`. `release check` fails while it is stale and `stayfixed release hashes` refreshes it, in whichever commit changed one of them. Nothing touches it at release time. |
 
 `.claude-plugin/marketplace.json` carries no version of its own and is checked for consistency
 rather than for a number.
 
-`keelline release check --tag vX.Y.Z` adds the tag as a further source and tightens one rule: a
+`stayfixed release check --tag vX.Y.Z` adds the tag as a further source and tightens one rule: a
 fragment still pending in `changelog.d/` is a finding rather than a licence for `CHANGELOG.md`
 to lag. That is the form `release.yml` runs.
 
@@ -52,7 +52,7 @@ step 7's sentence true.
    uv run pytest -n auto --cov --cov-report=term-missing --cov-fail-under=92
    uv run ruff check . && uv run ruff format --check . && uv run mypy
    uv run python scripts/mutation_oracle.py
-   uv run keelline release check
+   uv run stayfixed release check
    claude plugin validate --strict .claude-plugin/plugin.json
    claude plugin validate --strict .claude-plugin/marketplace.json
    claude plugin validate .codex-plugin/plugin.json
@@ -66,11 +66,11 @@ step 7's sentence true.
    exists from `1.0.0` on (step 9).
 
 3. **Set it in the four places you edit by hand**, then let the lockfile follow:
-   `pyproject.toml`, `src/keelline/__init__.py`, and both plugin manifests.
+   `pyproject.toml`, `src/stayfixed/__init__.py`, and both plugin manifests.
 
    ```bash
    uv sync
-   uv run keelline release check   # names every source that still disagrees
+   uv run stayfixed release check   # names every source that still disagrees
    ```
 
    That is four of the six sources; `uv.lock` is the fifth and `uv sync` above writes it.
@@ -83,17 +83,17 @@ step 7's sentence true.
    and the release workflow runs the suite on the tag.
 
    **And the two example configurations, which are on no gate at all.** `README.md`'s and
-   `docs/cli.md`'s example `keelline.toml` blocks both carry `version = "0.1.0"`; after the
-   first release that is a copy-paste that makes `keelline doctor` warn on a brand-new
+   `docs/cli.md`'s example `stayfixed.toml` blocks both carry `version = "0.1.0"`; after the
+   first release that is a copy-paste that makes `stayfixed doctor` warn on a brand-new
    project. `release check` cannot see them — they are examples and not sources — so they
    are named here or nowhere.
 
 4. **Assemble the changelog.**
 
    ```bash
-   uv run keelline release notes --version X.Y.Z --draft   # read it first; writes nothing
-   uv run keelline release notes --version X.Y.Z
-   uv run keelline release check                           # must print "one version everywhere: X.Y.Z"
+   uv run stayfixed release notes --version X.Y.Z --draft   # read it first; writes nothing
+   uv run stayfixed release notes --version X.Y.Z
+   uv run stayfixed release check                           # must print "one version everywhere: X.Y.Z"
    ```
 
    Read what it wrote, and **edit it**. A fragment written as a note to the author rather than
@@ -109,7 +109,7 @@ step 7's sentence true.
    record, and a fold done earlier is undone by the next commit. Do it here, once, over the
    assembled file: state the feature as what it now is, delete the fixes that only describe
    its development, and keep the ones a reader of 0.1.0 has to act on — a grammar that refuses
-   a `keelline.toml` which loaded before, a flag that means something narrower than it sounds.
+   a `stayfixed.toml` which loaded before, a flag that means something narrower than it sounds.
    The same folding applies to a `Changed` entry that changed something never released.
    `release check --tag` cannot judge this: it counts pending fragments and never reads them.
 
@@ -127,12 +127,12 @@ step 7's sentence true.
    git commit -am "chore(release): X.Y.Z"
    ```
 
-6. **Tag, twice, and check the tag.** `claude plugin tag` creates `keelline--vX.Y.Z`, the
+6. **Tag, twice, and check the tag.** `claude plugin tag` creates `stayfixed--vX.Y.Z`, the
    per-plugin shape the plugin tooling writes so a marketplace can resolve *this plugin's*
    version independently of the repository's; `vX.Y.Z` is the shape everything else expects
    and the one `release.yml` triggers on. Both name the same commit, which is why
    `README.md`'s install paragraph can hand a reader `…@vX.Y.Z` — `/plugin marketplace add`
-   takes any git ref — while the `keelline--` tag is the one the tooling itself looks for.
+   takes any git ref — while the `stayfixed--` tag is the one the tooling itself looks for.
    Neither is a substitute for the other; make both.
 
    **No prerelease tags.** `release check --tag` compares the tag to `pyproject.toml`'s
@@ -143,7 +143,7 @@ step 7's sentence true.
    ```bash
    claude plugin tag .
    git tag vX.Y.Z
-   uv run keelline release check --tag vX.Y.Z
+   uv run stayfixed release check --tag vX.Y.Z
    git push origin main --tags
    ```
 
@@ -164,8 +164,8 @@ step 7's sentence true.
    key GitHub knows:
 
    ```bash
-   uv run keelline overlay publish-template --owner Nezhinskiy        # read the plan
-   uv run keelline overlay publish-template --owner Nezhinskiy --yes  # do it
+   uv run stayfixed overlay publish-template --owner Nezhinskiy        # read the plan
+   uv run stayfixed overlay publish-template --owner Nezhinskiy --yes  # do it
    ```
 
    Without `--yes` nothing outward-facing happens: it renders, asks `gh` what is there, and
@@ -174,8 +174,8 @@ step 7's sentence true.
 9. **Move the alias — from `1.0.0` on; a `0.x` release moves none.** The alias is the major:
    a project that writes `@v1` takes every release the alias moves to. Under semantic
    versioning a `0.x` minor may break what the one before it did, so a `v0` alias would hand
-   every project on it breaking changes unannounced, and `keelline doctor` knows `v1` and no
-   other alias. So a `0.x` project pins the commit `keelline init` writes, and this step starts
+   every project on it breaking changes unannounced, and `stayfixed doctor` knows `v1` and no
+   other alias. So a `0.x` project pins the commit `stayfixed init` writes, and this step starts
    at the first `1.x` release:
 
    ```bash
@@ -200,12 +200,12 @@ step 7's sentence true.
 **Trusted Publishing.** The workflow authenticates to PyPI with a short-lived OIDC token rather
 than a stored secret, which requires a one-time registration on PyPI:
 
-**PyPI → Your projects → keelline → Publishing → Add a new publisher (GitHub)**
+**PyPI → Your projects → stayfixed → Publishing → Add a new publisher (GitHub)**
 
 | Field | Value |
 |---|---|
 | Owner | `Nezhinskiy` |
-| Repository | `keelline` |
+| Repository | `stayfixed` |
 | Workflow | `release.yml` |
 | Environment | `pypi` |
 
@@ -232,14 +232,14 @@ to me" is a repository variable, **Settings → Secrets and variables → Action
 reads back with zero rules fails whatever the variable says. Set it only after the environment
 and its reviewer exist.
 
-**Tag protection.** A repository ruleset over `refs/tags/v*.*.*` and `refs/tags/keelline--v*`
+**Tag protection.** A repository ruleset over `refs/tags/v*.*.*` and `refs/tags/stayfixed--v*`
 with `deletion` and `update` rules, so a semver tag is immutable while the `v1` alias, once a
 `1.x` release creates it — it matches neither pattern — can still move:
 
 ```bash
-gh api -X POST repos/Nezhinskiy/keelline/rulesets --input - <<'JSON'
+gh api -X POST repos/stayfixed/stayfixed/rulesets --input - <<'JSON'
 {"name": "release tags", "target": "tag", "enforcement": "active",
- "conditions": {"ref_name": {"include": ["refs/tags/v*.*.*", "refs/tags/keelline--v*"], "exclude": []}},
+ "conditions": {"ref_name": {"include": ["refs/tags/v*.*.*", "refs/tags/stayfixed--v*"], "exclude": []}},
  "rules": [{"type": "deletion"}, {"type": "update"}]}
 JSON
 ```
@@ -255,7 +255,7 @@ second one runs are the same tool, and the two pins must move together. A global
 not a manifest, so Dependabot does not see either of them: bump both by hand, in one commit,
 and let the smoke run say whether an install still works.
 
-**The overlay template's own action pins.** `src/keelline/templates/overlay/.github/workflows/scan.yml`
+**The overlay template's own action pins.** `src/stayfixed/templates/overlay/.github/workflows/scan.yml`
 pins two actions by full-length sha, and this repository's `.github/dependabot.yml` scans
 `.github/workflows/` at the root and nothing else — a nested tree under `src/` is not a
 workflow directory the platform reads, so those two pins rot here until somebody looks.
@@ -264,14 +264,14 @@ what this line is about is the state every *new* overlay starts from. Check them
 the release that publishes the template.
 
 **The project workflow's pin, and what the first tag unlocks.** There is a second sha-pinned
-template now: `src/keelline/templates/project/keelline.yml`, the caller `keelline init` renders
+template now: `src/stayfixed/templates/project/stayfixed.yml`, the caller `stayfixed init` renders
 into an adopting project's `.github/workflows/`. Its `uses:` line is not pinned in the tree —
-the sha is filled in at render time, and it is the commit of the *released* Keelline that did
+the sha is filled in at render time, and it is the commit of the *released* stayfixed that did
 the rendering, read off this repository's own `v*` tags. So nothing here rots, and nothing here
 needs checking at a release; what a release changes is whether the workflow can be written at
 all. Before the first tag `init` finds no released commit to name, reports the workflow skipped
 with that reason, and writes nothing into `.github/` — which means every project initialised
-before the first release carries no CI caller and no `[ci] ref`, and gets both when `keelline
+before the first release carries no CI caller and no `[ci] ref`, and gets both when `stayfixed
 upgrade` ships. The first tag is the event that changes that, and it changes it for new
 projects only.
 
@@ -284,7 +284,7 @@ projects only.
   resolvers without breaking anyone who has already pinned it) and release a patch version.
 - **`release check` fails in the workflow but passed locally.** Almost always `uv.lock`: `uv
   sync` was not run after the version bump, so the lockfile still carries the old one. The
-  other candidate is `hooks/hashes.json`, if a shipped file moved without `keelline release
+  other candidate is `hooks/hashes.json`, if a shipped file moved without `stayfixed release
   hashes`.
 - **`publish-template` pushed the wrong tree.** The next `publish-template` fixes it: it
   replaces the tree whole rather than merging into it.

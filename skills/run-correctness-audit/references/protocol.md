@@ -1,7 +1,7 @@
 # The audit protocol
 
 **A candidate is executable or it is not a candidate.** "The parser may mishandle
-quotes" is a worry. "`keelline commit strip <path>` on a message whose trailer line contains a
+quotes" is a worry. "`stayfixed commit strip <path>` on a message whose trailer line contains a
 quoted colon leaves the trailer in place — run it on this file and diff" is a candidate.
 The difference is the command.
 

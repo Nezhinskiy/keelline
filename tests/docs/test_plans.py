@@ -1,5 +1,5 @@
 """Contracts for the plan lint: references resolve, steps are non-leading, mutation outcomes are
-expectations, Scope/Premise are present. keelline:ledger:fixtures — `BR-` strings here are
+expectations, Scope/Premise are present. stayfixed:ledger:fixtures — `BR-` strings here are
 sample data.
 """
 
@@ -14,23 +14,23 @@ from typing import Any
 
 import pytest
 
-from keelline.config.loader import load
-from keelline.config.schema import Config
-from keelline.docs.plans import (
+from stayfixed.config.loader import load
+from stayfixed.config.schema import Config
+from stayfixed.docs.plans import (
     BaseUnresolvable,
     asserted_outcomes,
     lint,
     plan_gate,
     touched_plans,
 )
-from keelline.errors import Failure, Refusal
-from keelline.gitenv import DISJOINT, NO_ANSWER, git_run
+from stayfixed.errors import Failure, Refusal
+from stayfixed.gitenv import DISJOINT, NO_ANSWER, git_run
 from tests.cli import cli
 from tests.crafted import CRAFTED, assert_never_raw
 from tests.gitfixture import answer_shallow_check, criss_cross, dated, git, plant_path
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -50,7 +50,7 @@ needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not i
 def project(tmp_path: Path) -> tuple[Path, Config]:
     root = tmp_path / "widget"
     (root / "docs" / "plans").mkdir(parents=True)
-    (root / "keelline.toml").write_text(CONFIG, encoding="utf-8")
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
     return root, load(root, machine=tmp_path / "m.toml")
 
 
@@ -305,7 +305,7 @@ def test_a_diff_git_gave_no_answer_for_is_not_a_shallow_checkout(
     # every ref, and reads as a finding rather than as a gate that never looked. Still exit 1,
     # with the cause in words. Mutation (advisory): drop the `code == -1` arm in
     # `_unresolved` — `BaseUnresolvable` is raised instead of this `Failure` and this reddens.
-    from keelline.docs import plans as module
+    from stayfixed.docs import plans as module
 
     root, config = project(tmp_path)
     git(root, "init", "-q", "-b", "main")
@@ -516,7 +516,7 @@ def test_an_uncommitted_plan_is_reported_as_unlinted_and_linted_when_named(tmp_p
 
 
 def test_a_named_plan_that_does_not_exist_is_a_failure(tmp_path: Path) -> None:
-    from keelline.errors import Failure
+    from stayfixed.errors import Failure
 
     root, config = project(tmp_path)
     with pytest.raises(Failure):
@@ -530,7 +530,7 @@ def test_a_named_plan_outside_the_project_is_a_failure_not_an_internal_error(
     # and raise `ValueError`, which the frame reports as an internal error (2) rather than as
     # the failure the missing-file case beside it already produces. Mutation: drop the
     # `is_relative_to` guard — this reddens with `ValueError`.
-    from keelline.errors import Failure
+    from stayfixed.errors import Failure
 
     root, config = project(tmp_path)
     elsewhere = tmp_path / "other" / "2026-01-01-x.md"

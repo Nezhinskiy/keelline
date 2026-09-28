@@ -4,7 +4,7 @@ The repository carries no YAML parser, so the file is read by `tests.workflow_ya
 reader that returns the whole document or fails naming the line it cannot read, and each gate
 step's script is taken from it by `step_script` and run with `bash` in a workspace laid out as
 the runner lays it out — the caller's checkout at `project/`, against a real clone, with the
-real `keelline gate`. Only the two checkouts and `setup-python` are the platform's and are not
+real `stayfixed gate`. Only the two checkouts and `setup-python` are the platform's and are not
 run here; the base step's own cases are in `tests/test_fixtures.py`.
 
 **What the judging step must hold.** It is the step whose exit status is the verdict, so it runs
@@ -23,8 +23,8 @@ from pathlib import Path
 
 import pytest
 
-import keelline
-from keelline.config.loader import CONFIG_FILE
+import stayfixed
+from stayfixed.config.loader import CONFIG_FILE
 from tests.assess.baserepo import clone, commit
 from tests.floor import floor_env
 from tests.gitfixture import git, needs_git
@@ -39,15 +39,15 @@ from tests.workflow_yaml import Node, load
 
 JUDGE = "The configuration and the built-in gates"
 CUSTOM = "The project's own gates"
-PROOF = "Keelline runs at all"
+PROOF = "stayfixed runs at all"
 BASE_STEP = "The base ref and the project root"
 BOUND_STEP = "The time limit is inside its bounds"
 # The job's time limit, in minutes: the least and the most a caller may pass, and what it gets
 # when it passes nothing. `docs/cli.md#the-reusable-workflow` says why these three.
 TIMEOUT_LEAST, TIMEOUT_MOST, TIMEOUT_DEFAULT = 5, 60, 15
 
-BASE = f"""[keelline]
-version = "{keelline.__version__}"
+BASE = f"""[stayfixed]
+version = "{stayfixed.__version__}"
 state = "adopting"
 enforced = ["docs"]
 
@@ -59,20 +59,20 @@ LOOSENED = BASE.replace('["docs"]', "[]")
 OVER_BUDGET = "".join("word\n" for _ in range(400))
 
 # Every line that names an interpreter, whole, in the order the job runs them. Only three are
-# Keelline's, and a whitelist rather than a list of bad spellings: `-c` with flags before it,
+# stayfixed's, and a whitelist rather than a list of bad spellings: `-c` with flags before it,
 # `-Pc`, a program on standard input, a script path, an assignment in front of the command
 # (`PYTHONUSERBASE=… python3 …`), a wrapper (`env`, `exec`) or a second command packed onto the
 # line after a `;` are each a way the checkout reaches the interpreter, and a pattern for each
 # is a pattern for the ones thought of. Whole lines and not a prefix, because a prefix is
 # satisfied by a line that goes on to run something else.
 _PYTHON = re.compile(r"\bpython[\d.]*\b")
-KEELLINE_INVOCATIONS = (
-    "python3 -m keelline --version",
-    'python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \\',
-    'python3 -P -s -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \\',
+STAYFIXED_INVOCATIONS = (
+    "python3 -m stayfixed --version",
+    'python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \\',
+    'python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \\',
 )
 GATE_ENV: dict[str, Node] = {
-    "PYTHONPATH": "keelline/src",
+    "PYTHONPATH": "stayfixed/src",
     "ROOT": "${{ steps.base.outputs.root }}",
     "BASE_SHA": "${{ steps.base.outputs.base_sha }}",
     "WORKFLOW_SHA": "${{ job.workflow_sha }}",
@@ -95,12 +95,12 @@ STEPS: list[dict[str, Node]] = [
         "with": {"path": "project", "fetch-depth": "0", "persist-credentials": "false"},
     },
     {
-        "name": "Keelline, at this workflow's own commit",
+        "name": "stayfixed, at this workflow's own commit",
         "uses": "actions/checkout",
         "with": {
             "repository": "${{ job.workflow_repository }}",
             "ref": "${{ job.workflow_sha }}",
-            "path": "keelline",
+            "path": "stayfixed",
             "persist-credentials": "false",
         },
     },
@@ -110,7 +110,7 @@ STEPS: list[dict[str, Node]] = [
         "run": SCRIPT,
     },
     {"uses": "actions/setup-python", "with": {"python-version": "${{ inputs.python-version }}"}},
-    {"name": PROOF, "env": {"PYTHONPATH": "keelline/src"}, "run": SCRIPT},
+    {"name": PROOF, "env": {"PYTHONPATH": "stayfixed/src"}, "run": SCRIPT},
     {
         "name": BASE_STEP,
         "id": "base",
@@ -129,7 +129,7 @@ STEPS: list[dict[str, Node]] = [
 # And each script's text, line for line, comments and blank lines aside: `STEPS` holds what a
 # step is given, and this holds what it does with it. A line that is not an invocation can still
 # change the verdict's process — `export PYTHONUSERBASE=…` or `. project/.ci-env` in a gate step,
-# or a copy into `keelline/src/` from an earlier one, where the verdict's `PYTHONPATH` imports a
+# or a copy into `stayfixed/src/` from an earlier one, where the verdict's `PYTHONPATH` imports a
 # `sitecustomize.py` at start-up — and every such line is a line this list does not carry.
 CHECKOUT_STEP = "The checkout is the commit this workflow file is at"
 SCRIPTS: dict[str, list[str]] = {
@@ -143,11 +143,11 @@ SCRIPTS: dict[str, list[str]] = {
         "esac",
     ],
     CHECKOUT_STEP: [
-        'actual="$(git -C keelline rev-parse HEAD)"',
+        'actual="$(git -C stayfixed rev-parse HEAD)"',
         '[ "$actual" = "$EXPECTED" ] || { echo "::error::checked out $actual, not the workflow\'s'
         ' own $EXPECTED"; exit 1; }',
     ],
-    PROOF: ["python3 -m keelline --version"],
+    PROOF: ["python3 -m stayfixed --version"],
     BASE_STEP: [
         'case "$INPUT_PATH" in',
         '  ""|.|./) p="" ;;',
@@ -187,7 +187,7 @@ SCRIPTS: dict[str, list[str]] = {
         "only=()",
         'for name in $ONLY; do only+=("--only=$name"); done',
         "set +f",
-        KEELLINE_INVOCATIONS[1],
+        STAYFIXED_INVOCATIONS[1],
         '  --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"',
     ],
     CUSTOM: [
@@ -195,7 +195,7 @@ SCRIPTS: dict[str, list[str]] = {
         "only=()",
         'for name in $ONLY; do only+=("--only=$name"); done',
         "set +f",
-        KEELLINE_INVOCATIONS[2],
+        STAYFIXED_INVOCATIONS[2],
         '  --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"',
     ],
 }
@@ -303,8 +303,8 @@ def _judge(
     The `env:` block is read off the shipped file rather than retyped here, so a value it gains
     — a `PYTHONPATH` that reaches into the checkout, say — is a value these cases run under.
     Each `${{ }}` in it is replaced by what the runner would put there in this case, and one this
-    reader does not know is a failure rather than a guess. Keelline's own checkout is where the
-    runner puts it, `keelline/` beside `project/`.
+    reader does not know is a failure rather than a guess. stayfixed's own checkout is where the
+    runner puts it, `stayfixed/` beside `project/`.
     """
     runner = {
         "${{ steps.base.outputs.root }}": "project/.",
@@ -316,7 +316,7 @@ def _judge(
         key: runner[value] if value.startswith("${{") else value
         for key, value in _step_env(step).items()
     }
-    checkout = workspace / "keelline"
+    checkout = workspace / "stayfixed"
     if not checkout.exists():
         checkout.symlink_to(ROOT, target_is_directory=True)
     summary = workspace / "step-summary.md"
@@ -333,7 +333,7 @@ def _judge(
             "PATH": f"{interpreter or Path(sys.executable).parent}:/usr/bin:/bin:/usr/local/bin",
             "HOME": str(workspace),
             "GITHUB_STEP_SUMMARY": str(summary),
-            # The suite's floor under the product's `git`, for the `keelline gate` the step runs.
+            # The suite's floor under the product's `git`, for the `stayfixed gate` the step runs.
             **floor_env(),
             **named,
             **(extra or {}),
@@ -353,7 +353,7 @@ def _marker_gate(marker: Path) -> str:
 def test_one_job_whose_judging_steps_may_not_fail_and_run_in_order() -> None:
     # The verdict is the job's status, so a step that may fail — `continue-on-error`, or an
     # `if:` that runs it after a failure or skips it — is a verdict that can be turned green.
-    # `keelline gate` already exits 0 for an advisory gate's findings, so no step here needs
+    # `stayfixed gate` already exits 0 for an advisory gate's findings, so no step here needs
     # either. Mutations (declared): the judging step gains `continue-on-error: true`; the custom
     # step gains `if: always()`, which would run the repository's commands after a refusal.
     job = _job()
@@ -369,7 +369,7 @@ def test_one_job_whose_judging_steps_may_not_fail_and_run_in_order() -> None:
     # a step before the proof step.
     found = [(_name(step), list(step)) for step in steps]
     assert found == [(_name(step), list(step)) for step in STEPS], found
-    # A Keelline that cannot run fails under its own name before anything reads as a finding,
+    # A stayfixed that cannot run fails under its own name before anything reads as a finding,
     # the base is resolved before either gate step reads it, and the repository's own commands
     # run last.
     assert names.index(PROOF) < names.index(BASE_STEP) < names.index(JUDGE) < names.index(CUSTOM)
@@ -489,12 +489,12 @@ def test_both_gate_steps_start_python_without_the_working_directory_on_its_path(
     # `.pth` case below. Mutations (declared): `python3 -s -m` for `python3 -P -s -m` in the
     # judging step, and in the custom step.
     for step in (JUDGE, CUSTOM):
-        assert "python3 -P -s -m keelline gate" in step_script(CHECK_WORKFLOW, step), step
-    # And no interpreter the job starts runs anything but Keelline, in any spelling: every
-    # line that names one, comments aside, is one of Keelline's three invocation lines, whole
+        assert "python3 -P -s -m stayfixed gate" in step_script(CHECK_WORKFLOW, step), step
+    # And no interpreter the job starts runs anything but stayfixed, in any spelling: every
+    # line that names one, comments aside, is one of stayfixed's three invocation lines, whole
     # and in order. Mutations (declared): the proof step runs `python3 -P -c`, `python3 -Pc`, or
     # a program on standard input; the judging step's command gains an assignment in front of
-    # it. Whole, because `… gate --help >/dev/null; PYTHONUSERBASE=… python3 -P -m keelline gate
+    # it. Whole, because `… gate --help >/dev/null; PYTHONUSERBASE=… python3 -P -m stayfixed gate
     # --builtin …`, written before `-s`, began with an invocation and passed a prefix match.
     # Mutation (declared): the judging step's command line runs a second command before the gate.
     invocations = [
@@ -503,13 +503,13 @@ def test_both_gate_steps_start_python_without_the_working_directory_on_its_path(
         for line in script.splitlines()
         if not line.strip().startswith("#") and _PYTHON.search(line)
     ]
-    assert invocations == list(KEELLINE_INVOCATIONS), invocations
+    assert invocations == list(STAYFIXED_INVOCATIONS), invocations
 
 
 @needs_workflow
 def test_the_judging_step_passes_the_platform_s_workflow_sha_through_env() -> None:
     # An upgrade's `[ci] ref` is admitted only at the commit the platform says is running, so
-    # the judging step must hand `keelline gate` that commit, and from the platform's own record
+    # the judging step must hand `stayfixed gate` that commit, and from the platform's own record
     # — through `env:`, never spliced into the script. No clone case reaches an admitted move,
     # which needs a released tag, so the wiring is held here. Mutation (declared): drop
     # `--workflow-sha "$WORKFLOW_SHA"`.
@@ -532,8 +532,8 @@ def test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces(
     _commit(workspace, CONFIG_FILE, LOOSENED)
     code, printed, summary = _judge(workspace, base_sha, only)
     assert code == 1, printed
-    assert "::error" in printed and "keelline.enforced" in printed, printed
-    assert "keelline.enforced" in summary, summary
+    assert "::error" in printed and "stayfixed.enforced" in printed, printed
+    assert "stayfixed.enforced" in summary, summary
 
 
 @needs_git
@@ -549,7 +549,7 @@ def test_the_judging_step_judges_the_configuration_whatever_only_names(tmp_path:
     _commit(workspace, CONFIG_FILE, LOOSENED)
     code, printed, summary = _judge(workspace, base_sha, "docs")
     assert code == 1, printed
-    assert "keelline.enforced" in printed and "keelline.enforced" in summary, printed
+    assert "stayfixed.enforced" in printed and "stayfixed.enforced" in summary, printed
 
 
 @needs_git
@@ -575,7 +575,7 @@ def test_only_runs_the_names_it_is_given_and_nothing_else(tmp_path: Path) -> Non
 def test_an_only_name_is_never_expanded_as_a_file_pattern(tmp_path: Path) -> None:
     # `$ONLY` is split unquoted, which is also where the shell would glob: `d*` beside a file
     # called `docs` in the workspace would become the `docs` gate. With globbing off it stays
-    # `d*`, a name no configuration has, and `keelline gate` refuses it (2). Mutation
+    # `d*`, a name no configuration has, and `stayfixed gate` refuses it (2). Mutation
     # (declared): `set -f` is removed.
     workspace, base_sha = _clone(tmp_path)
     (workspace / "docs").write_text("", encoding="utf-8")
@@ -646,14 +646,14 @@ def test_every_script_the_job_runs_is_held_line_for_line() -> None:
     `-P` keeps the working directory off `sys.path` and nothing more. Measured with a
     `setup-python`-shaped interpreter (not a virtual environment), before the gate steps passed
     `-s`: a `.pth` under `project/.local` ran at start-up once the step exported
-    `PYTHONUSERBASE=project/.local`, and a `sitecustomize.py` copied into `keelline/src/` ran at
+    `PYTHONUSERBASE=project/.local`, and a `sitecustomize.py` copied into `stayfixed/src/` ran at
     start-up under the step's own `PYTHONPATH`. `-s` answers the first, and nothing but this
     hold answers the second. `export`, `.`/`source`, `cd`, `eval`, `umask` and a write into either
     checkout are each one line, and a list of forbidden spellings is a list of the ones thought
     of; so every script is held whole, comments aside, and a line the list does not carry reddens
     here.
     Mutations (declared): the judging step exports `PYTHONUSERBASE`; the custom step sources a
-    file from the caller's checkout; the base step copies a file into Keelline's checkout.
+    file from the caller's checkout; the base step copies a file into stayfixed's checkout.
     """
     found = {_name(step): _commands(str(step["run"])) for step in _steps() if "run" in step}
     assert found == SCRIPTS, found
@@ -667,9 +667,9 @@ def test_no_module_the_checkout_carries_is_imported_by_a_gate_step(
     tmp_path: Path, step: str
 ) -> None:
     # The behaviour the text above is about, run under the step's own `env:`: a pull request
-    # that adds a `tomllib.py` at its top, which Keelline's loader would import in place of the
+    # that adds a `tomllib.py` at its top, which stayfixed's loader would import in place of the
     # standard library's if the checkout were on `sys.path`. Measured when this case was
-    # written: with `PYTHONPATH: keelline/src:project` the planted module ran, and one that
+    # written: with `PYTHONPATH: stayfixed/src:project` the planted module ran, and one that
     # re-exported the real `tomllib` left the step at exit 0. Mutations (declared): that
     # `PYTHONPATH` on the judging step, and on the custom step.
     workspace, base_sha = _clone(tmp_path)
@@ -703,7 +703,7 @@ def test_no_pth_file_under_a_user_base_in_the_checkout_runs_in_a_gate_step(
     tmp_path: Path, step: str
 ) -> None:
     # `-P` leaves the user site directory on, and a `.pth` file in it runs at the interpreter's
-    # start-up, before anything Keelline imports. The step's `env:` is held whole and names no
+    # start-up, before anything stayfixed imports. The step's `env:` is held whole and names no
     # `PYTHONUSERBASE`; `-s` is what keeps a `.pth` the pull request commits out of the verdict's
     # process if it ever does. Measured before `-s`: with `PYTHONUSERBASE=project/.local`, a
     # committed `.pth` ran under `python3 -P`. Mutations (declared): `-s` dropped from the

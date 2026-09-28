@@ -1,8 +1,8 @@
-"""A `keelline.toml` that is a symlink, met by every command family that loads the configuration.
+"""A `stayfixed.toml` that is a symlink, met by every command family that loads the configuration.
 
-There were two readers of the file: `keelline gate`, `assess` and `init` went through
+There were two readers of the file: `stayfixed gate`, `assess` and `init` went through
 `read_document`, which refuses a symlink, and every other command through a plain `read_text`,
-which follows one. A clone's `keelline.toml -> /dev/zero` then kept `adopt`, `bugs check` and
+which follows one. A clone's `stayfixed.toml -> /dev/zero` then kept `adopt`, `bugs check` and
 `plan check` reading until the machine ran out of memory. `load` now reads through
 `read_document`, so each family below is refused before anything is read. The link here points
 at a valid document, so a reader that follows it would load it and go on: the refusal is the
@@ -15,14 +15,14 @@ from pathlib import Path
 
 import pytest
 
-from keelline.config.loader import CONFIG_FILE, load
-from keelline.config.paths import PathEscape
+from stayfixed.config.loader import CONFIG_FILE, load
+from stayfixed.config.paths import PathEscape
 from tests.cli import cli
 from tests.gitfixture import git, needs_git
 
 pytestmark = needs_git
 
-DOCUMENT = '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n'
+DOCUMENT = '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n'
 
 
 def _linked(tmp_path: Path) -> Path:
@@ -35,7 +35,7 @@ def _linked(tmp_path: Path) -> Path:
     return root
 
 
-def test_load_refuses_a_symlinked_keelline_toml(tmp_path: Path) -> None:
+def test_load_refuses_a_symlinked_stayfixed_toml(tmp_path: Path) -> None:
     # Mutation (declared): `load` reading the file with a plain `read_text` again -> it follows
     # the link and loads the document outside.
     with pytest.raises(PathEscape):
@@ -46,7 +46,7 @@ def test_load_refuses_a_symlinked_keelline_toml(tmp_path: Path) -> None:
     "argv",
     [
         pytest.param(
-            ["adopt", "begin", "docs/plans/2026-09-26-keelline-adoption.md"], id="adopt-begin"
+            ["adopt", "begin", "docs/plans/2026-09-26-stayfixed-adoption.md"], id="adopt-begin"
         ),
         pytest.param(["adopt", "promote"], id="adopt-promote"),
         pytest.param(["bugs", "check"], id="bugs-check"),
@@ -57,7 +57,7 @@ def test_load_refuses_a_symlinked_keelline_toml(tmp_path: Path) -> None:
         pytest.param(["gate"], id="gate"),
     ],
 )
-def test_every_command_family_refuses_a_symlinked_keelline_toml(
+def test_every_command_family_refuses_a_symlinked_stayfixed_toml(
     tmp_path: Path, argv: list[str]
 ) -> None:
     code, out, err = cli(_linked(tmp_path), tmp_path, *argv)
@@ -74,7 +74,7 @@ def test_every_command_family_refuses_a_symlinked_keelline_toml(
         pytest.param(["init", "--yes", "--dry-run", "--name", "widget"], id="init-answering"),
     ],
 )
-def test_init_refuses_a_symlinked_keelline_toml_whatever_it_points_at(
+def test_init_refuses_a_symlinked_stayfixed_toml_whatever_it_points_at(
     tmp_path: Path, argv: list[str], target: str
 ) -> None:
     # `init`'s answer-sheet check asked `is_file()`, which follows the link: a link to a regular

@@ -1,4 +1,4 @@
-"""`keelline assess` through the real parser: its exit codes, its `--json`, and the one write it
+"""`stayfixed assess` through the real parser: its exit codes, its `--json`, and the one write it
 makes, at a constant place a clone can shape only by committing something there."""
 
 from __future__ import annotations
@@ -8,12 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from keelline.assess.assessment import SKIPPED
-from keelline.assess.commands import BASE_NOT_THERE
-from keelline.config.loader import CONFIG_FILE
-from keelline.config.paths import KEELLINE_DIRECTORY
-from keelline.project.api import ASSESSMENT
-from keelline.project.init import init
+from stayfixed.assess.assessment import SKIPPED
+from stayfixed.assess.commands import BASE_NOT_THERE
+from stayfixed.config.loader import CONFIG_FILE
+from stayfixed.config.paths import STAYFIXED_DIRECTORY
+from stayfixed.project.api import ASSESSMENT
+from stayfixed.project.init import init
 from tests.assess.smoke import BASE, smoke_repo
 from tests.cli import cli, custom_gate
 from tests.gitfixture import LsRemote, git, needs_git
@@ -52,7 +52,7 @@ def test_a_base_the_checkout_lacks_is_named_as_why_the_gates_that_read_it_fail(
     )
     assert not answered.refused
     git(root, "add", "-A")
-    git(root, "commit", "-qm", "chore: adopt keelline")
+    git(root, "commit", "-qm", "chore: adopt stayfixed")
     code, summary, _ = cli(root, tmp_path, "assess")
     assert code == 1
     assert summary.rstrip().endswith(BASE_NOT_THERE.format(branch="develop")), summary
@@ -71,8 +71,8 @@ def test_assess_exits_one_when_a_gate_would_fail(tmp_path: Path) -> None:
 
 
 @needs_git
-def test_a_symlinked_keelline_toml_is_refused_and_never_followed(tmp_path: Path) -> None:
-    # `keelline gate` refuses a committed symlink at `keelline.toml`, and `assess` read through
+def test_a_symlinked_stayfixed_toml_is_refused_and_never_followed(tmp_path: Path) -> None:
+    # `stayfixed gate` refuses a committed symlink at `stayfixed.toml`, and `assess` read through
     # it: a link to `/dev/zero` ended the run by exhausting memory. Both read the file through
     # the one reader that refuses a link. Mutation (declared): `load` reading the file by
     # following the link -> the run exits 0 and writes the inventory.
@@ -88,7 +88,7 @@ def test_a_symlinked_keelline_toml_is_refused_and_never_followed(tmp_path: Path)
 
 
 @needs_git
-def test_a_symlinked_keelline_directory_is_a_refusal_and_nothing_is_written_through_it(
+def test_a_symlinked_stayfixed_directory_is_a_refusal_and_nothing_is_written_through_it(
     tmp_path: Path,
 ) -> None:
     # Mutation: drop the `except UnsafePath` in `write` -> the frame reports an internal error,
@@ -96,11 +96,11 @@ def test_a_symlinked_keelline_directory_is_a_refusal_and_nothing_is_written_thro
     root = smoke_repo(tmp_path)
     outside = tmp_path / "outside"
     outside.mkdir()
-    keelline_directory = root / KEELLINE_DIRECTORY
-    for child in keelline_directory.iterdir():
+    stayfixed_directory = root / STAYFIXED_DIRECTORY
+    for child in stayfixed_directory.iterdir():
         child.unlink()
-    keelline_directory.rmdir()
-    keelline_directory.symlink_to(outside, target_is_directory=True)
+    stayfixed_directory.rmdir()
+    stayfixed_directory.symlink_to(outside, target_is_directory=True)
     code, _, err = cli(root, tmp_path, "assess", "--base", BASE)
     assert code == 2
     assert f"refusing to write {ASSESSMENT}" in err
@@ -108,25 +108,25 @@ def test_a_symlinked_keelline_directory_is_a_refusal_and_nothing_is_written_thro
 
 
 @needs_git
-def test_a_file_where_keelline_s_directory_goes_is_a_refusal_and_is_left_as_it_was(
+def test_a_file_where_stayfixed_s_directory_goes_is_a_refusal_and_is_left_as_it_was(
     tmp_path: Path,
 ) -> None:
-    # The other half of the same refusal: `.keelline` is a regular file, so the walk cannot open
+    # The other half of the same refusal: `.stayfixed` is a regular file, so the walk cannot open
     # it as a directory. No `mutations.toml` entry and no line of its own: the `except
     # UnsafePath` that turns it into the refusal also holds the symlink case above, and the
     # walk's `O_DIRECTORY` is `fsops`'s, held by its own tests. Mutation: drop that `except`
     # -> the frame reports an internal error, still exit 2, and the message assertion reddens.
     root = smoke_repo(tmp_path)
-    keelline_directory = root / KEELLINE_DIRECTORY
-    for child in keelline_directory.iterdir():
+    stayfixed_directory = root / STAYFIXED_DIRECTORY
+    for child in stayfixed_directory.iterdir():
         child.unlink()
-    keelline_directory.rmdir()
-    keelline_directory.write_text("a person's file\n", encoding="utf-8")
+    stayfixed_directory.rmdir()
+    stayfixed_directory.write_text("a person's file\n", encoding="utf-8")
     before = sorted(p.name for p in root.iterdir())
     code, _, err = cli(root, tmp_path, "assess", "--base", BASE)
     assert code == 2
     assert f"refusing to write {ASSESSMENT}: a directory on its path" in err
-    assert keelline_directory.read_text(encoding="utf-8") == "a person's file\n"
+    assert stayfixed_directory.read_text(encoding="utf-8") == "a person's file\n"
     assert sorted(p.name for p in root.iterdir()) == before
 
 
@@ -179,7 +179,7 @@ def test_a_custom_gate_runs_beside_the_built_ins(tmp_path: Path) -> None:
 
 @needs_git
 def test_builtin_runs_no_custom_gate_and_says_which_it_left_out(tmp_path: Path) -> None:
-    # `keelline assess` in a clone runs the commands the clone configured; a person who has not
+    # `stayfixed assess` in a clone runs the commands the clone configured; a person who has not
     # agreed to that still gets an assessment. The gate that writes the marker must not run, and
     # the summary names what was left out rather than counting it as passing. Mutation
     # (declared): `builtin` ignored -> the marker appears.
@@ -213,7 +213,7 @@ def test_assess_after_init_with_no_origin_fetched_names_the_gates_that_cannot_ju
     root = repository(tmp_path)
     init(root, machine=tmp_path / "m.toml", runner=LsRemote(), yes=True, dry_run=False, ci=False)
     git(root, "add", "-A")
-    git(root, "commit", "-qm", "chore: keelline init")
+    git(root, "commit", "-qm", "chore: stayfixed init")
     code, out, _ = cli(root, tmp_path, "assess", "--json")
     assert code == 1
     printed = json.loads(out)
@@ -237,7 +237,7 @@ def test_a_roadmap_and_agents_md_kept_out_of_git_fail_trail_and_docs_and_say_wha
     )
     init(root, machine=tmp_path / "m.toml", runner=LsRemote(), yes=True, dry_run=False, ci=False)
     git(root, "add", "-A")
-    git(root, "commit", "-qm", "chore: keelline init")
+    git(root, "commit", "-qm", "chore: stayfixed init")
     head = git(root, "rev-parse", "HEAD").strip()
     code, out, _ = cli(root, tmp_path, "assess", "--base", head, "--json")
     assert code == 1
@@ -263,6 +263,6 @@ def test_a_probe_that_raises_exits_2_and_leaves_the_last_inventory_as_it_was(
     def boom(context: object) -> list[object]:
         raise RuntimeError("a probe the command has no answer for")
 
-    monkeypatch.setattr("keelline.assess.assessment.run_probes", boom)
+    monkeypatch.setattr("stayfixed.assess.assessment.run_probes", boom)
     assert cli(root, tmp_path, "assess", "--base", BASE)[0] == 2
     assert (root / ASSESSMENT).read_bytes() == before

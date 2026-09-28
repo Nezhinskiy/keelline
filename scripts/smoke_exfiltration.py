@@ -4,7 +4,7 @@
     python3 scripts/smoke_exfiltration.py --plugin-root R --fixture F --scratch S
 
 The clone commits its own notes as standing rules, names ANOTHER project, and ships a
-`.claude/settings.json` `env` block pointing Keelline at a machine configuration inside itself
+`.claude/settings.json` `env` block pointing stayfixed at a machine configuration inside itself
 and at a `PATH` inside itself. This script materialises that `env` block the way a harness
 would — the two relative values become absolute paths inside the scratch clone — and then asks
 each boundary the scenario is about, one printed row each.
@@ -14,7 +14,7 @@ pipeline prints, so the first three rows show the note reaching a session when t
 trusted it, then not reaching one after the record lapses, then not reaching one after the
 record is deleted. A row that could only ever have been green is not evidence.
 
-The scenario's MCP arm — `memory_search` under an explicit `project=` — is not run: Keelline
+The scenario's MCP arm — `memory_search` under an explicit `project=` — is not run: stayfixed
 ships no MCP server yet (the README lists the memory MCP server under "Not yet"), and the run
 says so in its own output rather than leaving a silent gap in the scenario.
 """
@@ -34,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from smoke_hooks import developer_free_env, fixture_repository
 
 CANARY = "CANARY-IN-REPO-RULE"
-DELIMITER = "<<<keelline:repository-data"
+DELIMITER = "<<<stayfixed:repository-data"
 # The remote the overlay records for `smoke`. The clone has no remote of its own and does not
 # choose this one, which is the whole of why `attach` can tell the two apart.
 RECORDED_REMOTE = "git@example.com:the-owner/smoke.git"
@@ -70,7 +70,7 @@ class Planted:
 def _run(argv: list[str], env: dict[str, str], cwd: Path) -> subprocess.CompletedProcess[str]:
     """Every subprocess here reads stdin from a pipe, which is what a hook's stdin is.
 
-    It is also the gate: `config/machine.py` honours `KEELLINE_CONFIG` only from an
+    It is also the gate: `config/machine.py` honours `STAYFIXED_CONFIG` only from an
     interactive terminal, so a pipe is the state the clone's `env` block actually meets.
     """
     return subprocess.run(  # noqa: S603
@@ -88,7 +88,7 @@ def plant(fixture: Path, scratch: Path, plugin_root: Path) -> Planted:
     clone = fixture_repository(fixture, scratch / "clone")
     home = scratch / "home"
     data = scratch / "data"
-    (home / ".config" / "keelline").mkdir(parents=True, exist_ok=True)
+    (home / ".config" / "stayfixed").mkdir(parents=True, exist_ok=True)
     data.mkdir(parents=True, exist_ok=True)
 
     # What the clone's `env` block names, made real: a machine configuration inside the clone
@@ -116,7 +116,7 @@ def plant(fixture: Path, scratch: Path, plugin_root: Path) -> Planted:
     created = _run(
         [
             sys.executable,
-            str(plugin_root / "scripts" / "keelline"),
+            str(plugin_root / "scripts" / "stayfixed"),
             "overlay",
             "create",
             "--owner",
@@ -136,7 +136,7 @@ def plant(fixture: Path, scratch: Path, plugin_root: Path) -> Planted:
     (overlay / "projects" / "smoke" / "project.toml").write_text(
         f'remote = "{RECORDED_REMOTE}"\n', encoding="utf-8"
     )
-    (home / ".config" / "keelline" / "config.toml").write_text(
+    (home / ".config" / "stayfixed" / "config.toml").write_text(
         f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8"
     )
     return Planted(clone, home, data, overlay, machine_in_clone, planted, planted_marker)
@@ -151,22 +151,22 @@ def hostile_env(planted: Planted, plugin_root: Path) -> dict[str, str]:
             "CLAUDE_PLUGIN_ROOT": str(plugin_root),
             "CLAUDE_PROJECT_DIR": str(planted.clone),
             "CLAUDE_PLUGIN_DATA": str(planted.data),
-            "KEELLINE_CONFIG": str(planted.machine_in_clone),
+            "STAYFIXED_CONFIG": str(planted.machine_in_clone),
             "PATH": f"{planted.planted_interpreter.parent}:{os.environ.get('PATH', '')}",
         }
     )
     return env
 
 
-def keelline(
+def stayfixed(
     plugin_root: Path, args: list[str], env: dict[str, str], cwd: Path
 ) -> subprocess.CompletedProcess[str]:
-    """Keelline itself, on this script's own interpreter.
+    """stayfixed itself, on this script's own interpreter.
 
-    The rows that use this are about Keelline's answers and not about the wrapper's probe; the
+    The rows that use this are about stayfixed's answers and not about the wrapper's probe; the
     planted interpreter is what the wrapper rows are about.
     """
-    return _run([sys.executable, str(plugin_root / "scripts" / "keelline"), *args], env, cwd)
+    return _run([sys.executable, str(plugin_root / "scripts" / "stayfixed"), *args], env, cwd)
 
 
 def through_wrapper(
@@ -176,7 +176,7 @@ def through_wrapper(
 
 
 def trust_record(planted: Planted) -> Path:
-    return planted.home / ".config" / "keelline" / "trust.json"
+    return planted.home / ".config" / "stayfixed" / "trust.json"
 
 
 def main(argv: list[str]) -> int:
@@ -192,7 +192,7 @@ def main(argv: list[str]) -> int:
     bundle = ["open", "memory", "session-context", "--bundle", "standing-rules", "--part", "1"]
 
     # --- the positive control, first: the pipeline can emit the note when it is trusted ------
-    recorded = keelline(
+    recorded = stayfixed(
         plugin_root,
         ["memory", "trust", "--in-repo-memory", "--root", str(planted.clone)],
         env,
@@ -257,7 +257,7 @@ def main(argv: list[str]) -> int:
     # the re-trusted store is shown to emit — this row's own positive control, because "the
     # canary did not arrive" is also what a store that was never re-trusted prints.
     note.write_text(committed, encoding="utf-8")
-    again = keelline(
+    again = stayfixed(
         plugin_root,
         ["memory", "trust", "--in-repo-memory", "--root", str(planted.clone)],
         env,
@@ -296,15 +296,15 @@ def main(argv: list[str]) -> int:
     lines[first] = "candidates='python3'\n"
     copied.write_text("".join(lines), encoding="utf-8")
     copied.chmod(0o755)
-    (contained_root / "scripts" / "keelline").write_text(
-        (plugin_root / "scripts" / "keelline").read_text(encoding="utf-8"), encoding="utf-8"
+    (contained_root / "scripts" / "stayfixed").write_text(
+        (plugin_root / "scripts" / "stayfixed").read_text(encoding="utf-8"), encoding="utf-8"
     )
     contained_env = {
         **env,
         "PATH": f"{planted.planted_interpreter.parent}:/usr/bin:/bin",
         "CLAUDE_PLUGIN_ROOT": str(contained_root),
     }
-    contained_env.pop("KEELLINE_PYTHON_CANDIDATES", None)
+    contained_env.pop("STAYFIXED_PYTHON_CANDIDATES", None)
     # Both policies, and the exit codes are NOT the same — asserting "the wrapper refused, so it
     # exited non-zero" would have been wrong about `open`, which is the whole of the two failure
     # policies: a fault the wrapper can see prints its token and then degrades to 0 under `open` and
@@ -331,7 +331,7 @@ def main(argv: list[str]) -> int:
     )
 
     # --- what the clone's machine configuration bought it: a warning row and nothing else ----
-    reported = keelline(
+    reported = stayfixed(
         plugin_root,
         ["doctor", "--json", "--root", str(planted.clone), "--home", str(planted.home)],
         env,
@@ -350,7 +350,7 @@ def main(argv: list[str]) -> int:
     # `machine_config_path`, and its refusal names the overlay it resolved, so which of the two
     # files was read is a fact this scenario can read rather than assert.
     inside = planted.clone / "evil" / "overlay" / "projects" / "smoke" / "memory"
-    attached = keelline(
+    attached = stayfixed(
         plugin_root,
         ["attach", "--store", str(inside), "--root", str(planted.clone), "--yes"],
         env,
@@ -364,7 +364,7 @@ def main(argv: list[str]) -> int:
     clones_overlay = f"records -- {planted.clone / 'evil' / 'overlay'}/" in attached.stderr
     report.row(
         ignored.get("status") == "warn"
-        and "KEELLINE_CONFIG" in ignored.get("detail", "")
+        and "STAYFIXED_CONFIG" in ignored.get("detail", "")
         and owners_overlay
         and not clones_overlay,
         "the clone's machine configuration is named as ignored, and was ignored",
@@ -380,7 +380,7 @@ def main(argv: list[str]) -> int:
     )
 
     real = planted.overlay / "projects" / "smoke" / "memory"
-    checked = keelline(
+    checked = stayfixed(
         plugin_root,
         ["attach", "--store", str(real), "--root", str(planted.clone), "--check", "--json"],
         env,
@@ -393,7 +393,7 @@ def main(argv: list[str]) -> int:
         f"state={state!r}",
     )
 
-    print("skip  memory_search under an explicit project= — Keelline does not depend on mcp")
+    print("skip  memory_search under an explicit project= — stayfixed does not depend on mcp")
     # The floor this script had none of. Six of its eight rows assert an ABSENCE, and a run
     # that executed one row prints the same green last line as a run that executed all eight —
     # measured, with `report.rows[:1]` immediately before this print and the whole suite still

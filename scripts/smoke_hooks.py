@@ -25,18 +25,18 @@ PLACEHOLDER = "${CLAUDE_PLUGIN_ROOT}"
 # the launcher rather than an answer from the dispatcher. A refusal that carries one is not a
 # refusal the guard made.
 FAULT = "KL_"
-DELIMITER = "<<<keelline:repository-data"
+DELIMITER = "<<<stayfixed:repository-data"
 # What `tests/fixtures/smoke-project`'s own store puts in front of the model, one marker per
 # bundle that renders anything on it.
 STANDING_RULE = "SMOKE-STANDING-RULE"
 VOLATILE_NOTE = "SMOKE-VOLATILE-NOTE"
-# Keelline's own rules, from the shipped preset rather than from the repository — so this one
+# stayfixed's own rules, from the shipped preset rather than from the repository — so this one
 # is the row that proves `preset-rules` still renders when the store is empty of them.
 PRESET_RULE = "### decision-forks"
-# The one `KEELLINE_*` variable an entry keeps: the floor a test runner puts under the product's
-# own bounds on `git` (`keelline.gitenv.FLOOR_VARIABLE`, which can only raise them). Spelled out
-# rather than imported, because this script runs without `keelline` importable.
-FLOOR_VARIABLE = "KEELLINE_GIT_FLOOR_SECONDS"
+# The one `STAYFIXED_*` variable an entry keeps: the floor a test runner puts under the product's
+# own bounds on `git` (`stayfixed.gitenv.FLOOR_VARIABLE`, which can only raise them). Spelled out
+# rather than imported, because this script runs without `stayfixed` importable.
+FLOOR_VARIABLE = "STAYFIXED_GIT_FLOOR_SECONDS"
 # Measured 2026-09-19 against the shipped `hooks/hooks.json` and this fixture: thirteen
 # entries, fourteen rows (`PreToolUse` carries two samples). Both are asserted because a run
 # that executes fewer rows prints an identically green summary — the shape `unsampled` and
@@ -55,7 +55,7 @@ class Sample:
     # from a launcher fault. `hooks/run-hook.sh` maps a launcher `rc=1` under the `closed`
     # policy to exit 2 with a `KL_` token on stderr, which satisfies `expected_code=2` and
     # `stderr_required=True` byte for byte. Measured 2026-09-19: a three-line
-    # `scripts/keelline` that writes to stderr and raises `SystemExit(1)` left the row that
+    # `scripts/stayfixed` that writes to stderr and raises `SystemExit(1)` left the row that
     # proves the guard denies GREEN, along with twelve of the other thirteen.
     stderr_says: tuple[str, ...] = ()
     stderr_never: tuple[str, ...] = ()
@@ -103,7 +103,7 @@ SAMPLES: dict[str, tuple[Sample, ...]] = {
 # part renders nothing on this fixture, so anything at all in its stdout is a finding.
 #
 # **Why this registry exists.** Before it, all ten of these rows ran against a project with no
-# memory store: `keelline` answered "no memory store", the wrapper degraded that to 0 under the
+# memory store: `stayfixed` answered "no memory store", the wrapper degraded that to 0 under the
 # `open` policy, and each row asserted an exit code it would have had if `session-context` were
 # `/bin/false`. Measured 2026-09-19 on the storeless fixture: ten rows, 0 bytes of stdout, all
 # green. These are the entries that carry repository bytes toward the model, which is the one
@@ -160,18 +160,18 @@ def fixture_repository(fixture: Path, into: Path) -> Path:
 
 
 def developer_free_env() -> dict[str, str]:
-    """This process's environment with this developer's own harness and Keelline stripped out,
+    """This process's environment with this developer's own harness and stayfixed stripped out,
     and the floor a test runner set kept: the base both smoke scripts build a session on.
     """
     return {
         k: v
         for k, v in os.environ.items()
-        if k == FLOOR_VARIABLE or not k.startswith(("KEELLINE_", "XDG_", "CLAUDE_", "PLUGIN_"))
+        if k == FLOOR_VARIABLE or not k.startswith(("STAYFIXED_", "XDG_", "CLAUDE_", "PLUGIN_"))
     }
 
 
 def session_env(*, plugin_root: Path, project: Path, home: Path, data: Path) -> dict[str, str]:
-    """The environment a hook entry meets, with this developer's own Keelline stripped out."""
+    """The environment a hook entry meets, with this developer's own stayfixed stripped out."""
     env = developer_free_env()
     env.update(
         {
@@ -197,7 +197,7 @@ def trust_the_store(plugin_root: Path, project: Path, env: dict[str, str]) -> st
     done = subprocess.run(  # noqa: S603
         [
             sys.executable,
-            str(plugin_root / "scripts" / "keelline"),
+            str(plugin_root / "scripts" / "stayfixed"),
             "memory",
             "trust",
             "--in-repo-memory",

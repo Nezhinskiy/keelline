@@ -3,7 +3,7 @@ asked of every hostile input at once.
 
 A write or removal must never land on a file whose bytes the committer does not control and git
 does not show. The inputs that could aim one are repository-authored: the committed
-`keelline.toml` (`[paths]`, `[artifacts] local`), the committed manifest, and the local ledger a
+`stayfixed.toml` (`[paths]`, `[artifacts] local`), the committed manifest, and the local ledger a
 clone can force-add; and, at `init`, the answers a person passes as flags, which `precheck`
 keeps off any committed document. Each hostile case below is one such input, run at every
 command that meets it — `init` reads `[paths]` from a fresh clone; `upgrade` and `uninstall` act
@@ -11,7 +11,7 @@ on recorded targets, so they meet a `[paths]` value only together with a record 
 artifact there.
 
 - **I1, nothing hidden is clobbered.** After every command, finished or refused, each file the
-  case planted where git does not show it — an ignored file, a file under `.git/`, Keelline's
+  case planted where git does not show it — an ignored file, a file under `.git/`, stayfixed's
   out-of-git state, another artifact's kept-out-of-git copy — is present with its bytes, and no
   file has appeared under `.git/`.
 - **I2, the legitimate user is not refused.** The legitimate cases run their commands to the
@@ -20,32 +20,32 @@ artifact there.
 - **I3, the end state is consistent.** After a finished `init`, `assess` or `upgrade`, a
   dry-run `upgrade` of the same tree plans nothing and refuses nothing: every artifact the
   configuration builds is at its own place with its own bytes. After a finished `uninstall`, a
-  second one says there is nothing to uninstall, and Keelline's own directory is gone.
+  second one says there is nothing to uninstall, and stayfixed's own directory is gone.
 
 Mutations (declared): each guard of the class put back one at a time — the ignore guard, the
-shared `.git` predicate and its case folding, the `.keelline` reservation, the ledger's and the
+shared `.git` predicate and its case folding, the `.stayfixed` reservation, the ledger's and the
 collision rule's ownership checks — and guards made to refuse more than they should, which the
 legitimate cases catch. An entry names every row it reddens; a row no single line can redden
 says so where it is declared.
 
 **Why `assess` joins the legitimate rows only.** The hostile inputs above are the ones that can
 aim a write — `[paths]`, `[artifacts] local`, a manifest record, the local ledger — and
-`assess`'s one write is a constant path under Keelline's reserved directory, which none of them
+`assess`'s one write is a constant path under stayfixed's reserved directory, which none of them
 reaches: the loader refuses a `[paths]` value naming it. What can reach that path is its shape
 in a clone, a committed symlink or directory there, which `tests/assess/test_command.py` holds.
 Its I2 and I3 lines have no mutation of their own: `assess` has no guard whose removal makes it
 raise a refusal or plan work for `upgrade`.
 
-**`adopt begin` and `adopt promote` write one place, `keelline.toml`,** through the editor
+**`adopt begin` and `adopt promote` write one place, `stayfixed.toml`,** through the editor
 `upgrade` uses, with the manifest's record of it re-stamped beside it. No repository value aims
 that write, and neither verb asks the ignore guard, which exempts the fixed names so that a
-person may keep `keelline.toml` out of git: the legitimate rows run both verbs to the end, once
+person may keep `stayfixed.toml` out of git: the legitimate rows run both verbs to the end, once
 with the file in the clone's excludes. What can aim it is the file's own shape, a committed
-`keelline.toml` that is a symlink to a hidden file, which the one hostile row holds.
+`stayfixed.toml` that is a symlink to a hidden file, which the one hostile row holds.
 
 What this module does not cover: guards that decide nothing about a hidden file's bytes, such
 as the attach refusal and the refusals over files `uninstall` would leave under
-`.keelline/local/`, which their own modules hold.
+`.stayfixed/local/`, which their own modules hold.
 """
 
 from __future__ import annotations
@@ -58,33 +58,33 @@ from typing import Literal
 
 import pytest
 
-from keelline.assess.assessment import assess, write
-from keelline.assess.state import begin, promote
-from keelline.attach.write import LEDGER as ATTACH_LEDGER
-from keelline.config.layout import local_base
-from keelline.config.loader import CONFIG_FILE, load
-from keelline.config.paths import KEELLINE_DIRECTORY
-from keelline.docs.api import trail_target
-from keelline.errors import Refusal
-from keelline.project.init import ANSWER_SHEET, NO_ANSWERS, Given, InitReport, init
-from keelline.project.templates import LOCAL_ELIGIBLE
-from keelline.project.uninstall import NOTHING, UninstallReport, uninstall
-from keelline.project.upgrade import UpgradeReport, upgrade
-from keelline.scaffold import digest
-from keelline.scaffold.local import LOCAL_ARTIFACTS, LocalDigests
+from stayfixed.assess.assessment import assess, write
+from stayfixed.assess.state import begin, promote
+from stayfixed.attach.write import LEDGER as ATTACH_LEDGER
+from stayfixed.config.layout import local_base
+from stayfixed.config.loader import CONFIG_FILE, load
+from stayfixed.config.paths import STAYFIXED_DIRECTORY
+from stayfixed.docs.api import trail_target
+from stayfixed.errors import Refusal
+from stayfixed.project.init import ANSWER_SHEET, NO_ANSWERS, Given, InitReport, init
+from stayfixed.project.templates import LOCAL_ELIGIBLE
+from stayfixed.project.uninstall import NOTHING, UninstallReport, uninstall
+from stayfixed.project.upgrade import UpgradeReport, upgrade
+from stayfixed.scaffold import digest
+from stayfixed.scaffold.local import LOCAL_ARTIFACTS, LocalDigests
 from tests.gitfixture import LsRemote, git, needs_git
 from tests.project.repos import DOCUMENT, MOVED_OFF_DOCS, forge_record, repository
 
 Command = Literal["init", "upgrade", "uninstall", "assess", "adopt-begin", "adopt-promote"]
 Report = InitReport | UpgradeReport | UninstallReport
 
-# Bytes no Keelline build renders: a person's file, or a tool's.
+# Bytes no stayfixed build renders: a person's file, or a tool's.
 FOREIGN = "bytes a person or another tool wrote\n"
 HOOK = "#!/bin/sh\n# the clone's own pre-commit hook\n"
 CLAUDE_COPY = f"{LOCAL_ARTIFACTS}/CLAUDE.md"
 CLAUDE_COPY_FOLDED = f"{LOCAL_ARTIFACTS}/claude.md"
 # The adoption plan the `adopt` rows hand to `begin`: setup, written when absent, not the command.
-ADOPTION_PLAN = "2026-09-25-keelline-adoption.md"
+ADOPTION_PLAN = "2026-09-25-stayfixed-adoption.md"
 # What the setup edits by hand as a person adopting would: the adoption plan's state goes into
 # `trail.toml`, which its own header says is maintained by hand, and `adopt begin` refuses a plan
 # whose row declares none. `upgrade` keeps that edit and says so, which is not work left.
@@ -102,9 +102,9 @@ def _forge_roadmap_at(target: str, text: str) -> Callable[[Path], None]:
 
 
 def _config_through_a_symlink(root: Path) -> None:
-    """`keelline.toml` replaced by a committed symlink to a file under `.git/`."""
+    """`stayfixed.toml` replaced by a committed symlink to a file under `.git/`."""
     (root / CONFIG_FILE).unlink()
-    (root / CONFIG_FILE).symlink_to(".git/keelline.toml")
+    (root / CONFIG_FILE).symlink_to(".git/stayfixed.toml")
 
 
 def _forge_ledger_entry(target: str) -> Callable[[Path], None]:
@@ -142,7 +142,7 @@ class Case:
     forge: Callable[[Path], None] | None = None
     # The answers `init` is given as flags; `NO_ANSWERS` is `--yes` alone.
     given: Given = NO_ANSWERS
-    # Whether the clone commits the case's `keelline.toml`; a fresh clone has none.
+    # Whether the clone commits the case's `stayfixed.toml`; a fresh clone has none.
     written: bool = True
     # The one refusal a hostile case must meet, where another guard would also refuse it and so
     # hide the one the row is about.
@@ -206,7 +206,7 @@ HOSTILE = (
         links={"gitlink": ".git"},
     ),
     # At `upgrade` the planted ledger is also an existing file git ignores, so the ignore guard
-    # holds it beside the `.keelline` reservation: that row reddens only with both gone.
+    # holds it beside the `.stayfixed` reservation: that row reddens only with both gone.
     Case(
         "region-into-attach-s-ledger",
         ("init", "upgrade"),
@@ -216,7 +216,7 @@ HOSTILE = (
     Case(
         "region-into-attach-s-ledger-case-folded",
         ("init", "upgrade"),
-        paths={"agents_md": ATTACH_LEDGER.replace(".keelline", ".Keelline")},
+        paths={"agents_md": ATTACH_LEDGER.replace(".stayfixed", ".stayfixed")},
         plant={ATTACH_LEDGER: FOREIGN},
     ),
     # The same three layers as the `.git` symlink.
@@ -225,7 +225,7 @@ HOSTILE = (
         ("init", "upgrade"),
         paths={"agents_md": "hidden/attach.json"},
         plant={ATTACH_LEDGER: FOREIGN},
-        links={"hidden": ".keelline/local"},
+        links={"hidden": ".stayfixed/local"},
     ),
     Case(
         "region-into-another-artifact-s-hidden-copy",
@@ -249,7 +249,7 @@ HOSTILE = (
         forge=_forge_ledger_entry(CLAUDE_COPY_FOLDED),
     ),
     # `roadmap` placed at `CLAUDE.md` spelled in another case: one file where case folds, an
-    # existing file Keelline did not write where it does not. Either way the collision must be
+    # existing file stayfixed did not write where it does not. Either way the collision must be
     # refused, or the roadmap is never written and the next upgrade still has work to do.
     Case(
         "a-paths-value-at-another-artifact-s-file-case-folded",
@@ -263,7 +263,7 @@ HOSTILE = (
     Case(
         "config-a-symlink-to-a-hidden-file",
         ("adopt-begin", "adopt-promote"),
-        plant={".git/keelline.toml": DOCUMENT},
+        plant={".git/stayfixed.toml": DOCUMENT},
         forge=_config_through_a_symlink,
     ),
     # Answers over a document the clone committed would rewrite what the committer chose; they
@@ -319,14 +319,14 @@ LEGITIMATE = (
         "an-adopted-project",
         ("init", "adopt-begin", "adopt-promote", "upgrade", "uninstall"),
     ),
-    # The user the ignore guard exempts on purpose: `adopt` writes `keelline.toml` without asking
+    # The user the ignore guard exempts on purpose: `adopt` writes `stayfixed.toml` without asking
     # it, so a person who keeps the file out of git is not refused.
     Case(
         "an-adopted-project-with-its-config-in-the-clone-s-excludes",
         ("init", "adopt-begin", "adopt-promote", "upgrade", "uninstall"),
         exclude=(CONFIG_FILE,),
     ),
-    # Every answer given, on a clone with no `keelline.toml`: the document `init` writes from
+    # Every answer given, on a clone with no `stayfixed.toml`: the document `init` writes from
     # them, the files kept out of git included, is one `upgrade` and `uninstall` finish on.
     Case(
         "answers-on-a-fresh-clone",
@@ -495,7 +495,7 @@ def _assert_invariant(
         with pytest.raises(Refusal) as again:
             _run("uninstall", root, tmp_path, dry_run=True)
         assert str(again.value) == NOTHING, f"I3: a finished uninstall left: {again.value}"
-        assert not (root / KEELLINE_DIRECTORY).exists(), "I3: a finished uninstall left .keelline"
+        assert not (root / STAYFIXED_DIRECTORY).exists(), "I3: a finished uninstall left .stayfixed"
     elif finished is not None:
         try:
             report = upgrade(

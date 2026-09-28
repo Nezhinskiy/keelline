@@ -7,7 +7,7 @@ imports — a test parses the file and checks."
 
 from __future__ import annotations
 
-import keelline.release.api as release
+import stayfixed.release.api as release
 
 
 def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
