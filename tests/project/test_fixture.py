@@ -95,9 +95,8 @@ def test_every_recorded_footprint_artifact_follows_a_template_change(tmp_path: P
     # change to its template's bytes, as the rename left four of them -> that artifact's reason
     # becomes "hand-edited" and the assertion reddens. A record whose digest is not the bytes on
     # disk makes `upgrade` call the fixture's own files hand-edited and skip them, which is the
-    # regression the fixture exists to catch; `test_the_smoke_fixture_is_a_project_init_has_
-    # nothing_left_to_create_in` cannot see it, because with the templates unchanged the plan
-    # compares the render and never reads the record.
+    # regression the fixture exists to catch. The test above cannot see it, because with the
+    # templates unchanged the plan compares the render and never reads the record.
     root = tmp_path / "smoke"
     shutil.copytree(SMOKE, root)
     config = load(root, machine=tmp_path / "absent.toml")

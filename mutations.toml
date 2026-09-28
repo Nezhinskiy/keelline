@@ -4308,6 +4308,15 @@ reddens = [
   "tests/hooks/test_dispatch.py::test_json_escaping_is_charged_to_the_same_budget",
 ]
 
+[[mutation]]
+name = "the clamp drops the truncation mark"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "        stdout = render(event_name, context[:keep] + TRUNCATION_MARK)"
+after = "        stdout = render(event_name, context[:keep])"
+reddens = [
+  "tests/hooks/test_dispatch.py::test_json_escaping_is_charged_to_the_same_budget",
+]
+
 # The registry is the only place a check's name is spelled. A stray literal equal to a registry key
 # is exactly the state the refactor removed — a name a row could come to disagree with — so the
 # mutation re-introduces one rather than deleting a guard.

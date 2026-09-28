@@ -320,6 +320,7 @@ def test_json_escaping_is_charged_to_the_same_budget() -> None:
     for cap in (200, 201):
         stdout = dispatch(event(), handlers, None, sink=Recorder(), cap=cap).stdout
         context = json.loads(stdout)["hookSpecificOutput"]["additionalContext"]
+        assert context.endswith(TRUNCATION_MARK)
         assert set(context.removesuffix(TRUNCATION_MARK)) == {"\n"}
         shortfall.append(cap - len(stdout))
     assert sorted(shortfall) == [0, 1]
