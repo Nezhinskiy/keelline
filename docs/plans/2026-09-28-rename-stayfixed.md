@@ -14,9 +14,10 @@ before the first tag, so that `0.1.0` ships under the name it keeps.
 
 **Architecture:** a guard test states the end state first (the former name appears in no tracked
 file and no tracked path outside the historical plans), then one mechanical pass applies a fixed,
-ordered mapping, and the generated files (`uv.lock`, `hooks/hashes.json`) are regenerated rather
-than edited. No behaviour changes; every existing test keeps its assertion and only its spelling
-moves.
+ordered mapping, and the generated files (`uv.lock`, `hooks/hashes.json`, the smoke fixture's
+manifest digests) are regenerated rather than edited. No behaviour changes. Every existing test
+keeps what it asserts; where one pinned a number or a pattern that the name's length or letters
+decided, the value is derived instead, so the next rename cannot move it.
 
 **Tech Stack:** Python 3.11+ standard library, `uv`, `pytest`, `ruff`, `mypy`, towncrier
 fragments, the Claude Code plugin validator.
@@ -25,9 +26,14 @@ fragments, the Claude Code plugin validator.
 2026-09-28 (the name is decided there; this repository does not carry that document).
 
 **Scope:** package `rename` of wave 6 only. A change belongs to this branch if and only if it
-replaces the former name with `stayfixed`, regenerates a file the replacement invalidates, or
-records the rename (changelog fragment, the plans index note). Anything else — a README rewrite,
-a tagline, a behaviour fix noticed on the way — is out and waits for its own branch.
+replaces the former name with `stayfixed`, regenerates a file the replacement invalidates,
+records the rename (the plans index note), or states a repository setting the move to the
+organisation has to carry (`RELEASING.md`'s one-time setup and its read-back before a tag).
+Anything else — a README rewrite, a tagline, a behaviour fix noticed on the way — is out and
+waits for its own branch.
+
+Nothing is recorded for the changelog: nothing was ever released under the former name, so a
+`changelog.d/` fragment would open the first changelog with a change to a name no user had.
 
 ## Global Constraints
 
@@ -90,7 +96,7 @@ configuration is held to the byte comparison again.
 Measured before the rename: 9,037 lower-case, 1,070 capitalised and 143 upper-case occurrences in
 471 tracked files; the upper-case ones are the seven environment variables
 (`_CONFIG`, `_PYTHON_CANDIDATES`, `_DIRECTORY`, `_OLD_PYTHON`, `_STORE`, `_INVOCATIONS`,
-`_GIT_FLOOR_SECONDS`), and `KeellineError` is the only capitalised identifier.
+`_GIT_FLOOR_SECONDS`).
 
 ---
 
@@ -111,15 +117,18 @@ git fetch origin
 
 - [ ] **Step 3: Read back what the transfer carried.** Expected: the `dev` branch protection
   still lists the nine required checks (`oracle`, `plugin`, four `checks (…)` legs, two
-  `installed-plugin (…)` legs, `same-repository-form / gates`), and the `release tags` ruleset is
-  present and active.
+  `installed-plugin (…)` legs, `same-repository-form / gates`). The `release tags` ruleset's name
+  and enforcement are not enough: the transfer carries its patterns as they were, and they name
+  the former tag prefix, so read them.
 
 ```bash
 gh api repos/stayfixed/stayfixed/branches/dev/protection/required_status_checks --jq '.contexts[]'
-gh api repos/stayfixed/stayfixed/rulesets --jq '.[]|"\(.name) \(.enforcement)"'
 ```
 
-If either is missing, recreate it from `RELEASING.md` before Task 3's push.
+  Then run the three settings read-backs in `RELEASING.md` section 2, step 1: the ruleset's
+  patterns, private vulnerability reporting, and the PyPI name. Whatever they report differently
+  is set by `RELEASING.md` section 3 before the first tag; its ruleset command replaces an
+  existing ruleset in place rather than adding a second.
 
 ### Task 1: The guard test
 
@@ -133,14 +142,7 @@ If either is missing, recreate it from `RELEASING.md` before Task 3's push.
 - [ ] **Step 1: Write the failing test**
 
 ```python
-"""The project has one name, and the former one survives only in the historical plans.
-
-The rename to stayfixed happened before the first release, so nothing a user can install ever
-carried the former name, and nothing tracked should carry it now: not a module path, not an
-environment variable, not a sentence. The plans written before the rename are the record of the
-work as it was argued and keep their wording, and so does the plan that spells the mapping.
-The former name is assembled from two halves so this file does not match itself.
-"""
+"""The former name survives only in the plans dated before the rename and the plan performing it."""
 
 from __future__ import annotations
 
@@ -148,51 +150,42 @@ import re
 
 from tests.test_neutral import ROOT, tracked_files
 
-FORMER = "keel" + "line"
-PATTERN = re.compile(FORMER, re.IGNORECASE)
-
-# Plans dated before the rename, the plan that performs it, and this file.
+# Split so this file does not match itself; separators are allowed so a hyphenated, spaced or
+# wrapped spelling is caught as well as the contiguous one.
+FORMER = re.compile("keel" + r"[\s_.-]*" + "line", re.IGNORECASE)
 RENAME_DAY = "2026-09-28"
+RENAME_PLAN = f"{RENAME_DAY}-rename-stayfixed.md"
+DATED = re.compile(r"\d{4}-\d{2}-\d{2}-[^/]+\.md")
 
 
-def _exempt(relative: str) -> bool:
-    if relative == "tests/test_name.py":
-        return True
-    if relative.startswith("docs/plans/") and relative != "docs/plans/README.md":
-        name = relative.removeprefix("docs/plans/")
-        return name[:10] < RENAME_DAY or name == f"{RENAME_DAY}-rename-stayfixed.md"
-    return False
+def _historical(relative: str) -> bool:
+    """A dated plan directly under `docs/plans/`, written before the rename or spelling it."""
+    name = relative.removeprefix("docs/plans/")
+    if name == relative or not DATED.fullmatch(name):
+        return False
+    return name < RENAME_DAY or name == RENAME_PLAN
 
 
-def test_no_tracked_path_carries_the_former_name() -> None:
+def test_the_former_name_survives_only_in_the_historical_plans() -> None:
+    # Watched red on seven planted files: a path carrying the name, a file mentioning it, a
+    # hyphenated and a line-wrapped spelling, and three plans outside the exemption: undated
+    # (`1-notes.md`, which sorts before the date), nested (`2025/old.md`) and dated the rename day.
     hits = [
-        str(p.relative_to(ROOT))
-        for p in tracked_files()
-        if PATTERN.search(str(p.relative_to(ROOT))) and not _exempt(str(p.relative_to(ROOT)))
+        relative
+        for path in tracked_files()
+        if not _historical(relative := path.relative_to(ROOT).as_posix())
+        and (
+            FORMER.search(relative)
+            or FORMER.search(path.read_text(encoding="utf-8", errors="replace"))
+        )
     ]
-    assert hits == [], f"{len(hits)} path(s) still carry the former name, first: {hits[:5]}"
-
-
-def test_no_tracked_file_mentions_the_former_name() -> None:
-    hits: list[str] = []
-    for path in tracked_files():
-        relative = str(path.relative_to(ROOT))
-        if _exempt(relative):
-            continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            continue
-        if PATTERN.search(text):
-            hits.append(relative)
-    assert hits == [], f"{len(hits)} file(s) still mention the former name, first: {hits[:5]}"
+    assert hits == [], hits
 ```
 
 - [ ] **Step 2: Run it to see it fail**
 
 Run: `uv run pytest tests/test_name.py -q`
-Expected: FAIL, both tests, the path test naming `src/keelline/…` entries and the text test
-reporting about 470 files.
+Expected: FAIL, listing about 470 files, `src/keelline/…` paths among them.
 
 - [ ] **Step 3: Commit**
 
@@ -208,8 +201,8 @@ git commit -m "test(name): state that the former name survives only in the histo
 - Modify: `pyproject.toml` (package name, script entry, `extend-include`, via the mapping)
 - Modify: `.claude-plugin/marketplace.json` (the `owner` name)
 - Modify: `docs/plans/README.md`
-- Modify: `uv.lock`, `hooks/hashes.json` (regenerated)
-- Create: `changelog.d/+rename-stayfixed.change.md`
+- Modify: `uv.lock`, `hooks/hashes.json`, `tests/fixtures/smoke-project/.stayfixed/manifest.json`
+  (regenerated)
 
 **Interfaces:**
 - Consumes: the guard test from Task 1.
@@ -236,7 +229,8 @@ for n in sys.stdin.buffer.read().decode().split("\0"):
 
 ```bash
 git ls-files -z | python3 -c '
-import sys, pathlib
+import pathlib, re, sys
+DATED = re.compile(r"\d{4}-\d{2}-\d{2}-[^/]+\.md")
 RULES = [
     ("Nezhinskiy/keelline-overlay-template", "stayfixed/stayfixed-overlay-template"),
     ("Nezhinskiy/keelline", "stayfixed/stayfixed"),
@@ -245,13 +239,11 @@ RULES = [
     ("Keelline", "stayfixed"),
     ("keelline", "stayfixed"),
 ]
-def exempt(n):
-    if n == "tests/test_name.py":
-        return True
-    if n.startswith("docs/plans/") and n != "docs/plans/README.md":
-        name = n.removeprefix("docs/plans/")
-        return name[:10] < "2026-09-28" or name == "2026-09-28-rename-stayfixed.md"
-    return False
+def exempt(n):  # the guard test's `_historical`
+    name = n.removeprefix("docs/plans/")
+    if name == n or not DATED.fullmatch(name):
+        return False
+    return name < "2026-09-28" or name == "2026-09-28-rename-stayfixed.md"
 for n in sys.stdin.buffer.read().decode().split("\0"):
     if not n or exempt(n):
         continue
@@ -275,43 +267,40 @@ for n in sys.stdin.buffer.read().decode().split("\0"):
 - [ ] **Step 4: Note the rename in the plans index.** Append to `docs/plans/README.md`:
 
 ```markdown
-The project was renamed to stayfixed on 2026-09-28, before its first release. Plans dated
-earlier were written under the former name and keep it, as the record of the work as it was
-argued; their module paths and commands read `stayfixed` today.
+Plans dated before 2026-09-28 predate the rename and keep the former name as the record; read
+`stayfixed` for it in every path, command and variable.
 ```
 
-- [ ] **Step 5: Record the rename for the changelog.** Create
-  `changelog.d/+rename-stayfixed.change.md`:
-
-```markdown
-The project is named stayfixed: the package and the command are `stayfixed`, a repository's
-configuration is `stayfixed.toml` and its state directory `.stayfixed/`, the environment
-variables are `STAYFIXED_*`, release tags are `stayfixed--vX.Y.Z`, and the repository is
-`stayfixed/stayfixed`.
-```
-
-- [ ] **Step 6: Regenerate the generated files**
+- [ ] **Step 5: Regenerate the generated files**
 
 ```bash
-uv lock
 uv run stayfixed release hashes
+mv uv.lock "${TMPDIR:-/tmp}/uv.lock.mapped" && uv lock
+uv lock -P <name>==<version>   # once per package the fresh resolution moved
 ```
 
-Expected: `uv.lock` names the package `stayfixed`; `hooks/hashes.json` lists
-`scripts/stayfixed` and new digests for the hook files the mapping touched.
+Expected: `hooks/hashes.json` lists `scripts/stayfixed` and new digests for the hook files the
+mapping touched. The mapping renames `uv.lock`'s package entry in place, and `uv lock` accepts
+that file as it is, so the lock is resolved afresh and every package pinned back to the version
+the mapped file held: the result differs from it only in where the `stayfixed` entry sorts.
 
-- [ ] **Step 7: Run the guard test**
+The smoke fixture's manifest records, for each artifact, the digest of the bytes stayfixed owns
+in its target, and the mapping rewrote four of those files. Set each stale record's `sha256` to
+the digest of what is there now; `tests/project/test_fixture.py` states the rule and reddens on a
+stale record, because `upgrade` would call that file hand-edited and stop refreshing it.
+
+- [ ] **Step 6: Run the guard test**
 
 Run: `uv run pytest tests/test_name.py -q`
-Expected: PASS, both tests.
+Expected: PASS.
 
-- [ ] **Step 8: Lint and type-check, then fix what the longer name pushed over the line**
+- [ ] **Step 7: Lint and type-check, then fix what the longer name pushed over the line**
 
 Run: `uv run ruff check . && uv run ruff format --check . && uv run mypy`
 Expected: the only findings are `E501` lines the one-character-longer name pushed past 100
 columns and format drift from the same cause. Re-wrap those lines by hand; change no logic.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add -A
@@ -347,23 +336,18 @@ Expected: every command exits 0. A failure here is a spot the mapping could not 
 example a width assertion on printed text that grew by one character); fix the spot, keep the
 assertion's meaning, and record it in the commit message.
 
-- [ ] **Step 2: Run the full suite through the machine-wide queue**
+- [ ] **Step 2: Run the full suite**
 
 ```bash
-# HEAVY is the machine-wide queue wrapper (`heavy.sh OUTPREFIX -- cmd…`) the owner's sessions share;
-# set it to its path on this machine.
-HEAVY="${HEAVY:?set HEAVY to the heavy.sh queue wrapper}"
-$HEAVY "${TMPDIR:-/tmp}/rename-suite" -- uv run pytest -n auto --cov --cov-fail-under=92
-cat "${TMPDIR:-/tmp}/rename-suite.exit"
+uv run pytest -n auto --cov --cov-fail-under=92
 ```
 
 Expected: exit 0, coverage at or above 92.
 
-- [ ] **Step 3: Run the mutation oracle through the same queue, on a committed tree**
+- [ ] **Step 3: Run the mutation oracle, on a committed tree**
 
 ```bash
-$HEAVY "${TMPDIR:-/tmp}/rename-oracle" -- uv run python scripts/mutation_oracle.py
-cat "${TMPDIR:-/tmp}/rename-oracle.exit"
+uv run python scripts/mutation_oracle.py
 ```
 
 Expected: exit 0. The warm cache misses on every renamed path, so this run is a cold one.

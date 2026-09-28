@@ -10,6 +10,5 @@ one delivery spanning a lane — names all of them on that line and says why the
 The two P0 documents here were copied from that repository, which keeps its own copies as
 history.
 
-The project was renamed to stayfixed on 2026-09-28, before its first release. Plans dated
-earlier were written under the former name and keep it, as the record of the work as it was
-argued; their module paths and commands read `stayfixed` today.
+Plans dated before 2026-09-28 predate the rename and keep the former name as the record; read
+`stayfixed` for it in every path, command and variable.
