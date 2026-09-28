@@ -30,7 +30,8 @@ SHA = "b" * 40
 # the invariant these tests hold is that the workflow pins what `stayfixed.toml` says on
 # disk, and two values that happened to be equal could not tell the two sources apart.
 ADOPTED = "a" * 40
-LISTING = f"{SHA}\trefs/tags/v0.1.0\n"
+TAG = f"v{stayfixed.__version__}"
+LISTING = f"{SHA}\trefs/tags/{TAG}\n"
 
 
 def _repo(tmp_path: Path) -> Path:
@@ -291,10 +292,10 @@ def test_an_adopted_ref_is_what_the_workflow_pins_and_the_document_is_not_rewrit
     workflow = (root / ".github" / "workflows" / "stayfixed.yml").read_text(encoding="utf-8")
     assert f"check.yml@{ADOPTED}" in workflow and SHA not in workflow
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == ADOPTED
-    assert report.ref == ADOPTED and report.resolution.pin == Pin("v0.1.0", SHA)
+    assert report.ref == ADOPTED and report.resolution.pin == Pin(TAG, SHA)
     assert "ci-workflow" not in report.skipped
     # And nothing beside the ref names a release this document does not record.
-    assert f"check.yml@{ADOPTED}\n" in workflow and "v0.1.0" not in workflow
+    assert f"check.yml@{ADOPTED}\n" in workflow and TAG not in workflow
 
 
 @needs_git
@@ -386,7 +387,7 @@ def test_the_pin_is_written_and_the_workflow_rendered_when_a_release_matches(
     root = _repo(tmp_path)
     runner = LsRemote(stdout=LISTING, code=0)
     report = _init(root, tmp_path, runner=runner)
-    assert report.resolution.pin == Pin("v0.1.0", SHA)
+    assert report.resolution.pin == Pin(TAG, SHA)
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == SHA
     body = (root / ".github" / "workflows" / "stayfixed.yml").read_text(encoding="utf-8")
     # The bare path, unchanged by the adoption fix: this run created the document, so the
@@ -409,7 +410,7 @@ def test_a_gate_branch_outside_the_grammar_leaves_a_pin_with_no_workflow(tmp_pat
         encoding="utf-8",
     )
     report = _init(root, tmp_path, runner=LsRemote(stdout=LISTING, code=0))
-    assert report.resolution.pin == Pin("v0.1.0", SHA)
+    assert report.resolution.pin == Pin(TAG, SHA)
     assert report.skipped["ci-workflow"].startswith("[ci] gate_branch is not a plain branch name")
     assert report.ref == "" and not (root / ".github").exists()
 
