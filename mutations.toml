@@ -2276,7 +2276,7 @@ reddens = [
 [[mutation]]
 name = "the wrapper stops noticing that it has no policy argument"
 file = "hooks/run-hook.sh"
-before = '[ $# -ge 1 ] || refuse "KL_ARGV no policy argument"'
+before = '[ $# -ge 1 ] || refuse "SF_ARGV no policy argument"'
 after = 'policy=open'
 reddens = ["tests/hooks/test_wrapper.py::test_no_policy_argument_refuses_with_a_token"]
 
@@ -2300,7 +2300,7 @@ reddens = [
 [[mutation]]
 name = "the wrapper stops noticing that its launcher is missing"
 file = "hooks/run-hook.sh"
-before = '[ -f "$launcher" ] && [ -r "$launcher" ] || fail "KL_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
+before = '[ -f "$launcher" ] && [ -r "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
 after = ':'
 reddens = [
   "tests/hooks/test_wrapper.py::test_a_missing_launcher_refuses_although_the_environment_names_one",
@@ -2431,14 +2431,14 @@ reddens = [
 ]
 
 # `-f` tests existence, not readability. Measured with `chmod 000`: CPython printed its own
-# "Permission denied" and exited 2 with no KL_ token, passed through by `case "$rc" in 0|2)` -- the
+# "Permission denied" and exited 2 with no SF_ token, passed through by `case "$rc" in 0|2)` -- the
 # unattributed exit 2 the wrapper exists to make impossible, and a state `doctor`'s wrapper row
 # called green because it keys on finding a token.
 [[mutation]]
 name = "the wrapper stops noticing that its launcher cannot be read"
 file = "hooks/run-hook.sh"
-before = '[ -f "$launcher" ] && [ -r "$launcher" ] || fail "KL_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
-after = '[ -f "$launcher" ] || fail "KL_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
+before = '[ -f "$launcher" ] && [ -r "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
+after = '[ -f "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
 reddens = [
   "tests/hooks/test_wrapper.py::test_a_launcher_that_cannot_be_read_refuses_with_a_token",
 ]
@@ -2450,7 +2450,7 @@ reddens = [
 [[mutation]]
 name = "an unenterable project root leaves the hook in the harness's directory in silence"
 file = "hooks/run-hook.sh"
-before = '  CDPATH= cd -- "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"'
+before = '  CDPATH= cd -- "$root" 2>/dev/null || fail "SF_NO_ROOT the project root this entry was given cannot be entered"'
 after = '  CDPATH= cd -- "$root" 2>/dev/null || true'
 reddens = [
   "tests/hooks/test_wrapper.py::test_a_project_root_that_cannot_be_entered_says_so[closed-2]",
@@ -3429,7 +3429,7 @@ reddens = [
 [[mutation]]
 name = "no trustworthy git degrades in silence instead of printing a token"
 file = "hooks/run-hook.sh"
-before = '[ -n "$git_bin" ] || fail "KL_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"'
+before = '[ -n "$git_bin" ] || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"'
 after = ':'
 reddens = [
   "tests/hooks/test_wrapper.py::test_no_git_at_any_absolute_path_is_a_token_rather_than_a_silent_run[closed-2]",
@@ -3464,8 +3464,8 @@ reddens = [
 [[mutation]]
 name = "the project-root cd consults CDPATH again"
 file = "hooks/run-hook.sh"
-before = '  CDPATH= cd -- "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"'
-after = '  cd -- "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"'
+before = '  CDPATH= cd -- "$root" 2>/dev/null || fail "SF_NO_ROOT the project root this entry was given cannot be entered"'
+after = '  cd -- "$root" 2>/dev/null || fail "SF_NO_ROOT the project root this entry was given cannot be entered"'
 reddens = [
   "tests/hooks/test_wrapper.py::test_a_cdpath_never_chooses_the_directory_the_hook_runs_in",
 ]
@@ -3475,8 +3475,8 @@ reddens = [
 [[mutation]]
 name = "the project-root cd parses a root beginning with a dash as options"
 file = "hooks/run-hook.sh"
-before = '  CDPATH= cd -- "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"'
-after = '  CDPATH= cd "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"'
+before = '  CDPATH= cd -- "$root" 2>/dev/null || fail "SF_NO_ROOT the project root this entry was given cannot be entered"'
+after = '  CDPATH= cd "$root" 2>/dev/null || fail "SF_NO_ROOT the project root this entry was given cannot be entered"'
 reddens = [
   "tests/hooks/test_wrapper.py::test_a_project_root_whose_name_begins_with_a_dash_is_a_destination_and_not_an_option",
 ]
@@ -5152,7 +5152,7 @@ reddens = [
 #
 # The first is the headline: the row that proves the `PreToolUse` guard denies could not tell a
 # genuine deny from any launcher fault at all. `hooks/run-hook.sh` maps a launcher `rc=1` under
-# the `closed` policy to exit 2 with a `KL_` token on stderr, which is byte-for-byte what
+# the `closed` policy to exit 2 with a `SF_` token on stderr, which is byte-for-byte what
 # `expected_code=2` and `stderr_required=True` ask for — measured against a three-line
 # `scripts/stayfixed`: thirteen of the fourteen rows green, that one among them.
 [[mutation]]

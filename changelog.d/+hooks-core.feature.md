@@ -13,7 +13,7 @@ worktree is the same repository, and a clone ships its tree into every checkout;
 answers for the project root is taken from a fixed list of absolute paths with an allowlisted
 environment, never from `PATH`; and a relative `CLAUDE_PLUGIN_DATA` gets no diagnostics sink at
 all rather than one anchored inside the checkout. If your only Python 3.11 lives inside your
-checkout you will see `KL_NO_PY` and a red `wrapper` row in `stayfixed doctor`, with the remedy,
+checkout you will see `SF_NO_PY` and a red `wrapper` row in `stayfixed doctor`, with the remedy,
 instead of a hook that silently runs your tree's own program. Every fault the wrapper can see
 before stayfixed runs — no policy argument, no `git`, no interpreter, a launcher it cannot read, a
 project root it cannot enter — prints its own token.

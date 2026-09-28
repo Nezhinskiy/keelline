@@ -148,7 +148,7 @@ def test_no_policy_argument_refuses_with_a_token(tmp_path: Path) -> None:
     # entry that loses its first argument must disarm loudly or not at all.
     result = _run(plugin_root=_plugin_root(tmp_path, 0))
     assert result.returncode == 2
-    assert "KL_ARGV" in result.stderr
+    assert "SF_ARGV" in result.stderr
 
 
 @pytest.mark.parametrize(("policy", "code"), [("closed", 2), ("open", 0)])
@@ -167,7 +167,7 @@ def test_no_interpreter_of_the_floor_version_refuses_under_closed_only(
         candidates="/nonexistent/python3",
     )
     assert result.returncode == code
-    assert "KL_NO_PY" in result.stderr
+    assert "SF_NO_PY" in result.stderr
 
 
 def test_an_interpreter_below_the_floor_is_rejected(tmp_path: Path) -> None:
@@ -188,7 +188,7 @@ def test_an_interpreter_below_the_floor_is_rejected(tmp_path: Path) -> None:
         candidates=old,
     )
     assert result.returncode == 2
-    assert "KL_NO_PY" in result.stderr
+    assert "SF_NO_PY" in result.stderr
 
 
 def test_an_interpreter_at_the_floor_is_accepted(tmp_path: Path) -> None:
@@ -202,7 +202,7 @@ def test_an_interpreter_at_the_floor_is_accepted(tmp_path: Path) -> None:
         candidates=sys.executable,
     )
     assert result.returncode == 0
-    assert "KL_NO_PY" not in result.stderr
+    assert "SF_NO_PY" not in result.stderr
 
 
 def test_a_plugin_root_in_the_environment_does_not_choose_the_launcher(tmp_path: Path) -> None:
@@ -215,12 +215,12 @@ def test_a_plugin_root_in_the_environment_does_not_choose_the_launcher(tmp_path:
     # nothing, because this choice is made before any stayfixed guard runs.
     #
     # The two roots are told apart by their exit codes, not by a message: `theirs` exits 3,
-    # which under `closed` policy becomes a KL_RC refusal and exit 2.
+    # which under `closed` policy becomes a SF_RC refusal and exit 2.
     ours = _plugin_root(tmp_path / "ours", 0)
     theirs = _plugin_root(tmp_path / "theirs", 3)
     result = _run("closed", "hook", "PreToolUse", plugin_root=ours, env_root=theirs)
     assert result.returncode == 0
-    assert "KL_RC" not in result.stderr
+    assert "SF_RC" not in result.stderr
 
 
 def _planted_interpreter(tmp_path: Path) -> tuple[Path, Path]:
@@ -323,7 +323,7 @@ def test_an_interpreter_inside_the_project_root_is_never_used(tmp_path: Path) ->
         "closed", "hook", "PreToolUse", plugin_root=root, project=clone, candidates=str(shipped)
     )
     assert only.returncode == 2
-    assert "KL_NO_PY" in only.stderr
+    assert "SF_NO_PY" in only.stderr
     assert not ran.exists()
 
 
@@ -372,7 +372,7 @@ def test_an_interpreter_reached_through_path_is_judged_by_its_resolved_path(
     )
     assert not ran.exists(), f"the tree's own interpreter ran, reached through {spelling}"
     assert result.returncode == 2
-    assert "KL_NO_PY" in result.stderr
+    assert "SF_NO_PY" in result.stderr
 
 
 def test_a_candidate_stands_when_there_is_no_project_root_to_compare_it_against(
@@ -422,8 +422,8 @@ def test_the_project_root_is_never_taken_from_an_inherited_git_environment(tmp_p
 
 def test_a_launcher_that_cannot_be_read_refuses_with_a_token(tmp_path: Path) -> None:
     # `[ -f ]` tests existence, not readability. Measured with `chmod 000`: the wrapper printed
-    # CPython's own "Permission denied" and exited 2 with no KL_ token, passed straight through
-    # by `case "$rc" in 0|2)` — an unattributed exit 2, which every KL_ token exists to make
+    # CPython's own "Permission denied" and exited 2 with no SF_ token, passed straight through
+    # by `case "$rc" in 0|2)` — an unattributed exit 2, which every SF_ token exists to make
     # impossible, and a state `doctor`'s wrapper row reported green for, because it keys on
     # finding a token.
     root = _plugin_root(tmp_path, 0)
@@ -433,7 +433,7 @@ def test_a_launcher_that_cannot_be_read_refuses_with_a_token(tmp_path: Path) -> 
     finally:
         (root / "scripts" / "stayfixed").chmod(0o755)
     assert result.returncode == 2
-    assert "KL_NO_LAUNCHER" in result.stderr
+    assert "SF_NO_LAUNCHER" in result.stderr
 
 
 @pytest.mark.parametrize(("policy", "code"), [("closed", 2), ("open", 0)])
@@ -458,7 +458,7 @@ def test_a_project_root_that_cannot_be_entered_says_so(
         stdin=subprocess.DEVNULL,
     )
     assert result.returncode == code
-    assert "KL_NO_ROOT" in result.stderr
+    assert "SF_NO_ROOT" in result.stderr
     # Non-vacuous: the launcher was not reached at all, which is what "cannot be entered" has
     # to mean — a run that continued in the harness's cwd would have printed one.
     assert result.stdout == ""
@@ -474,7 +474,7 @@ def test_a_missing_launcher_refuses_although_the_environment_names_one(tmp_path:
     theirs = _plugin_root(tmp_path / "theirs", 0)
     result = _run("closed", "hook", "PreToolUse", plugin_root=ours, env_root=theirs)
     assert result.returncode == 2
-    assert "KL_NO_LAUNCHER" in result.stderr
+    assert "SF_NO_LAUNCHER" in result.stderr
 
 
 @pytest.mark.parametrize("rc", [1, 3, 126, 127])
@@ -484,7 +484,7 @@ def test_any_other_exit_code_becomes_a_refusal_under_closed(tmp_path: Path, rc: 
     # none of them may read as allow.
     result = _run("closed", "hook", "PreToolUse", plugin_root=_plugin_root(tmp_path, rc))
     assert result.returncode == 2
-    assert "KL_RC" in result.stderr and str(rc) in result.stderr
+    assert "SF_RC" in result.stderr and str(rc) in result.stderr
 
 
 @pytest.mark.parametrize("rc", [0, 2])
@@ -612,7 +612,7 @@ def test_an_interpreter_in_the_git_root_is_refused_although_the_environment_name
     assert not ran.exists(), "the tree's own interpreter ran while the environment moved the anchor"
     assert result.returncode == 2
     # WHICH refusal fired. A later `elif` that let this arm fall through to the generic message
-    # would still exit 2 with a KL_NO_PY token, so the token alone proves nothing here.
+    # would still exit 2 with a SF_NO_PY token, so the token alone proves nothing here.
     assert "inside the project root" in result.stderr
     # Non-vacuous, and it names the member doing the work: take the git anchor away — the same
     # tree, from a directory that is not a repository — and the remaining anchor is the variable
@@ -712,7 +712,7 @@ def test_the_two_states_with_no_interpreter_are_told_apart(tmp_path: Path) -> No
         candidates=str(shipped),
     )
     assert in_tree.returncode == 2
-    assert "KL_NO_PY" in in_tree.stderr
+    assert "SF_NO_PY" in in_tree.stderr
     assert "inside the project root" in in_tree.stderr
     assert "outside the checkout" in in_tree.stderr, "the remedy is not named where it is needed"
     assert not ran.exists()
@@ -725,7 +725,7 @@ def test_the_two_states_with_no_interpreter_are_told_apart(tmp_path: Path) -> No
         candidates="/nonexistent/python3",
     )
     assert nothing.returncode == 2
-    assert "KL_NO_PY" in nothing.stderr
+    assert "SF_NO_PY" in nothing.stderr
     # The assertion the old message could not pass: the two states must not print one string.
     assert "inside the project root" not in nothing.stderr
 
@@ -769,7 +769,7 @@ def test_a_project_root_whose_name_begins_with_a_dash_is_a_destination_and_not_a
         project=Path("-dashed"),
         cwd=dashed.parent,
     )
-    assert "KL_NO_ROOT" not in result.stderr
+    assert "SF_NO_ROOT" not in result.stderr
     assert result.stdout.splitlines() == [str(dashed.resolve())]
 
 
@@ -788,7 +788,7 @@ def test_no_git_at_any_absolute_path_is_a_token_rather_than_a_silent_run(
         plugin_root=_plugin_root(tmp_path, 0, echo_cwd=True, git_candidates="/nonexistent/git"),
     )
     assert result.returncode == code
-    assert "KL_NO_GIT" in result.stderr
+    assert "SF_NO_GIT" in result.stderr
     # Non-vacuous: the launcher was never reached, so this is the wrapper's own decision and not
     # something that happened further down.
     assert result.stdout == ""

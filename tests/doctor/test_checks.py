@@ -483,7 +483,7 @@ def test_the_wrapper_is_executed_rather_than_only_read(
     )
     check = _by_name(_checks(tmp_path, _initialised(tmp_path)), "wrapper")
     assert check.status == "red"
-    assert "KL_NO_LAUNCHER" in check.detail
+    assert "SF_NO_LAUNCHER" in check.detail
 
 
 def test_a_wrapper_that_runs_is_reported_green(tmp_path: Path) -> None:
@@ -1543,7 +1543,7 @@ def test_a_wrapper_refusal_that_quotes_bytes_that_are_not_text_is_still_read(
     (planted / "hooks").mkdir(parents=True)
     wrapper = planted / "hooks" / "run-hook.sh"
     wrapper.write_text(
-        "#!/bin/sh\nprintf 'stayfixed: KL_NO_LAUNCHER in /caf\\351; continuing open\\n' >&2\n"
+        "#!/bin/sh\nprintf 'stayfixed: SF_NO_LAUNCHER in /caf\\351; continuing open\\n' >&2\n"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -1551,7 +1551,7 @@ def test_a_wrapper_refusal_that_quotes_bytes_that_are_not_text_is_still_read(
     monkeypatch.setattr(checks, "_own_root", lambda: planted)
     check = _by_name(_checks(tmp_path, _initialised(tmp_path)), "wrapper")
     assert check.status == "red"
-    assert "KL_NO_LAUNCHER" in check.detail
+    assert "SF_NO_LAUNCHER" in check.detail
 
 
 def test_the_wrapper_probe_never_inherits_this_process_stdin(

@@ -57,7 +57,7 @@ degrade() { echo "stayfixed: $1; continuing open" >&2; exit 0; }
 # with the shell's own "unbound variable" and exit 1 — measured as exit 1 with no token on
 # /bin/sh (bash 3.2.57), and exit 0 under `zsh --emulate sh`, so the mapping is not even
 # portable. A disarmed guard must say so.
-[ $# -ge 1 ] || refuse "KL_ARGV no policy argument"
+[ $# -ge 1 ] || refuse "SF_ARGV no policy argument"
 policy="$1"
 shift
 
@@ -116,7 +116,7 @@ launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/stayfixed"
 # Written out in the `for` rather than held in a variable, unlike the interpreter list below,
 # which has to be one because `STAYFIXED_PYTHON_CANDIDATES` replaces it. An unquoted variable is
 # not word-split by zsh outside `sh` emulation, so a list in a variable is one long word there
-# and no candidate matches; measured under native `zsh`, which refused with `KL_NO_GIT` — safe,
+# and no candidate matches; measured under native `zsh`, which refused with `SF_NO_GIT` — safe,
 # since the containment still refused and nothing ran, but the wrong reason. Literal words in a
 # `for` are words in all five shells this file is verified against.
 git_bin=
@@ -127,7 +127,7 @@ for g in /opt/homebrew/bin/git /usr/local/bin/git /home/linuxbrew/.linuxbrew/bin
     break
   fi
 done
-[ -n "$git_bin" ] || fail "KL_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"
+[ -n "$git_bin" ] || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"
 git_root=$(env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)
 
 # `CLAUDE_PROJECT_DIR` still decides the *destination*, which is the question it is allowed to
@@ -152,7 +152,7 @@ root="${CLAUDE_PROJECT_DIR:-}"
 # without the `--`.
 project=
 if [ -n "$root" ]; then
-  CDPATH= cd -- "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"
+  CDPATH= cd -- "$root" 2>/dev/null || fail "SF_NO_ROOT the project root this entry was given cannot be entered"
   project=$(pwd -P)
 fi
 
@@ -304,20 +304,20 @@ set +f
 # arm names it here.
 if [ -z "$p" ]; then
   if [ -n "$skipped_in_project" ]; then
-    fail "KL_NO_PY every python3 candidate found is inside the project root, which this wrapper never runs; install a python3 3.11 or newer outside the checkout, or put one on PATH from outside it"
+    fail "SF_NO_PY every python3 candidate found is inside the project root, which this wrapper never runs; install a python3 3.11 or newer outside the checkout, or put one on PATH from outside it"
   fi
-  fail "KL_NO_PY no python3 of 3.11 or newer among the candidates"
+  fail "SF_NO_PY no python3 of 3.11 or newer among the candidates"
 fi
 
 # Readable and not merely present. `-f` alone let a launcher at mode 000 reach CPython, which
 # printed its own `Permission denied` and exited 2 with no token of ours — the unattributed exit
 # 2 this file's header is about, and a state `doctor`'s wrapper row read as green because it
 # keys on finding a token (measured with `chmod 000`).
-[ -f "$launcher" ] && [ -r "$launcher" ] || fail "KL_NO_LAUNCHER launcher missing or unreadable at ${launcher}"
+[ -f "$launcher" ] && [ -r "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"
 
 "$p" "$launcher" "$@"
 rc=$?
 case "$rc" in
   0|2) exit "$rc" ;;
-  *) fail "KL_RC stayfixed exited rc=$rc" ;;
+  *) fail "SF_RC stayfixed exited rc=$rc" ;;
 esac

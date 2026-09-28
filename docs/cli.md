@@ -334,12 +334,12 @@ wrapper, and `stayfixed doctor`'s `wrapper` row reports on the same basis.
 
 | Token | What it means |
 |---|---|
-| `KL_ARGV` | The entry lost its policy argument. Always a refusal, whatever the missing policy would have been: a `closed` guard that disarmed itself must say so. |
-| `KL_NO_PY` | No candidate interpreter is 3.11 or newer **and outside the project root**. The message distinguishes the two states, because their remedies differ: a candidate that was found inside the checkout and skipped says so and names the remedy, while "none among the candidates" means no interpreter answered at all. `STAYFIXED_PYTHON_CANDIDATES` replaces the built-in list, space-separated — and is honoured **only when the wrapper's stdin is a terminal**, because it names the program the wrapper executes. See below. |
-| `KL_NO_GIT` | There is no `git` at any of the wrapper's absolute candidate paths. `git`'s answer is one of the two anchors the interpreter containment is measured against, so a machine without one has no anchor this process can trust: it degrades under `open` and refuses under `closed`, rather than keeping the shape of the containment and none of its strength. `git` is **not** looked up on `PATH` here — see below. |
-| `KL_NO_LAUNCHER` | There is no readable `scripts/stayfixed` beside the wrapper. The launcher is derived from the wrapper's own path and never read out of the environment: the harness substitutes the plugin root into the *command string*, so the wrapper that runs is always the plugin's own, while a variable of that name reaching this process from anywhere else would choose the program Python is handed — before any stayfixed guard runs. Readability and not merely existence: a launcher at mode `000` otherwise reached CPython, which printed its own error and exited `2` with no token. |
-| `KL_NO_ROOT` | `CLAUDE_PROJECT_DIR`, or `git`, named a project root the wrapper could not enter. A root that cannot be *resolved* is silent and correct — nothing is configured, so nothing is emitted — but a root that was named and cannot be entered used to leave the process in the harness's working directory, where every `--root`-defaulting entry would read whatever project happened to be there. |
-| `KL_RC` | `stayfixed` exited with something other than `0` or `2`; the code is printed. |
+| `SF_ARGV` | The entry lost its policy argument. Always a refusal, whatever the missing policy would have been: a `closed` guard that disarmed itself must say so. |
+| `SF_NO_PY` | No candidate interpreter is 3.11 or newer **and outside the project root**. The message distinguishes the two states, because their remedies differ: a candidate that was found inside the checkout and skipped says so and names the remedy, while "none among the candidates" means no interpreter answered at all. `STAYFIXED_PYTHON_CANDIDATES` replaces the built-in list, space-separated — and is honoured **only when the wrapper's stdin is a terminal**, because it names the program the wrapper executes. See below. |
+| `SF_NO_GIT` | There is no `git` at any of the wrapper's absolute candidate paths. `git`'s answer is one of the two anchors the interpreter containment is measured against, so a machine without one has no anchor this process can trust: it degrades under `open` and refuses under `closed`, rather than keeping the shape of the containment and none of its strength. `git` is **not** looked up on `PATH` here — see below. |
+| `SF_NO_LAUNCHER` | There is no readable `scripts/stayfixed` beside the wrapper. The launcher is derived from the wrapper's own path and never read out of the environment: the harness substitutes the plugin root into the *command string*, so the wrapper that runs is always the plugin's own, while a variable of that name reaching this process from anywhere else would choose the program Python is handed — before any stayfixed guard runs. Readability and not merely existence: a launcher at mode `000` otherwise reached CPython, which printed its own error and exited `2` with no token. |
+| `SF_NO_ROOT` | `CLAUDE_PROJECT_DIR`, or `git`, named a project root the wrapper could not enter. A root that cannot be *resolved* is silent and correct — nothing is configured, so nothing is emitted — but a root that was named and cannot be entered used to leave the process in the harness's working directory, where every `--root`-defaulting entry would read whatever project happened to be there. |
+| `SF_RC` | `stayfixed` exited with something other than `0` or `2`; the code is printed. |
 
 **Which values may choose what.** The wrapper asks one question of everything it reads: is this
 a *destination*, or does it choose a program, or the provenance of what runs? `CLAUDE_PROJECT_DIR`
@@ -360,7 +360,7 @@ anchor there is, so a bare `git` would let a clone that ships one have that bina
 every hook invocation, before any guard. The wrapper therefore tries a fixed list of absolute
 paths and takes the first that exists, asking the machine owner's own installs before
 `/usr/bin/git`; nothing under `$HOME` is on the list, because `HOME` is environment-chosen too.
-A machine with `git` at none of them gets `KL_NO_GIT`. This is deliberately stricter than
+A machine with `git` at none of them gets `SF_NO_GIT`. This is deliberately stricter than
 `stayfixed`'s own `git` calls, which do resolve through `PATH` so that the machine owner's `git`
 answers: those run inside a stayfixed that has already chosen its interpreter, while this one
 decides which programs may run at all.
@@ -387,7 +387,7 @@ repository — and its only fallback there is to trust the remaining variable on
 the same hole under a longer name.
 
 A machine whose interpreter really is inside the checkout — a vendored toolchain, or an in-tree
-virtual environment that is the only `python3` on `PATH` — gets `KL_NO_PY` rather than a silent
+virtual environment that is the only `python3` on `PATH` — gets `SF_NO_PY` rather than a silent
 run of the tree's own program: a refusal under `closed`, a degradation under `open`, and a red
 `wrapper` row in `stayfixed doctor` either way. That is the accepted cost of the rule, and it is
 reached only when none of the four absolute candidates answers first.

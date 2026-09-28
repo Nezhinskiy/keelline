@@ -24,7 +24,7 @@ PLACEHOLDER = "${CLAUDE_PLUGIN_ROOT}"
 # The wrapper's own fault tokens all begin with this, and every one of them is a report about
 # the launcher rather than an answer from the dispatcher. A refusal that carries one is not a
 # refusal the guard made.
-FAULT = "KL_"
+FAULT = "SF_"
 DELIMITER = "<<<stayfixed:repository-data"
 # What `tests/fixtures/smoke-project`'s own store puts in front of the model, one marker per
 # bundle that renders anything on it.
@@ -53,7 +53,7 @@ class Sample:
     label: str
     # What the stderr must and must not say, because the exit code cannot tell a genuine deny
     # from a launcher fault. `hooks/run-hook.sh` maps a launcher `rc=1` under the `closed`
-    # policy to exit 2 with a `KL_` token on stderr, which satisfies `expected_code=2` and
+    # policy to exit 2 with a `SF_` token on stderr, which satisfies `expected_code=2` and
     # `stderr_required=True` byte for byte. Measured 2026-09-19: a three-line
     # `scripts/stayfixed` that writes to stderr and raises `SystemExit(1)` left the row that
     # proves the guard denies GREEN, along with twelve of the other thirteen.

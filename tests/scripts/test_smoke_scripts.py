@@ -46,7 +46,7 @@ def _plugin(tmp_path: Path, *, launcher: str | None = None, hooks: Path | None =
 # A launcher that performs the owner's trust act for real and answers everything else the way
 # a broken plugin does: something on stderr, exit 1. That is the shape the security seat ran —
 # a three-line `scripts/stayfixed` — and under it the wrapper's `closed` policy produces exit 2
-# with a `KL_` token on stderr, which is byte-for-byte what the security-bearing row used to
+# with a `SF_` token on stderr, which is byte-for-byte what the security-bearing row used to
 # ask for. Trust is delegated so that the run reaches its rows at all.
 FAULTY = f"""
 import runpy, sys

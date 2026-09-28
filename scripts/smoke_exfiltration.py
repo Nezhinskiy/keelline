@@ -317,7 +317,7 @@ def main(argv: list[str]) -> int:
         copied, ["closed", "hook", "PreToolUse"], contained_env, planted.clone
     )
     named = all(
-        "KL_NO_PY" in done.stderr and "inside the project root" in done.stderr
+        "SF_NO_PY" in done.stderr and "inside the project root" in done.stderr
         for done in (degraded, refused)
     )
     report.row(

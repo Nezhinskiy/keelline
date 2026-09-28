@@ -124,13 +124,13 @@ SETTINGS_FILES = (
 # at the plugin root — `overlay/template.py` says why — so it is found by environment or by
 # checkout probe and never through `importlib.resources`.
 WRAPPER = "hooks/run-hook.sh"
-# A refusal token the wrapper prints: `KL_ARGV`, `KL_NO_GIT`, `KL_NO_PY`, `KL_NO_ROOT`,
-# `KL_NO_LAUNCHER`, `KL_RC` — the pattern matches the shape rather than the list, so a new one
+# A refusal token the wrapper prints: `SF_ARGV`, `SF_NO_GIT`, `SF_NO_PY`, `SF_NO_ROOT`,
+# `SF_NO_LAUNCHER`, `SF_RC` — the pattern matches the shape rather than the list, so a new one
 # is reported without an edit here, but the list is kept true because it is what a reader
 # checks against. The
 # wrapper's own vocabulary, which is the whole reason it prints one — an exit 2 is attributed
 # rather than inferred, and under `open` policy the exit code is 0 and the token is all there is.
-_TOKEN = re.compile(r"\bKL_[A-Z_]+\b")
+_TOKEN = re.compile(r"\bSF_[A-Z_]+\b")
 # Wall-clock bound on the one subprocess this *module* launches. The area's total is four on a
 # green attached installation — `stayfixed.doctor.__init__` counts them and names the one that
 # leaves the machine — because three more are launched inside the areas the rows below call.
