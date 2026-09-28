@@ -159,11 +159,14 @@ def test_a_document_that_does_not_parse_is_refused_by_position_alone() -> None:
     # `tomllib` quotes the document in its message (`Cannot declare ('stayfixed',) twice`), and a
     # refusal reaches a terminal and a model. Mutation: re-raise the `TOMLDecodeError` and this
     # reddens.
-    text = "[stayfixed]\n[stayfixed]\n# \x1b[31m\n"
+    header = "[stayfixed]"
+    text = f"{header}\n{header}\n# \x1b[31m\n"
     with pytest.raises(OwnedKeyError) as caught:
         rewrite(text, {("stayfixed", "version"): "0.2.0"})
+    # The position is the end of the repeated header, so the column is that header's width.
     assert str(caught.value) == (
-        "stayfixed.toml is not valid TOML (at line 2, column 11), so nothing was written"
+        f"stayfixed.toml is not valid TOML (at line 2, column {len(header)}), "
+        "so nothing was written"
     )
 
 

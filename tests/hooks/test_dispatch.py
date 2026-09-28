@@ -295,10 +295,10 @@ def test_context_at_a_realistic_cap_keeps_its_leading_content_and_the_mark() -> 
     outcome = dispatch(event(), handlers, None, sink=Recorder(), cap=200)
     context = json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"]
     # Every kept character here is plain ASCII, so nothing widens under JSON escaping and the
-    # search always lands exactly on the cap: 68 kept characters plus the mark is the true
-    # optimum for this event name and context, not merely a value close enough to it.
+    # search always lands exactly on the cap: what is left of it after the envelope and the mark
+    # is the true optimum for this event name and context, not merely a value close to it.
     assert len(outcome.stdout) == 200
-    assert context == "y" * 68 + TRUNCATION_MARK
+    assert context == "y" * (len(context) - len(TRUNCATION_MARK)) + TRUNCATION_MARK
 
 
 def test_the_cap_bounds_the_emitted_string_not_the_field_inside_it() -> None:
@@ -310,15 +310,19 @@ def test_the_cap_bounds_the_emitted_string_not_the_field_inside_it() -> None:
 
 
 def test_json_escaping_is_charged_to_the_same_budget() -> None:
+    # Each kept `\n` costs two rendered characters once JSON-escaped, so of two adjacent caps one
+    # leaves a budget that cannot be spent to the last character: the true optimum lands on one
+    # cap and one short of the other. Asking both pins that without depending on which one is
+    # odd, which the envelope's and the mark's widths decide and a rename moves. Mutations (by
+    # hand): `_clamp`'s `<= cap` as `< cap` -> [1, 2]; as `<= cap + 1` -> [-1, 0]; each reddens.
     handlers = [handler("a", Policy.OPEN, HookResult(context="\n" * 500))]
-    # The cap is chosen so that the budget left after the envelope and the mark is odd.
-    outcome = dispatch(event(), handlers, None, sink=Recorder(), cap=201)
-    # Each kept `\n` costs two rendered characters once JSON-escaped, so an odd cap budget
-    # cannot be spent to the last character: the true optimum here lands one short of the cap,
-    # not merely under it, so that is the value to pin instead of an inequality.
-    assert len(outcome.stdout) == 200
-    context = json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert context == "\n" * 34 + TRUNCATION_MARK
+    shortfall = []
+    for cap in (200, 201):
+        stdout = dispatch(event(), handlers, None, sink=Recorder(), cap=cap).stdout
+        context = json.loads(stdout)["hookSpecificOutput"]["additionalContext"]
+        assert set(context.removesuffix(TRUNCATION_MARK)) == {"\n"}
+        shortfall.append(cap - len(stdout))
+    assert sorted(shortfall) == [0, 1]
 
 
 def test_a_once_per_context_handler_runs_once_and_is_skipped_afterwards() -> None:

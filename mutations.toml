@@ -4276,6 +4276,26 @@ reddens = [
   "tests/hooks/test_dispatch.py::test_a_once_per_context_handler_whose_result_is_rejected_keeps_its_one_delivery",
 ]
 
+# The clamp keeps the largest prefix whose whole rendered string fits the cap. Either off-by-one
+# changes where the escaping case lands on one of its two caps, whichever of them is odd.
+[[mutation]]
+name = "the clamp keeps a string one short of fitting"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "        if len(stdout) <= cap:"
+after = "        if len(stdout) < cap:"
+reddens = [
+  "tests/hooks/test_dispatch.py::test_json_escaping_is_charged_to_the_same_budget",
+]
+
+[[mutation]]
+name = "the clamp keeps a string one past the cap"
+file = "src/stayfixed/hooks/dispatch.py"
+before = "        if len(stdout) <= cap:"
+after = "        if len(stdout) <= cap + 1:"
+reddens = [
+  "tests/hooks/test_dispatch.py::test_json_escaping_is_charged_to_the_same_budget",
+]
+
 # The registry is the only place a check's name is spelled. A stray literal equal to a registry key
 # is exactly the state the refactor removed — a name a row could come to disagree with — so the
 # mutation re-introduces one rather than deleting a guard.

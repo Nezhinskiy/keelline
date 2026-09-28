@@ -557,13 +557,16 @@ def test_a_directory_only_last_star_owns_what_is_below_each_directory_it_matches
 # Each runs in a child with a deadline, so a matcher that backtracks fails this case instead of
 # hanging the suite. Every pattern is the repository's to write: a run of `*`, a run of `**`
 # components long enough to exhaust a recursion, a component of alternating stars, and one whose
-# ends and runs `stayfixed.yml` all holds, which only the walk answers.
+# ends and literal runs all hold on `release.yml`, so only the walk answers it. That last one is
+# asked of a fixed path rather than of `CI_WORKFLOW`: a pattern built from the workflow's own
+# letters went vacuous when the project was renamed, and a path carrying no product name cannot.
 BOUNDED = (
     "from stayfixed.assess.probes import _owns\n"
     "from stayfixed.project.api import CI_WORKFLOW\n"
     "for pattern in ('*' * 100_000 + 'z', '**/' * 100_000 + 'z', '*e' * 50_000 + 'z',\n"
-    "                '/'.join(['*'] * 100_000), 's*x?e*l'):\n"
+    "                '/'.join(['*'] * 100_000)):\n"
     "    print(_owns(pattern, CI_WORKFLOW))\n"
+    "print(_owns('r*l?e*l', '.github/workflows/release.yml'))\n"
 )
 
 
