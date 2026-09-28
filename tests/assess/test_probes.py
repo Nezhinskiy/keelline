@@ -562,7 +562,7 @@ BOUNDED = (
     "from stayfixed.assess.probes import _owns\n"
     "from stayfixed.project.api import CI_WORKFLOW\n"
     "for pattern in ('*' * 100_000 + 'z', '**/' * 100_000 + 'z', '*e' * 50_000 + 'z',\n"
-    "                '/'.join(['*'] * 100_000), 'k*l?e*l'):\n"
+    "                '/'.join(['*'] * 100_000), 's*x?e*l'):\n"
     "    print(_owns(pattern, CI_WORKFLOW))\n"
 )
 
