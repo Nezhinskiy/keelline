@@ -33,7 +33,8 @@ a tagline, a behaviour fix noticed on the way — is out and waits for its own b
 
 - The name is written `stayfixed`, lower case, everywhere: prose, sentence starts, headings,
   command output, URLs. The one exception is a Python class name, which keeps PEP 8 case:
-  the error class becomes `StayfixedError`.
+  the error class becomes `StayfixedError` and the configuration section's dataclass becomes
+  `Stayfixed`.
 - The repository is `stayfixed/stayfixed` on GitHub. The personal account stays the author:
   `authors`, `author`, `developerName` and `CODEOWNERS` keep `Nezhinskiy`; only the marketplace
   `owner` becomes `stayfixed`.
@@ -59,15 +60,32 @@ so a later, shorter rule cannot split them.
 6. keelline                              ->  stayfixed
 ```
 
-Paths that carry the name move with `git mv`:
+Every tracked path that carries the name moves with `git mv`, the package directory first and
+then each remaining path with the name replaced in it. Outside the package that is the launcher,
+three changelog fragments, the two fixture projects' configuration files, the smoke fixture's
+state directory, and, inside the package, the project template's CI workflow:
 
 ```text
 src/keelline/                                   ->  src/stayfixed/
 scripts/keelline                                ->  scripts/stayfixed
-changelog.d/+keelline-directory-reserved.fix.md ->  changelog.d/+stayfixed-directory-reserved.fix.md
-changelog.d/+keelline-directory.change.md       ->  changelog.d/+stayfixed-directory.change.md
-changelog.d/+keelline-toml-never-followed.fix.md -> changelog.d/+stayfixed-toml-never-followed.fix.md
+changelog.d/+keelline-*.md (three)              ->  changelog.d/+stayfixed-*.md
+tests/fixtures/*/keelline.toml (two)            ->  tests/fixtures/*/stayfixed.toml
+tests/fixtures/smoke-project/.keelline/         ->  tests/fixtures/smoke-project/.stayfixed/
+src/stayfixed/templates/project/keelline.yml    ->  src/stayfixed/templates/project/stayfixed.yml
 ```
+
+The mapping's rule 5 also turns the configuration section's dataclass `Keelline` into a name that
+collides with the local variable holding it (ruff reports `F823`); that one identifier is renamed
+`Stayfixed` by hand, in its definition, its annotation, its import and its two constructor calls.
+A tokenizer pass over the original tree shows `KeellineError` and `Keelline` are the only code
+identifiers spelled with a capital.
+
+**The smoke fixture's configuration moves without tripping its gate.** The `same-repository-form`
+job compares the fixture's configuration with the base branch's copy byte for byte, which is why
+that file may not change in a pull request. After the rename the gate reads `stayfixed.toml`, the
+base has none, and a missing base copy is the bootstrap, where the change's own tree decides
+(`docs/cli.md`, the `gate` section). So this change passes; the next one to touch the fixture's
+configuration is held to the byte comparison again.
 
 Measured before the rename: 9,037 lower-case, 1,070 capitalised and 143 upper-case occurrences in
 471 tracked files; the upper-case ones are the seven environment variables
@@ -203,10 +221,15 @@ git commit -m "test(name): state that the former name survives only in the histo
 
 ```bash
 git mv src/keelline src/stayfixed
-git mv scripts/keelline scripts/stayfixed
-git mv changelog.d/+keelline-directory-reserved.fix.md changelog.d/+stayfixed-directory-reserved.fix.md
-git mv changelog.d/+keelline-directory.change.md changelog.d/+stayfixed-directory.change.md
-git mv changelog.d/+keelline-toml-never-followed.fix.md changelog.d/+stayfixed-toml-never-followed.fix.md
+git ls-files -z | python3 -c '
+import sys, subprocess, pathlib
+for n in sys.stdin.buffer.read().decode().split("\0"):
+    if not n or "keelline" not in n.lower() or n.startswith("docs/plans/"):
+        continue
+    new = n.replace("keelline", "stayfixed")
+    pathlib.Path(new).parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "mv", n, new], check=True)
+'
 ```
 
 - [ ] **Step 2: Apply the mapping to every tracked text file outside the exemptions**

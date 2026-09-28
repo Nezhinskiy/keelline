@@ -163,7 +163,7 @@ def test_a_document_that_does_not_parse_is_refused_by_position_alone() -> None:
     with pytest.raises(OwnedKeyError) as caught:
         rewrite(text, {("stayfixed", "version"): "0.2.0"})
     assert str(caught.value) == (
-        "stayfixed.toml is not valid TOML (at line 2, column 10), so nothing was written"
+        "stayfixed.toml is not valid TOML (at line 2, column 11), so nothing was written"
     )
 
 

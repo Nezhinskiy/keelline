@@ -295,10 +295,10 @@ def test_context_at_a_realistic_cap_keeps_its_leading_content_and_the_mark() -> 
     outcome = dispatch(event(), handlers, None, sink=Recorder(), cap=200)
     context = json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"]
     # Every kept character here is plain ASCII, so nothing widens under JSON escaping and the
-    # search always lands exactly on the cap: 69 kept characters plus the mark is the true
+    # search always lands exactly on the cap: 68 kept characters plus the mark is the true
     # optimum for this event name and context, not merely a value close enough to it.
     assert len(outcome.stdout) == 200
-    assert context == "y" * 69 + TRUNCATION_MARK
+    assert context == "y" * 68 + TRUNCATION_MARK
 
 
 def test_the_cap_bounds_the_emitted_string_not_the_field_inside_it() -> None:
@@ -311,11 +311,12 @@ def test_the_cap_bounds_the_emitted_string_not_the_field_inside_it() -> None:
 
 def test_json_escaping_is_charged_to_the_same_budget() -> None:
     handlers = [handler("a", Policy.OPEN, HookResult(context="\n" * 500))]
-    outcome = dispatch(event(), handlers, None, sink=Recorder(), cap=200)
+    # The cap is chosen so that the budget left after the envelope and the mark is odd.
+    outcome = dispatch(event(), handlers, None, sink=Recorder(), cap=201)
     # Each kept `\n` costs two rendered characters once JSON-escaped, so an odd cap budget
     # cannot be spent to the last character: the true optimum here lands one short of the cap,
     # not merely under it, so that is the value to pin instead of an inequality.
-    assert len(outcome.stdout) == 199
+    assert len(outcome.stdout) == 200
     context = json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"]
     assert context == "\n" * 34 + TRUNCATION_MARK
 
