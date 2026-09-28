@@ -22,6 +22,7 @@ from typing import Any
 
 import pytest
 
+from stayfixed import __version__
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.loader import load, loads
 from stayfixed.config.schema import NAME_RULE, Config
@@ -42,6 +43,8 @@ from tests.cli import cli
 from tests.gitfixture import git, needs_git
 from tests.project.repos import DOCUMENT, repository
 from tests.snapshot import assert_snapshot_unchanged, snapshot
+
+TAG = f"v{__version__}"  # the release tag the running version would carry
 
 
 @dataclass
@@ -195,12 +198,12 @@ def test_a_hostile_gate_branch_is_reported_as_a_skipped_workflow_and_not_as_a_pi
     monkeypatch.setattr(
         runner_module,
         "subprocess_runner",
-        lambda: _Listing(f"{sha}\trefs/tags/v0.1.0\n"),
+        lambda: _Listing(f"{sha}\trefs/tags/{TAG}\n"),
     )
     code, printed = _run(root, tmp_path, "--yes")
     assert code == 0, printed
     assert "CI: skipped — [ci] gate_branch is not a plain branch name" in printed
-    assert sha not in printed and "v0.1.0@" not in printed
+    assert sha not in printed and f"{TAG}@" not in printed
     assert not (root / ".github").exists()
 
 
@@ -223,18 +226,18 @@ def test_an_adopted_ref_is_reported_as_the_repositorys_own_and_not_as_a_release(
     )
     sha = "c" * 40
     monkeypatch.setattr(
-        runner_module, "subprocess_runner", lambda: _Listing(f"{sha}\trefs/tags/v0.1.0\n")
+        runner_module, "subprocess_runner", lambda: _Listing(f"{sha}\trefs/tags/{TAG}\n")
     )
     # The dry run first, because it writes nothing and leaves the repository fresh for the real
     # one below: `--json` is where a caller reads which ref the workflow will carry.
     code, printed = _run(root, tmp_path, "--yes", "--dry-run", "--json")
     assert code == 0, printed
     data = json.loads(printed)
-    assert data["ref"] == recorded and data["pin"] == {"tag": "v0.1.0", "sha": sha}
+    assert data["ref"] == recorded and data["pin"] == {"tag": TAG, "sha": sha}
     code, plain = _run(root, tmp_path, "--yes")
     assert code == 0, plain
     assert "CI: the workflow pins the [ci] ref this repository already recorded" in plain
-    assert f"v0.1.0@{sha}" not in plain
+    assert f"{TAG}@{sha}" not in plain
     workflow = (root / ".github" / "workflows" / "stayfixed.yml").read_text(encoding="utf-8")
     assert f"check.yml@{recorded}" in workflow and sha not in workflow
 

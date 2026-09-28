@@ -103,8 +103,9 @@ step 7's sentence true.
 
    **And the release smoke's tag, which a test holds.** `.github/workflows/smoke-release.yml`
    calls `check.yml@vX.Y.Z`, written out, because `uses:` takes no expression; set it to the
-   new version here. `tests/test_fixtures.py` fails until it names the version the tree carries,
-   and the release workflow runs the suite on the tag.
+   new version here, and in the `mutations.toml` entry whose `before` is that line.
+   `tests/test_fixtures.py` fails until it names the version the tree carries, and the release
+   workflow runs the suite on the tag.
 
    **And the two example configurations, which are on no gate at all.** `README.md`'s and
    `docs/cli.md`'s example `stayfixed.toml` blocks both carry `version = "0.1.0"`; after the

@@ -80,13 +80,13 @@ later package.
 
 ## Install
 
-**Released as 0.1.0.** Both commands below install that release. The plugin form takes the
+**Released as 0.1.1.** Both commands below install that release. The plugin form takes the
 tag, and `uv tool install stayfixed` resolves from PyPI:
 
 As a Claude Code plugin:
 
 ```
-/plugin marketplace add stayfixed/stayfixed@v0.1.0
+/plugin marketplace add stayfixed/stayfixed@v0.1.1
 /plugin install stayfixed@stayfixed-marketplace
 ```
 
@@ -111,7 +111,7 @@ of them, annotated.
 
 ```toml
 [stayfixed]
-version = "0.1.0"
+version = "0.1.1"
 
 [project]
 name = "widget"          # one lowercase path segment
