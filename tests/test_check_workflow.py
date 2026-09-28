@@ -75,7 +75,7 @@ GATE_ENV: dict[str, Node] = {
     "PYTHONPATH": "stayfixed/src",
     "ROOT": "${{ steps.base.outputs.root }}",
     "BASE_SHA": "${{ steps.base.outputs.base_sha }}",
-    "WORKFLOW_SHA": "${{ job.workflow_sha }}",
+    "WORKFLOW_SHA": "${{ steps.stayfixed.outputs.sha }}",
     "ONLY": "${{ inputs.only }}",
 }
 SCRIPT = "<script>"
@@ -106,6 +106,7 @@ STEPS: list[dict[str, Node]] = [
     },
     {
         "name": "The checkout is the commit this workflow file is at",
+        "id": "stayfixed",
         "env": {"EXPECTED": "${{ job.workflow_sha }}"},
         "run": SCRIPT,
     },
@@ -143,9 +144,13 @@ SCRIPTS: dict[str, list[str]] = {
         "esac",
     ],
     CHECKOUT_STEP: [
+        'expected="$(git -C stayfixed rev-parse --verify --quiet "$EXPECTED^{commit}")" || { echo'
+        " \"::error::the workflow's own ref '$EXPECTED' names no commit in the checkout\";"
+        " exit 1; }",
         'actual="$(git -C stayfixed rev-parse HEAD)"',
-        '[ "$actual" = "$EXPECTED" ] || { echo "::error::checked out $actual, not the workflow\'s'
-        ' own $EXPECTED"; exit 1; }',
+        '[ "$actual" = "$expected" ] || { echo "::error::checked out $actual, not the workflow\'s'
+        ' own $expected"; exit 1; }',
+        'echo "sha=$expected" >> "$GITHUB_OUTPUT"',
     ],
     PROOF: ["python3 -m stayfixed --version"],
     BASE_STEP: [
@@ -309,7 +314,7 @@ def _judge(
     runner = {
         "${{ steps.base.outputs.root }}": "project/.",
         "${{ steps.base.outputs.base_sha }}": base_sha,
-        "${{ job.workflow_sha }}": "0" * 40,
+        "${{ steps.stayfixed.outputs.sha }}": "0" * 40,
         "${{ inputs.only }}": only,
     }
     named = {
@@ -510,11 +515,61 @@ def test_both_gate_steps_start_python_without_the_working_directory_on_its_path(
 def test_the_judging_step_passes_the_platform_s_workflow_sha_through_env() -> None:
     # An upgrade's `[ci] ref` is admitted only at the commit the platform says is running, so
     # the judging step must hand `stayfixed gate` that commit, and from the platform's own record
-    # — through `env:`, never spliced into the script. No clone case reaches an admitted move,
-    # which needs a released tag, so the wiring is held here. Mutation (declared): drop
-    # `--workflow-sha "$WORKFLOW_SHA"`.
+    # peeled by the checkout step, below — through `env:`, never spliced into the script. No
+    # clone case reaches an admitted move, which needs a released tag, so the wiring is held
+    # here. Mutation (declared): drop `--workflow-sha "$WORKFLOW_SHA"`.
     assert '--workflow-sha "$WORKFLOW_SHA"' in step_script(CHECK_WORKFLOW, JUDGE)
-    assert _step_env(JUDGE)["WORKFLOW_SHA"] == "${{ job.workflow_sha }}"
+    assert _step_env(JUDGE)["WORKFLOW_SHA"] == "${{ steps.stayfixed.outputs.sha }}"
+
+
+def _checkout_step(workspace: Path, expected: str) -> tuple[int, str, str]:
+    """The checkout-assertion step, run against `workspace/stayfixed` with `EXPECTED` as the
+    platform's `job.workflow_sha`; its exit code, its stderr and what it wrote to the outputs."""
+    output = workspace / "github-output"
+    output.write_text("", encoding="utf-8")
+    done = subprocess.run(
+        ["bash", "-e", "-c", step_script(CHECK_WORKFLOW, CHECKOUT_STEP)],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**floor_env(), "EXPECTED": expected, "GITHUB_OUTPUT": str(output)},
+    )
+    return done.returncode, done.stdout + done.stderr, output.read_text(encoding="utf-8")
+
+
+@needs_git
+@needs_bash
+@needs_workflow
+def test_the_checkout_step_peels_an_annotated_tag_to_the_commit_the_gates_are_handed(
+    tmp_path: Path,
+) -> None:
+    # A caller pinning `@vX.Y.Z` where that tag is annotated gets the tag object's sha as
+    # `job.workflow_sha`, while the checkout lands on the commit: `v0.1.0` was tagged so, and
+    # every run pinned to it refused with "checked out <commit>, not the workflow's own <tag>".
+    # The step peels the value, and hands the commit on. Mutation (declared): the step compares
+    # the raw value -> the annotated case refuses and this reddens.
+    checkout = tmp_path / "stayfixed"
+    checkout.mkdir()
+    git(checkout, "init", "-q")
+    (checkout / "a").write_text("a", encoding="utf-8")
+    commit(checkout, "first")
+    first = git(checkout, "rev-parse", "HEAD").strip()
+    (checkout / "a").write_text("b", encoding="utf-8")
+    commit(checkout, "second")
+    head = git(checkout, "rev-parse", "HEAD").strip()
+    git(checkout, "tag", "-a", "v9.9.9", "-m", "annotated")
+    tag_object = git(checkout, "rev-parse", "v9.9.9").strip()
+    assert tag_object != head
+    for expected in (tag_object, head):
+        code, said, output = _checkout_step(tmp_path, expected)
+        assert (code, output) == (0, f"sha={head}\n"), said
+    # And what still refuses: an empty value, which checks out the default branch, and a sha
+    # that names some other commit.
+    for expected in ("", first):
+        code, said, output = _checkout_step(tmp_path, expected)
+        assert (code, output) == (1, ""), said
+        assert "::error::" in said
 
 
 @needs_git

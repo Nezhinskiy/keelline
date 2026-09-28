@@ -121,11 +121,20 @@ jobs:
         # The assertion that would have caught an empty `ref`: a default-branch checkout
         # answers a different sha. It is also the only thing that turns the Enterprise Server
         # gap above into a refusal rather than into a floating stayfixed.
+        #
+        # A caller whose `uses:` names an annotated tag gets the tag object's sha here, not the
+        # commit's, and the checkout lands on the commit; `v0.1.0` was tagged that way and every
+        # run pinned to it refused. So the sha is peeled to the commit it names, and that commit,
+        # not the platform's raw value, is what the gate steps are handed. An empty value names
+        # nothing and is still refused.
+        id: stayfixed
         env:
           EXPECTED: ${{ job.workflow_sha }}
         run: |
+          expected="$(git -C stayfixed rev-parse --verify --quiet "$EXPECTED^{commit}")" || { echo "::error::the workflow's own ref '$EXPECTED' names no commit in the checkout"; exit 1; }
           actual="$(git -C stayfixed rev-parse HEAD)"
-          [ "$actual" = "$EXPECTED" ] || { echo "::error::checked out $actual, not the workflow's own $EXPECTED"; exit 1; }
+          [ "$actual" = "$expected" ] || { echo "::error::checked out $actual, not the workflow's own $expected"; exit 1; }
+          echo "sha=$expected" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: ${{ inputs.python-version }}
@@ -212,7 +221,7 @@ jobs:
           PYTHONPATH: stayfixed/src
           ROOT: ${{ steps.base.outputs.root }}
           BASE_SHA: ${{ steps.base.outputs.base_sha }}
-          WORKFLOW_SHA: ${{ job.workflow_sha }}
+          WORKFLOW_SHA: ${{ steps.stayfixed.outputs.sha }}
           ONLY: ${{ inputs.only }}
         run: |
           set -f
@@ -233,7 +242,7 @@ jobs:
           PYTHONPATH: stayfixed/src
           ROOT: ${{ steps.base.outputs.root }}
           BASE_SHA: ${{ steps.base.outputs.base_sha }}
-          WORKFLOW_SHA: ${{ job.workflow_sha }}
+          WORKFLOW_SHA: ${{ steps.stayfixed.outputs.sha }}
           ONLY: ${{ inputs.only }}
         run: |
           set -f
