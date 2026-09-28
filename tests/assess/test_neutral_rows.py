@@ -1,13 +1,13 @@
 """No gate reads a key the tighten-only rule calls `neutral`.
 
-The rule lets a pull request change `keelline.preset`, `keelline.profile`, `keelline.agents` and
+The rule lets a pull request change `stayfixed.preset`, `stayfixed.profile`, `stayfixed.agents` and
 `project.name` whatever the base enforces, on the ground that no gate reads them. That ground is
 a fact about the gates, so it is executed rather than asserted: every built-in gate runs over a
 clone once under the loaded configuration and once per neutral key moved, and must answer the
 same. The unchanged run has a finding, so "the same" is not two empty answers.
 
 No mutation of the rule reaches this, because the rule is not what it checks: the gates are. To
-watch it fail, make `keelline.docs.hygiene.docs_gate` return `[]` when
+watch it fail, make `stayfixed.docs.hygiene.docs_gate` return `[]` when
 `config.project.name == "gadget"`.
 """
 
@@ -18,18 +18,18 @@ from pathlib import Path
 
 import pytest
 
-import keelline
-from keelline.assess.gates import GateContext, run_gates
-from keelline.config.loader import load
-from keelline.config.schema import BUILTIN_GATES, Config
+import stayfixed
+from stayfixed.assess.gates import GateContext, run_gates
+from stayfixed.config.loader import load
+from stayfixed.config.schema import BUILTIN_GATES, Config
 from tests.assess.baserepo import AGENTS, clone, commit
 from tests.gitfixture import git, needs_git
 
 pytestmark = needs_git
 
 # `AGENTS` is five lines, so it breaks this budget and the `docs` gate has a finding.
-BASE = f"""[keelline]
-version = "{keelline.__version__}"
+BASE = f"""[stayfixed]
+version = "{stayfixed.__version__}"
 state = "initialised"
 
 [project]
@@ -39,16 +39,16 @@ name = "widget"
 agents_md_lines = 3
 """
 # The keys `tests/assess/test_rule.py` holds to `neutral` whatever the base enforces.
-NEUTRAL = ("keelline.preset", "keelline.profile", "keelline.agents", "project.name")
+NEUTRAL = ("stayfixed.preset", "stayfixed.profile", "stayfixed.agents", "project.name")
 
 
 def _moved(config: Config, key: str) -> Config:
-    if key == "keelline.preset":
-        return replace(config, keelline=replace(config.keelline, preset="other"))
-    if key == "keelline.profile":
-        return replace(config, keelline=replace(config.keelline, profile="python"))
-    if key == "keelline.agents":
-        return replace(config, keelline=replace(config.keelline, agents=("codex",)))
+    if key == "stayfixed.preset":
+        return replace(config, stayfixed=replace(config.stayfixed, preset="other"))
+    if key == "stayfixed.profile":
+        return replace(config, stayfixed=replace(config.stayfixed, profile="python"))
+    if key == "stayfixed.agents":
+        return replace(config, stayfixed=replace(config.stayfixed, agents=("codex",)))
     assert key == "project.name"
     return replace(config, project=replace(config.project, name="gadget"))
 

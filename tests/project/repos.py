@@ -11,17 +11,17 @@ from collections.abc import Mapping
 from dataclasses import asdict, replace
 from pathlib import Path
 
-import keelline
-from keelline.config.loader import preset_defaults
-from keelline.project.init import init
-from keelline.runner import Runner
-from keelline.scaffold import Manifest
+import stayfixed
+from stayfixed.config.loader import preset_defaults
+from stayfixed.project.init import init
+from stayfixed.runner import Runner
+from stayfixed.scaffold import Manifest
 from tests.gitfixture import LsRemote, git
 
-BEFORE = "# ours, from before Keelline\n"
-# The smallest `keelline.toml` a test writes by hand: this build's version, a name, and no CI.
+BEFORE = "# ours, from before stayfixed\n"
+# The smallest `stayfixed.toml` a test writes by hand: this build's version, a name, and no CI.
 DOCUMENT = (
-    f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n\n'
+    f'[stayfixed]\nversion = "{stayfixed.__version__}"\n\n[project]\nname = "widget"\n\n'
     '[ci]\nmode = "none"\n'
 )
 # Every `[paths]` value that defaults under `docs/`, moved off it, so a symlinked `docs` is on no
@@ -69,11 +69,11 @@ def initialised(
     files: Mapping[str, str] | None = None,
 ) -> Path:
     """`init --yes` over a repository that already held a README, `document` as its
-    `keelline.toml` when one is given, and each of `files` (a root-relative path and its text)
+    `stayfixed.toml` when one is given, and each of `files` (a root-relative path and its text)
     written before `init` runs."""
     root = repository(tmp_path)
     if document:
-        (root / "keelline.toml").write_text(document, encoding="utf-8")
+        (root / "stayfixed.toml").write_text(document, encoding="utf-8")
     for relative, text in (files or {}).items():
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)

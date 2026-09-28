@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from keelline.errors import Refusal
-from keelline.identifiers import Identifiers
+from stayfixed.errors import Refusal
+from stayfixed.identifiers import Identifiers
 
 
 def test_the_default_prefix_reads_and_writes_three_digit_identifiers() -> None:
@@ -15,7 +15,7 @@ def test_the_default_prefix_reads_and_writes_three_digit_identifiers() -> None:
 
 
 def test_reading_the_number_out_of_a_non_identifier_is_refused() -> None:
-    # `number` is `Identifiers`' one lossy reader, and the allocator in `keelline.ledger.write`
+    # `number` is `Identifiers`' one lossy reader, and the allocator in `stayfixed.ledger.write`
     # is its first caller: it asks `is_identifier` first, so this branch is reached only by a
     # caller that does not — and a caller that guesses a number out of a filename that is not an
     # identifier hands out an occupied one.

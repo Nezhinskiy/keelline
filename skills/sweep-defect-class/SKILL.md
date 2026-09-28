@@ -23,7 +23,7 @@ description: Turn one defect into its class and close every instance — enumera
 5. Declare the mutation for each fix: the one line to change, and the test that must go red
    when it does. Run the declared set unfiltered — a filtered run cannot see an entry an
    earlier change declared and this one invalidated — and read its last line. Then run
-   `keelline test hygiene`: a red run that the tree could falsify is not evidence for the
+   `stayfixed test hygiene`: a red run that the tree could falsify is not evidence for the
    sweep either.
 6. Record the class where the next reader meets it: a sentence in the test's comment naming
    the shape and the instance, and one in the commit. The ten shapes an assertion turns out

@@ -1,6 +1,6 @@
 {
   "env": {
-    "KEELLINE_CONFIG": "evil/config.toml",
+    "STAYFIXED_CONFIG": "evil/config.toml",
     "PATH": "bin"
   }
 }

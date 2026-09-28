@@ -1,10 +1,10 @@
 # The reusable workflow a project calls. One job, `gates`: it checks out the caller, checks out
-# Keelline at THIS FILE's own commit (no resolver and no build backend; the network is the two
+# stayfixed at THIS FILE's own commit (no resolver and no build backend; the network is the two
 # checkouts, whatever `setup-python` below fetches when the runner has no matching interpreter
-# cached, and, on a pull request that moves `[ci] ref`, one listing of Keelline's release tags),
+# cached, and, on a pull request that moves `[ci] ref`, one listing of stayfixed's release tags),
 # resolves the base branch to one commit, and runs
-# `python3 -P -s -m keelline gate` against it twice. The first run reads the base's
-# `keelline.toml`, admits only a change that tightens it, and runs the configuration check and
+# `python3 -P -s -m stayfixed gate` against it twice. The first run reads the base's
+# `stayfixed.toml`, admits only a change that tightens it, and runs the configuration check and
 # the built-in gates, each advisory or enforcing as the configuration it admitted says; it
 # executes nothing the repository wrote.
 # The second runs the project's own gates from `[gates.custom]`, only once the first passed:
@@ -18,7 +18,7 @@
 # **Anchor provenance, said once.**
 # - The base branch's NAME is the pull request's base as the platform reports it
 #   (`github.base_ref`); the caller's `base:` decides only on events that report none, and on a
-#   pull request a `base:` that disagrees is refused. The caller `keelline init` writes runs
+#   pull request a `base:` that disagrees is refused. The caller `stayfixed init` writes runs
 #   only for pull requests into the gate branch and passes that branch as a literal `base:`,
 #   so a pull request retargeted at a looser branch produces no run at all. The caller file is
 #   pull-request content, so all of that holds only under the repository settings
@@ -26,14 +26,14 @@
 # - The base COMMIT is `refs/remotes/origin/<base>` in the caller's own checkout, resolved once
 #   to a full sha that every later read uses. A fully qualified name is never shadowed by a tag
 #   called `origin/<base>`, and a 40-hex name is never shadowed by anything.
-# - The Keelline that runs comes from the platform's own record of which reusable workflow is
+# - The stayfixed that runs comes from the platform's own record of which reusable workflow is
 #   executing (`job.workflow_repository`, `job.workflow_sha`), never from the caller's inputs.
 #   That record names what the caller's `uses:` line pinned, and that line is pull-request
 #   content under the same settings. The platform documents no `github.job_workflow_sha`; an
 #   undefined property is the empty string, and `actions/checkout` with an empty `ref` checks
 #   out the DEFAULT BRANCH, a pin silently turned into a floating ref, so the checkout it got
 #   is asserted rather than trusted.
-name: keelline-check
+name: stayfixed-check
 
 on:
   workflow_call:
@@ -47,7 +47,7 @@ on:
         type: string
         default: "."
       python-version:
-        description: "the interpreter Keelline runs on; 3.11 is the floor"
+        description: "the interpreter stayfixed runs on; 3.11 is the floor"
         type: string
         default: "3.13"
       only:
@@ -109,34 +109,34 @@ jobs:
           path: project
           fetch-depth: 0
           persist-credentials: false
-      - name: Keelline, at this workflow's own commit
+      - name: stayfixed, at this workflow's own commit
         # The `job.workflow_*` properties are unavailable on GitHub Enterprise Server.
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
-          path: keelline
+          path: stayfixed
           persist-credentials: false
       - name: The checkout is the commit this workflow file is at
         # The assertion that would have caught an empty `ref`: a default-branch checkout
         # answers a different sha. It is also the only thing that turns the Enterprise Server
-        # gap above into a refusal rather than into a floating Keelline.
+        # gap above into a refusal rather than into a floating stayfixed.
         env:
           EXPECTED: ${{ job.workflow_sha }}
         run: |
-          actual="$(git -C keelline rev-parse HEAD)"
+          actual="$(git -C stayfixed rev-parse HEAD)"
           [ "$actual" = "$EXPECTED" ] || { echo "::error::checked out $actual, not the workflow's own $EXPECTED"; exit 1; }
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: ${{ inputs.python-version }}
-      - name: Keelline runs at all
-        # First, so that a Keelline that cannot run fails here under its own name, and not as
+      - name: stayfixed runs at all
+        # First, so that a stayfixed that cannot run fails here under its own name, and not as
         # a gate that reads as if it had found something. A bad checkout, a renamed module, or
         # an interpreter below the 3.11 floor (which `inputs.python-version` can name and
         # nothing validates) all land here.
         env:
-          PYTHONPATH: keelline/src
-        run: python3 -m keelline --version
+          PYTHONPATH: stayfixed/src
+        run: python3 -m stayfixed --version
       - name: The base ref and the project root
         id: base
         working-directory: project
@@ -165,7 +165,7 @@ jobs:
               exit 1
               ;;
           esac
-          # A root reached through a symbolic link is refused by `keelline gate` itself, which
+          # A root reached through a symbolic link is refused by `stayfixed gate` itself, which
           # both gate steps run before any gate: one implementation of that rule, not two.
           # **On a pull request the platform's answer wins, and a `base:` that disagrees is
           # refused rather than preferred.** The workflow file a `pull_request` run executes comes
@@ -198,18 +198,18 @@ jobs:
             echo "base_sha=$base_sha"
             echo "root=project/${p:-.}"
           } >> "$GITHUB_OUTPUT"
-      # The step that judges. `--builtin` executes no command from `keelline.toml`, and `-P -s`
+      # The step that judges. `--builtin` executes no command from `stayfixed.toml`, and `-P -s`
       # put neither the working directory nor the user site directory on `sys.path`, so nothing
       # the pull request wrote runs in the process that holds the verdict. It may not fail
-      # quietly: `keelline gate` already exits 0 for an advisory gate's findings, so
+      # quietly: `stayfixed gate` already exits 0 for an advisory gate's findings, so
       # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
       # `only:` is split on whitespace and never globbed, and each name travels as `--only=NAME`,
       # so it is always that flag's value, whatever it looks like; `--builtin` runs the
       # configuration check whatever `only:` names, so a leg that names one gate still judges the
-      # change's `keelline.toml` against the base's.
+      # change's `stayfixed.toml` against the base's.
       - name: The configuration and the built-in gates
         env:
-          PYTHONPATH: keelline/src
+          PYTHONPATH: stayfixed/src
           ROOT: ${{ steps.base.outputs.root }}
           BASE_SHA: ${{ steps.base.outputs.base_sha }}
           WORKFLOW_SHA: ${{ job.workflow_sha }}
@@ -219,7 +219,7 @@ jobs:
           only=()
           for name in $ONLY; do only+=("--only=$name"); done
           set +f
-          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
             --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"
       # The commands `[gates.custom]` names, and only after the step above passed: under the
       # default `if: success()` they never run after a refusal or an enforced built-in's failure,
@@ -230,7 +230,7 @@ jobs:
       # as in the step above.
       - name: The project's own gates
         env:
-          PYTHONPATH: keelline/src
+          PYTHONPATH: stayfixed/src
           ROOT: ${{ steps.base.outputs.root }}
           BASE_SHA: ${{ steps.base.outputs.base_sha }}
           WORKFLOW_SHA: ${{ job.workflow_sha }}
@@ -240,5 +240,5 @@ jobs:
           only=()
           for name in $ONLY; do only+=("--only=$name"); done
           set +f
-          python3 -P -s -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \
             --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"

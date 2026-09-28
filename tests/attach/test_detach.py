@@ -1,4 +1,4 @@
-"""`keelline detach` removes exactly what `attach` added, and nothing else.
+"""`stayfixed detach` removes exactly what `attach` added, and nothing else.
 
 The ledger is the authority on what was ours. Guessing it back from the content of a settings
 file is the heuristic the ledger exists to replace, and a detach built on a guess removes a rule
@@ -14,13 +14,13 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from keelline.attach.api import LEDGER
-from keelline.attach.write import GITIGNORE, IGNORE_BODY, IGNORE_REGION, Detached, detach
-from keelline.errors import Failure, Refusal
-from keelline.memory.api import harness_memory_path, resolve
-from keelline.memory.trust import record
-from keelline.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, digest
-from keelline.scaffold.regions import RegionError, Style, extract, markers, upsert
+from stayfixed.attach.api import LEDGER
+from stayfixed.attach.write import GITIGNORE, IGNORE_BODY, IGNORE_REGION, Detached, detach
+from stayfixed.errors import Failure, Refusal
+from stayfixed.memory.api import harness_memory_path, resolve
+from stayfixed.memory.trust import record
+from stayfixed.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, digest
+from stayfixed.scaffold.regions import RegionError, Style, extract, markers, upsert
 from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.attach.test_links import _attach, _bound, _config
 from tests.attach.test_write import SETTINGS
@@ -84,7 +84,7 @@ def test_detach_leaves_a_rule_the_ledger_does_not_claim(tmp_path: Path) -> None:
 
 def test_detach_leaves_a_hook_entry_that_was_never_marked(tmp_path: Path) -> None:
     # The same rule for the other half of the file. `scaffold.apply_entries` splits a group
-    # rather than replacing it, so a developer's own entry beside Keelline's survives — and
+    # rather than replacing it, so a developer's own entry beside stayfixed's survives — and
     # this is the command whose mistake would delete it.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], hooks=True)
@@ -121,7 +121,7 @@ def test_detach_without_a_ledger_says_so_and_changes_nothing(tmp_path: Path) -> 
 
 
 def test_detach_withdraws_the_harness_link(tmp_path: Path) -> None:
-    # The link that leaves Keelline's gate is the one that must not outlive the binding — the
+    # The link that leaves stayfixed's gate is the one that must not outlive the binding — the
     # same asymmetry `worktree._unlink` already enforces in the other direction.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
@@ -282,7 +282,7 @@ def test_the_two_values_attach_really_writes_are_still_acted_on(tmp_path: Path) 
     record(resolved, _config(root, machine))
     harness_memory_path(root, home).mkdir(parents=True)
     _attach(root, store, machine, home)
-    from keelline.attach.api import ledger as read_ledger
+    from stayfixed.attach.api import ledger as read_ledger
 
     recorded = read_ledger(root)
     assert recorded.rules == (".codex/rules/common.rules",)
@@ -303,7 +303,7 @@ def _a_git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
     def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
         return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
 
-    monkeypatch.setattr("keelline.memory.store.git_run", refuse)
+    monkeypatch.setattr("stayfixed.memory.store.git_run", refuse)
 
 
 def test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn(
@@ -368,12 +368,12 @@ def _directories(root: Path) -> set[str]:
 
 def test_detach_removes_the_directories_the_attach_created(tmp_path: Path) -> None:
     # `docs/cli.md` promised "an attach and a detach leave the tree byte-for-byte as it was" and
-    # it was false for directories: `.keelline/local/`, `.keelline/`, `.codex/rules/` and
+    # it was false for directories: `.stayfixed/local/`, `.stayfixed/`, `.codex/rules/` and
     # `.codex/` survived every round trip. `snapshot` filters on `is_file()`, so the round-trip
     # test above passed while four directories accumulated.
     #
     # The set is asserted by value and not by `not any(...)`: a `_withdraw_directories` that
-    # removed only the leaves, or only `.keelline/`, satisfies "something was removed" and
+    # removed only the leaves, or only `.stayfixed/`, satisfies "something was removed" and
     # leaves the tree changed. `.claude/` is on the list too — the overlay here grants a rule,
     # so the attach creates it.
     #
@@ -388,8 +388,8 @@ def test_detach_removes_the_directories_the_attach_created(tmp_path: Path) -> No
     assert _directories(root) > before
     removed = _detach(root, machine, home)
     assert set(removed.directories_removed) == {
-        ".keelline/local",
-        ".keelline",
+        ".stayfixed/local",
+        ".stayfixed",
         ".codex/rules",
         ".codex",
         ".claude",
@@ -423,7 +423,7 @@ def test_detach_keeps_a_directory_that_still_holds_something(tmp_path: Path) -> 
     assert ".codex/rules" not in removed.directories_removed
     assert ".codex" not in removed.directories_removed
     # And the ones that had nothing of the owner's in them still went.
-    assert ".keelline" in removed.directories_removed
+    assert ".stayfixed" in removed.directories_removed
 
 
 def test_detach_leaves_a_directory_that_was_there_before_the_attach(tmp_path: Path) -> None:
@@ -444,7 +444,7 @@ def test_detach_leaves_a_directory_that_was_there_before_the_attach(tmp_path: Pa
 
 
 def test_a_ledger_naming_a_directory_no_attach_creates_is_refused(tmp_path: Path) -> None:
-    # `.keelline/local/attach.json` is a path a clone can commit, and `directories` drives
+    # `.stayfixed/local/attach.json` is a path a clone can commit, and `directories` drives
     # `rmdir`. It is held to the same closed list `rules` and `settings_keys` are held to, so a
     # ledger naming `src` is refused with nothing removed rather than obeyed — even though
     # `rmdir` would have spared a non-empty `src/` anyway. A partial defence reported as a
@@ -553,7 +553,7 @@ def test_a_whitespace_only_gitignore_survives_the_round_trip(tmp_path: Path) -> 
 def test_a_region_init_recorded_survives_a_detach(tmp_path: Path) -> None:
     """A region `init`'s footprint records is `init`'s: ownership decides, not last writer.
 
-    `keelline init` records the `keelline:ignore` region as a footprint artifact with exactly
+    `stayfixed init` records the `stayfixed:ignore` region as a footprint artifact with exactly
     the body `attach` writes — one spelling, imported rather than respelled, so neither command
     can report the other's region as hand-edited. `attach`'s own write stays and is idempotent;
     what changes is the withdrawal. A `detach` that dropped a region the manifest records would
@@ -620,10 +620,10 @@ def test_a_manifest_a_clone_committed_cannot_block_the_withdrawal(
 ) -> None:
     """A repository may not disable the command that undoes an attach.
 
-    `.keelline/manifest.json` is **tracked** -- the ignore region covers `.keelline/local/` and
-    `.keelline/assessment.json` and nothing else -- so a clone commits whatever it likes there,
+    `.stayfixed/manifest.json` is **tracked** -- the ignore region covers `.stayfixed/local/` and
+    `.stayfixed/assessment.json` and nothing else -- so a clone commits whatever it likes there,
     and `Manifest.read` refuses one that is unreadable, is not an object, or declares a `format`
-    past this Keelline's. `attach` never reads the file, so a clone shipping `{"format": 99}`
+    past this stayfixed's. `attach` never reads the file, so a clone shipping `{"format": 99}`
     attached cleanly, merged the owner's allow rules and hook entries, and then made `detach`
     exit 2 on every run for ever: the ownership question is asked above every withdrawal, so
     nothing was half-undone and nothing could ever be undone either.

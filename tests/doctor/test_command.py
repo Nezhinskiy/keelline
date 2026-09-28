@@ -14,11 +14,11 @@ from pathlib import Path
 
 import pytest
 
-from keelline.cli import build_parser, discover_registrars, run
-from keelline.doctor import checks
-from keelline.doctor.api import OK, RED, SKIP, WARN, Check
-from keelline.doctor.commands import summarise
-from keelline.findings import LISTED_LIMIT
+from stayfixed.cli import build_parser, discover_registrars, run
+from stayfixed.doctor import checks
+from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check
+from stayfixed.doctor.commands import summarise
+from stayfixed.findings import LISTED_LIMIT
 from tests.doctor.test_checks import _initialised
 from tests.floor import is_developers
 
@@ -31,7 +31,7 @@ def _nothing_of_the_developers_own(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     real environment, which no test in this suite may read: `ignored-env` reports whichever of
     two real variables is set, `diagnostics` finds the harness data root in it and this suite is
     plausibly run inside a session where that points at a real log, and
-    `load(root, machine=None)` resolves the developer's own `~/.config/keelline/config.toml`.
+    `load(root, machine=None)` resolves the developer's own `~/.config/stayfixed/config.toml`.
     The flag cases below cannot pass an environment through argparse, so the environment is made
     hermetic instead of passed.
 
@@ -79,7 +79,7 @@ def test_the_runner_this_command_builds_is_bounded_for_a_diagnostic(
 
     `runner.NETWORK_TIMEOUT_SECONDS` is five minutes, written for `gh repo create --clone` and
     the clone behind it. `doctor` inherited it for the `ci-ref` row's single `git ls-remote` —
-    and `keelline init` recording a `[ci] ref` is what made a five-minute block reachable on a
+    and `stayfixed init` recording a `[ci] ref` is what made a five-minute block reachable on a
     command whose whole output is one line. The row's own `git` questions go through `gitenv`'s
     five seconds and the wrapper probe through this module's thirty, so the bound here is the
     module's own thirty and `checks.CI_REF_TIMEOUT_SECONDS` carries the argument for it.
@@ -92,7 +92,7 @@ def test_the_runner_this_command_builds_is_bounded_for_a_diagnostic(
     `subprocess_runner(timeout=CI_REF_TIMEOUT_SECONDS)` -> `subprocess_runner()` -> this reddens
     on the recorded keyword.
     """
-    import keelline.runner as runner
+    import stayfixed.runner as runner
 
     asked: list[float | None] = []
     real = runner.subprocess_runner
@@ -123,8 +123,8 @@ def test_a_skip_is_not_a_finding(tmp_path: Path, capsys: pytest.CaptureFixture[s
 
 def test_any_red_check_exits_one(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     # Exit 1 is "findings". A doctor that always exits 0 is a doctor nothing can gate on: a
-    # script or a CI step that runs it reads the exit code, since `keelline assess` runs no
-    # doctor check. A directory with no `keelline.toml` is the cheapest red there is, and the
+    # script or a CI step that runs it reads the exit code, since `stayfixed assess` runs no
+    # doctor check. A directory with no `stayfixed.toml` is the cheapest red there is, and the
     # report's own first row.
     code = invoke(["doctor", "--root", str(tmp_path), "--home", str(tmp_path / "home")])
     assert code == 1

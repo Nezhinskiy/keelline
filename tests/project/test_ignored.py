@@ -1,6 +1,6 @@
 """A write or removal git would never show, at an existing file a committed `[paths]` value put
 an artifact on, is refused before anything is written, by all three footprint commands; a new
-file, a fixed name, a preset place, a tracked file, Keelline's own out-of-git directory, and a
+file, a fixed name, a preset place, a tracked file, stayfixed's own out-of-git directory, and a
 tree that is not a repository are not."""
 
 from __future__ import annotations
@@ -9,15 +9,15 @@ from pathlib import Path
 
 import pytest
 
-from keelline.config.loader import CONFIG_FILE
-from keelline.errors import Refusal
-from keelline.gitenv import git_run
-from keelline.project import ignored as module
-from keelline.project.ignored import IGNORED, IGNORED_REMOVING, UNANSWERED
-from keelline.project.init import init
-from keelline.project.uninstall import uninstall
-from keelline.project.upgrade import upgrade
-from keelline.scaffold import Manifest, digest
+from stayfixed.config.loader import CONFIG_FILE
+from stayfixed.errors import Refusal
+from stayfixed.gitenv import git_run
+from stayfixed.project import ignored as module
+from stayfixed.project.ignored import IGNORED, IGNORED_REMOVING, UNANSWERED
+from stayfixed.project.init import init
+from stayfixed.project.uninstall import uninstall
+from stayfixed.project.upgrade import upgrade
+from stayfixed.scaffold import Manifest, digest
 from tests.gitfixture import LsRemote, git, needs_git, run_git
 from tests.project.repos import (
     DOCUMENT,
@@ -57,7 +57,7 @@ def _append(path: Path, text: str) -> None:
 
 
 def _ignoring(root: Path, pattern: str) -> None:
-    # A line of the project's own, outside Keelline's region.
+    # A line of the project's own, outside stayfixed's region.
     _append(root / ".gitignore", f"{pattern}\n")
 
 
@@ -76,7 +76,7 @@ def test_a_committed_path_naming_an_ignored_env_file_is_refused_before_upgrade_w
     tmp_path: Path, dry_run: bool
 ) -> None:
     """The review's reproduction, end to end. `agents_md = ".env"` with `.env` git-ignored had
-    `upgrade` report `region_update .env (refreshed)` and append Keelline's region to `.env`,
+    `upgrade` report `region_update .env (refreshed)` and append stayfixed's region to `.env`,
     while `git status` showed only the manifest. It is refused now, dry run included, and the
     refusal names the file through the report's own bound.
 
@@ -156,7 +156,7 @@ def test_uninstall_s_remedy_for_an_ignored_file_works(tmp_path: Path) -> None:
     )
     uninstall(root, machine=tmp_path / "absent.toml", dry_run=False, force=())
     assert marker.read_text(encoding="utf-8") == MARKER
-    assert not (root / ".keelline").exists()
+    assert not (root / ".stayfixed").exists()
 
 
 @needs_git
@@ -165,13 +165,13 @@ def test_fixed_names_ignored_by_the_clone_s_own_rules_are_written_and_taken_back
     tmp_path: Path, dry_run: bool
 ) -> None:
     """`CLAUDE.md` and `AGENTS.md` in a person's excludes (global, or `.git/info/exclude`), and
-    `keelline.toml` kept out of git on purpose: none of those places was chosen by a repository
+    `stayfixed.toml` kept out of git on purpose: none of those places was chosen by a repository
     value, so none is refused. The first version refused `init` outright, dry run included,
     refused `upgrade`'s refresh of the region in an untracked ignored `AGENTS.md`, and left
     `uninstall` no way to take back the `CLAUDE.md` it wrote but deleting it by hand.
 
     Mutation (advisory): drop the preset-place exemption -> `init` refuses the existing
-    `keelline.toml` and `AGENTS.md`, and this reddens at the first call.
+    `stayfixed.toml` and `AGENTS.md`, and this reddens at the first call.
     """
     root = repository(tmp_path)
     for name in ("CLAUDE.md", "AGENTS.md", CONFIG_FILE):
@@ -182,13 +182,13 @@ def test_fixed_names_ignored_by_the_clone_s_own_rules_are_written_and_taken_back
     if dry_run:
         return
     assert (root / "CLAUDE.md").is_file()
-    assert "keelline:harness" in (root / "AGENTS.md").read_text(encoding="utf-8")
-    # Keelline's region taken out by hand: `upgrade` puts it back into the untracked, ignored
+    assert "stayfixed:harness" in (root / "AGENTS.md").read_text(encoding="utf-8")
+    # stayfixed's region taken out by hand: `upgrade` puts it back into the untracked, ignored
     # `AGENTS.md` at the preset's own place.
     agents = root / "AGENTS.md"
     agents.write_text("# Ours\n", encoding="utf-8")
     _upgrade(root, tmp_path)
-    assert "keelline:harness" in agents.read_text(encoding="utf-8")
+    assert "stayfixed:harness" in agents.read_text(encoding="utf-8")
     _uninstall(root, tmp_path)
     assert not (root / "CLAUDE.md").exists()
     assert tree(root) == {"README.md", "AGENTS.md", CONFIG_FILE}
@@ -230,7 +230,7 @@ def test_a_file_created_at_an_ignored_paths_place_is_refused_on_uninstall_until_
     )
     _uninstall(root, tmp_path)
     assert (root / "build" / "roadmap.md").is_file() and (root / "build" / "trail.toml").is_file()
-    assert not (root / ".keelline").exists()
+    assert not (root / ".stayfixed").exists()
 
 
 @needs_git
@@ -250,14 +250,14 @@ def test_a_tracked_file_matching_an_ignore_pattern_is_not_ignored(tmp_path: Path
     )
     _upgrade(root, tmp_path)
     text = host.read_text(encoding="utf-8")
-    assert text.startswith("# Our notes\n") and "keelline:harness:begin" in text
+    assert text.startswith("# Our notes\n") and "stayfixed:harness:begin" in text
 
 
 @needs_git
 def test_an_artifact_kept_out_of_git_is_written_and_removed_where_git_ignores_it(
     tmp_path: Path,
 ) -> None:
-    # `[artifacts] local` asks for exactly this: the file under `.keelline/local/artifacts/`,
+    # `[artifacts] local` asks for exactly this: the file under `.stayfixed/local/artifacts/`,
     # which the footprint's ignore block keeps out of git, at a place `[paths]` chose. Mutation
     # (advisory): drop the exemption -> uninstall refuses its removal, and this reddens.
     root = initialised(
@@ -265,7 +265,7 @@ def test_an_artifact_kept_out_of_git_is_written_and_removed_where_git_ignores_it
         document=DOCUMENT
         + '\n[artifacts]\nlocal = ["roadmap"]\n\n[paths]\nroadmap = "plans/roadmap.md"\n',
     )
-    local = ".keelline/local/artifacts/plans/roadmap.md"
+    local = ".stayfixed/local/artifacts/plans/roadmap.md"
     assert run_git(root, "check-ignore", "-q", "--", local).returncode == 0
     _uninstall(root, tmp_path)
     assert not (root / local).exists()
@@ -279,7 +279,7 @@ def test_outside_a_repository_there_is_no_diff_to_hide_from(tmp_path: Path) -> N
     (root / ".env").write_text(ENV_TEXT, encoding="utf-8")
     (root / CONFIG_FILE).write_text(DOCUMENT + '\n[paths]\nagents_md = ".env"\n', encoding="utf-8")
     _init(root, tmp_path)
-    assert "keelline:harness:begin" in (root / ".env").read_text(encoding="utf-8")
+    assert "stayfixed:harness:begin" in (root / ".env").read_text(encoding="utf-8")
 
 
 @needs_git
@@ -332,7 +332,7 @@ def test_a_symlinked_place_only_the_preset_would_use_refuses_no_command(tmp_path
     assert (root / "planning" / "roadmap.md").is_file()
     _upgrade(root, tmp_path)
     _uninstall(root, tmp_path)
-    assert not (root / ".keelline").exists()
+    assert not (root / ".stayfixed").exists()
     assert (root / "docs").is_symlink()
 
 
@@ -343,7 +343,7 @@ def test_a_paths_value_naming_another_artifact_s_preset_place_is_still_that_valu
 ) -> None:
     """`docs/roadmap-history.md` is `roadmap-history`'s preset place, not `roadmap`'s. A commit
     moves `roadmap_history` elsewhere, points `roadmap` at that file, drops `roadmap-history`'s
-    record and forges a `roadmap` record stating the bytes Keelline wrote there, which this
+    record and forges a `roadmap` record stating the bytes stayfixed wrote there, which this
     clone's excludes ignore. For `roadmap` it is a place a `[paths]` value chose: the run is
     refused, and the file is neither overwritten with the roadmap nor removed. (The file of an
     artifact this configuration still builds, such as `CLAUDE.md`, is refused earlier, as

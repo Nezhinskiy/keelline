@@ -1,6 +1,6 @@
-# Contributing to Keelline
+# Contributing to stayfixed
 
-Keelline's real conventions used to live only inside `docs/plans/`, which meant a first-time
+stayfixed's real conventions used to live only inside `docs/plans/`, which meant a first-time
 contributor's pull request could be rejected on rules they had no way to read. This file is
 those rules.
 
@@ -12,7 +12,7 @@ uv run pytest -n auto --cov --cov-fail-under=92   # the suite across workers, at
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run python scripts/mutation_oracle.py          # every declared mutation still reddens
-uv run keelline release check                     # version discipline
+uv run stayfixed release check                    # version discipline
 ```
 
 All five run in CI on Linux for Python 3.11, 3.12 and 3.13, and on macOS for 3.13 — including
@@ -25,7 +25,7 @@ in either is ours to diagnose, not yours.
 
 ## What this project is, and what that costs a change
 
-Keelline treats **a repository as untrusted input**. A clone can commit a `keelline.toml`, a
+stayfixed treats **a repository as untrusted input**. A clone can commit a `stayfixed.toml`, a
 `MEMORY.md`, a manifest, an `env` block and a tree of symlinks, and all of it reaches the code
 before a human has read any of it. Three rules follow, and a change that breaks one will be
 sent back however good it looks otherwise.
@@ -45,14 +45,14 @@ code that puts files into a repository.
 
 **Repository bytes are data.** Anything a repository authored — a note, an index line, a
 `memory.groups` entry, a refusal message built out of one — reaches the model only inside
-`trust.wrap`'s delimited region, and only after `keelline memory trust`. If you find yourself
+`trust.wrap`'s delimited region, and only after `stayfixed memory trust`. If you find yourself
 putting such a string into a `Result.summary`, a `HookResult.context` or an exception message,
 wrap it.
 
 The wrap is for the model and escapes no byte, and the same string also reaches a terminal and a
 CI runner, where a line break followed by `::error::` is a workflow command and an escape
 sequence drives the screen. So a name the repository chose — a file name, a note's name, a
-`memory.groups` entry, a TOML key — is printed through `keelline.printed`: `printable` where the
+`memory.groups` entry, a TOML key — is printed through `stayfixed.printed`: `printable` where the
 command's `--json` carries the name, and `quoted` in a refusal, where the message is the only
 place the name appears.
 
@@ -65,18 +65,18 @@ A bound comes from one of three places. A limit a project may tune — a documen
 count, a note's time to live — is a key under `[budgets]`, which a project may lower below its
 preset and never raise. A limit the harness sets — how much of an index it loads, how many
 characters of a hook's output it keeps — is a key under `[native_caps]`. Code reads both
-through `Config` (`src/keelline/config/schema.py`). Every other bound — a subprocess's
+through `Config` (`src/stayfixed/config/schema.py`). Every other bound — a subprocess's
 wall-clock timeout, how many bytes of a repository-authored file are read, how deep a parser
 descends — is a *named cap*: a constant in the code, almost always a module-level one with a
 name, and never a configuration key. None of them is a project's to move, because each one
 protects the run itself from a hung program, an oversized file or a pathological input, and a
-`keelline.toml` is repository-authored (principle 5). The one timeout a project does set,
+`stayfixed.toml` is repository-authored (principle 5). The one timeout a project does set,
 `[gates] custom_timeout_seconds`, bounds the project's own gate command rather than anything
-Keelline runs for itself.
+stayfixed runs for itself.
 
 The comment beside a named cap says what it bounds and why the number is what it is. When the number
 has to agree with a shipped file, the comment names that file, so a change to either is visibly a
-change to both: `doctor`'s `WORKFLOW_MAX_BYTES` names `src/keelline/templates/project/keelline.yml`,
+change to both: `doctor`'s `WORKFLOW_MAX_BYTES` names `src/stayfixed/templates/project/stayfixed.yml`,
 which it must stay well above, and `NEARLY_FULL` names `hooks/hooks.json`, where a bundle's slot
 count is raised. When no such file exists — a timeout on a hung `git`, the longest command
 `bg-cleanup` will read — the comment says so rather than inventing one.
@@ -86,25 +86,25 @@ count is raised. When no such file exists — a timeout on a hung `git`, the lon
 A command's section in [docs/cli.md](docs/cli.md) names every path the command writes, in a
 paragraph that opens with **Writes** (a read-only command's says "**Writes** nothing"), and the
 command writes those paths and no others: a change that makes a command write somewhere new
-names the path there in the same commit. `keelline hook`, which is internal, is held to the same
-rule: its paragraph names what it keeps inside the one directory Keelline owns under the data
-root the harness hands it (`${CLAUDE_PLUGIN_DATA}/keelline/`, which `src/keelline/hooks/sink.py`
+names the path there in the same commit. `stayfixed hook`, which is internal, is held to the same
+rule: its paragraph names what it keeps inside the one directory stayfixed owns under the data
+root the harness hands it (`${CLAUDE_PLUGIN_DATA}/stayfixed/`, which `src/stayfixed/hooks/sink.py`
 writes), and the one handler that writes outside it.
 
-Removal is held tighter. Every file or directory Keelline removes is one it names before it looks —
+Removal is held tighter. Every file or directory stayfixed removes is one it names before it looks —
 a fixed name in the code, a path its ledger or manifest recorded, one its configuration computes, or
 a directory above a file the same run removed — and none is found by listing a directory and
-removing what the listing returned, with two exceptions, each inside a directory only Keelline
+removing what the listing returned, with two exceptions, each inside a directory only stayfixed
 writes. The hook sink's sessions are unbounded in number, so it lists its `markers/` directory and
-prunes all but the newest `MARKER_SESSIONS_KEPT` sessions. And `keelline uninstall` walks
-`.keelline/local/artifacts/` and removes the directories it finds there that are empty, because
+prunes all but the newest `MARKER_SESSIONS_KEPT` sessions. And `stayfixed uninstall` walks
+`.stayfixed/local/artifacts/` and removes the directories it finds there that are empty, because
 that tree holds nothing but the local artifacts the same run just removed. Both go through `fsops`,
 as every removal in a project root does. A temporary directory a command creates for itself and removes whole when
 it finishes is outside the rule: nothing but that command ever wrote into it.
 
 ## Areas
 
-An area is a subpackage of `src/keelline/` that the CLI frame and the hook registry discover by
+An area is a subpackage of `src/stayfixed/` that the CLI frame and the hook registry discover by
 name — there is no shared registry to edit.
 
 Today the discovered ones are `assess`, `attach`, `docs`, `doctor`, `guards`, `hooks`,
@@ -113,9 +113,9 @@ path: `overlay` renders and upgrades the private overlay, `attach` binds a repos
 unbinds it again, and `doctor` reports on what every other area left behind and repairs none
 of it. `project` holds the shipped project templates and `init`, the command that writes a
 repository's footprint from them, and `assess` runs the gates and the inventory over a
-repository as it is, judges a change's `keelline.toml` against what its base branch enforces
-(`keelline gate`), and moves `[keelline] state` and `enforced` as a project promotes its gates
-(`keelline adopt begin` and `keelline adopt promote`). `assess` publishes no `api.py`: nothing
+repository as it is, judges a change's `stayfixed.toml` against what its base branch enforces
+(`stayfixed gate`), and moves `[stayfixed] state` and `enforced` as a project promotes its gates
+(`stayfixed adopt begin` and `stayfixed adopt promote`). `assess` publishes no `api.py`: nothing
 under `src/` or `scripts/` outside it imports it, and tests reach its modules directly, as they
 do every area's.
 (`config`, `presets`, `profiles`, `scaffold` and `templates` are subpackages and not areas, and
@@ -128,12 +128,12 @@ nor a `hooks.py`.)
   interpreter imports neither the configuration layer nor the presets.
 - `api.py` is the area's import surface. Other areas import from it and from nothing else, and
   its `__all__` must equal exactly what it imports — a test parses the file and checks, and
-  `tests/test_areas.py` walks every module under `src/keelline/` and fails on a cross-area
+  `tests/test_areas.py` walks every module under `src/stayfixed/` and fails on a cross-area
   import that reaches past one. The list is what consumers actually reach for, not what the
   area finds tidy: a consumer that needs something absent from it grows it deliberately, in a
   commit that says which consumer and why. `cli.py` is the CLI frame rather than an area, and its
   one direct import of `hooks.policy` is named in that test rather than skipped silently.
-- **`keelline.hooks.api` is the one exception, and it is structural rather than drift.** That
+- **`stayfixed.hooks.api` is the one exception, and it is structural rather than drift.** That
   module *defines* the vocabulary two areas share — `EVENTS`, `Policy`, `Decision`, `HookEvent`,
   `HookResult`, `Handler`, `Sink`, `NullSink`, `detect_harness` and the sink's on-disk layout —
   instead of re-exporting it, because `hooks.dispatch`, `hooks.sink`, `hooks.registry` and every
@@ -141,14 +141,14 @@ nor a `hooks.py`.)
   `api.py` would be an import cycle, not a tidying. So in the one area that ships the common
   vocabulary the rule runs the other way — **a name two areas share is defined in `api.py`** —
   and its `__all__` lists what it defines. No other area may read this as licence: a consumer
-  still imports `keelline.hooks.api` and never `keelline.hooks.dispatch` or `.sink`.
+  still imports `stayfixed.hooks.api` and never `stayfixed.hooks.dispatch` or `.sink`.
 - Every area is a regular package with an `__init__.py`. `pkgutil.iter_modules` does not yield a
   namespace package, so one without it is invisible to both discovery paths.
 
 Two top-level trees are documents rather than areas. `skills/` holds the Agent Skills this
 plugin ships and `agents/` the agent files; [skills/README.md](skills/README.md) is their
 contract — a skill body is **action language** and never names a harness tool, a `SKILL.md` is
-capped at 80 lines with the detail in `<skill>/references/`, and every `keelline …` invocation
+capped at 80 lines with the detail in `<skill>/references/`, and every `stayfixed …` invocation
 in a skill must parse against the real parser or be listed in `NOT_YET_SHIPPED` against the
 package that will ship it. `tests/skills/test_skills.py` holds all three, and the change that
 ships a command deletes its `NOT_YET_SHIPPED` entry.
@@ -188,7 +188,7 @@ that load could break. A test that fails under contention fails on the mutated r
 that is not the mutation, and that reads as *caught*. The product's own bounds on `git` are one
 such clock, so `tests/conftest.py` lifts every `git_run` bound to a floor of its own, through
 the environment variable `gitenv.FLOOR_VARIABLE`, which the product honours only as a raise
-(`src/keelline/gitenv.py` says why that is safe). A `keelline` the suite starts as a separate
+(`src/stayfixed/gitenv.py` says why that is safe). A `stayfixed` the suite starts as a separate
 process gets the same floor: a spawner that strips the developer's own variables takes
 `tests.floor.developer_free_environ()`, which keeps the floor, and one that builds its child's
 environment from nothing adds `tests.floor.floor_env()`. A test about a bound running out
@@ -200,7 +200,7 @@ a row in its table.
 ```toml
 [[mutation]]
 name = "the containment walk stops refusing '..'"
-file = "src/keelline/fsops.py"
+file = "src/stayfixed/fsops.py"
 before = "        if part in (_PARENT, _HERE):"
 after = "        if part in (_HERE,):"
 reddens = ["tests/test_fsops.py::test_a_parent_component_never_leaves_the_root"]
@@ -209,7 +209,7 @@ reddens = ["tests/test_fsops.py::test_a_parent_component_never_leaves_the_root"]
 The oracle sweeps before it runs. A killed run — `kill -9`, a CI timeout, a cancelled agent —
 cannot run its own cleanup, and `git worktree prune` does not collect what it leaves: prune only
 drops entries whose directory is gone, and a killed run leaves its directory standing. So the
-first thing a run does is drop every `keelline-oracle-*` checkout but its own, naming on stderr
+first thing a run does is drop every `stayfixed-oracle-*` checkout but its own, naming on stderr
 what it dropped.
 
 CI runs the whole set in a job of its own, called `oracle`, on one configuration —
@@ -268,10 +268,10 @@ two differed by four. Two entries are four characters long, which is why the off
 at all — a four-character window is not something a contributor can guess. Rewrite the line;
 do not add an entry to the exemption.
 
-A test must never read or write the developer's real `~/.config/keelline/`, `~/.claude/` or
+A test must never read or write the developer's real `~/.config/stayfixed/`, `~/.claude/` or
 `~/.codex/`. Pass `--machine` to a command, `machine=` to `resolve`, `home=` where a function
 takes one, and use `tmp_path` for everything else. A test must not shell out to `gh`, `claude`,
-`codex` or `pre-commit` either: `keelline.runner.Runner` is the seam those calls go through, and a
+`codex` or `pre-commit` either: `stayfixed.runner.Runner` is the seam those calls go through, and a
 stub records the argv, which is the part of them that can be wrong in a way somebody notices.
 
 ## Commits and changelog
@@ -287,7 +287,7 @@ reference and prints it in parentheses at the end of the bullet, so the release 
 reads would carry a file-name slug that means nothing to them. Write the fragment as a release
 note someone outside the project can read — not as a note to yourself about the change.
 
-`uv run keelline release check` cross-checks the version across `pyproject.toml`, `uv.lock`,
+`uv run stayfixed release check` cross-checks the version across `pyproject.toml`, `uv.lock`,
 the package, and both plugin manifests. It runs in CI; run it before you push.
 
 ## Plans

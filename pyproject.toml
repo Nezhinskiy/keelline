@@ -1,5 +1,5 @@
 [project]
-name = "keelline"
+name = "stayfixed"
 version = "0.1.0"
 description = "A methodology harness for coding agents: a bug ledger that lives in the repository, curated working memory behind a trust gate, and fail-closed guards, packaged as one plugin for Claude Code and Codex."
 readme = "README.md"
@@ -27,13 +27,13 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Nezhinskiy/keelline"
-Repository = "https://github.com/Nezhinskiy/keelline"
-Issues = "https://github.com/Nezhinskiy/keelline/issues"
-Changelog = "https://github.com/Nezhinskiy/keelline/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/stayfixed/stayfixed"
+Repository = "https://github.com/stayfixed/stayfixed"
+Issues = "https://github.com/stayfixed/stayfixed/issues"
+Changelog = "https://github.com/stayfixed/stayfixed/blob/main/CHANGELOG.md"
 
 [project.scripts]
-keelline = "keelline.cli:main"
+stayfixed = "stayfixed.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.11,<0.13"]
@@ -78,7 +78,7 @@ dev = ["pytest>=8", "pytest-cov>=6", "pytest-xdist>=3", "ruff>=0.12", "mypy>=1.1
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-include = ["scripts/keelline"]
+extend-include = ["scripts/stayfixed"]
 
 [tool.ruff.format]
 # Ruff formats Python code blocks inside Markdown from 0.16 on. This excludes every Markdown
@@ -125,7 +125,7 @@ addopts = ["-ra", "--strict-markers", "--strict-config"]
 xfail_strict = true
 
 [tool.coverage.run]
-source = ["src/keelline"]
+source = ["src/stayfixed"]
 branch = true
 
 [tool.coverage.report]
@@ -135,7 +135,7 @@ exclude_also = [
 ]
 
 [tool.towncrier]
-package = "keelline"
+package = "stayfixed"
 package_dir = "src"
 directory = "changelog.d"
 filename = "CHANGELOG.md"

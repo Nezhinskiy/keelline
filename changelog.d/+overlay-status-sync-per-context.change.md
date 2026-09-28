@@ -16,4 +16,4 @@ context is treated as a new one rather than as one already answered.
 
 The cost, which is the reason this is a change and not only a speed-up: an overlay that becomes
 unpushed *during* a session whose start found nothing to say is not reported at that session's
-compactions. `keelline doctor` answers on demand, and the next resume or start says it too.
+compactions. `stayfixed doctor` answers on demand, and the next resume or start says it too.

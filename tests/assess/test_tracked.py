@@ -16,12 +16,12 @@ from pathlib import Path
 
 import pytest
 
-from keelline import gitenv
-from keelline.assess import tracked
-from keelline.assess.assessment import UNNAMED, Assessment, assess, document, render
-from keelline.assess.gates import GateResult
-from keelline.assess.state import promote
-from keelline.assess.tracked import (
+from stayfixed import gitenv
+from stayfixed.assess import tracked
+from stayfixed.assess.assessment import UNNAMED, Assessment, assess, document, render
+from stayfixed.assess.gates import GateResult
+from stayfixed.assess.state import promote
+from stayfixed.assess.tracked import (
     CASE_DIFFERS,
     CASE_REMEDY,
     UNASKED,
@@ -30,8 +30,8 @@ from keelline.assess.tracked import (
     UNSEEN_REASON,
     UNTRACKED,
 )
-from keelline.config.loader import load
-from keelline.printed import UNPRINTABLE
+from stayfixed.config.loader import load
+from stayfixed.printed import UNPRINTABLE
 from tests.assess.smoke import BASE, FIXTURE, PLAN, smoke_repo
 from tests.cli import cli
 from tests.gitfixture import git, needs_git
@@ -78,7 +78,7 @@ def _sha(root: Path, rev: str) -> str:
 
 def _adopting(root: Path) -> None:
     """The fixture moved back to `initialised`, so its gates have something to be promoted to."""
-    config = root / "keelline.toml"
+    config = root / "stayfixed.toml"
     text = config.read_text(encoding="utf-8")
     config.write_text(
         text.replace('state = "installed"', 'state = "initialised"'), encoding="utf-8"
@@ -568,13 +568,13 @@ def test_adopt_promote_never_enforces_a_gate_that_reads_an_untracked_file(tmp_pa
     _adopting(root)
     _untrack(root, AGENTS)
     machine = tmp_path / "m.toml"
-    before = (root / "keelline.toml").read_text(encoding="utf-8")
+    before = (root / "stayfixed.toml").read_text(encoding="utf-8")
     named = promote(root, load(root, machine=machine), ["docs"], base=BASE, machine=machine)
     assert named.promoted == () and named.unanswered == ("docs",)
-    assert (root / "keelline.toml").read_text(encoding="utf-8") == before
+    assert (root / "stayfixed.toml").read_text(encoding="utf-8") == before
     every = promote(root, load(root, machine=machine), [], base=BASE, machine=machine)
     assert "docs" not in every.promoted and "bugs" in every.promoted
-    assert "docs" not in load(root, machine=machine).keelline.enforced
+    assert "docs" not in load(root, machine=machine).stayfixed.enforced
 
 
 def test_adopt_promote_s_refusal_says_to_track_the_file_and_names_it(tmp_path: Path) -> None:
@@ -593,7 +593,7 @@ def test_adopt_promote_s_refusal_says_to_track_the_file_and_names_it(tmp_path: P
     assert "commit each file named" in note and "[gates] builtin" in note, note
     # An ignored file is the commonest case, and plain `git add` refuses one.
     assert "`git add -f`" in note, note
-    assert "enforced =" not in note and "[keelline]" not in note, note
+    assert "enforced =" not in note and "[stayfixed]" not in note, note
     code, out, _ = cli(
         root, tmp_path, "adopt", "promote", "docs", "--base", _sha(root, BASE), "--json"
     )
@@ -602,10 +602,10 @@ def test_adopt_promote_s_refusal_says_to_track_the_file_and_names_it(tmp_path: P
     assert data["unanswered"] == ["docs"], data
 
 
-def test_keelline_gate_judges_the_disk_and_asks_git_nothing(
+def test_stayfixed_gate_judges_the_disk_and_asks_git_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `keelline gate` runs where CI checked out, and there an untracked file is simply absent,
+    # `stayfixed gate` runs where CI checked out, and there an untracked file is simply absent,
     # which the gate's own finding covers. So it asks nothing about tracking: here, with the
     # file on disk, `docs` passes as it would have, and the tracked-files check asked git
     # nothing, not even whether this is a work tree. No mutation entry: the defect is a call

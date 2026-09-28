@@ -14,12 +14,12 @@ from types import ModuleType
 
 import pytest
 
-from keelline.overlay.api import OVERLAY_FILES
-from keelline.project.api import PROJECT_FILES
-from keelline.scaffold import MANIFEST_PATH
+from stayfixed.overlay.api import OVERLAY_FILES
+from stayfixed.project.api import PROJECT_FILES
+from stayfixed.scaffold import MANIFEST_PATH
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "check_artifacts.py"
-WHEEL_LAST = f"keelline/templates/overlay/{OVERLAY_FILES[-1]}"
+WHEEL_LAST = f"stayfixed/templates/overlay/{OVERLAY_FILES[-1]}"
 
 
 def checker() -> ModuleType:
@@ -34,11 +34,11 @@ def checker() -> ModuleType:
 def _wheel(path: Path, *, without: str | None = None) -> Path:
     """A synthetic wheel holding what `WHEEL_MUST` names; keep this list in step with it."""
     names = [
-        "keelline/presets/recommended.toml",
-        *(f"keelline/templates/overlay/{r}" for r in OVERLAY_FILES),
-        *(f"keelline/templates/project/{n}" for n in PROJECT_FILES),
-        "keelline/profiles/python/profile.toml",
-        "keelline/profiles/python/rules.md",
+        "stayfixed/presets/recommended.toml",
+        *(f"stayfixed/templates/overlay/{r}" for r in OVERLAY_FILES),
+        *(f"stayfixed/templates/project/{n}" for n in PROJECT_FILES),
+        "stayfixed/profiles/python/profile.toml",
+        "stayfixed/profiles/python/rules.md",
     ]
     with zipfile.ZipFile(path, "w") as archive:
         for name in names:
@@ -54,7 +54,7 @@ def _sdist(
         for name in module.SDIST_MUST:
             if name == without:
                 continue
-            info = tarfile.TarInfo(f"keelline-0.0.0/{name}")
+            info = tarfile.TarInfo(f"stayfixed-0.0.0/{name}")
             info.size = 1
             info.mode = wrapper_mode if name in module.SDIST_EXECUTABLE else 0o644
             archive.addfile(info, io.BytesIO(b"x"))
@@ -71,13 +71,13 @@ def test_a_template_file_missing_from_the_wheel_is_named(tmp_path: Path) -> None
     # Mutation: none of its own — the wheel check is a set difference; the sdist mode check
     # below carries the declared mutation.
     module = checker()
-    missing = f"keelline/templates/overlay/{OVERLAY_FILES[-1]}"
+    missing = f"stayfixed/templates/overlay/{OVERLAY_FILES[-1]}"
     findings = module.check_wheel(_wheel(tmp_path / "k.whl", without=missing))
     assert findings == [f"wheel: missing {missing}"]
     # Both trees, because both are read at runtime by `resources.files` and `WHEEL_MUST` is
     # what says so: the overlay's tree answers `overlay create --local` and the project's
-    # answers `keelline init`, and a build that dropped either is invisible to every other test.
-    absent = f"keelline/templates/project/{PROJECT_FILES[-1]}"
+    # answers `stayfixed init`, and a build that dropped either is invisible to every other test.
+    absent = f"stayfixed/templates/project/{PROJECT_FILES[-1]}"
     assert module.check_wheel(_wheel(tmp_path / "p.whl", without=absent)) == [
         f"wheel: missing {absent}"
     ]
@@ -97,7 +97,7 @@ def test_a_wrapper_that_lost_its_executable_bit_in_the_sdist_is_named(tmp_path: 
     module = checker()
     findings = module.check_sdist(_sdist(tmp_path / "k.tar.gz", module, wrapper_mode=0o644))
     assert "sdist: hooks/run-hook.sh is not executable" in findings, findings
-    assert "sdist: scripts/keelline is not executable" in findings, findings
+    assert "sdist: scripts/stayfixed is not executable" in findings, findings
     assert len(findings) == 2, findings
 
 
@@ -163,13 +163,13 @@ def test_the_dist_arm_reports_a_finding_and_is_clean_when_there_is_none(
     module = checker()
     dist = tmp_path / "dist"
     dist.mkdir()
-    _wheel(dist / "keelline-0.0.0-py3-none-any.whl")
-    _sdist(dist / "keelline-0.0.0.tar.gz", module)
+    _wheel(dist / "stayfixed-0.0.0-py3-none-any.whl")
+    _sdist(dist / "stayfixed-0.0.0.tar.gz", module)
     assert module.main([str(dist)]) == 0, capsys.readouterr()
 
     short = tmp_path / "short"
     short.mkdir()
-    _wheel(short / "keelline-0.0.0-py3-none-any.whl", without=WHEEL_LAST)
-    _sdist(short / "keelline-0.0.0.tar.gz", module)
+    _wheel(short / "stayfixed-0.0.0-py3-none-any.whl", without=WHEEL_LAST)
+    _sdist(short / "stayfixed-0.0.0.tar.gz", module)
     assert module.main([str(short)]) == 1
     assert f"wheel: missing {WHEEL_LAST}" in capsys.readouterr().err

@@ -15,7 +15,7 @@ from types import ModuleType
 
 import pytest
 
-from keelline import gitenv
+from stayfixed import gitenv
 from tests.floor import SUITE_GIT_FLOOR_SECONDS
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -39,20 +39,20 @@ def _plugin(tmp_path: Path, *, launcher: str | None = None, hooks: Path | None =
         shutil.copytree(ROOT / "scripts", planted / "scripts")
     else:
         (planted / "scripts").mkdir()
-        (planted / "scripts" / "keelline").write_text(launcher, encoding="utf-8")
+        (planted / "scripts" / "stayfixed").write_text(launcher, encoding="utf-8")
     return planted
 
 
 # A launcher that performs the owner's trust act for real and answers everything else the way
 # a broken plugin does: something on stderr, exit 1. That is the shape the security seat ran —
-# a three-line `scripts/keelline` — and under it the wrapper's `closed` policy produces exit 2
-# with a `KL_` token on stderr, which is byte-for-byte what the security-bearing row used to
+# a three-line `scripts/stayfixed` — and under it the wrapper's `closed` policy produces exit 2
+# with a `SF_` token on stderr, which is byte-for-byte what the security-bearing row used to
 # ask for. Trust is delegated so that the run reaches its rows at all.
 FAULTY = f"""
 import runpy, sys
 
 if sys.argv[1:3] == ["memory", "trust"]:
-    runpy.run_path({str(ROOT / "scripts" / "keelline")!r}, run_name="__main__")
+    runpy.run_path({str(ROOT / "scripts" / "stayfixed")!r}, run_name="__main__")
 sys.stderr.write("boom\\n")
 sys.exit(1)
 """
@@ -96,7 +96,7 @@ def test_a_launcher_fault_is_not_mistaken_for_a_refusal(
     # The row that proves the guard denies could not tell a genuine deny from any launcher
     # fault at all: `hooks/run-hook.sh` maps a launcher `rc=1` under `closed` to exit 2 with a
     # reason on stderr, which satisfied `expected_code=2` and `stderr_required=True` exactly.
-    # Measured against a `scripts/keelline` that writes to stderr and exits 1: thirteen of the
+    # Measured against a `scripts/stayfixed` that writes to stderr and exits 1: thirteen of the
     # fourteen rows green, including that one.
     #
     # Mutation (declared, "the hook smoke stops reading the refusal it was handed"): the
@@ -120,7 +120,7 @@ def test_a_launcher_fault_is_not_mistaken_for_a_refusal(
     #
     # Mutation (declared, "the hook smoke stops reading what an injection entry injected"):
     # the registry lookup answers `None` -> this reddens and the row above does not.
-    assert "injected nothing carrying '<<<keelline:repository-data'" in out, out
+    assert "injected nothing carrying '<<<stayfixed:repository-data'" in out, out
 
 
 @needs_git
@@ -134,7 +134,7 @@ def test_a_wrapper_that_answers_wrongly_is_reported(
     planted = tmp_path / "plugin"
     shutil.copytree(ROOT / "hooks", planted / "hooks")
     (planted / "scripts").mkdir()
-    (planted / "scripts" / "keelline").write_text("raise SystemExit(0)\n", encoding="utf-8")
+    (planted / "scripts" / "stayfixed").write_text("raise SystemExit(0)\n", encoding="utf-8")
     code = smoke.main(
         [
             "--plugin-root",
@@ -267,8 +267,8 @@ def test_the_exfiltration_scenario_holds_against_the_checkout(
     # a `project.name` naming another project, and a committed settings `env` block naming a
     # machine configuration inside the clone and a PATH into the clone. Asserted separately:
     # nothing untrusted reaches the session-start output, the hook ignored the clone's
-    # KEELLINE_CONFIG, the planted interpreter never ran, and `attach` refuses. The MCP arm is
-    # not run: Keelline ships no MCP server yet (the README lists the memory MCP server under
+    # STAYFIXED_CONFIG, the planted interpreter never ran, and `attach` refuses. The MCP arm is
+    # not run: stayfixed ships no MCP server yet (the README lists the memory MCP server under
     # "Not yet"), and the script says so in its own output.
     #
     # The count as well as the exit code, because six of the eight rows assert an ABSENCE and a
@@ -318,17 +318,17 @@ def test_the_exfiltration_scenario_reports_a_row_that_went_the_wrong_way(
     assert "FAIL  the owner's own trust record lets the note through" in out, out
 
 
-def test_a_hook_entry_keeps_the_suite_floor_and_no_other_keelline_variable(
+def test_a_hook_entry_keeps_the_suite_floor_and_no_other_stayfixed_variable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Both smoke scripts strip every `KEELLINE_*` variable so an entry never reads this
-    # developer's own Keelline, and without an exception that strip would take the suite's floor
+    # Both smoke scripts strip every `STAYFIXED_*` variable so an entry never reads this
+    # developer's own stayfixed, and without an exception that strip would take the suite's floor
     # under the product's `git` bounds too. The floor alone is kept, spelled as the product
     # spells it, in the one base environment both scripts build on. Mutation (oracle): "the hook
     # smoke strips the suite's floor" -> this reddens.
     smoke = _load("smoke_hooks")
     assert smoke.FLOOR_VARIABLE == gitenv.FLOOR_VARIABLE
-    monkeypatch.setenv("KEELLINE_CONFIG", str(tmp_path / "developer.toml"))
+    monkeypatch.setenv("STAYFIXED_CONFIG", str(tmp_path / "developer.toml"))
     env = smoke.session_env(plugin_root=ROOT, project=tmp_path, home=tmp_path, data=tmp_path)
     assert env[gitenv.FLOOR_VARIABLE] == str(SUITE_GIT_FLOOR_SECONDS)
-    assert "KEELLINE_CONFIG" not in env
+    assert "STAYFIXED_CONFIG" not in env

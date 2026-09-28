@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from keelline.cli import build_parser, discover_registrars, run
-from keelline.config.schema import Config
+from stayfixed.cli import build_parser, discover_registrars, run
+from stayfixed.config.schema import Config
 from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
 from tests.attach.test_write import LEDGER, RULE, SETTINGS, _overlay_grants
 
@@ -78,7 +78,7 @@ def test_the_projects_own_name_reaches_neither_the_line_nor_the_json_nor_a_refus
     # `config.project.name` is repository-authored bytes (principle 5), and `config/schema.py`'s
     # PROJECT_NAME is looser than the marker-id grammar `doctor` already refuses to print — the name
     # below is legal under it. `skills/attach/SKILL.md` tells the model to relay this diff to the
-    # user, so a name shaped like an instruction would arrive attributed to Keelline. All three
+    # user, so a name shaped like an instruction would arrive attributed to stayfixed. All three
     # surfaces are asserted together because the rule is one rule: the summary line, `--json`, and
     # the refusal a mismatch raises.
     root, store = _project_and_store(
@@ -155,7 +155,7 @@ def test_detach_undoes_an_attach_through_the_command_surface(tmp_path: Path) -> 
 
 def test_detach_on_a_repository_that_was_never_attached_is_a_finding(tmp_path: Path) -> None:
     # Exit 1 and not 2: nothing crossed a boundary, there is simply nothing recorded — and the
-    # answer is to say so rather than to guess which rules were Keelline's.
+    # answer is to say so rather than to guess which rules were stayfixed's.
     root, _ = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
     assert invoke(["detach", "--root", str(root)]) == 1
 
@@ -165,7 +165,7 @@ def test_no_command_prints_a_path_a_repository_chose(
 ) -> None:
     # Every link path is built out of `paths.memory` and a `memory.groups` entry, both
     # repository-authored and neither schema-constrained, and `--json` puts `data` in front of
-    # the model. `keelline.memory.hooks` already reports this value as a count and `attach`
+    # the model. `stayfixed.memory.hooks` already reports this value as a count and `attach`
     # must too — the first draft of it shipped the paths.
     root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
     _overlay_grants(store)
@@ -180,7 +180,7 @@ def test_no_command_prints_a_path_a_repository_chose(
 def test_a_non_interactive_session_may_not_name_the_machine_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `config/machine.py` gates `KEELLINE_CONFIG` and `XDG_CONFIG_HOME` behind this same
+    # `config/machine.py` gates `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME` behind this same
     # question and generalises past them: "Gating one of a pair of equivalent inputs is not a
     # partial defence, it is a redirect with a longer name." `--machine` is a third member of
     # that class, and this is the command that turns that file into capability — the overlay
@@ -226,7 +226,7 @@ def test_a_command_with_no_machine_flag_is_unaffected_by_the_gate(
     # not by a successful attach, which would need the developer's own file.
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
     root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
-    monkeypatch.setattr("keelline.memory.store.machine_config_path", lambda **_: tmp_path / "none")
+    monkeypatch.setattr("stayfixed.memory.store.machine_config_path", lambda **_: tmp_path / "none")
     assert invoke(["attach", "--check", "--root", str(root), "--store", str(store)]) == 2
 
 
@@ -260,17 +260,17 @@ def test_nothing_the_ledger_holds_reaches_detachs_line_or_its_json(
     # `test_the_projects_own_name_reaches_neither_the_line_nor_the_json_nor_a_refusal`, and the
     # rule is the same rule. `run_detach` used to put `allow_removed`, `rules_removed` and
     # `settings_keys_removed` into `Result.data` as full strings — and every one of them is read
-    # out of `.keelline/local/attach.json` or `.claude/settings.local.json`, both paths a clone
+    # out of `.stayfixed/local/attach.json` or `.claude/settings.local.json`, both paths a clone
     # can commit, because `.gitignore` does not untrack a committed file.
     # `skills/attach/SKILL.md` tells the model to relay what detach removed, so an allow rule
-    # shaped like an instruction arrived attributed to Keelline.
+    # shaped like an instruction arrived attributed to stayfixed.
     #
     # `permissions.check` reduces `already_present` to `len(...)` on exactly this reasoning, and
     # this branch removed a marker id **bounded by a grammar** from `doctor`'s output on it. An
     # allow rule is less bounded than that, not more, so counts here or the three disagree.
     #
     # Mutation: `mutations.toml`'s "detach prints the ledger's own strings".
-    from keelline.attach.api import LEDGER as LEDGER_PATH
+    from stayfixed.attach.api import LEDGER as LEDGER_PATH
 
     root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
     _overlay_grants(store, allow=(HOSTILE_RULE,))
@@ -341,11 +341,11 @@ def test_check_reads_each_of_its_two_documents_once(
     # loads and the whole suite still passed.
     #
     # Counted at `binding.load`, the name `read_binding` resolves, and not at
-    # `keelline.config.loader.load`: `permissions` binds its own reference at import time, so a
+    # `stayfixed.config.loader.load`: `permissions` binds its own reference at import time, so a
     # patch there would also count the load `check` is supposed to make. Zero is the assertion.
     #
     # Mutation (oracle): `read_binding(...)` without `config=config` -> this reddens.
-    from keelline.config.loader import load as real_load
+    from stayfixed.config.loader import load as real_load
 
     root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
     _overlay_grants(store)
@@ -358,7 +358,7 @@ def test_check_reads_each_of_its_two_documents_once(
 
     # Patched by name rather than through the module object, which is the same seam and does not
     # read an attribute the module never exported.
-    monkeypatch.setattr("keelline.attach.binding.load", counted)
+    monkeypatch.setattr("stayfixed.attach.binding.load", counted)
     assert invoke(["attach", "--check", *_flags(root, store, machine)]) == 0
     assert loads == []
 
@@ -370,14 +370,14 @@ def test_attach_reads_each_of_its_two_documents_once_too(
     # above: a `--check` that read two documents reports the wrong thing, while an `attach`
     # that reads two *writes* under the wrong one. `attach` called `read_binding` without a
     # `Config` and then loaded a second time for its own `memory.groups` refusals, so
-    # `keelline.toml` and the machine file were read twice per run with the two halves free to
+    # `stayfixed.toml` and the machine file were read twice per run with the two halves free to
     # disagree.
     #
     # Counted at `binding.load` and zero is the assertion, for the reason the test above gives.
     # A real attach and not a `--check`, so the count covers the whole run.
     #
     # Mutation (oracle): `read_binding(...)` without `config=config` -> this reddens.
-    from keelline.config.loader import load as real_load
+    from stayfixed.config.loader import load as real_load
 
     root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
     _overlay_grants(store)
@@ -389,6 +389,6 @@ def test_attach_reads_each_of_its_two_documents_once_too(
         loads.append(target)
         return real_load(target, **kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr("keelline.attach.binding.load", counted)
+    monkeypatch.setattr("stayfixed.attach.binding.load", counted)
     assert invoke(["attach", "--yes", *_flags(root, store, machine)]) == 0
     assert loads == []

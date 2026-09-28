@@ -15,8 +15,8 @@ import time
 
 import pytest
 
-from keelline.guards import bgcleanup
-from keelline.guards.bgcleanup import (
+from stayfixed.guards import bgcleanup
+from stayfixed.guards.bgcleanup import (
     ALLOW,
     EXIT_ECHO_HINT,
     LEAK_REASON,

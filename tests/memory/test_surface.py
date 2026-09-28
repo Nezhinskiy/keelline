@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import keelline.memory.api as memory
+import stayfixed.memory.api as memory
 
 
 def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
@@ -63,7 +63,7 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         "wrap",
         "new_nonce",
         "UnsafeNote",
-        # the trust gate. Repository bytes reach a model only after `keelline memory trust`
+        # the trust gate. Repository bytes reach a model only after `stayfixed memory trust`
         # and only inside a delimited region, so an area that injects them has to be able to
         # ask this area whether it may, to see a store that was trusted and is not any more,
         # and to tell a broken record from an unapproved store.

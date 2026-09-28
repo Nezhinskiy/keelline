@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from keelline.harnesses import CLAUDE, CODEX, HARNESSES, select
-from keelline.profiles import load_profile
+from stayfixed.harnesses import CLAUDE, CODEX, HARNESSES, select
+from stayfixed.profiles import load_profile
 
 
 def test_the_claude_rule_is_path_scoped_and_points_at_the_one_copy() -> None:
     profile = load_profile("python")
     assert CLAUDE.render_profile is not None
-    rendition = CLAUDE.render_profile(profile, "docs/keelline/rules/python.md")
+    rendition = CLAUDE.render_profile(profile, "docs/stayfixed/rules/python.md")
     assert rendition.artifact_id == "claude-rules"
-    # `keelline-` says who owns the file and leaves `python.md` to the project.
-    assert rendition.target == ".claude/rules/keelline-python.md"
+    # `stayfixed-` says who owns the file and leaves `python.md` to the project.
+    assert rendition.target == ".claude/rules/stayfixed-python.md"
     head, _, body = rendition.render().partition("---\n\n")
     assert head.startswith("---\npaths:\n")
     for glob in profile.scope:
@@ -20,7 +20,7 @@ def test_the_claude_rule_is_path_scoped_and_points_at_the_one_copy() -> None:
     # A pointer, not a copy: nothing of the rules' prose is in the file, so an edit to the one
     # copy is what every session reads. Mutation: render `head + profile.rules` instead of the
     # pointer -> the next two assertions redden.
-    assert "`docs/keelline/rules/python.md`" in body
+    assert "`docs/stayfixed/rules/python.md`" in body
     assert profile.essentials[0] not in body and len(body.splitlines()) == 1
 
 

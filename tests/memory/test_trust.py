@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from keelline.config.loader import CONFIG_FILE, load
-from keelline.config.schema import Config
-from keelline.errors import Refusal
-from keelline.memory.store import Store, resolve
-from keelline.memory.trust import (
+from stayfixed.config.loader import CONFIG_FILE, load
+from stayfixed.config.schema import Config
+from stayfixed.errors import Refusal
+from stayfixed.memory.store import Store, resolve
+from stayfixed.memory.trust import (
     DELIMITER,
     UnreadableTrustRecord,
     UnsafeNote,
@@ -33,7 +33,7 @@ from tests.gitfixture import git
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -63,7 +63,7 @@ def a_store(
     git(root, "remote", "add", "origin", "git@example.com:acme/widget.git")
     where = {
         "in-repo": root / "docs" / "memory",
-        "local-only": root / ".keelline" / "local" / "memory",
+        "local-only": root / ".stayfixed" / "local" / "memory",
     }[mode]
     for group in groups:
         (where / group).mkdir(parents=True)
@@ -86,7 +86,7 @@ def a_store(
 def test_notes_that_live_in_the_repository_are_not_injected_before_trust(
     tmp_path: Path, mode: str
 ) -> None:
-    # `local-only` is the cheap attack: two lines of keelline.toml and a committed directory,
+    # `local-only` is the cheap attack: two lines of stayfixed.toml and a committed directory,
     # no forged overlay and no symlink. Gating on the mode the clone declares misses it.
     store, config, _machine = a_store(tmp_path, mode)
     assert may_inject(store, config) is False
@@ -206,11 +206,11 @@ def test_the_index_at_the_store_root_is_covered_by_the_digest(tmp_path: Path) ->
 def test_a_local_only_store_whose_notes_escaped_the_repository_is_gated_not_ungated(
     tmp_path: Path,
 ) -> None:
-    # The shape a symlinked `.keelline` ancestor produced: `mode` is `local-only`, the notes are
+    # The shape a symlinked `.stayfixed` ancestor produced: `mode` is `local-only`, the notes are
     # repository-authored, and every group resolves *outside* `store.root`. `inside_project`
     # answered False for it, so this gate short-circuited to True with no trust record and
     # `is_repository_data` said the text was not repository data — the notes arrived as
-    # top-ranked standing rules, unwrapped, with no `keelline memory trust` gesture ever made.
+    # top-ranked standing rules, unwrapped, with no `stayfixed memory trust` gesture ever made.
     # The resolver now refuses to build this store; the gate must not open for it either.
     store, config, machine = a_store(tmp_path, "local-only")
     outside = tmp_path / "elsewhere" / "developer"
@@ -231,7 +231,7 @@ def test_one_note_cannot_be_restructured_into_two_without_changing_the_digest(
     # `key \0 content \0` and concatenated with no length prefix does not keep it: both halves
     # are repository-controlled and `\0` is valid UTF-8, so `read_note` parses a note whose
     # body carries a splice. v1 ships one innocuous note ending in `\0developer/b.md\0<payload>`
-    # and the human runs `keelline memory trust` once; v2 — an ordinary `git pull` — ships the
+    # and the human runs `stayfixed memory trust` once; v2 — an ordinary `git pull` — ships the
     # same bytes as two notes, the second a rank-1 standing rule. The two byte streams are
     # identical, so the digest never moves and the payload is injected with no re-prompt.
     store, config, _ = a_store(tmp_path, "in-repo")
@@ -292,31 +292,31 @@ def test_every_digest_entry_is_the_same_width_whatever_its_key(tmp_path: Path) -
     assert widths == {128}
 
 
-def test_a_refresh_carries_only_the_file_keelline_wrote(tmp_path: Path) -> None:
+def test_a_refresh_carries_only_the_file_stayfixed_wrote(tmp_path: Path) -> None:
     # `memory index` rewrites every note and `MEMORY.md`, so trust has to survive a write
-    # Keelline authored. It must survive *only that*: the store has a second writer (the
+    # stayfixed authored. It must survive *only that*: the store has a second writer (the
     # harness's native memory writer) and a `git pull` can land at any moment, so a refresh
     # that re-read the whole store would hand a record to bytes the owner has never seen.
-    # Keelline's own file is carried forward; the one that appeared beside it is not.
+    # stayfixed's own file is carried forward; the one that appeared beside it is not.
     store, config, _machine = a_store(tmp_path, "in-repo")
     record(store, config)
     before = snapshot(store, config)
     assert before.trusted is True
     mine = store.groups["developer"] / "a.md"
-    mine.write_text(NOTE.replace("Body.", "Rewritten by keelline."), encoding="utf-8")
+    mine.write_text(NOTE.replace("Body.", "Rewritten by stayfixed."), encoding="utf-8")
     theirs = store.groups["developer"] / "pulled.md"
     theirs.write_text(NOTE.replace("startup: -100", "startup: 1"), encoding="utf-8")
     assert refresh_if_trusted(store, config, before, [mine]) is False
     assert may_inject(store, config) is False
 
 
-def test_a_refresh_keeps_a_store_keelline_rewrote_trusted(tmp_path: Path) -> None:
-    # The other half: nothing but Keelline's own write happened, so the owner is not re-asked.
+def test_a_refresh_keeps_a_store_stayfixed_rewrote_trusted(tmp_path: Path) -> None:
+    # The other half: nothing but stayfixed's own write happened, so the owner is not re-asked.
     store, config, _machine = a_store(tmp_path, "in-repo")
     record(store, config)
     before = snapshot(store, config)
     mine = store.groups["developer"] / "a.md"
-    mine.write_text(NOTE.replace("Body.", "Rewritten by keelline."), encoding="utf-8")
+    mine.write_text(NOTE.replace("Body.", "Rewritten by stayfixed."), encoding="utf-8")
     index = store.path / "MEMORY.md"
     index.write_text("# Memory Index\n\n- [t](developer/a.md)\n", encoding="utf-8")
     assert refresh_if_trusted(store, config, before, [mine, index]) is True
@@ -328,17 +328,17 @@ def test_a_refresh_does_nothing_for_a_store_that_was_never_trusted(tmp_path: Pat
     before = snapshot(store, config)
     assert before.trusted is False
     mine = store.groups["developer"] / "a.md"
-    mine.write_text(NOTE.replace("Body.", "Rewritten by keelline."), encoding="utf-8")
+    mine.write_text(NOTE.replace("Body.", "Rewritten by stayfixed."), encoding="utf-8")
     assert refresh_if_trusted(store, config, before, [mine]) is False
     assert may_inject(store, config) is False
 
 
 def test_editing_only_index_extra_does_not_leave_the_store_trusted(tmp_path: Path) -> None:
-    # `memory.index_extra` is repository-controlled, lives in `keelline.toml` — which no store
+    # `memory.index_extra` is repository-controlled, lives in `stayfixed.toml` — which no store
     # file covers — and is rendered straight into `MEMORY.md`, the file the `index` bundle
     # injects. An attacker who changes nothing but that list left the digest untouched, and the
     # next `memory index` carried their pointers in under a still-valid trust record, blessed
-    # on the way past by `refresh_if_trusted` because Keelline itself authored the write.
+    # on the way past by `refresh_if_trusted` because stayfixed itself authored the write.
     store, config, _machine = a_store(tmp_path, "in-repo")
     record(store, config)
     assert may_inject(store, config) is True

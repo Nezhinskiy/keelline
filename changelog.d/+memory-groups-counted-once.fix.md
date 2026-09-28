@@ -1,7 +1,7 @@
-A `memory.groups` entry written twice is now one group. The list was taken from `keelline.toml`
-as-is, and it is the one repository-authored list Keelline reports back as a count you are asked
-to act on — so `groups = ["developer", "developer"]` made `keelline attach` refuse naming two
-groups that had not moved into the overlay, `keelline attach --check` print
+A `memory.groups` entry written twice is now one group. The list was taken from `stayfixed.toml`
+as-is, and it is the one repository-authored list stayfixed reports back as a count you are asked
+to act on — so `groups = ["developer", "developer"]` made `stayfixed attach` refuse naming two
+groups that had not moved into the overlay, `stayfixed attach --check` print
 `real_directories: 2`, and the session line tell the model two, all about one directory whose
 remedy was already done. Entries are kept once, in the order your document wrote them.
 

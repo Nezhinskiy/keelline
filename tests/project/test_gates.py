@@ -2,7 +2,7 @@
 
 The fixture guard beside this one says planning over the committed fixture has nothing left to
 create; this one says the templates render a project the gates accept, which is a different claim
-and the one a first adopter meets. The five invocations are the five built-in gates `keelline gate`
+and the one a first adopter meets. The five invocations are the five built-in gates `stayfixed gate`
 runs in `.github/workflows/check.yml`, driven through their own commands and the real parser the way
 `tests/test_fixtures.py` drives them.
 """
@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from keelline.cli import build_parser, discover_registrars, run
-from keelline.project.init import init
+from stayfixed.cli import build_parser, discover_registrars, run
+from stayfixed.project.init import init
 from tests.gitfixture import LsRemote, git, needs_git
 
 GATES = (
@@ -49,7 +49,7 @@ def _initialised(tmp_path: Path) -> Path:
         ci=False,
     )
     git(root, "add", "-A")
-    git(root, "commit", "-qm", "chore: initialise keelline")
+    git(root, "commit", "-qm", "chore: initialise stayfixed")
     history = root / "docs" / "roadmap-history.md"
     history.write_text(
         history.read_text(encoding="utf-8") + "\nA line the second commit adds.\n",

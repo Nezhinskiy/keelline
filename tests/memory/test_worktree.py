@@ -7,15 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from keelline.config.loader import CONFIG_FILE, load
-from keelline.config.paths import PathEscape
-from keelline.config.schema import Config
-from keelline.errors import Refusal
-from keelline.memory import worktree
-from keelline.memory.index import INDEX_NAME
-from keelline.memory.store import LOCAL_STORE, Store, resolve
-from keelline.memory.trust import record
-from keelline.memory.worktree import (
+from stayfixed.config.loader import CONFIG_FILE, load
+from stayfixed.config.paths import PathEscape
+from stayfixed.config.schema import Config
+from stayfixed.errors import Refusal
+from stayfixed.memory import worktree
+from stayfixed.memory.index import INDEX_NAME
+from stayfixed.memory.store import LOCAL_STORE, Store, resolve
+from stayfixed.memory.trust import record
+from stayfixed.memory.worktree import (
     PartialLink,
     attach_main,
     detach_main,
@@ -23,7 +23,7 @@ from keelline.memory.worktree import (
     link,
     linked_names,
 )
-from keelline.presets import load_preset
+from stayfixed.presets import load_preset
 from tests.gitfixture import git
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
@@ -36,7 +36,7 @@ pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not 
 DEFAULT_MEMORY = load_preset("recommended")["defaults"]["paths"]["memory"]
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -73,7 +73,7 @@ def _a_repo(tmp_path: Path) -> Path:
 def _commit_checkout(root: Path, *, ignore: str = f"{DEFAULT_MEMORY}/") -> None:
     (root / "README.md").write_text("x", encoding="utf-8")
     # The store is git-ignored, which is the whole reason a worktree has none of it. Which
-    # directory that is depends on the mode: `local-only` keeps it at `.keelline/local/`, and
+    # directory that is depends on the mode: `local-only` keeps it at `.stayfixed/local/`, and
     # the ignore entry a mode ships is the one that covers the tree `link()` builds.
     (root / ".gitignore").write_text(f"{ignore}\n", encoding="utf-8")
     git(root, "add", "-A")
@@ -92,7 +92,7 @@ def a_checkout(
     (root / CONFIG_FILE).write_text(CONFIG.format(mode="in-repo", groups=listed), encoding="utf-8")
     # Resolved against a machine file of this test's own: `resolve` puts it on the `Store`,
     # and every trust question downstream reads it from there rather than from the
-    # developer's real `~/.config/keelline/`.
+    # developer's real `~/.config/stayfixed/`.
     config = load(root, machine=tmp_path / "absent.toml")
     store = resolve(root, config, machine=a_machine_file(tmp_path))
     assert store is not None
@@ -103,9 +103,9 @@ def a_checkout(
 def a_home(tmp_path: Path) -> Path:
     """A home directory that is already there, for the tests that expect the harness link.
 
-    Keelline finds the machine owner's home and never creates it: `harness_link_parts` makes
+    stayfixed finds the machine owner's home and never creates it: `harness_link_parts` makes
     it the containment anchor, and `open_within` applies `O_NOFOLLOW` to every component
-    *below* an anchor and never to the anchor itself — so an anchor Keelline made up would be
+    *below* an anchor and never to the anchor itself — so an anchor stayfixed made up would be
     one the walk cannot vouch for. Every component under it is still created by the walk,
     which is what `test_the_harness_link_is_created_on_a_machine_with_no_projects_directory_yet`
     asserts.
@@ -221,7 +221,7 @@ def test_no_new_top_level_entry_appears_anywhere_but_the_home_directory(tmp_path
     # leave `elsewhere` untouched and pass unnoticed. This snapshots every entry `tmp_path`
     # holds right before `link()` runs and requires nothing new to appear at all.
     #
-    # It used to allow one new entry, `home`, because `link` created it. Keelline now finds
+    # It used to allow one new entry, `home`, because `link` created it. stayfixed now finds
     # the home directory and never makes it, so `a_home` creates it before the snapshot and
     # that allowance was dead weight: `after - before <= {home}` could only ever have been
     # satisfied by the empty set. Dropping it makes the assertion say what it now means.
@@ -474,13 +474,13 @@ def test_a_symlinked_index_is_refused_outside_overlay_mode_even_with_an_overlay_
 # Every fixture above declares `in-repo` or `overlay`, where `paths.memory` *is* the store —
 # so `worktree / config.paths.memory` and the store's own place in the checkout are the same
 # directory and no test could tell them apart. `local-only` separates them: the resolver uses
-# `.keelline/local/memory` and never consults `paths.memory`, while `link()` used to build the
+# `.stayfixed/local/memory` and never consults `paths.memory`, while `link()` used to build the
 # tree at `paths.memory` unconditionally. That is one bug wearing two faces — the links landing
 # where the resolver never looks and outside the `.gitignore` entry the mode relies on, and a
 # repository-controlled `paths.memory` choosing a directory anywhere on the filesystem.
 
 LOCAL_ONLY_CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -528,11 +528,11 @@ def a_local_only_checkout(
     )
     # Resolved against a machine file of this test's own: `resolve` puts it on the `Store`,
     # and every trust question downstream reads it from there rather than from the
-    # developer's real `~/.config/keelline/`.
+    # developer's real `~/.config/stayfixed/`.
     config = load(root, machine=tmp_path / "absent.toml")
     store = resolve(root, config, machine=a_machine_file(tmp_path))
     assert store is not None
-    _commit_checkout(root, ignore=".keelline/local/")
+    _commit_checkout(root, ignore=".stayfixed/local/")
     return root, store, config
 
 
@@ -540,9 +540,9 @@ def test_a_local_only_worktree_is_linked_where_local_only_keeps_the_store(
     tmp_path: Path,
 ) -> None:
     # The functional half of the same defect: in `local-only` the resolver reads
-    # `.keelline/local/memory` and `paths.memory` is never consulted, so a tree built at
+    # `.stayfixed/local/memory` and `paths.memory` is never consulted, so a tree built at
     # `paths.memory` put every link where nothing would ever read it — and, because the mode's
-    # `.gitignore` entry covers `.keelline/local/` and not `docs/`, left the worktree dirty.
+    # `.gitignore` entry covers `.stayfixed/local/` and not `docs/`, left the worktree dirty.
     root, store, config = a_local_only_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     created = link(tree, store, config, home=a_home(tmp_path)).created
@@ -610,9 +610,9 @@ def test_a_group_target_that_escapes_the_worktree_tree_is_refused_rather_than_sk
     assert list(outside.iterdir()) == []
 
 
-# --- the harness's own project-memory directory is the one hop outside keelline's gate -------
+# --- the harness's own project-memory directory is the one hop outside stayfixed's gate -------
 #
-# Every link above lands inside the worktree, where nothing reads it but Keelline's own
+# Every link above lands inside the worktree, where nothing reads it but stayfixed's own
 # bundles — which route through `trust.may_inject` and `trust.wrap`. The harness link does not:
 # `~/.claude/projects/<slug>/memory` is read by the harness's *native* memory reader, so
 # whatever sits behind it reaches the model with no gate, no nonce region and no trust record.
@@ -671,7 +671,7 @@ def test_a_committed_index_reaches_no_harness_link_before_trust(tmp_path: Path) 
     # under an overlay-mode store — was untested. `bundles.blocks` refused it correctly and
     # `link` created the harness symlink anyway, after which the harness's own native memory
     # reader injected the text with no delimiter, no nonce and no gate.
-    from keelline.memory.bundles import Bundle, blocks
+    from stayfixed.memory.bundles import Bundle, blocks
 
     root, store, config, _machine = an_overlay_checkout_with_a_committed_index(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
@@ -688,8 +688,8 @@ def test_the_harness_link_is_withdrawn_once_the_trust_record_lapses(tmp_path: Pa
     # approved in-repo store lapsed the record, closed every channel `memory` controls, and
     # left `~/.claude/projects/<slug>/memory` pointing at the store the new note is in, where
     # the harness's own native reader read it with no gate, no delimiter and no record.
-    from keelline.memory.bundles import Bundle, blocks
-    from keelline.memory.trust import state
+    from stayfixed.memory.bundles import Bundle, blocks
+    from stayfixed.memory.trust import state
 
     root, store, config = a_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
@@ -785,7 +785,7 @@ def test_an_os_error_part_way_through_carries_out_the_links_it_did_make(tmp_path
 # puts the real store in the overlay and the checkout holds a link tree. `attach_main` is that
 # case, and it lives here beside `link` rather than in `attach` because the two share `_link`,
 # `_unlink` and — above all — the `trust.may_inject` gate on the harness link, which is forty
-# lines of reasoning about a channel Keelline does not control.
+# lines of reasoning about a channel stayfixed does not control.
 
 
 def an_overlay_to_attach(
@@ -846,7 +846,7 @@ def test_the_harness_link_is_gated_by_the_same_predicate_as_in_a_worktree(tmp_pa
 
 
 def test_a_group_name_that_escapes_the_tree_raises_rather_than_skipping(tmp_path: Path) -> None:
-    # `memory.groups` is an ordinary keelline.toml list and reaches no guard of its own: root
+    # `memory.groups` is an ordinary stayfixed.toml list and reaches no guard of its own: root
     # containment covers the `[paths]` fields only.
     # Skipping one escaping name leaves the next free to try the same thing, which is why
     # `link` raises `PathEscape` rather than continuing — and `attach_main` must match it.
@@ -985,7 +985,7 @@ def test_the_worktree_module_writes_links_only_through_fsops() -> None:
     # this pin did not see at all.
     import re
 
-    from keelline.memory import worktree
+    from stayfixed.memory import worktree
 
     source = Path(worktree.__file__).read_text(encoding="utf-8")
     # The positive half first, because an absence proves nothing on its own: this pin stayed
@@ -1007,7 +1007,7 @@ def test_a_group_directory_that_is_a_symlink_in_the_worktree_is_refused_and_noth
     # (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`), at the worktree: the branch checked out
     # there commits the configured store as a symlink to a directory outside the checkout. `link`
     # raises rather than following it, and the outside directory gains nothing. The refusal is
-    # `PathEscape` and not `UnsafePath`, because `keelline.memory.hooks` catches `PartialLink` — an
+    # `PathEscape` and not `UnsafePath`, because `stayfixed.memory.hooks` catches `PartialLink` — an
     # `OSError`, which `UnsafePath` is — before `Refusal`, so an escape arriving as an `OSError`
     # would be reported as "N links made" rather than as the containment refusal it is.
     root, store, config = a_checkout(tmp_path)
@@ -1046,7 +1046,7 @@ def test_a_home_that_is_not_there_is_a_refusal_naming_it_and_never_a_partial_lin
 ) -> None:
     # The anchor is found and never created, and this is the sentence that buys. Without it
     # the walk raised a bare `FileNotFoundError` from `os.open(root)`, `link` wrapped it as a
-    # `PartialLink`, and `keelline.memory.hooks` rendered that as "0 links made" with the home
+    # `PartialLink`, and `stayfixed.memory.hooks` rendered that as "0 links made" with the home
     # path nowhere in the message — an error where a refusal belongs (exit 2, not 1).
     #
     # The assertion is on the sentence and not on the exception class, because `PathEscape` is
@@ -1113,7 +1113,7 @@ def test_a_symlinked_claude_directory_is_a_refusal_in_both_directions(tmp_path: 
     # not intended is its shape: `_link` and `_unlink` catch `NotASymlink` and
     # `FileNotFoundError` and not `UnsafePath`, so creating wrapped it as a `PartialLink`
     # *after* the worktree's own links were made, and withdrawing let it out raw —
-    # `keelline: internal error`, exit 2, and every later `detach` failing at the same line
+    # `stayfixed: internal error`, exit 2, and every later `detach` failing at the same line
     # with the repository half-attached for good.
     #
     # The assertion is on the sentence rather than on the class, for the reason the home-that-

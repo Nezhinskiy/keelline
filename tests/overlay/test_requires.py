@@ -5,21 +5,21 @@ from pathlib import Path
 
 import pytest
 
-from keelline.overlay.api import later, requires_of, satisfies
-from keelline.overlay.layout import PLUGIN_MANIFEST
-from keelline.overlay.template import template_root
+from stayfixed.overlay.api import later, requires_of, satisfies
+from stayfixed.overlay.layout import PLUGIN_MANIFEST
+from stayfixed.overlay.template import template_root
 
 
 def overlay_with(root: Path, requires: object) -> Path:
     """An overlay directory whose manifest declares `requires`; the doctor, attach and setup
     suites plant their overlays with it too."""
     (root / ".claude-plugin").mkdir(parents=True, exist_ok=True)
-    body: dict[str, object] = {"name": "keelline-overlay", "version": "0.0.0"}
+    body: dict[str, object] = {"name": "stayfixed-overlay", "version": "0.0.0"}
     if requires is not None:
-        body["keelline"] = {"requires": requires}
+        body["stayfixed"] = {"requires": requires}
     (root / PLUGIN_MANIFEST).write_text(json.dumps(body), encoding="utf-8")
     (root / ".claude-plugin" / "marketplace.json").write_text(
-        json.dumps({"name": "keelline-overlay-marketplace", "plugins": []}), encoding="utf-8"
+        json.dumps({"name": "stayfixed-overlay-marketplace", "plugins": []}), encoding="utf-8"
     )
     return root
 
@@ -52,7 +52,7 @@ def test_a_manifest_whose_top_level_is_not_an_object_is_nothing_declared(tmp_pat
     """
     root = tmp_path / "overlay"
     (root / ".claude-plugin").mkdir(parents=True)
-    for body in ("[]", '[{"keelline": {"requires": ">=0.1.0"}}]', '">=0.1.0"', "3", "null"):
+    for body in ("[]", '[{"stayfixed": {"requires": ">=0.1.0"}}]', '">=0.1.0"', "3", "null"):
         (root / PLUGIN_MANIFEST).write_text(body, encoding="utf-8")
         assert requires_of(root) is None, body
 

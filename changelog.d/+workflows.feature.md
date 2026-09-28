@@ -1,5 +1,5 @@
-Your project's CI can now call Keelline's gates as one reusable workflow, pinned at a commit
-sha. A `uses:` line in your own workflow file runs `keelline gate` against your checkout in one
+Your project's CI can now call stayfixed's gates as one reusable workflow, pinned at a commit
+sha. A `uses:` line in your own workflow file runs `stayfixed gate` against your checkout in one
 `gates` job, with no resolver and no build backend, in two steps: the configuration check and
 the built-in gates first, then your own gates from `[gates.custom]`, only once the first step
 passed, so no command your repository wrote runs where the verdict is decided. Both start Python
@@ -16,12 +16,12 @@ link is refused. The new `only` input runs a chosen few, for a caller that wants
 per gate from a matrix of its own; the configuration check runs whatever it names. What the tree
 under review cannot do is turn off the gates it is about to face; what your `.github/` still
 needs is the ordinary protection, because the `uses:` line and its `with:` block live in a file
-a pull request can edit. The Keelline that runs is the commit your `uses:` line pins, read off
+a pull request can edit. The stayfixed that runs is the commit your `uses:` line pins, read off
 the platform's own record of which reusable workflow is executing and asserted against `git
 rev-parse HEAD` before a gate runs, so a ref that resolved to something else fails the run
 instead of quietly checking out a default branch.
 
-Keelline now proves its own install the way you would: a smoke workflow installs this plugin
+stayfixed now proves its own install the way you would: a smoke workflow installs this plugin
 from the checkout with the real harness CLI under a temporary configuration directory on
 Linux and macOS, feeds every `hooks/hooks.json` entry the event it is filed under through the
 *installed* wrapper, runs `doctor` over the result, calls the reusable workflow against a

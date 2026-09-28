@@ -1,8 +1,8 @@
-`keelline setup --preset recommended` configures a machine in one step: it writes your personal
+`stayfixed setup --preset recommended` configures a machine in one step: it writes your personal
 languages and the preset name into the machine configuration file, merges the preset's deny rules
 and your personal values into `~/.claude/settings.json`, registers and installs the preset's
 plugins on every harness that declares a marketplace for them (a missing binary or harness is a
-reported note, never a failure), and tells you whether `keelline` itself is on `PATH`. Pass
+reported note, never a failure), and tells you whether `stayfixed` itself is on `PATH`. Pass
 `--overlay <path>` to record a private overlay you already have, or
 `--overlay create:<owner>/<name> --yes` to have it create one on GitHub and record that instead;
 creating one needs `--yes`, because it is the one irreversible, outward-facing act this command
@@ -10,8 +10,8 @@ performs — `--yes` confirms nothing else, since nothing else asks — and noth
 happens at all unless you name `--overlay`.
 
 Everything `setup` can refuse, it refuses before its first write. An `--overlay` path must be a
-real overlay — both `.claude-plugin/` manifests naming it `keelline-overlay[-<owner>]` and
-`keelline-overlay-marketplace[-<owner>]`, not merely present — and must lie outside the
+real overlay — both `.claude-plugin/` manifests naming it `stayfixed-overlay[-<owner>]` and
+`stayfixed-overlay-marketplace[-<owner>]`, not merely present — and must lie outside the
 repository `--root` names: not inside it, not above it, and not in another checkout of it, since
 a worktree is not a different repository and a clone ships its tree into all of them. For
 `create:`, the destination is known from the arguments and refused before `gh repo create` runs;
@@ -30,13 +30,13 @@ on every run. A home directory managed by stow, chezmoi or a synced folder is re
 link and a `--home` that writes the real file, not reported as an internal error; where the
 layout is the per-file one no `--home` can express, `--settings <path>` names the file itself.
 
-`keelline setup --git-hooks` installs the commit-message hook into this repository's own hooks
+`stayfixed setup --git-hooks` installs the commit-message hook into this repository's own hooks
 directory (never `core.hooksPath`, which is global state this command has no business owning). A
 hook already there is kept as `prepare-commit-msg.local` and chained to, never overwritten;
 `--git-hooks --uninstall` puts it back exactly as it was.
 
 `--home` and `--machine` point the `--preset` run at a scratch destination instead of your real
-home directory and `~/.config/keelline/config.toml`, the same way every other command here takes
+home directory and `~/.config/stayfixed/config.toml`, the same way every other command here takes
 `--root`. They are a different destination and not a dry run: the same files are written, at the
 paths you name. `--machine` defaults to the file every reader reads, never to one
 `XDG_CONFIG_HOME` chose. `--settings <path>` writes the user-scope settings file where it really

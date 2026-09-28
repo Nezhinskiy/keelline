@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from keelline.cli import build_parser, discover_registrars, run
-from keelline.findings import LISTED_LIMIT
+from stayfixed.cli import build_parser, discover_registrars, run
+from stayfixed.findings import LISTED_LIMIT
 from tests.gitfixture import git
 
 
@@ -69,7 +69,7 @@ def test_guard_bg_cleanup_refuses_what_it_cannot_read(
 
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -89,7 +89,7 @@ def repo(tmp_path: Path, *messages: str) -> Path:
     root = tmp_path / "repo"
     root.mkdir()
     git(root, "init", "-q", "-b", "main")
-    (root / "keelline.toml").write_text(CONFIG, encoding="utf-8")
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "chore: seed")
     git(root, "tag", "base")
@@ -355,7 +355,7 @@ def test_test_hygiene_reports_the_two_faults(
     root = repo(tmp_path)
     (root / "src").mkdir()
     (root / "src" / "m.py").write_text("x = 1\n", encoding="utf-8")
-    (root / "keelline.toml").write_text(
+    (root / "stayfixed.toml").write_text(
         CONFIG + '\n[ledger]\ncode_roots = ["src"]\n', encoding="utf-8"
     )
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
@@ -388,7 +388,7 @@ def test_test_hygiene_refuses_a_tree_git_cannot_report_on(
     # `raise Refusal(_NO_GIT)` with `found = found._replace(dirty=0)`; measured.
     root = tmp_path / "bare"
     root.mkdir()
-    (root / "keelline.toml").write_text(CONFIG, encoding="utf-8")
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
     assert invoke(argv) == 2
     assert "refused:" in capsys.readouterr().err
@@ -419,7 +419,7 @@ def test_test_hygiene_names_the_stale_count_in_its_summary(
     )
     future = time.time() + 60
     os.utime(module, (future, future))
-    (root / "keelline.toml").write_text(
+    (root / "stayfixed.toml").write_text(
         CONFIG + '\n[ledger]\ncode_roots = ["src"]\n', encoding="utf-8"
     )
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
@@ -432,11 +432,11 @@ def test_test_audit_entrypoints_scans_the_configured_roots(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Exit 0 *with* findings, on purpose: this is an audit for triage, not a gate. Run over
-    # Keelline's own tests with its own `ledger.code_roots` the scanner names six
+    # stayfixed's own tests with its own `ledger.code_roots` the scanner names six
     # name-collision candidates (measured, and recorded in the command's own comment), so an
     # exit 1 would be red on this repository from the first run, and the schema has no
     # per-command enable switch to turn it off with. It stays its own advisory command, and
-    # `keelline assess` leaves it out of the inventory until its candidates are triaged.
+    # `stayfixed assess` leaves it out of the inventory until its candidates are triaged.
     # Reddened by giving `run_test_audit`'s findings branch `exit_code=1`; measured, and it
     # reddened this test alone -- so the exit code is pinned, not merely the default.
     root = repo(tmp_path)
@@ -447,7 +447,7 @@ def test_test_audit_entrypoints_scans_the_configured_roots(
         "from widget.boot import boot_demo\n\n\ndef test_boot_demo_x() -> None:\n    assert 1\n",
         encoding="utf-8",
     )
-    (root / "keelline.toml").write_text(
+    (root / "stayfixed.toml").write_text(
         CONFIG + '\n[ledger]\ncode_roots = ["src", "tests"]\n', encoding="utf-8"
     )
     argv = [
@@ -487,7 +487,7 @@ def test_test_audit_entrypoints_refuses_when_the_scanner_stops_discriminating(
     # `if problems:` raise in `run_test_audit`; measured -- this test then exits 0, and it
     # reddened alone.
     root = repo(tmp_path)
-    monkeypatch.setattr("keelline.guards.audit.run_self_test", lambda: ["known-bad was missed"])
+    monkeypatch.setattr("stayfixed.guards.audit.run_self_test", lambda: ["known-bad was missed"])
     argv = [
         "test",
         "audit-entrypoints",
@@ -516,7 +516,7 @@ def test_test_attribute_runs_the_three_trees_and_reports_the_verdict(
     # `Result(result.verdict, data)` to `Result("done", data)` left the whole suite green —
     # `verdict` comes out of `data`, so the line a person reads was covered by nothing.
     # Re-measured with both: that mutation now reddens this test, and this test alone.
-    from keelline.guards.attribute import VERDICTS
+    from stayfixed.guards.attribute import VERDICTS
 
     root = repo(tmp_path)
     argv = [

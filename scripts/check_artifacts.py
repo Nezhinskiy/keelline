@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the built artifacts carry what an installed Keelline needs.
+"""Check the built artifacts carry what an installed stayfixed needs.
 
     uv run python scripts/check_artifacts.py dist            # the one wheel and one sdist
     uv run python scripts/check_artifacts.py rendered DIR    # what `overlay create --local` left
@@ -31,24 +31,24 @@ import tarfile
 import zipfile
 from pathlib import Path
 
-from keelline.overlay.api import OVERLAY_FILES
-from keelline.project.api import PROJECT_FILES
-from keelline.release.api import HASHED_FILES, RECORD
-from keelline.scaffold import MANIFEST_PATH
+from stayfixed.overlay.api import OVERLAY_FILES
+from stayfixed.project.api import PROJECT_FILES
+from stayfixed.release.api import HASHED_FILES, RECORD
+from stayfixed.scaffold import MANIFEST_PATH
 
 WHEEL_MUST = (
-    "keelline/presets/recommended.toml",
-    *(f"keelline/templates/overlay/{relative}" for relative in OVERLAY_FILES),
+    "stayfixed/presets/recommended.toml",
+    *(f"stayfixed/templates/overlay/{relative}" for relative in OVERLAY_FILES),
     # The project footprint's own tree. `init` reads it at runtime through
-    # `keelline.templates.tree`, exactly as `overlay create --local` reads the tree above, so a
-    # build that dropped it would leave every installed Keelline unable to initialise anything
+    # `stayfixed.templates.tree`, exactly as `overlay create --local` reads the tree above, so a
+    # build that dropped it would leave every installed stayfixed unable to initialise anything
     # while the checkout's own suite stayed green.
-    *(f"keelline/templates/project/{name}" for name in PROJECT_FILES),
-    # The one shipped profile. `keelline.profiles` reads it at runtime through
+    *(f"stayfixed/templates/project/{name}" for name in PROJECT_FILES),
+    # The one shipped profile. `stayfixed.profiles` reads it at runtime through
     # `importlib.resources`, like the presets, so a build that dropped it would refuse
-    # `[keelline] profile = "python"` as unshipped on every installed Keelline.
-    "keelline/profiles/python/profile.toml",
-    "keelline/profiles/python/rules.md",
+    # `[stayfixed] profile = "python"` as unshipped on every installed stayfixed.
+    "stayfixed/profiles/python/profile.toml",
+    "stayfixed/profiles/python/rules.md",
 )
 # What a downstream packager needs to verify the sdist, plus the three files the harness runs
 # without an interpreter of ours and the record they are checked against.
@@ -68,7 +68,7 @@ SDIST_MUST = (
     RECORD,
     "mutations.toml",
 )
-SDIST_EXECUTABLE = ("hooks/run-hook.sh", "scripts/keelline")
+SDIST_EXECUTABLE = ("hooks/run-hook.sh", "scripts/stayfixed")
 
 
 def check_wheel(path: Path) -> list[str]:

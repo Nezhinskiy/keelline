@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from keelline.cli import build_parser, discover_registrars, run
-from keelline.docs.trail import END_MARKER, MARKER
-from keelline.findings import LISTED_LIMIT, Finding
-from keelline.printed import CLIPPED_CHARS, UNPRINTABLE
+from stayfixed.cli import build_parser, discover_registrars, run
+from stayfixed.docs.trail import END_MARKER, MARKER
+from stayfixed.findings import LISTED_LIMIT, Finding
+from stayfixed.printed import CLIPPED_CHARS, UNPRINTABLE
 from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "installed"
 preset = "recommended"
@@ -44,7 +44,7 @@ def project(tmp_path: Path) -> tuple[Path, list[str]]:
     root = tmp_path / "widget"
     for name in ("docs/specs", "docs/plans", "notes/developer"):
         (root / name).mkdir(parents=True)
-    (root / "keelline.toml").write_text(CONFIG, encoding="utf-8")
+    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
     (root / "AGENTS.md").write_text(AGENTS, encoding="utf-8")
     (root / "docs" / "guide.md").write_text("g\n", encoding="utf-8")
     (root / "docs" / "roadmap.md").write_text(f"# R\n\n{MARKER}\n{END_MARKER}\n", encoding="utf-8")
@@ -112,7 +112,7 @@ def test_docs_check_without_a_store_is_silent_about_the_graph(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root, common = project(tmp_path)
-    (root / "keelline.toml").write_text(
+    (root / "stayfixed.toml").write_text(
         CONFIG.replace('mode = "in-repo"', 'mode = "local-only"'), encoding="utf-8"
     )
     assert invoke(["docs", "check", "--memory-graph", *common]) == 0
@@ -348,15 +348,15 @@ def test_a_non_utf8_roadmap_or_plan_exits_1_through_the_frame_and_never_2(
 @pytest.mark.parametrize(
     ("command", "module", "gate"),
     [
-        (["docs", "check"], "keelline.docs.hygiene", "docs_gate"),
-        (["docs", "trail", "--check"], "keelline.docs.trail", "trail_gate"),
+        (["docs", "check"], "stayfixed.docs.hygiene", "docs_gate"),
+        (["docs", "trail", "--check"], "stayfixed.docs.trail", "trail_gate"),
     ],
     ids=["docs check", "docs trail --check"],
 )
 def test_the_command_answers_with_its_gate_s_own_function(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: list[str], module: str, gate: str
 ) -> None:
-    # The gate `keelline assess` runs and the command a person runs are one function, so the
+    # The gate `stayfixed assess` runs and the command a person runs are one function, so the
     # two cannot drift apart. Mutations (advisory): `problems = docs_gate(root, config)` becomes
     # `problems = check_budgets(root, config) + check_links(root, config)` in `run_docs_check`
     # (first case); `trail_gate(root, config)` replaced by an inline comparison in

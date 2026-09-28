@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import keelline.docs.api as docs
+import stayfixed.docs.api as docs
 
 
 def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
@@ -13,9 +13,9 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     # substituted line. Measured by hand instead — re-exporting `trail.TRAIL_FILE` reddens this
     # test and this test alone.
     #
-    # Outside this area, `project` imports `trail_target`, `keelline.assess.gates` imports the
+    # Outside this area, `project` imports `trail_target`, `stayfixed.assess.gates` imports the
     # three gate functions and what the docs and trail gates read by path, and
-    # `keelline.assess.state` imports `lint` and `declared_state`; the other names below have no
+    # `stayfixed.assess.state` imports `lint` and `declared_state`; the other names below have no
     # importer and stay on the argument written beside them in `api.py`.
     required = {
         # the four checks this area is, one call each
@@ -29,7 +29,7 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         # the install path: `project` ships `trail.toml`
         # beside the roadmap and must put it where `docs trail` reads it, a location only
         "trail_target",
-        # the three gates keelline.assess.gates runs, each this area's own command's function
+        # the three gates stayfixed.assess.gates runs, each this area's own command's function
         "docs_gate",
         "plan_gate",
         "trail_gate",

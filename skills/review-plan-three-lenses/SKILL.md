@@ -24,8 +24,8 @@ procedure.
    Every write goes through a contained primitive; repository bytes reach the model only as
    data. A ruling whose anchor arrives through the channel it exists to defeat is a critical
    finding, whatever else is right about it.
-4. Run the lint the plan is held to: `keelline plan check docs/plans/example.md`, and
-   `keelline docs check` for the documents it links.
+4. Run the lint the plan is held to: `stayfixed plan check docs/plans/example.md`, and
+   `stayfixed docs check` for the documents it links.
 5. Set the findings out as a table — id, lens, task, finding, verdict — and give it to the
    plan's author neutrally. Do not grade a concern before the author has answered it; twice
    in one execution a reviewer overturned the controller's own leaning, and pre-judging

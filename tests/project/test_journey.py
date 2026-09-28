@@ -1,4 +1,4 @@
-"""The whole path a person takes onto Keelline, run as one scenario through the real parser: the
+"""The whole path a person takes onto stayfixed, run as one scenario through the real parser: the
 questions, `init --yes` with an answer, `assess`, an adoption design and plan with an accurate
 trail, `adopt begin`, `adopt promote`, and an `upgrade` that keeps a hand edit.
 
@@ -7,7 +7,7 @@ the repository one command leaves is one every later command accepts, on a base 
 not `main`. A failure here is a defect between commands, not a reason to weaken a step.
 
 Nothing reaches the network. The runner the CLI builds is stubbed for the whole scenario at the
-seam `tests/project/test_command.py` stubs (`keelline.runner.subprocess_runner`), answering a
+seam `tests/project/test_command.py` stubs (`stayfixed.runner.subprocess_runner`), answering a
 release tag at the running version: `init` resolves its pin through it, and so do `upgrade
 --dry-run` and `upgrade`, which read the pinned `[ci] ref`.
 
@@ -22,11 +22,11 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-import keelline
-from keelline.config.loader import CONFIG_FILE, load, preset_defaults
-from keelline.config.schema import BUILTIN_GATES
-from keelline.project.templates import CI_WORKFLOW, CONFIG_ARTIFACT
-from keelline.scaffold import Manifest, digest
+import stayfixed
+from stayfixed.config.loader import CONFIG_FILE, load, preset_defaults
+from stayfixed.config.schema import BUILTIN_GATES
+from stayfixed.project.templates import CI_WORKFLOW, CONFIG_ARTIFACT
+from stayfixed.scaffold import Manifest, digest
 from tests.cli import cli
 from tests.gitfixture import LsRemote, git, needs_git, run_git
 from tests.project.repos import repository
@@ -36,8 +36,8 @@ pytestmark = needs_git
 
 PATHS = preset_defaults("widget").paths
 DATE = "2026-09-26"
-DESIGN = f"{PATHS.specs}/{DATE}-keelline-adoption-design.md"
-PLAN = f"{PATHS.plans}/{DATE}-keelline-adoption.md"
+DESIGN = f"{PATHS.specs}/{DATE}-stayfixed-adoption-design.md"
+PLAN = f"{PATHS.plans}/{DATE}-stayfixed-adoption.md"
 TRAIL = f"{PurePosixPath(PATHS.roadmap).parent}/trail.toml"
 # The released commit the stubbed listing answers, at the version running.
 SHA = "c" * 40
@@ -48,9 +48,9 @@ POLICY = "documentation-policy"
 @pytest.fixture
 def released(monkeypatch: pytest.MonkeyPatch) -> LsRemote:
     """The runner every command builds, answering one release tag at the running version."""
-    from keelline import runner as runner_module
+    from stayfixed import runner as runner_module
 
-    listing = LsRemote(stdout=f"{SHA}\trefs/tags/v{keelline.__version__}\n", code=0)
+    listing = LsRemote(stdout=f"{SHA}\trefs/tags/v{stayfixed.__version__}\n", code=0)
     monkeypatch.setattr(runner_module, "subprocess_runner", lambda **_: listing)
     return listing
 
@@ -81,14 +81,14 @@ def test_a_fresh_non_main_repository_goes_from_its_answers_to_an_upgrade_that_ke
     assert code == 0, err
     asked = json.loads(out)["questions"]["properties"]
     assert asked["project.base_branch"]["default"] == "develop"
-    assert asked["project.base_branch"]["x-keelline-source"] == "origin/HEAD"
+    assert asked["project.base_branch"]["x-stayfixed-source"] == "origin/HEAD"
 
     # 3. `init --yes` with one answer, pinned to the release the stub lists; commit it all.
     code, out, err = cli(root, tmp_path, "init", "--yes", "--name", "widget")
     assert code == 0, out + err
-    assert f"CI: v{keelline.__version__}@{SHA}" in out, out
+    assert f"CI: v{stayfixed.__version__}@{SHA}" in out, out
     git(root, "add", "-A")
-    git(root, "commit", "-qm", "chore: keelline init")
+    git(root, "commit", "-qm", "chore: stayfixed init")
     initialised = git(root, "rev-parse", "HEAD").strip()
 
     # 4. The inventory: a fresh tree fails no gate against its own commit, and the file is
@@ -96,12 +96,12 @@ def test_a_fresh_non_main_repository_goes_from_its_answers_to_an_upgrade_that_ke
     code, out, err = cli(root, tmp_path, "assess", "--base", initialised)
     assert code == 0, out + err
     assert "0 of 5 gate(s) would fail" in out, out
-    assert run_git(root, "check-ignore", "-q", ".keelline/assessment.json").returncode == 0
+    assert run_git(root, "check-ignore", "-q", ".stayfixed/assessment.json").returncode == 0
 
     # 5. The adoption's design and plan, with a state each in the trail, staged before the trail
     # is rewritten because it lists tracked files only.
-    _write(root, DESIGN, "# Keelline adoption\n\nWhat the project adopts, and why.\n")
-    _write(root, PLAN, "# Keelline adoption\n\n**Scope:** the gates.\n\n**Premise:** none.\n")
+    _write(root, DESIGN, "# stayfixed adoption\n\nWhat the project adopts, and why.\n")
+    _write(root, PLAN, "# stayfixed adoption\n\n**Scope:** the gates.\n\n**Premise:** none.\n")
     trail = (root / TRAIL).read_text(encoding="utf-8")
     rows = [f"{PurePosixPath(p).parent.name}/{PurePosixPath(p).name}" for p in (DESIGN, PLAN)]
     _write(root, TRAIL, trail + "".join(f'"{row}" = "in progress"\n' for row in rows))
@@ -118,12 +118,12 @@ def test_a_fresh_non_main_repository_goes_from_its_answers_to_an_upgrade_that_ke
     code, out, err = cli(root, tmp_path, "plan", "check", str(root / PLAN))
     assert code == 0, out + err
     git(root, "add", "-A")
-    git(root, "commit", "-qm", "docs: the keelline adoption design and plan")
+    git(root, "commit", "-qm", "docs: the stayfixed adoption design and plan")
 
     # 6. `adopt begin`.
     code, out, err = cli(root, tmp_path, "adopt", "begin", str(root / PLAN))
     assert code == 0, out + err
-    assert load(root, machine=tmp_path / "absent.toml").keelline.state == "adopting"
+    assert load(root, machine=tmp_path / "absent.toml").stayfixed.state == "adopting"
 
     # 7. `adopt promote`, judged against the `init` commit. The fresh tree passes all five
     # built-ins over that range, so every one is promoted and the project is installed.
@@ -157,8 +157,8 @@ def test_a_fresh_non_main_repository_goes_from_its_answers_to_an_upgrade_that_ke
     assert config.ci.gate_branch == "develop"
     # The loaded answer, not the file's: under `installed` the file says `enforced = []`, which
     # the loader reads as every configured gate.
-    assert config.keelline.state == "installed"
-    assert set(config.keelline.enforcing) == set(BUILTIN_GATES)
+    assert config.stayfixed.state == "installed"
+    assert set(config.stayfixed.enforcing) == set(BUILTIN_GATES)
     workflow = (root / CI_WORKFLOW).read_text(encoding="utf-8")
     assert workflow.count('branches: ["develop"]') == 3 and 'base: "develop"' in workflow
     assert f"@{SHA}" in workflow
@@ -174,12 +174,14 @@ def test_a_fresh_non_main_repository_goes_from_its_answers_to_an_upgrade_that_ke
 def test_a_versionless_answer_sheet_goes_through_the_same_confirmation(
     tmp_path: Path, released: LsRemote
 ) -> None:
-    # The other way in: a `keelline.toml` the user wrote, with `[project]` and no version. It
+    # The other way in: a `stayfixed.toml` the user wrote, with `[project]` and no version. It
     # meets the same dry run and the same refusal as an answered run, and the one line `init`
-    # adds to it is the version. The sheet carries a `[keelline]` table of its own, so that line
+    # adds to it is the version. The sheet carries a `[stayfixed]` table of its own, so that line
     # has a table to go into; one without it gains the table's header too.
     root = repository(tmp_path)
-    sheet = '[keelline]\nagents = ["claude"]\n\n[project]\nname = "widget"\n\n[ci]\nmode = "none"\n'
+    sheet = (
+        '[stayfixed]\nagents = ["claude"]\n\n[project]\nname = "widget"\n\n[ci]\nmode = "none"\n'
+    )
     (root / CONFIG_FILE).write_text(sheet, encoding="utf-8")
     before = snapshot(root)
 
@@ -202,7 +204,7 @@ def test_a_versionless_answer_sheet_goes_through_the_same_confirmation(
     assert "this run wrote it" in out, out
     written = (root / CONFIG_FILE).read_text(encoding="utf-8")
     added = [line for line in written.splitlines() if line not in sheet.splitlines()]
-    assert added == [f'version = "{keelline.__version__}"'], added
+    assert added == [f'version = "{stayfixed.__version__}"'], added
     kept = [line for line in written.splitlines() if line not in added]
     assert kept == sheet.splitlines(), kept
     # `assess` loads the stamped file. It exits 1 because this repository has no

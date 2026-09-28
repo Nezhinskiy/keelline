@@ -222,12 +222,12 @@ def _preset_paths() -> tuple[tuple[int, str], ...]:
     """The digests of the default `[paths]` values the preset ships.
 
     Three of them are in `FORBIDDEN`, because they were the source repository's paths before
-    they were Keelline's defaults. A public document that could not say where the note store
+    they were stayfixed's defaults. A public document that could not say where the note store
     lives by default would be useless, so the public-document walk exempts exactly the values
     the plugin itself ships — read off the preset at import time, never written here. Source
     code keeps the full table: a module has no reason to spell a default path.
     """
-    from keelline.presets import load_preset
+    from stayfixed.presets import load_preset
 
     values = load_preset("recommended")["defaults"]["paths"].values()
     return tuple((len(value), digest_of(value)) for value in values)
@@ -235,7 +235,7 @@ def _preset_paths() -> tuple[tuple[int, str], ...]:
 
 PUBLIC_FORBIDDEN = tuple(entry for entry in FORBIDDEN if entry not in _preset_paths())
 # Three of the preset's default `[paths]` values are also digest-table entries — the ones that
-# were the source repository's paths before they were Keelline's defaults. Pinned so
+# were the source repository's paths before they were stayfixed's defaults. Pinned so
 # the exemption cannot quietly grow: a fourth would mean a token was added to the table for a
 # path the plugin itself ships, which is a contradiction to resolve, not to exempt.
 PRESET_PATHS_IN_TABLE = 3
@@ -375,11 +375,11 @@ def test_the_gate_reads_the_whole_tree() -> None:
     # inside it, so they are named like the rest.
     for wanted in (
         "README.md",
-        "src/keelline/cli.py",
+        "src/stayfixed/cli.py",
         "docs/cli.md",
         "mutations.toml",
         "hooks/run-hook.sh",
-        "scripts/keelline",
+        "scripts/stayfixed",
         "tests/test_fsops.py",
         "skills/README.md",
         "agents/code-navigator.md",
@@ -428,13 +428,15 @@ def test_the_two_tables_are_told_apart_by_the_file_they_are_for() -> None:
     # `table_for` is what decides whether a file may name a default path, so it is worth an
     # assertion of its own rather than only being exercised through the walk. A module and a
     # test module take the full table; the preset that ships those defaults, every document,
-    # and a data file under a full-table tree take the public one. `scripts/keelline` has no
+    # and a data file under a full-table tree take the public one. `scripts/stayfixed` has no
     # suffix at all and is source, which is why the tree name is a second arm.
-    assert table_for(ROOT / "src" / "keelline" / "cli.py") == FORBIDDEN
+    assert table_for(ROOT / "src" / "stayfixed" / "cli.py") == FORBIDDEN
     assert table_for(ROOT / "tests" / "test_fsops.py") == FORBIDDEN
-    assert table_for(ROOT / "scripts" / "keelline") == FORBIDDEN
-    assert table_for(ROOT / "src" / "keelline" / "presets" / "recommended.toml") == PUBLIC_FORBIDDEN
-    fixture = ROOT / "tests" / "fixtures" / "smoke-project" / "keelline.toml"
+    assert table_for(ROOT / "scripts" / "stayfixed") == FORBIDDEN
+    assert (
+        table_for(ROOT / "src" / "stayfixed" / "presets" / "recommended.toml") == PUBLIC_FORBIDDEN
+    )
+    fixture = ROOT / "tests" / "fixtures" / "smoke-project" / "stayfixed.toml"
     assert table_for(fixture) == PUBLIC_FORBIDDEN
     assert table_for(ROOT / "docs" / "cli.md") == PUBLIC_FORBIDDEN
     assert table_for(ROOT / "README.md") == PUBLIC_FORBIDDEN
@@ -569,7 +571,7 @@ def test_the_exemption_is_exactly_the_presets_default_paths() -> None:
 def test_the_public_table_still_discriminates() -> None:
     # A preset path is allowed by the public table and refused by the full one; a planted
     # token is refused by both; the dotted harness directory is not a vendor branch.
-    from keelline.presets import load_preset
+    from stayfixed.presets import load_preset
 
     defaults = load_preset("recommended")["defaults"]["paths"].values()
     exempt_value = next(

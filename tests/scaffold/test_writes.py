@@ -19,12 +19,12 @@ from typing import Any
 
 import pytest
 
-from keelline.config.loader import CONFIG_FILE, load
-from keelline.scaffold import Kind, Style, Template, apply, plan
-from keelline.scaffold.manifest import MANIFEST_PATH
+from stayfixed.config.loader import CONFIG_FILE, load
+from stayfixed.scaffold import Kind, Style, Template, apply, plan
+from stayfixed.scaffold.manifest import MANIFEST_PATH
 
 CONFIG = """
-[keelline]
+[stayfixed]
 version = "0.1.0"
 state = "initialised"
 preset = "recommended"
@@ -128,7 +128,7 @@ def templates() -> list[Template]:
             kind=Kind.MANAGED_REGION,
             target=".gitignore",
             source="t",
-            render=lambda: ".keelline/local/",
+            render=lambda: ".stayfixed/local/",
             region="ignores",
             style=Style.HASH,
         ),
@@ -183,7 +183,7 @@ def test_the_trace_sees_a_write_the_tree_diff_cannot(tmp_path: Path, trace: Trac
     # The anti-vacuity guard for the test above, and the demonstration that this instrument is
     # strictly stronger than the diff: a write to $HOME is invisible to a walk of tmp_path.
     root = a_project(tmp_path)
-    outside = tmp_path.parent / "keelline-trace-probe.log"
+    outside = tmp_path.parent / "stayfixed-trace-probe.log"
     outside.write_text("x\n", encoding="utf-8")
     outside.unlink()
     assert trace.outside(root) == [str(outside)]

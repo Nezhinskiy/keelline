@@ -1,5 +1,5 @@
 # tests/setup/test_git_hooks.py
-"""`keelline setup --git-hooks`: the CLI wiring over `guards.githooks`'s already-tested
+"""`stayfixed setup --git-hooks`: the CLI wiring over `guards.githooks`'s already-tested
 installer (`tests/guards/test_githooks.py` covers the hook's own chaining behaviour end to
 end). What is untested until this file is the command that calls it and the report it prints.
 """
@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from keelline.errors import Refusal
-from keelline.guards.api import HOOK_MARKER, HOOK_NAME, hooks_dir
-from keelline.setup.commands import run_setup
+from stayfixed.errors import Refusal
+from stayfixed.guards.api import HOOK_MARKER, HOOK_NAME, hooks_dir
+from stayfixed.setup.commands import run_setup
 from tests import gitfixture
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -37,7 +37,7 @@ def _env(tmp_path: Path) -> dict[str, str]:
     """The shared fixture environment, with `tmp_path` as `HOME`.
 
     It used to pin `PATH` to `/usr/bin:/bin`; `tests/gitfixture.py` passes the real one
-    through, for the reason `keelline.gitenv`'s docstring gives — a hardcoded path is what
+    through, for the reason `stayfixed.gitenv`'s docstring gives — a hardcoded path is what
     picks the Xcode shim on macOS over the `git` the machine owner installed.
     """
     return gitfixture.env(tmp_path)
@@ -65,8 +65,8 @@ def _args(**over: object) -> argparse.Namespace:
     base: dict[str, object] = {
         "preset": None,
         "yes": False,
-        "home": "/nonexistent/keelline-test-guard/home",
-        "machine": "/nonexistent/keelline-test-guard/config.toml",
+        "home": "/nonexistent/stayfixed-test-guard/home",
+        "machine": "/nonexistent/stayfixed-test-guard/config.toml",
         "overlay": None,
         "git_hooks": True,
         "uninstall": False,

@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-import keelline.guards.api as guards
+import stayfixed.guards.api as guards
 
 
 def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
@@ -33,7 +33,7 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         "hooks_dir",
         # which roots a configuration's paths may reach, for ledger.scan and memory.refs
         "contained_roots",
-        # the commit gate keelline.assess.gates runs
+        # the commit gate stayfixed.assess.gates runs
         "commit_gate",
     }
     assert required == set(guards.__all__)

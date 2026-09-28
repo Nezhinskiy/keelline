@@ -28,7 +28,7 @@ description: Turn a retrospective into guards — for each finding, a test with 
      report it upstream with the reproduction, record the report in the table, and write
      the working rule the session follows meanwhile.
 4. For each guard, declare the mutation and run the declared set unfiltered. For each
-   rule, run `keelline memory index --check` after adding the note, so the index carries
+   rule, run `stayfixed memory index --check` after adding the note, so the index carries
    it. For each entry, use the `file-bug` skill.
 5. Close the table. Count the rows by terminal state and put the count where the
    retrospective is kept. A retrospective whose findings all have a state is one that will

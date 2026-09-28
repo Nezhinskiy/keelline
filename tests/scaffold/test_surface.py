@@ -1,10 +1,10 @@
-"""What `keelline.scaffold` publishes, which is the whole of the engine's contract for a caller."""
+"""What `stayfixed.scaffold` publishes, which is the whole of the engine's contract for a caller."""
 
 from __future__ import annotations
 
-from keelline import scaffold
-from keelline.errors import Refusal
-from keelline.scaffold import EntriesError, ManifestError, RegionError
+from stayfixed import scaffold
+from stayfixed.errors import Refusal
+from stayfixed.scaffold import EntriesError, ManifestError, RegionError
 
 EXPORTED = [
     "FORMAT",

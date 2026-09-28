@@ -9,16 +9,16 @@ from pathlib import Path
 
 import pytest
 
-from keelline.attach.api import IGNORE_BODY, IGNORE_REGION
-from keelline.config.loader import CONFIG_FILE, preset_defaults
-from keelline.config.schema import BRANCH_NAME, Config
-from keelline.errors import Failure, Refusal
-from keelline.harnesses import HARNESSES
-from keelline.ledger.api import render_index
-from keelline.profiles import load_profile
-from keelline.project.api import PROJECT_FILES, Prepared, project_templates
-from keelline.project.footprint import LOCAL_PROFILE, refuse_local_profile
-from keelline.project.templates import (
+from stayfixed.attach.api import IGNORE_BODY, IGNORE_REGION
+from stayfixed.config.loader import CONFIG_FILE, preset_defaults
+from stayfixed.config.schema import BRANCH_NAME, Config
+from stayfixed.errors import Failure, Refusal
+from stayfixed.harnesses import HARNESSES
+from stayfixed.ledger.api import render_index
+from stayfixed.profiles import load_profile
+from stayfixed.project.api import PROJECT_FILES, Prepared, project_templates
+from stayfixed.project.footprint import LOCAL_PROFILE, refuse_local_profile
+from stayfixed.project.templates import (
     CI_ARTIFACT,
     CI_WORKFLOW,
     COMPUTED,
@@ -36,14 +36,14 @@ from keelline.project.templates import (
     fill,
     read,
 )
-from keelline.release.api import Pin, Resolution
-from keelline.scaffold import Kind, Style
-from keelline.templates import tree
+from stayfixed.release.api import Pin, Resolution
+from stayfixed.scaffold import Kind, Style
+from stayfixed.templates import tree
 from tests.gitfixture import needs_git, run_git
 from tests.workflow_yaml import load
 
 SHA = "a" * 40
-DOCUMENT = '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n'
+DOCUMENT = '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n'
 ROOT = Path(__file__).resolve().parents[2]
 CHECK_WORKFLOW = ROOT / ".github" / "workflows" / "check.yml"
 NO_PIN = Resolution(None, True)
@@ -56,7 +56,7 @@ def _prepared(
     resolution: Resolution = NO_PIN,
     adopted: bool = False,
 ) -> Prepared:
-    """This file's default is the run that *creates* `keelline.toml`, which is the path on which
+    """This file's default is the run that *creates* `stayfixed.toml`, which is the path on which
     the three "why there is no ref" sentences are the answers. `adopted=True` is the other kind
     of run, and it has one answer; the case below holds that."""
     return project_templates(config, resolution=resolution, document=DOCUMENT, adopted=adopted)
@@ -65,7 +65,7 @@ def _prepared(
 def _recording(config: Config, ref: str = SHA) -> Config:
     """`config` with `[ci] ref` set, which is the only thing that renders a workflow.
 
-    The workflow is built from what `keelline.toml` will say on disk and never from the
+    The workflow is built from what `stayfixed.toml` will say on disk and never from the
     resolution, so a test that wants one says so on the configuration rather than on the pin.
     """
     return replace(config, ci=replace(config.ci, ref=ref))
@@ -93,7 +93,7 @@ def test_the_claude_md_pointer_names_the_configured_instruction_file() -> None:
 
     `claude.md` shipped as the literal `@AGENTS.md` and was built with no `render` override, so
     `[paths] agents_md = "CONTEXT.md"` produced `CLAUDE.md` pointing at a file the run did not
-    write, `CONTEXT.md` beside it, and a `keelline docs check` that passed — every Claude Code
+    write, `CONTEXT.md` beside it, and a `stayfixed docs check` that passed — every Claude Code
     session in that project following a dangling pointer, with nothing anywhere saying so.
 
     Mutation (oracle): `AGENTS_MD=p.agents_md` -> `AGENTS_MD=CLAUDE_MD` -> the pointer names the
@@ -117,8 +117,8 @@ def test_the_skeleton_states_the_budgets_this_project_will_be_held_to() -> None:
     """The rendered bytes again, and the numbers are `Budgets.effective`'s and not the preset's.
 
     The three numbers were literals in the shipped template — 300, 3,000 and 50, the preset's
-    own. A project that lowered `agents_md_lines` to 250 received a document Keelline wrote
-    telling it 300 was fine, and `keelline docs check` then failed the same document at 251.
+    own. A project that lowered `agents_md_lines` to 250 received a document stayfixed wrote
+    telling it 300 was fine, and `stayfixed docs check` then failed the same document at 251.
     Nothing held the literals to the preset, so nothing could see them drift either.
 
     Mutation (oracle): `LINES=_budget(config, "agents_md_lines")` ->
@@ -168,7 +168,7 @@ def test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherw
     # offered, because what renders one is `[ci] ref` and there is none.
     config = preset_defaults("widget")
     assert "ci-workflow" not in {t.id for t in _prepared(config).footprint}
-    assert _prepared(config).skipped["ci-workflow"].startswith("no released Keelline tag")
+    assert _prepared(config).skipped["ci-workflow"].startswith("no released stayfixed tag")
     skipped = _prepared(config, resolution=Resolution(None, False)).skipped
     assert "could not be asked" in skipped["ci-workflow"]
     # A pin resolved and the document records no ref. On a run that creates the document this is
@@ -176,7 +176,7 @@ def test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherw
     # path, where it is the ordinary one.
     no_ref = _prepared(config, resolution=PINNED, adopted=True)
     assert "ci-workflow" not in {t.id for t in no_ref.footprint}
-    assert no_ref.skipped["ci-workflow"].startswith("the keelline.toml this repository already")
+    assert no_ref.skipped["ci-workflow"].startswith("the stayfixed.toml this repository already")
     footprint = _prepared(_recording(config), resolution=PINNED).footprint
     body = {t.id: t for t in footprint}["ci-workflow"].render()
     assert f"/.github/workflows/check.yml@{SHA}\n" in body and "%%" not in body
@@ -204,11 +204,11 @@ def test_the_adoption_path_is_never_sent_to_the_network_for_a_file_it_must_edit(
 
     `project_templates` took no adoption flag, so `_ci` saw only a `Resolution` and could not
     tell which kind of run it was in. Under the preset's `[ci] mode = "reusable"`, on a
-    repository with a hand-written `keelline.toml` and no `[ci] ref` — the ordinary adoption
-    path — an unreachable remote printed "run `keelline init --yes` again with the network
-    reachable" and a pre-release Keelline printed "no released Keelline tag matches the version
+    repository with a hand-written `stayfixed.toml` and no `[ci] ref` — the ordinary adoption
+    path — an unreachable remote printed "run `stayfixed init --yes` again with the network
+    reachable" and a pre-release stayfixed printed "no released stayfixed tag matches the version
     running". Neither is why there is no workflow, and running again cannot produce one:
-    `keelline.toml` is a `Kind.ONCE` artifact already on disk, so no pin any run resolves is ever
+    `stayfixed.toml` is a `Kind.ONCE` artifact already on disk, so no pin any run resolves is ever
     recorded and the workflow is skipped again, for ever.
 
     All three states are one answer here, and the same one. Asserted as the whole text and not a
@@ -234,7 +234,7 @@ def test_the_adoption_path_is_never_sent_to_the_network_for_a_file_it_must_edit(
 def test_a_recorded_ref_outside_the_grammar_is_never_rendered_into_the_uses_line() -> None:
     """`[ci] ref` is repository-authored and lands in a YAML file GitHub executes.
 
-    On the adoption path it is whatever `keelline.toml` already carried, and the loader bounds it
+    On the adoption path it is whatever `stayfixed.toml` already carried, and the loader bounds it
     to "a string" and nothing more — so it is held to `CI_REF` before it is written, exactly as
     `gate_branch` is held to `BRANCH_NAME`, and a value outside the grammar costs the artifact
     rather than the run. The anchor is `CI_REF`, a constant in the installed package that nothing
@@ -482,7 +482,7 @@ def test_every_id_offered_as_local_is_a_whole_file_of_the_footprint_pass() -> No
 def test_every_source_both_passes_build_is_a_shipped_file_or_is_declared_computed() -> None:
     """The same anti-drift rule over `Template.source`, which had no guard and was wrong.
 
-    `source` becomes `Record.template` in `.keelline/manifest.json` — committed, and where a
+    `source` becomes `Record.template` in `.stayfixed/manifest.json` — committed, and where a
     reader finds out where an artifact's bytes came from. Three artifacts recorded
     `project/config`, `project/bug-index` and `project/gitignore`: names `PROJECT_FILES` does not
     carry, that the wheel does not ship, and that `read` refuses by name. Nothing raised, because
@@ -518,7 +518,7 @@ def test_every_source_both_passes_build_is_a_shipped_file_or_is_declared_compute
             continue
         if source.startswith(f"{PROFILE}/"):
             _, name, file = source.split("/")
-            assert (resources.files("keelline.profiles") / name / file).is_file(), source
+            assert (resources.files("stayfixed.profiles") / name / file).is_file(), source
             continue
         area, _, name = source.partition("/")
         assert area == PROJECT and name in PROJECT_FILES, source
@@ -536,7 +536,7 @@ def test_a_template_sentinel_left_unfilled_costs_the_artifact_rather_than_shippi
     of the file every session loads, was executed by the suite and asserted by none of it.
 
     The sentinel's own name prints: it is a string from a template this package ships, which is
-    Keelline's own text and not a repository's. The names below are deliberately *not* ones this
+    stayfixed's own text and not a repository's. The names below are deliberately *not* ones this
     package ships — the subject is any unfilled sentinel, not the two real ones.
 
     Mutation (oracle): the search is made to answer `None` -> the first assertion reddens.
@@ -561,7 +561,7 @@ def test_read_refuses_a_name_this_package_does_not_ship_before_it_joins_it() -> 
     Mutation (oracle): the membership check is dropped -> the traversal name reaches
     `read_text` and raises `OSError` instead of this module's own `Failure`.
     """
-    for name in ("../../../etc/passwd", "keelline.toml", ".", ""):
+    for name in ("../../../etc/passwd", "stayfixed.toml", ".", ""):
         with pytest.raises(Failure, match="is not a shipped project template"):
             read(name)
     # And a name it does ship is read, so the check is not simply refusing everything.
@@ -570,7 +570,7 @@ def test_read_refuses_a_name_this_package_does_not_ship_before_it_joins_it() -> 
 
 def _python(agents: tuple[str, ...] = ("claude", "codex")) -> Config:
     config = _recording(preset_defaults("widget"))
-    return replace(config, keelline=replace(config.keelline, profile="python", agents=agents))
+    return replace(config, stayfixed=replace(config.stayfixed, profile="python", agents=agents))
 
 
 def _renditions() -> set[str]:
@@ -585,12 +585,12 @@ def _renditions() -> set[str]:
 
 def test_a_profile_lands_once_neutrally_and_once_per_adapted_harness() -> None:
     by_id = {t.id: t for t in _prepared(_python()).footprint}
-    assert by_id["profile-rules"].target == "docs/keelline/rules/python.md"
+    assert by_id["profile-rules"].target == "docs/stayfixed/rules/python.md"
     assert by_id["profile-rules"].source == "profile/python/rules.md"
     assert by_id["profile-rules"].render() == load_profile("python").rules
-    assert by_id["claude-rules"].target == ".claude/rules/keelline-python.md"
+    assert by_id["claude-rules"].target == ".claude/rules/stayfixed-python.md"
     assert by_id["claude-rules"].source == "computed/claude-rules"
-    assert "`docs/keelline/rules/python.md`" in by_id["claude-rules"].render()
+    assert "`docs/stayfixed/rules/python.md`" in by_id["claude-rules"].render()
 
 
 def test_a_harness_not_listed_gets_no_file_of_its_own() -> None:
@@ -600,7 +600,7 @@ def test_a_harness_not_listed_gets_no_file_of_its_own() -> None:
 
 def test_a_profile_artifact_kept_out_of_git_is_refused() -> None:
     """The `AGENTS.md` pointer and the Claude rule read `profile-rules` at its committed path;
-    kept local it lands under `.keelline/local/artifacts/`, and both point at nothing (a review
+    kept local it lands under `.stayfixed/local/artifacts/`, and both point at nothing (a review
     reproduced all three files). Mutation (declared): the refusal's condition dropped -> this
     reddens.
     """
@@ -618,7 +618,7 @@ def test_the_region_hands_every_harness_the_pointer_and_the_essentials() -> None
     region = next(
         t for t in _prepared(_python(agents=("codex",))).footprint if t.id == "agents-md"
     ).render()
-    assert "`docs/keelline/rules/python.md`" in region
+    assert "`docs/stayfixed/rules/python.md`" in region
     for line in load_profile("python").essentials:
         assert f"- {line}" in region
     # The block follows the paragraph after one blank line and adds none before the end marker.
@@ -659,8 +659,10 @@ def test_a_rendition_that_collides_is_refused_naming_the_harness_s_fixed_name() 
     # what the refusal calls an id with no row. Mutation (oracle): look the second id up with no
     # fallback -> the collision is a `KeyError`, not a refusal, and this reddens.
     config = _python(("claude",))
-    clash = replace(config, paths=replace(config.paths, roadmap=".claude/rules/keelline-python.md"))
-    with pytest.raises(Refusal, match=r"claude-rules \(a fixed name of Keelline's own\)"):
+    clash = replace(
+        config, paths=replace(config.paths, roadmap=".claude/rules/stayfixed-python.md")
+    )
+    with pytest.raises(Refusal, match=r"claude-rules \(a fixed name of stayfixed's own\)"):
         _prepared(clash)
 
 
@@ -676,7 +678,7 @@ def test_every_target_any_configuration_writes_is_one_every_configuration_could(
         replace(
             base,
             ci=replace(base.ci, mode=mode),
-            keelline=replace(base.keelline, profile=profile, agents=agents),
+            stayfixed=replace(base.stayfixed, profile=profile, agents=agents),
         )
         for mode in ("reusable", "uvx", "none")
         for profile in ("", "python")

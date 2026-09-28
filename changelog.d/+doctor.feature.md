@@ -1,4 +1,4 @@
-`keelline doctor` reports on an installation: sixteen checks covering the project's
+`stayfixed doctor` reports on an installation: sixteen checks covering the project's
 configuration, the plugin's hook wrapper, the overlay binding and the shape of the memory path,
 every hook entry with its provenance, the budgets a preset clamps, whether each injection bundle
 still fits its session-start slots, the overlay's commit-time secret scan, the note store, the
@@ -7,11 +7,11 @@ writes nothing and repairs nothing: every finding carries the command that would
 `--json` carries all sixteen. It exits 1 when any check is red and 0 otherwise — a check that
 cannot be answered says so rather than guessing, and a `skip` never reaches the exit code.
 
-It holds a repository's bytes to the same rule as the rest of Keelline, because its `--json` is
+It holds a repository's bytes to the same rule as the rest of stayfixed, because its `--json` is
 relayed to a model. A hook entry is vouched for by the overlay this repository is bound to and
 never by the ledger beside it, and is named by position rather than by its committed id; the
 `diagnostics` row counts the hook sink's log and never quotes it; the `cli-path` row says that
-`keelline` resolves and not where, since `PATH` reaches it from a committed `env` block; and a
+`stayfixed` resolves and not where, since `PATH` reaches it from a committed `env` block; and a
 file it could not read is a warning that names the file, never a red row a clone can force. It
 executes only a hook wrapper it derived from its own installation — a plugin root the
 environment named is read, reported and never run, and the `attached` row believes the

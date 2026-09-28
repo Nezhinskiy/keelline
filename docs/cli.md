@@ -1,6 +1,6 @@
 # Command reference
 
-Every command, what it reads, what it writes, and what each exit code means. `keelline --help`
+Every command, what it reads, what it writes, and what each exit code means. `stayfixed --help`
 gives you the one-line version; this is the rest.
 
 Three things hold everywhere:
@@ -15,12 +15,12 @@ Three things hold everywhere:
   and the two of `docs trail`'s keys that are not lists at all, `written` and `stale`.
 - **Exit codes**: `0` success, `1` findings, `2` a refusal or an internal error. A caller that
   treats `1` as "proceed anyway" must still never treat `2` that way — a refusal is a boundary,
-  not a low-confidence result. Every command that reads `keelline.toml` refuses one that is a
+  not a low-confidence result. Every command that reads `stayfixed.toml` refuses one that is a
   symbolic link, whatever it points at, before reading anything through it: a link to
   `/dev/zero` would otherwise be read until memory ran out. The refusal exits `2`, except in two
-  commands whose exits mean something else: `keelline hook` refuses only on `PreToolUse` and
-  continues on every other event (see [its section](#keelline-hook-event)), and `keelline doctor`
-  reports it as a `keelline.toml` that does not load, a red row, exit `1`.
+  commands whose exits mean something else: `stayfixed hook` refuses only on `PreToolUse` and
+  continues on every other event (see [its section](#stayfixed-hook-event)), and `stayfixed doctor`
+  reports it as a `stayfixed.toml` that does not load, a red row, exit `1`.
 - **Every `memory` command takes the same three options**, described once here rather than five
   times below. `--root` and `--machine` are not memory's alone: every `bugs`, `docs` and `plan`
   command, and `assess`, `gate` and `adopt`, takes them with the same meaning, and `docs check`
@@ -30,70 +30,70 @@ Three things hold everywhere:
 |---|---|
 | `--root PATH` | The project root. Default: the current directory. |
 | `--store PATH` | Resolve the note store at this path instead of where the configuration says. An override of *where the notes are*, not of the rules about them: the same containment and overlay-binding checks apply, so it is not a way around the trust gate. |
-| `--machine PATH` | Read this machine configuration file instead of `~/.config/keelline/config.toml`. Mostly for tests and for running against a second machine profile; it also decides which `trust.json` is consulted. |
+| `--machine PATH` | Read this machine configuration file instead of `~/.config/stayfixed/config.toml`. Mostly for tests and for running against a second machine profile; it also decides which `trust.json` is consulted. |
 ## Contents
 
-- [`keelline memory index`](#keelline-memory-index)
-- [`keelline memory trust --in-repo-memory`](#keelline-memory-trust---in-repo-memory)
-- [`keelline memory session-context --bundle <name> [--part N]`](#keelline-memory-session-context---bundle-name---part-n)
-- [`keelline memory inventory`](#keelline-memory-inventory)
-- [`keelline memory fit`](#keelline-memory-fit)
-- [`keelline release check [--tag TAG]`](#keelline-release-check---tag-tag)
-- [`keelline release notes --version X.Y.Z [--draft]`](#keelline-release-notes---version-xyz---draft)
-- [`keelline release hashes [--check]`](#keelline-release-hashes---check)
-- [`keelline hook <event>`](#keelline-hook-event)
+- [`stayfixed memory index`](#stayfixed-memory-index)
+- [`stayfixed memory trust --in-repo-memory`](#stayfixed-memory-trust---in-repo-memory)
+- [`stayfixed memory session-context --bundle <name> [--part N]`](#stayfixed-memory-session-context---bundle-name---part-n)
+- [`stayfixed memory inventory`](#stayfixed-memory-inventory)
+- [`stayfixed memory fit`](#stayfixed-memory-fit)
+- [`stayfixed release check [--tag TAG]`](#stayfixed-release-check---tag-tag)
+- [`stayfixed release notes --version X.Y.Z [--draft]`](#stayfixed-release-notes---version-xyz---draft)
+- [`stayfixed release hashes [--check]`](#stayfixed-release-hashes---check)
+- [`stayfixed hook <event>`](#stayfixed-hook-event)
 - [Hooks](#hooks)
-- [`keelline guard bg-cleanup`](#keelline-guard-bg-cleanup)
-- [`keelline commit check --range RANGE`](#keelline-commit-check---range-range)
-- [`keelline commit strip FILE`](#keelline-commit-strip-file)
-- [`keelline test hygiene`](#keelline-test-hygiene)
-- [`keelline test audit-entrypoints`](#keelline-test-audit-entrypoints)
-- [`keelline test attribute --command CMD [--base REF]`](#keelline-test-attribute---command-cmd---base-ref)
-- [`keelline bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`](#keelline-bugs-new-title---severity-s---area-a---source-s---related-id----no-fetch)
-- [`keelline bugs index [--check]`](#keelline-bugs-index---check)
-- [`keelline bugs check [--base REF]`](#keelline-bugs-check---base-ref)
-- [`keelline bugs renumber OLD NEW`](#keelline-bugs-renumber-old-new)
-- [`keelline docs check [--budgets] [--links] [--memory-graph] [--store PATH]`](#keelline-docs-check---budgets---links---memory-graph---store-path)
-- [`keelline docs trail [--check]`](#keelline-docs-trail---check)
-- [`keelline plan check [--base REF] [PATH …]`](#keelline-plan-check---base-ref-path-)
-- [`keelline assess [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#keelline-assess---base-ref---builtin---root-path---machine-path)
-- [`keelline gate [--only NAME]… [--base REF] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`](#keelline-gate---only-name---base-ref---builtin----custom---workflow-sha-sha---annotate---summary-file---root-path---machine-path)
-- [`keelline adopt begin PLAN [--root PATH] [--machine PATH]`](#keelline-adopt-begin-plan---root-path---machine-path)
-- [`keelline adopt promote [GATE …] [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#keelline-adopt-promote-gate----base-ref---builtin---root-path---machine-path)
-- [`keelline memory refs`](#keelline-memory-refs)
-- [`keelline init --yes [--dry-run] [--name NAME] [--base-branch BRANCH] [--agent NAME …] [--profile NAME] [--memory-mode MODE] [--local ID …] [--no-ci] [--root PATH] [--machine PATH]`](#keelline-init---yes---dry-run---name-name---base-branch-branch---agent-name----profile-name---memory-mode-mode---local-id----no-ci---root-path---machine-path)
-- [`keelline init --questions [--root PATH] [--machine PATH]`](#keelline-init---questions---root-path---machine-path)
-- [`keelline upgrade [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`](#keelline-upgrade---dry-run---force-path---root-path---machine-path)
-- [`keelline uninstall [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`](#keelline-uninstall---dry-run---force-path---root-path---machine-path)
-- [`keelline overlay create --owner OWNER [--name NAME] (--template | --local) [--root PATH]`](#keelline-overlay-create---owner-owner---name-name---template----local---root-path)
-- [`keelline overlay init --owner OWNER [--root PATH]`](#keelline-overlay-init---owner-owner---root-path)
-- [`keelline overlay upgrade [--root PATH] [--dry-run]`](#keelline-overlay-upgrade---root-path---dry-run)
-- [`keelline overlay publish-template --owner OWNER [--name NAME] [--yes]`](#keelline-overlay-publish-template---owner-owner---name-name---yes)
-- [`keelline attach --store PATH [--check] [--yes] [--trust-remote] [--root PATH] [--machine PATH]`](#keelline-attach---store-path---check---yes---trust-remote---root-path---machine-path)
-- [`keelline detach [--root PATH] [--machine PATH]`](#keelline-detach---root-path---machine-path)
-- [`keelline setup --preset NAME [--yes] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#keelline-setup---preset-name---yes---home-path---settings-path---machine-path---overlay-value---root-path)
-- [`keelline setup --git-hooks [--uninstall] [--root PATH]`](#keelline-setup---git-hooks---uninstall---root-path)
-- [`keelline doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`](#keelline-doctor---json---root-path---home-path---machine-path)
+- [`stayfixed guard bg-cleanup`](#stayfixed-guard-bg-cleanup)
+- [`stayfixed commit check --range RANGE`](#stayfixed-commit-check---range-range)
+- [`stayfixed commit strip FILE`](#stayfixed-commit-strip-file)
+- [`stayfixed test hygiene`](#stayfixed-test-hygiene)
+- [`stayfixed test audit-entrypoints`](#stayfixed-test-audit-entrypoints)
+- [`stayfixed test attribute --command CMD [--base REF]`](#stayfixed-test-attribute---command-cmd---base-ref)
+- [`stayfixed bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`](#stayfixed-bugs-new-title---severity-s---area-a---source-s---related-id----no-fetch)
+- [`stayfixed bugs index [--check]`](#stayfixed-bugs-index---check)
+- [`stayfixed bugs check [--base REF]`](#stayfixed-bugs-check---base-ref)
+- [`stayfixed bugs renumber OLD NEW`](#stayfixed-bugs-renumber-old-new)
+- [`stayfixed docs check [--budgets] [--links] [--memory-graph] [--store PATH]`](#stayfixed-docs-check---budgets---links---memory-graph---store-path)
+- [`stayfixed docs trail [--check]`](#stayfixed-docs-trail---check)
+- [`stayfixed plan check [--base REF] [PATH …]`](#stayfixed-plan-check---base-ref-path-)
+- [`stayfixed assess [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#stayfixed-assess---base-ref---builtin---root-path---machine-path)
+- [`stayfixed gate [--only NAME]… [--base REF] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`](#stayfixed-gate---only-name---base-ref---builtin----custom---workflow-sha-sha---annotate---summary-file---root-path---machine-path)
+- [`stayfixed adopt begin PLAN [--root PATH] [--machine PATH]`](#stayfixed-adopt-begin-plan---root-path---machine-path)
+- [`stayfixed adopt promote [GATE …] [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#stayfixed-adopt-promote-gate----base-ref---builtin---root-path---machine-path)
+- [`stayfixed memory refs`](#stayfixed-memory-refs)
+- [`stayfixed init --yes [--dry-run] [--name NAME] [--base-branch BRANCH] [--agent NAME …] [--profile NAME] [--memory-mode MODE] [--local ID …] [--no-ci] [--root PATH] [--machine PATH]`](#stayfixed-init---yes---dry-run---name-name---base-branch-branch---agent-name----profile-name---memory-mode-mode---local-id----no-ci---root-path---machine-path)
+- [`stayfixed init --questions [--root PATH] [--machine PATH]`](#stayfixed-init---questions---root-path---machine-path)
+- [`stayfixed upgrade [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`](#stayfixed-upgrade---dry-run---force-path---root-path---machine-path)
+- [`stayfixed uninstall [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`](#stayfixed-uninstall---dry-run---force-path---root-path---machine-path)
+- [`stayfixed overlay create --owner OWNER [--name NAME] (--template | --local) [--root PATH]`](#stayfixed-overlay-create---owner-owner---name-name---template----local---root-path)
+- [`stayfixed overlay init --owner OWNER [--root PATH]`](#stayfixed-overlay-init---owner-owner---root-path)
+- [`stayfixed overlay upgrade [--root PATH] [--dry-run]`](#stayfixed-overlay-upgrade---root-path---dry-run)
+- [`stayfixed overlay publish-template --owner OWNER [--name NAME] [--yes]`](#stayfixed-overlay-publish-template---owner-owner---name-name---yes)
+- [`stayfixed attach --store PATH [--check] [--yes] [--trust-remote] [--root PATH] [--machine PATH]`](#stayfixed-attach---store-path---check---yes---trust-remote---root-path---machine-path)
+- [`stayfixed detach [--root PATH] [--machine PATH]`](#stayfixed-detach---root-path---machine-path)
+- [`stayfixed setup --preset NAME [--yes] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#stayfixed-setup---preset-name---yes---home-path---settings-path---machine-path---overlay-value---root-path)
+- [`stayfixed setup --git-hooks [--uninstall] [--root PATH]`](#stayfixed-setup---git-hooks---uninstall---root-path)
+- [`stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`](#stayfixed-doctor---json---root-path---home-path---machine-path)
 - [The reusable workflow](#the-reusable-workflow)
 - [Shared flags](#shared-flags)
 - [Configuration](#configuration)
 
 ---
 
-## `keelline memory index`
+## `stayfixed memory index`
 
 Rewrite every note's `index:` line and re-render `MEMORY.md` from them.
 
 ```bash
-keelline memory index            # write
-keelline memory index --check    # report drift, write nothing
+stayfixed memory index            # write
+stayfixed memory index --check    # report drift, write nothing
 ```
 
 **Reads** every `*.md` under each configured group, and the current `MEMORY.md`.
 
 **Writes** each note whose `index:` line it filled in, and `MEMORY.md` — in overlay mode, the file
 the symlink points at, not the link — and, when the store was trusted before the run,
-`~/.config/keelline/trust.json` (or the file beside `--machine`), re-recorded over the files it
+`~/.config/stayfixed/trust.json` (or the file beside `--machine`), re-recorded over the files it
 wrote (see below). Under `--check`, nothing.
 
 What it does, in order:
@@ -126,7 +126,7 @@ on. It does not — it re-records the hash across exactly the files it itself wr
 other file's approved digest forward unchanged. If something else changed the store while the
 command ran, it refuses to carry trust and says so.
 
-## `keelline memory trust --in-repo-memory`
+## `stayfixed memory trust --in-repo-memory`
 
 Record that the notes sitting inside this repository may reach the model.
 
@@ -135,7 +135,7 @@ stops this from being a bare, trivially scripted command.
 
 **Reads** every file the store yields.
 
-**Writes** `~/.config/keelline/trust.json` (or the file beside `--machine`).
+**Writes** `~/.config/stayfixed/trust.json` (or the file beside `--machine`).
 
 The hash covers every note, `MEMORY.md`, and the repository-controlled configuration rendered
 into it, keyed by the store's absolute path. Change any of it and the approval lapses — you are
@@ -145,7 +145,7 @@ approval; recording one is inert rather than dangerous.
 Exits `2` if `trust.json` exists and does not parse. It holds every project's approval on the
 machine, so nothing will overwrite a file it could not read — repair or delete it.
 
-## `keelline memory session-context --bundle <name> [--part N]`
+## `stayfixed memory session-context --bundle <name> [--part N]`
 
 Render one injection bundle. This is what a `SessionStart` hook entry invokes; you will rarely
 run it by hand except to see what a session actually receives.
@@ -161,7 +161,7 @@ Each bundle is emitted across numbered parts, because the harness caps each hook
 independently. `--part N` selects one; a part past the end prints nothing and exits `0`. A part
 that is a single block too large for one slot is withheld — the command prints a short notice
 saying so instead, because the harness would otherwise truncate it and a truncated region loses
-the marker that says where repository content ends. `keelline memory fit` names the block.
+the marker that says where repository content ends. `stayfixed memory fit` names the block.
 
 Output is deliberately **raw**, not JSON: the margin that keeps a bundle inside the platform cap
 is additive only because there is no envelope and no escaping. Do not pass `--json` from a hook
@@ -169,19 +169,19 @@ entry.
 
 When the store is repository data with no trust record, every bundle but `preset-rules` is
 empty, and this command says nothing rather than explaining why — its output *is* what reaches
-the model. `keelline memory index` and `keelline memory fit` are where the explanation is
+the model. `stayfixed memory index` and `stayfixed memory fit` are where the explanation is
 printed, because those are the commands a person runs.
 
 **Writes** nothing: the bundle goes to standard output and nowhere else.
 
-## `keelline memory inventory`
+## `stayfixed memory inventory`
 
 What a memory sweep reads: every note with its word count, type, `startup` rank, date, whether
 it is stale, and whether its index line is curated, harvested or provisional. Plus totals.
 
 **Writes** nothing.
 
-## `keelline memory fit`
+## `stayfixed memory fit`
 
 Whether each bundle fits the numbered hook entries declared for it. Exits `1` when one does not
 — either it needs more parts than there are slots, or a single block is larger than one part
@@ -192,9 +192,9 @@ whether the trust gate is open.
 
 **Writes** nothing.
 
-## `keelline release check [--tag TAG]`
+## `stayfixed release check [--tag TAG]`
 
-Cross-checks the version across `pyproject.toml`, `uv.lock`, `src/keelline/__init__.py`, both
+Cross-checks the version across `pyproject.toml`, `uv.lock`, `src/stayfixed/__init__.py`, both
 plugin manifests and `CHANGELOG.md`. Exits `1` naming every source that disagrees.
 
 The `--json` object carries `summary`, `versions` (every source and what it says) and
@@ -204,7 +204,7 @@ refusal and prints `error` instead, which is the difference between a finding an
 
 `--tag` adds the tag as a further source, and it is what the release workflow runs. Both tag
 shapes are accepted — `vX.Y.Z`, which is the workflow's trigger, and the platform's own
-`keelline--vX.Y.Z` — because either may be the ref a run was created from. Under `--tag` one
+`stayfixed--vX.Y.Z` — because either may be the ref a run was created from. Under `--tag` one
 other rule tightens: without it a pending fragment in `changelog.d/` lets `CHANGELOG.md` lag,
 because a change writes its fragment long before a release assembles it, but at a tag there is
 nothing left to assemble, so a fragment still pending means the changelog users will read is
@@ -213,16 +213,16 @@ not the one the tag claims. That is a finding naming the count.
 **Writes** nothing. It reads the sources above, the fragments pending in `changelog.d/`, and
 `hooks/hashes.json` beside the three files it records.
 
-This is discipline for **the Keelline repository itself**, not something Keelline offers your
+This is discipline for **the stayfixed repository itself**, not something stayfixed offers your
 project. See [RELEASING.md](../RELEASING.md).
 
-## `keelline release notes --version X.Y.Z [--draft]`
+## `stayfixed release notes --version X.Y.Z [--draft]`
 
 Assemble `CHANGELOG.md` from the fragments in `changelog.d/`, through towncrier.
 
 ```bash
-keelline release notes --version 1.2.3 --draft   # print the section; write nothing
-keelline release notes --version 1.2.3           # write it, and consume the fragments
+stayfixed release notes --version 1.2.3 --draft   # print the section; write nothing
+stayfixed release notes --version 1.2.3           # write it, and consume the fragments
 ```
 
 A wrapper and nothing more: towncrier does the rendering and `[tool.towncrier]` in
@@ -239,22 +239,22 @@ all that `changelog.d/` held, as they are while every file there is a `+…` fra
 removes the directory itself too. With `--draft` nothing is written and the rendered section is
 printed.
 
-## `keelline release hashes [--check]`
+## `stayfixed release hashes [--check]`
 
 Record the sha256 of every file the harness executes without Python, into `hooks/hashes.json`
 beside them.
 
 ```bash
-keelline release hashes            # write the record
-keelline release hashes --check    # report drift, write nothing
+stayfixed release hashes            # write the record
+stayfixed release hashes --check    # report drift, write nothing
 ```
 
-Three files are recorded — `hooks/run-hook.sh`, `hooks/hooks.json` and `scripts/keelline` —
+Three files are recorded — `hooks/run-hook.sh`, `hooks/hooks.json` and `scripts/stayfixed` —
 because those are the ones a harness runs directly; a wheel's own contents are the packaging
 tool's to attest. The record is refused rather than written when any of the three is missing: a
 record naming two of three reads as a clean comparison for the third.
 
-**Not a release-time command.** `keelline release check` compares the record to the tree on
+**Not a release-time command.** `stayfixed release check` compares the record to the tree on
 every run, so editing any of the three without re-recording fails the gate in the same commit
 rather than at a tag — which is what makes it a record somebody has watched fail. `doctor
 files` reads the installed record against the installed files, and reports post-install
@@ -265,24 +265,24 @@ the record is not this check's threat; tag protection and the pinned SHA are.
 `--check --json` the object carries `summary`, `files` and `problems`, in both outcomes, for
 the reason `release check` above gives.
 
-## `keelline hook <event>`
+## `stayfixed hook <event>`
 
 Internal. Reads a hook payload on stdin, dispatches it to every handler registered for that
 event, and writes the harness's expected output.
 
 Not something to run by hand. Its exit-code policy differs from every other command: an internal
 error refuses (`2`) only on `PreToolUse`, and degrades open (`0`) everywhere else — on
-`UserPromptSubmit` an exit `2` erases what you typed, so a bug in Keelline must not cost you
-your prompt. A `keelline.toml` that does not load takes the same path.
+`UserPromptSubmit` an exit `2` erases what you typed, so a bug in stayfixed must not cost you
+your prompt. A `stayfixed.toml` that does not load takes the same path.
 
-A `keelline.toml` that is a symbolic link is never read, whatever it points at, and no handler
+A `stayfixed.toml` that is a symbolic link is never read, whatever it points at, and no handler
 runs. On `PreToolUse` the call is refused (`2`), and on every other event, `SessionStart`
 included, the hook continues (`0`) with nothing on standard output; either way standard error
-says `keelline: keelline.toml is a symbolic link, and no Keelline command reads keelline.toml
+says `stayfixed: stayfixed.toml is a symbolic link, and no stayfixed command reads stayfixed.toml
 through one; replace the link with the file itself`, followed by `; refused` or `; continuing
 open`.
 
-**Writes** inside `keelline/` under the data root the harness names — `CLAUDE_PLUGIN_DATA`, or
+**Writes** inside `stayfixed/` under the data root the harness names — `CLAUDE_PLUGIN_DATA`, or
 Codex's `PLUGIN_DATA` — and nowhere else of its own: `.probe`, written each time it dispatches to
 learn whether the root can be written at all; under `markers/`, one empty file per `once_key`
 handler that delivered, filed under a directory per session, both names hashed to a fixed width,
@@ -290,7 +290,7 @@ with all but the newest fifty session directories removed; and `diagnostics.json
 per diagnostic record, rotated to `diagnostics.1.jsonl` once it would pass 256 KiB. With no data
 root, or a relative one, nothing is written there and a `once_key` handler is asked on every
 invocation. One handler writes outside it: `worktree-link`, on `SessionStart` in a worktree
-other than the checkout that holds the store, makes the link tree `keelline attach` makes — a
+other than the checkout that holds the store, makes the link tree `stayfixed attach` makes — a
 symlink for each memory group and for `MEMORY.md`, at the store's own place in the worktree,
 with the directories above each link created as it is made — and creates the harness memory
 link, `~/.claude/projects/<slug>/memory`, with the directories above it inside the home
@@ -301,15 +301,15 @@ this store.
 
 ## Hooks
 
-The two harnesses do not run `keelline` directly. Every entry in `hooks/hooks.json` invokes
+The two harnesses do not run `stayfixed` directly. Every entry in `hooks/hooks.json` invokes
 `hooks/run-hook.sh`, and its argv is:
 
 ```
-run-hook.sh <policy> <keelline args…>
+run-hook.sh <policy> <stayfixed args…>
 ```
 
 `<policy>` is `open` or `closed`, and it is the only argument the wrapper itself reads; the rest
-is handed to `keelline` untouched. The wrapper exists because a Python process cannot fail
+is handed to `stayfixed` untouched. The wrapper exists because a Python process cannot fail
 closed about its own absence: a missing script exits `2` by CPython accident, a missing
 interpreter `127`, an `ImportError` `1`, a lost executable bit `126` — and Claude Code reads
 every exit that is not `2` as a non-blocking error, which is permission. So the wrapper owns
@@ -319,7 +319,7 @@ changes into it so every command's `--root` default is correct, and it maps exit
 
 `0` and `2` are the dispatcher's own and pass through untouched — a `2` it produced is a
 handler's deny, not a wrapper failure. Every other exit code, and every fault the wrapper finds
-before `keelline` runs at all, is judged by `<policy>`: `closed` refuses with exit `2`, `open`
+before `stayfixed` runs at all, is judged by `<policy>`: `closed` refuses with exit `2`, `open`
 continues with exit `0`. Either way the reason is written to stderr with a token — Codex
 downgrades an exit `2` with empty stderr to a plain failure, so the reason is part of the
 contract.
@@ -330,24 +330,24 @@ is indistinguishable from it and no token accompanies it. What the wrapper owns 
 faults it can reach *first* — a lost policy argument, no interpreter, a launcher it cannot read,
 a project root it cannot enter — and each of those prints its token. So an exit `2` **carrying a
 token** is attributed; an exit `2` carrying none is a handler's deny or a fault beneath the
-wrapper, and `keelline doctor`'s `wrapper` row reports on the same basis.
+wrapper, and `stayfixed doctor`'s `wrapper` row reports on the same basis.
 
 | Token | What it means |
 |---|---|
-| `KL_ARGV` | The entry lost its policy argument. Always a refusal, whatever the missing policy would have been: a `closed` guard that disarmed itself must say so. |
-| `KL_NO_PY` | No candidate interpreter is 3.11 or newer **and outside the project root**. The message distinguishes the two states, because their remedies differ: a candidate that was found inside the checkout and skipped says so and names the remedy, while "none among the candidates" means no interpreter answered at all. `KEELLINE_PYTHON_CANDIDATES` replaces the built-in list, space-separated — and is honoured **only when the wrapper's stdin is a terminal**, because it names the program the wrapper executes. See below. |
-| `KL_NO_GIT` | There is no `git` at any of the wrapper's absolute candidate paths. `git`'s answer is one of the two anchors the interpreter containment is measured against, so a machine without one has no anchor this process can trust: it degrades under `open` and refuses under `closed`, rather than keeping the shape of the containment and none of its strength. `git` is **not** looked up on `PATH` here — see below. |
-| `KL_NO_LAUNCHER` | There is no readable `scripts/keelline` beside the wrapper. The launcher is derived from the wrapper's own path and never read out of the environment: the harness substitutes the plugin root into the *command string*, so the wrapper that runs is always the plugin's own, while a variable of that name reaching this process from anywhere else would choose the program Python is handed — before any Keelline guard runs. Readability and not merely existence: a launcher at mode `000` otherwise reached CPython, which printed its own error and exited `2` with no token. |
-| `KL_NO_ROOT` | `CLAUDE_PROJECT_DIR`, or `git`, named a project root the wrapper could not enter. A root that cannot be *resolved* is silent and correct — nothing is configured, so nothing is emitted — but a root that was named and cannot be entered used to leave the process in the harness's working directory, where every `--root`-defaulting entry would read whatever project happened to be there. |
-| `KL_RC` | `keelline` exited with something other than `0` or `2`; the code is printed. |
+| `SF_ARGV` | The entry lost its policy argument. Always a refusal, whatever the missing policy would have been: a `closed` guard that disarmed itself must say so. |
+| `SF_NO_PY` | No candidate interpreter is 3.11 or newer **and outside the project root**. The message distinguishes the two states, because their remedies differ: a candidate that was found inside the checkout and skipped says so and names the remedy, while "none among the candidates" means no interpreter answered at all. `STAYFIXED_PYTHON_CANDIDATES` replaces the built-in list, space-separated — and is honoured **only when the wrapper's stdin is a terminal**, because it names the program the wrapper executes. See below. |
+| `SF_NO_GIT` | There is no `git` at any of the wrapper's absolute candidate paths. `git`'s answer is one of the two anchors the interpreter containment is measured against, so a machine without one has no anchor this process can trust: it degrades under `open` and refuses under `closed`, rather than keeping the shape of the containment and none of its strength. `git` is **not** looked up on `PATH` here — see below. |
+| `SF_NO_LAUNCHER` | There is no readable `scripts/stayfixed` beside the wrapper. The launcher is derived from the wrapper's own path and never read out of the environment: the harness substitutes the plugin root into the *command string*, so the wrapper that runs is always the plugin's own, while a variable of that name reaching this process from anywhere else would choose the program Python is handed — before any stayfixed guard runs. Readability and not merely existence: a launcher at mode `000` otherwise reached CPython, which printed its own error and exited `2` with no token. |
+| `SF_NO_ROOT` | `CLAUDE_PROJECT_DIR`, or `git`, named a project root the wrapper could not enter. A root that cannot be *resolved* is silent and correct — nothing is configured, so nothing is emitted — but a root that was named and cannot be entered used to leave the process in the harness's working directory, where every `--root`-defaulting entry would read whatever project happened to be there. |
+| `SF_RC` | `stayfixed` exited with something other than `0` or `2`; the code is printed. |
 
 **Which values may choose what.** The wrapper asks one question of everything it reads: is this
 a *destination*, or does it choose a program, or the provenance of what runs? `CLAUDE_PROJECT_DIR`
-is a destination and is honoured. `KEELLINE_PYTHON_CANDIDATES` is not — the probe asks a
+is a destination and is honoured. `STAYFIXED_PYTHON_CANDIDATES` is not — the probe asks a
 candidate only to exit `0` for a trivial `-c`, so an unguarded list picks the interpreter that
-runs on every tool call — and it is therefore gated where `keelline`'s machine configuration
-gates `KEELLINE_CONFIG` and `XDG_CONFIG_HOME`: honoured from an interactive terminal, ignored
-everywhere else. A hook's stdin is the harness's JSON payload on a pipe and `keelline doctor`
+runs on every tool call — and it is therefore gated where `stayfixed`'s machine configuration
+gates `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME`: honoured from an interactive terminal, ignored
+everywhere else. A hook's stdin is the harness's JSON payload on a pipe and `stayfixed doctor`
 hands its own probe `/dev/null`, so a committed `.claude/settings.json` `env` block — which
 applies without a trust prompt in a non-interactive session — cannot reach it, while a machine
 owner debugging the probe by hand still can. The `git` that resolves the project root is asked
@@ -360,14 +360,14 @@ anchor there is, so a bare `git` would let a clone that ships one have that bina
 every hook invocation, before any guard. The wrapper therefore tries a fixed list of absolute
 paths and takes the first that exists, asking the machine owner's own installs before
 `/usr/bin/git`; nothing under `$HOME` is on the list, because `HOME` is environment-chosen too.
-A machine with `git` at none of them gets `KL_NO_GIT`. This is deliberately stricter than
-`keelline`'s own `git` calls, which do resolve through `PATH` so that the machine owner's `git`
-answers: those run inside a Keelline that has already chosen its interpreter, while this one
+A machine with `git` at none of them gets `SF_NO_GIT`. This is deliberately stricter than
+`stayfixed`'s own `git` calls, which do resolve through `PATH` so that the machine owner's `git`
+answers: those run inside a stayfixed that has already chosen its interpreter, while this one
 decides which programs may run at all.
 
 **`PATH` is contained rather than trusted or dropped.** The last built-in candidate is bare
 `python3`, resolved through `PATH`, and an `env` block can set `PATH` — so gating
-`KEELLINE_PYTHON_CANDIDATES` alone would have moved the choice of program from one variable to
+`STAYFIXED_PYTHON_CANDIDATES` alone would have moved the choice of program from one variable to
 another. The entry cannot simply go: it is the fall-through the built-in list exists for, and a
 machine whose Python lives under `pyenv`, `nix` or `asdf` has none at any of the four absolute
 paths. So the rule is narrower and matches what a hostile clone can actually stage — **no
@@ -387,14 +387,14 @@ repository — and its only fallback there is to trust the remaining variable on
 the same hole under a longer name.
 
 A machine whose interpreter really is inside the checkout — a vendored toolchain, or an in-tree
-virtual environment that is the only `python3` on `PATH` — gets `KL_NO_PY` rather than a silent
+virtual environment that is the only `python3` on `PATH` — gets `SF_NO_PY` rather than a silent
 run of the tree's own program: a refusal under `closed`, a degradation under `open`, and a red
-`wrapper` row in `keelline doctor` either way. That is the accepted cost of the rule, and it is
+`wrapper` row in `stayfixed doctor` either way. That is the accepted cost of the rule, and it is
 reached only when none of the four absolute candidates answers first.
 
 **The one row this does not cover.** A `run-hook.sh` whose executable bit has been cleared is
 never executed by the harness at all, so no code of ours runs and no policy applies — the guard
-is silent rather than closed. The wrapper cannot defend its own mode, so `keelline doctor` is
+is silent rather than closed. The wrapper cannot defend its own mode, so `stayfixed doctor` is
 what catches it: the `files` row goes **red** on a cleared bit and hands you the `chmod +x`. Run
 it after anything that rewrites the plugin directory.
 
@@ -409,10 +409,10 @@ count, joined by newlines in this order: **no overlay recorded** on this machine
 repository **not attached** to that overlay, or the overlay recording **a different remote**
 under this project's name; **a memory path refused**, so the notes were not examined at all; how
 many note groups are **real directories** rather than links into the overlay; the overlay's
-`keelline.requires` in **a form this Keelline cannot read**, or naming **a floor this Keelline
+`stayfixed.requires` in **a form this stayfixed cannot read**, or naming **a floor this stayfixed
 does not meet**; and — only when none of those fired — the overlay's branch having **no
 upstream**, and the counts of its **unpushed commits and uncommitted changes**. A bound, linked,
-up-to-date repository on a satisfied Keelline hears nothing. Not one byte a repository wrote
+up-to-date repository on a satisfied stayfixed hears nothing. Not one byte a repository wrote
 reaches any of those lines: `project.name`, `memory.groups`, `paths.memory` and both remotes are
 read and none is quoted back, because the field these lines land in is `additionalContext` —
 model input with no delimiter and no trust record.
@@ -430,16 +430,16 @@ Which is why those last two `git` calls are gated on the event's own `source`: o
 the running conversation continuing, under the session id the marker is filed under — they are
 skipped, so a healthy repository costs five seconds there and not nine. `startup`, `resume`,
 `fork`, `clear` and a payload carrying no `source` all pay: a resume is a new launch, often days
-later, over an overlay the conversation may have left dirty, and an invocation Keelline cannot
+later, over an overlay the conversation may have left dirty, and an invocation stayfixed cannot
 place in a context is treated as a new one rather than as one already answered. The cost is that
 an overlay which becomes unpushed *during* a session that started clean is not reported at that
-session's compactions, only at its next resume or startup; `keelline doctor` answers on demand. And the overlay is never a plugin Keelline
+session's compactions, only at its next resume or startup; `stayfixed doctor` answers on demand. And the overlay is never a plugin stayfixed
 executes anything from — its
 `hooks/hooks.json` stays empty; hook entries the owner keeps in *common/claude/hooks.json* and
 `projects/<name>/claude/hooks.json` reach a session only through `attach`'s explicit, ledgered
 merge.
 
-## `keelline guard bg-cleanup`
+## `stayfixed guard bg-cleanup`
 
 Judge one Bash call for a background leak. Reads one JSON object on stdin — a whole hook
 payload, or a bare `tool_input` with `command` and `run_in_background` — and answers `2` when
@@ -460,7 +460,7 @@ smoke test and a person can ask it without a harness.
 
 **Writes** nothing.
 
-## `keelline commit check --range RANGE`
+## `stayfixed commit check --range RANGE`
 
 Every message in `RANGE` (a `git log` revision range, e.g. `main..HEAD`), for lines in its
 trailing attribution block that are an AI/tool attribution trailer or footer: a `-by:` trailer
@@ -475,16 +475,16 @@ read. Exits `1` naming up to eight offences as `sha line N [label]` and counting
 never the text, which is the repository's; `--json`'s `violations` carries every one — and `2`
 when git cannot read the range or the range looks like an option.
 
-**Writes** nothing. `keelline gate`'s `commit` gate, which the reusable workflow runs, reads the
+**Writes** nothing. `stayfixed gate`'s `commit` gate, which the reusable workflow runs, reads the
 range from the base to `HEAD` through this same check.
 
 Exit `1` has two meanings here and a gate should know both: messages were read and some carry a
-trailer (`FAIL: …`), and *no `keelline.toml` was found under `--root`*, which the configuration
-loader reports as a failure — `keelline: failed: …/keelline.toml does not exist` — and not as a
+trailer (`FAIL: …`), and *no `stayfixed.toml` was found under `--root`*, which the configuration
+loader reports as a failure — `stayfixed: failed: …/stayfixed.toml does not exist` — and not as a
 refusal. A workflow that must tell them apart reads the first word of the output, or checks the
 file is there before it runs the gate.
 
-## `keelline commit strip FILE`
+## `stayfixed commit strip FILE`
 
 Rewrite a commit-message file in place with the attribution lines of its trailing attribution
 block removed — never a line of the body. Exits `0` whether or not anything was stripped, and
@@ -497,13 +497,13 @@ Git's own trailing comment block is kept, and so is everything below the scissor
 
 This is what the chained `prepare-commit-msg` hook runs, so the trailer is gone before the
 commit exists; `git commit --no-verify` skips `commit-msg` but not that hook. Installing the
-hook is `keelline setup --git-hooks`, and removing it — restoring whatever it chained to — is
-`keelline setup --git-hooks --uninstall`; both are documented below.
-`keelline.guards.api.install` is the same call for a caller embedding Keelline.
+hook is `stayfixed setup --git-hooks`, and removing it — restoring whatever it chained to — is
+`stayfixed setup --git-hooks --uninstall`; both are documented below.
+`stayfixed.guards.api.install` is the same call for a caller embedding stayfixed.
 
 **Writes** `FILE`.
 
-## `keelline test hygiene`
+## `stayfixed test hygiene`
 
 The two environment faults that make a red test run unattributable: uncommitted changes in
 the tree, and `.pyc` files whose recorded source mtime no longer matches their source. Counts
@@ -514,7 +514,7 @@ same note once per context after a red pytest run.
 
 **Writes** nothing.
 
-## `keelline test audit-entrypoints`
+## `stayfixed test audit-entrypoints`
 
 Tests that never exercise what they name, in two shapes: an assertion whose value is produced
 by invoking a test double, and a test whose name states an entry point it imports but never
@@ -547,7 +547,7 @@ finding is `path`, `line`, `test` (the test function's name), `shape` (`assert-o
 `detail` are repository-authored strings, which is why they are in `--json` and not in the
 summary line.
 
-## `keelline test attribute --command CMD [--base REF]`
+## `stayfixed test attribute --command CMD [--base REF]`
 
 Run one failing command three times and say what the three exit codes mean. The three trees:
 
@@ -618,7 +618,7 @@ files because the archived tree's own `.gitattributes` excluded them, and `2` wh
 shaped like an option, which is refused above the first subprocess rather than handed to `git` as
 one.
 
-## `keelline bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`
+## `stayfixed bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`
 
 File a bug: allocate the next free identifier (`1 + max` over every entry in the working tree
 and every entry ever added on any ref, after a bounded `git fetch origin` unless `--no-fetch`),
@@ -634,7 +634,7 @@ and, unless `--no-fetch`, whatever the `git fetch --quiet origin` it runs before
 writes into the repository — the remote-tracking refs, `FETCH_HEAD` and the fetched objects —
 even when a rejection that follows the allocation leaves the working tree as it was.
 
-## `keelline bugs index [--check]`
+## `stayfixed bugs index [--check]`
 
 Render `<paths.bug_index>` from the entry files alone. `--check` exits `1` when the committed
 index differs from that rendering and writes nothing. Either form refuses (`2`) while the write
@@ -650,7 +650,7 @@ older generated format is still read as generated rather than refused as hand-wr
 
 **Writes** `<paths.bug_index>`.
 
-## `keelline bugs check [--base REF]`
+## `stayfixed bugs check [--base REF]`
 
 Every rule the ledger holds, in one pass: each entry parses under the flat frontmatter subset
 and its `id:` matches its filename; no entry restates `**Status:**`/`**Severity:**` in its
@@ -690,12 +690,12 @@ not, fail (`1`) rather than read as a base with no ledger, and under a gate that
 fetch the whole history (`fetch-depth: 0`). Without `--base` the tree alone is judged.
 A generated index with no directory behind it is a deleted ledger and exits `1`. Git enumerates
 the files where the root is the top of a checkout (tracked plus untracked-not-ignored), and a
-walk stands in elsewhere. A file whose first 2 KiB carry `keelline:ledger:fixtures` holds sample
+walk stands in elsewhere. A file whose first 2 KiB carry `stayfixed:ledger:fixtures` holds sample
 identifiers and is neither scanned nor swept.
 
 **Writes** nothing.
 
-## `keelline bugs renumber OLD NEW`
+## `stayfixed bugs renumber OLD NEW`
 
 Move an entry to a free identifier: `NEW` gets the entry with its `id:` rewritten, `OLD` becomes
 a `void` pointer at the new number, every scanned file that mentions `OLD` is rewritten, and the
@@ -706,12 +706,12 @@ could not read or write is listed and the command exits `1` naming it, because o
 exists a stale mention in that file looks intentional to `bugs check` forever. The line counts
 them and names up to eight; `--json`'s `unswept` carries every one, each an object with `path`
 and `reason`. The path is relative to the root, and the reason is the error in words, naming no
-absolute path; a refusal of Keelline's own may repeat the root-relative path. The moved entry's
+absolute path; a refusal of stayfixed's own may repeat the root-relative path. The moved entry's
 own body is the operator's to rewrite and is not swept.
 
 **Writes** the two entry files, every rewritten file, and `<paths.bug_index>`.
 
-## `keelline docs check [--budgets] [--links] [--memory-graph] [--store PATH]`
+## `stayfixed docs check [--budgets] [--links] [--memory-graph] [--store PATH]`
 
 Two kinds of check, and the difference is the whole design; no flag runs the enforced
 two, and `--memory-graph` is opt-in. **Enforced** (exit `1`, `FAIL:`):
@@ -731,7 +731,7 @@ the store. Silent where no store resolves.
 
 **Writes** nothing.
 
-## `keelline docs trail [--check]`
+## `stayfixed docs trail [--check]`
 
 Rewrite the listing between `## Design and plan trail` and `<!-- end design and plan trail -->`
 in the roadmap: every `*.md` under `[paths] specs` and `[paths] plans` that git tracks and does
@@ -771,12 +771,12 @@ listing every document on disk; outside one, every document is listed.
 
 **Writes** `[paths] roadmap`.
 
-## `keelline plan check [--base REF] [PATH …]`
+## `stayfixed plan check [--base REF] [PATH …]`
 
 With `PATH` arguments, lint exactly those plans; without, the plans under `[paths] plans` that
 merging the change could alter on `REF`, `REF` defaulting to
-`refs/remotes/origin/<project.base_branch>`, the fully qualified name, as for `keelline assess`
-and `keelline gate`, so a tag called `origin/<branch>` cannot stand in for it. Those are the plans
+`refs/remotes/origin/<project.base_branch>`, the fully qualified name, as for `stayfixed assess`
+and `stayfixed gate`, so a tag called `origin/<branch>` cannot stand in for it. Those are the plans
 whose copy in `HEAD` differs from `REF`'s and from that of any commit `git merge-base --all REF
 HEAD` names: a copy equal to every merge base's leaves the merge taking `REF`'s, and one equal to
 `REF`'s leaves it as it is. Every merge base, not the one `REF...HEAD` diffs against, which can
@@ -796,7 +796,7 @@ any base in a clone git refuses to say is shallow or not, are this command's `ba
 finding (`1`), never an OK: fetch the whole history (`fetch-depth: 0`). A git that could not be
 run or ran past its time limit, on any of these questions, fails (`1`) with that cause in
 words. The `plan` gate that
-`keelline assess`, `keelline gate` and `keelline adopt promote` run reads the same cause as a
+`stayfixed assess`, `stayfixed gate` and `stayfixed adopt promote` run reads the same cause as a
 gate that could not run, as `commit` does, because it says nothing about any plan. A `REF`
 shaped like an option is refused (`2`) before git sees it. Uncommitted plans
 are not in the diff; the line counts them and `--json` names them, and naming one as `PATH`
@@ -804,10 +804,10 @@ lints it.
 
 **Writes** nothing.
 
-## `keelline assess [--base REF] [--builtin] [--root PATH] [--machine PATH]`
+## `stayfixed assess [--base REF] [--builtin] [--root PATH] [--machine PATH]`
 
 What stands between this repository, as it is, and enforcement. It reads the tree's own
-`keelline.toml` — not the base branch's: the question is about this tree, so this command is
+`stayfixed.toml` — not the base branch's: the question is about this tree, so this command is
 not a trust boundary — and runs every configured gate (see [Configuration](#configuration)): the
 built-ins `[gates] builtin` keeps, in their fixed order, then each `[gates.custom.<name>]`. A
 custom gate's output goes to standard error as it ran and nowhere else, so running `assess` in a
@@ -839,7 +839,7 @@ tracks and nothing else, so a file that is on disk here and that git does not tr
 or ignored — is one those gates read here and CI never sees, and there the gate's own finding for
 an absent file fails every pull request. So `assess` reports such a gate as could not run, its
 `reason` saying it could not judge the tree as CI will, and counts it as one that would fail, and
-`keelline adopt promote` never enforces it. To keep one of those files out of git, take its gate out
+`stayfixed adopt promote` never enforces it. To keep one of those files out of git, take its gate out
 of `[gates] builtin`.
 
 - **The files.** `[paths] agents_md` and every file or directory its links name, for `docs`, and
@@ -868,13 +868,13 @@ of `[gates] builtin`.
   gate could not run the same way, and its item is `could-not-look`. Outside a work tree nothing is
   asked, since there is no index to ask and no checkout for CI to take, and both gates judge the
   files as they are, as `docs trail` lists every document there.
-- **`keelline gate`** asks nothing about tracking: it runs on the checkout CI took, where such a
+- **`stayfixed gate`** asks nothing about tracking: it runs on the checkout CI took, where such a
   file is simply absent and the gate's own finding says so.
 
-**A gate's row.** `keelline assess`, `keelline gate` and `keelline adopt promote` each give every
+**A gate's row.** `stayfixed assess`, `stayfixed gate` and `stayfixed adopt promote` each give every
 gate they ran one `--json` row in one shape: `name`; `enforcing`; `answered`, false when the gate
 could not run; `reason`, that fixed text, else empty; `count`, its findings; and `failing`, true
-when it has a finding or could not run. A custom gate `keelline gate` did not start because the
+when it has a finding or could not run. A custom gate `stayfixed gate` did not start because the
 run had already failed has a row too, `answered` false and `reason` `not run: the run had already
 failed`, and `failing` true, since it judged nothing and a gate that did not look has not passed.
 A row names no finding: `assess` lists them as items.
@@ -884,54 +884,54 @@ A row names no finding: `assess` lists them as items.
 | `todo-markers` | tracked files under `[ledger] code_roots` | advice | 1 | a `TODO`, `FIXME` or `XXX` word; `where` names files |
 | `tracked-env` | the git index | warning | — | a tracked file named `.env` or `.env.<x>`, except `.example`, `.sample` and `.template` |
 | `memory-history` | the history of `[paths] memory` | warning | 8 | the store has history and `memory.mode` is not `in-repo` |
-| `foreign-hooks` | the committed hook settings of each harness `[keelline] agents` selects | advice | 5 | a hook entry without Keelline's marker |
-| `foreign-workflows` | `.github/workflows/*.yml` and `*.yaml` | advice | — | any workflow but Keelline's own caller |
-| `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | warning | 7 | the line that governs Keelline's caller workflow names no owner, or there is no file. Lines end at a line feed, and a carriage return just before one is dropped; words are separated by spaces and tabs, a `#` starts a comment at the line's start or after a blank, a line with an owner outside `@user`, `@org/team` and an email address decides nothing, and a line holding any other whitespace or control character, a carriage return anywhere else included, is read with no owner; not judged under `[ci] mode = "none"` |
-| `codeowners-scope` | the same file, and `.github/workflows/*.yml` and `*.yaml` | warning | 7 | the caller workflow is owned, but a workflow a pull request could add — asked at a name no project gives one, as `.yml` and as `.yaml`, so `keelline*` or `*.yml` alone does not own it — a workflow the repository already has, or the code-owners file itself is not; a `/.github/` rule in a file kept at `.github/CODEOWNERS` owns all three, until a later line with no owner takes a file back out of it. `where` names `.github/workflows/`, each unowned workflow whose path is inside the plain-path grammar (any other is counted under `.github/workflows/`), and the file. The repository's workflows are asked in turn under a budget of 30,000,000 matching steps, counted as they are taken; past it, the workflows not yet asked are `could-not-look`. Silent where `codeowners` reports; not judged under `[ci] mode = "none"` |
+| `foreign-hooks` | the committed hook settings of each harness `[stayfixed] agents` selects | advice | 5 | a hook entry without stayfixed's marker |
+| `foreign-workflows` | `.github/workflows/*.yml` and `*.yaml` | advice | — | any workflow but stayfixed's own caller |
+| `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | warning | 7 | the line that governs stayfixed's caller workflow names no owner, or there is no file. Lines end at a line feed, and a carriage return just before one is dropped; words are separated by spaces and tabs, a `#` starts a comment at the line's start or after a blank, a line with an owner outside `@user`, `@org/team` and an email address decides nothing, and a line holding any other whitespace or control character, a carriage return anywhere else included, is read with no owner; not judged under `[ci] mode = "none"` |
+| `codeowners-scope` | the same file, and `.github/workflows/*.yml` and `*.yaml` | warning | 7 | the caller workflow is owned, but a workflow a pull request could add — asked at a name no project gives one, as `.yml` and as `.yaml`, so `stayfixed*` or `*.yml` alone does not own it — a workflow the repository already has, or the code-owners file itself is not; a `/.github/` rule in a file kept at `.github/CODEOWNERS` owns all three, until a later line with no owner takes a file back out of it. `where` names `.github/workflows/`, each unowned workflow whose path is inside the plain-path grammar (any other is counted under `.github/workflows/`), and the file. The repository's workflows are asked in turn under a budget of 30,000,000 matching steps, counted as they are taken; past it, the workflows not yet asked are `could-not-look`. Silent where `codeowners` reports; not judged under `[ci] mode = "none"` |
 | `commit-types` | the subjects of the last 100 commits, merges excluded | advice | — | a subject whose type is not in `[commit_messages] types`; `where` names commits |
-| `profile` | the configured profile's checks | the check's own | — | each failed check, counted once; a profile this Keelline does not ship is one `profile-not-shipped` warning |
+| `profile` | the configured profile's checks | the check's own | — | each failed check, counted once; a profile this stayfixed does not ship is one `profile-not-shipped` warning |
 
-A probe that could not look — a git query that failed or timed out, a settings file Keelline
+A probe that could not look — a git query that failed or timed out, a settings file stayfixed
 cannot read, a path through a symlink — reports a `could-not-look` warning naming where, and
 never reads as "nothing found". Two things are deliberately not inventoried: another tool's
-design-document directories, because Keelline names no other tool's convention; and
-[`keelline test audit-entrypoints`](#keelline-test-audit-entrypoints), which stays its own
+design-document directories, because stayfixed names no other tool's convention; and
+[`stayfixed test audit-entrypoints`](#stayfixed-test-audit-entrypoints), which stays its own
 advisory command until its candidates are triaged.
 
-**Writes** `.keelline/assessment.json`, which the `keelline:ignore` region keeps out of git,
+**Writes** `.stayfixed/assessment.json`, which the `stayfixed:ignore` region keeps out of git,
 overwritten on every run that gets that far and never read back: format `1`, with `format`,
-`keelline` (the version that wrote it), `base`, `state`, `enforcing` (the gates
-`[keelline] enforced` makes enforcing, every configured gate under `installed`), `skipped` (the
+`stayfixed` (the version that wrote it), `base`, `state`, `enforcing` (the gates
+`[stayfixed] enforced` makes enforcing, every configured gate under `installed`), `skipped` (the
 custom gates `--builtin` left out, else empty), `gates` (a gate's row each, above) and `items`
 (per item: `probe`, the gate or probe that found it; `rule`; `principle`, a number in
 [the principles](methodology/principles.md) or `null`; `severity`, `warning` or `advice`;
 `remedy`; `where`, at most 200 labels; and `count`, how many there were, never capped). A gate's
 findings become one item per rule, at `warning`. `--json` prints the same object with `summary`
 beside it. When git does not ignore the file where it is written, the summary ends with a note
-saying so. A `.keelline` that is a symlink or not a directory, or a directory at the inventory's
+saying so. A `.stayfixed` that is a symlink or not a directory, or a directory at the inventory's
 place, is a refusal and the inventory is not written. Anything else at that place, a symlink
 included, is replaced by the file, and what a symlink pointed at is left as it was. Without
 `--builtin`, a custom gate writes whatever its command writes, and every gate runs before the
 inventory is written, so that refusal comes after the custom gates have run.
 
-The summary prints counts and Keelline's own words — gate names, probe and rule ids,
+The summary prints counts and stayfixed's own words — gate names, probe and rule ids,
 severities, remedies — and never a path the repository chose: one table with a row per gate
 (`gate`, `enforcing`, `findings`, `would fail`) and one with a row per item (`from`, `rule`,
 `severity`, `count`, `remedy`).
 
 Exit codes: `0` when no gate would fail, whatever the probes found, so `0` means every gate
-could enforce now; `1` when a gate would fail, enforced or not, or when `keelline.toml` is
+could enforce now; `1` when a gate would fail, enforced or not, or when `stayfixed.toml` is
 missing or invalid (`failed:`, as for every command that reads it); `2` on a refusal, a
-`keelline.toml` that is a symlink among them: it is never followed, as no command follows it.
+`stayfixed.toml` that is a symlink among them: it is never followed, as no command follows it.
 
-## `keelline gate [--only NAME]… [--base REF] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`
+## `stayfixed gate [--only NAME]… [--base REF] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`
 
 The gate a pull request faces, runnable on your own checkout. One run:
 
 1. refuses a project root reached through a symbolic link, spelled otherwise than git spells it,
    or given with a `..` component, which after a linked component is not the directory it names;
-2. reads the base's `keelline.toml` at one exact commit, at the project's own path in the repository;
-3. judges this tree's `keelline.toml` against it, key by key (below);
+2. reads the base's `stayfixed.toml` at one exact commit, at the project's own path in the repository;
+3. judges this tree's `stayfixed.toml` against it, key by key (below);
 4. runs the configuration check and the configured gates under the configuration that judgement
    chose, each enforcing or advisory as it says.
 
@@ -942,11 +942,11 @@ have is refused, counted and not quoted. Running it in a clone runs that clone's
 commands, as [Configuration](#configuration) says.
 
 **`--builtin` and `--custom`.** `--builtin` runs the configuration check and the built-in gates
-and executes no command from `keelline.toml`; `--custom` runs the project's own gates alone and
+and executes no command from `stayfixed.toml`; `--custom` runs the project's own gates alone and
 judges nothing. Each narrows the bare run, or `--only`'s names, to its kind, and skips a name of
 the other kind rather than refuse it. `--builtin` runs the configuration check whatever `--only`
 names: it is the run that judges, and a caller that names one gate — a matrix leg, a person
-reproducing CI — still judges the change's `keelline.toml`, so a loosening fails every such
+reproducing CI — still judges the change's `stayfixed.toml`, so a loosening fails every such
 run. The reusable workflow runs them as two steps, the second only when the first passed. A
 custom gate's command is fixed by the base, but the files it executes — a `conftest.py`, a
 `Makefile`, a script — are the change under review, so for a custom gate the guarantee is "this
@@ -956,11 +956,11 @@ process. Narrowed to nothing — `--custom` on a project with no gate of its own
 `nothing to run`, appends no summary and exits `0`.
 
 **Which custom gates run, and in what order.** A custom gate runs only with the command the
-base's `keelline.toml` gives it. One the change adds, or re-commands while the base does not
+base's `stayfixed.toml` gives it. One the change adds, or re-commands while the base does not
 enforce it, is not run: it prints `<name>: advisory, not run until the base has this command`
 (or `enforcing`, when the change enforces it), and runs from the first pull request after it
 lands on the base. It fails nothing meanwhile, since the base enforces no command it lacks, and
-under the bootstrap, where the base has no `keelline.toml`, no custom gate runs. The reason is
+under the bootstrap, where the base has no `stayfixed.toml`, no custom gate runs. The reason is
 that the custom gates share one checkout: a gate the change wrote, run before the base's
 enforced ones, could rewrite the script they are about to execute. For the same reason the
 built-in gates run first, then the custom gates the base enforces, then every other custom gate.
@@ -980,12 +980,12 @@ Each custom gate runs in a session of its own, and the command's process group i
 the command exits, passes or not, as on a timeout or an interrupt, so nothing it started in the
 background in that group runs on into the next gate. A descendant that leaves the command's
 process group (a new session, or a job-control shell's own group) is not ended, and nor is one
-Keelline may not signal (a sudo or setuid descendant). Enforced gates that themselves run files
+stayfixed may not signal (a sudo or setuid descendant). Enforced gates that themselves run files
 the change can edit — two test runners, say — still share that one checkout, and one could
 rewrite what the other runs; one leg per gate isolates them (see "One row per gate" under
 [the reusable workflow](#the-reusable-workflow)).
 
-**What a pull request may change in `keelline.toml`.** Both copies go through the loader and are
+**What a pull request may change in `stayfixed.toml`.** Both copies go through the loader and are
 compared by what it derives — each key by its dotted name, each budget by its effective value,
 each custom gate's `run` on its own — never by byte. A comment, a key written out at its default,
 a reordered `enforced` or `[gates] builtin` list, and `installed` beside a list that says the same
@@ -993,18 +993,18 @@ thing are no change at all. Each changed key gets one verdict:
 
 | Key | Admitted when | Verdict | Otherwise |
 |---|---|---|---|
-| `keelline.state` and `keelline.enforced`, judged as one | this tree enforces every gate the base enforces, and `state` does not move back (`initialised`, `adopting`, `installed`) | `tightened` when either moved forward, else `neutral` | `refused` |
+| `stayfixed.state` and `stayfixed.enforced`, judged as one | this tree enforces every gate the base enforces, and `state` does not move back (`initialised`, `adopting`, `installed`) | `tightened` when either moved forward, else `neutral` | `refused` |
 | `gates.builtin` | a gate added, or one removed that the base does not enforce | `tightened` when one was added, else `neutral` | `refused` |
 | `gates.custom.<name>.run` | the gate is new, or the base does not enforce it | `tightened` when new, else `neutral` | `refused` |
 | `budgets.<name>` | the effective value is at most the base's | `tightened` | `refused` |
-| `keelline.preset`, `keelline.profile`, `keelline.agents`, `project.name` | always: no gate reads them | `neutral` | — |
-| `keelline.version` and `ci.ref`, judged as one upgrade | the version is exactly the running Keelline's and not earlier than the base's, and a moved `ci.ref` is the commit `--workflow-sha` names and one of Keelline's release tags names | `upgrade` | as any other key |
+| `stayfixed.preset`, `stayfixed.profile`, `stayfixed.agents`, `project.name` | always: no gate reads them | `neutral` | — |
+| `stayfixed.version` and `ci.ref`, judged as one upgrade | the version is exactly the running stayfixed's and not earlier than the base's, and a moved `ci.ref` is the commit `--workflow-sha` names and one of stayfixed's release tags names | `upgrade` | as any other key |
 | any other key | — | — | `refused` while the base enforces any gate, `noted` while it enforces none |
 
 A preset switch is judged by what it moves: its own name is `neutral`, a budget it lowers
 `tightened`, and anything else it moves falls to "any other key". "Not earlier" is read the way
-`keelline upgrade` reads it — by the leading `X.Y.Z`, and a release after its own pre-release — and
-a pair Keelline does not order is judged as any other key: refused while the base enforces a gate,
+`stayfixed upgrade` reads it — by the leading `X.Y.Z`, and a release after its own pre-release — and
+a pair stayfixed does not order is judged as any other key: refused while the base enforces a gate,
 noted while it enforces none. The run uses this tree's configuration unless a key was
 refused, and then the base's; it enforces the gates either side enforces. So a pull request that
 promotes a gate is held to that gate in its own run.
@@ -1035,30 +1035,30 @@ that, and it is an option, not a requirement.
   refused: either would look for the copy where the base has none, and a missing copy is the
   bootstrap, where this tree decides. A link above the repository's top — `/tmp` on macOS, a linked
   home directory — belongs to the machine and is admitted.
-- *The running Keelline and `--workflow-sha`.* In CI both are whatever the caller workflow's
+- *The running stayfixed and `--workflow-sha`.* In CI both are whatever the caller workflow's
   `uses:` line selects. A pull request can edit that line; a required code-owner review of
   `/.github/` is what keeps it out of the pull request's reach.
-- *Release tags.* A moved `[ci] ref` is admitted only at a commit one of Keelline's own `v*` tags
+- *Release tags.* A moved `[ci] ref` is admitted only at a commit one of stayfixed's own `v*` tags
   names, asked of the public repository.
 - *The verdict itself* is worth what the process that computed it is worth. It must execute
   nothing the repository wrote: run it with `--builtin`, and start it as
-  `python3 -P -s -m keelline`, so that no module in the checkout is imported in place of
-  Keelline's own, and no `.pth` file in a user site directory is processed at start-up, even one
+  `python3 -P -s -m stayfixed`, so that no module in the checkout is imported in place of
+  stayfixed's own, and no `.pth` file in a user site directory is processed at start-up, even one
   the environment has pointed into the checkout.
 
-Run locally on a branch `keelline upgrade` made, a moved `[ci] ref` is refused unless you pass
+Run locally on a branch `stayfixed upgrade` made, a moved `[ci] ref` is refused unless you pass
 `--workflow-sha` with the commit the new `uses:` line names; with it, the run answers what CI will.
 
 **Printed.** `config: …` first when the configuration check runs: how many keys changed, how many
-were refused and up to eight of their names, or that the base has no `keelline.toml` at this
+were refused and up to eight of their names, or that the base has no `stayfixed.toml` at this
 path. Then one line per gate: `<name>: enforcing, N finding(s)`, `<name>: advisory, N finding(s)`, or `could not run`
 in place of the count, or `not run: the run had already failed` for a custom gate not started
 once the run had failed; and, after the gates that ran, `<name>: advisory, not run until the base
 has this command` (or `enforcing`) for each custom gate whose command the base does not have. A run
 that fails with a gate failing ends with one `details:` line saying
-where the findings are: `keelline assess --json` (`keelline assess --builtin --json` under
+where the findings are: `stayfixed assess --json` (`stayfixed assess --builtin --json` under
 `--builtin`), or the gate's own command. Key names and gate
-names print; values from `keelline.toml` and a finding's detail never do.
+names print; values from `stayfixed.toml` and a finding's detail never do.
 
 **`--annotate`** also prints GitHub workflow commands, which the platform shows as annotations:
 one `error` per refused key, and one per finding or gate that could not run or was not started —
@@ -1073,16 +1073,16 @@ ten per level per step and drops the others without a word.
 changed key's verdict — to `FILE`; the workflow names the job summary. **`--json`** carries
 `config` (`judged`, `base_state`, `changes` as `{key, verdict}`, `refused`, `enforcing`),
 `not_on_base`, the custom gates not run until the base has their command, and `gates`, a gate's
-row each as [`keelline assess`](#keelline-assess---base-ref---builtin---root-path---machine-path)
-defines it, `enforcing` as this run enforces it. It lists no finding: `keelline assess --json` is
+row each as [`stayfixed assess`](#stayfixed-assess---base-ref---builtin---root-path---machine-path)
+defines it, `enforcing` as this run enforces it. It lists no finding: `stayfixed assess --json` is
 where findings are serialised.
 
-**Reads** `keelline.toml`, the base's copy through git, every file a gate reads, and — only when
+**Reads** `stayfixed.toml`, the base's copy through git, every file a gate reads, and — only when
 `--workflow-sha` matches a moved `[ci] ref` — the public repository's tags.
 
 **Writes** nothing but the file `--summary` names; a custom gate writes whatever its command writes.
 
-A pull request that removes `keelline.toml` — `keelline uninstall` among them — fails the run:
+A pull request that removes `stayfixed.toml` — `stayfixed uninstall` among them — fails the run:
 nothing says which gates run, and a run that cannot judge a change does not pass it. Such a
 change lands the way a refused key does, by a direct push to the base branch.
 
@@ -1097,24 +1097,24 @@ nothing was refused; a custom gate not run until the base has its command change
 when an enforcing gate failed or could not run; when the configuration check refused a key; when
 the base is not in the checkout or git could not read its copy (the message names
 `fetch-depth: 0`); when the root is not inside a git repository, or git refuses the one it is
-in; when this tree has no `keelline.toml`; or when either side's `keelline.toml` is not UTF-8
+in; when this tree has no `stayfixed.toml`; or when either side's `stayfixed.toml` is not UTF-8
 text or does not load, the message naming which (a base's copy is fixed on the base branch, and
 is never read as the base having none). `2` on a refusal: a `--base` outside its grammar (before
 anything runs); a root reached through a symbolic link, spelled otherwise than git spells it, or
 given with a `..` component; an `--only` name this run's configuration does not have; a
-`keelline.toml` that is itself a symbolic link; or a `[paths]` value on either side that leaves
-the root, passes through a symbolic link, or names `.git` or `.keelline`. Both copies are loaded
+`stayfixed.toml` that is itself a symbolic link; or a `[paths]` value on either side that leaves
+the root, passes through a symbolic link, or names `.git` or `.stayfixed`. Both copies are loaded
 against this tree's disk, so a change that turns a directory the base names into a symbolic link
 refuses the base's own load, in a message that says it is the base's, and a base written for an
-older Keelline that this one no longer loads fails every pull request until the owner fixes it
+older stayfixed that this one no longer loads fails every pull request until the owner fixes it
 on the base branch.
 
-## `keelline adopt begin PLAN [--root PATH] [--machine PATH]`
+## `stayfixed adopt begin PLAN [--root PATH] [--machine PATH]`
 
 Starts a project's adoption with a plan. `PLAN`, read from the current directory when it is
-relative, must be a markdown file directly under `[paths] plans` with `keelline` as a word of its
-name — `2026-09-23-keelline-adoption.md`, or `2026-09-23-keelline-adoption-api.md` for one of
-several — spelled as the file is on disk, and it must pass `keelline plan check`. While the
+relative, must be a markdown file directly under `[paths] plans` with `stayfixed` as a word of its
+name — `2026-09-23-stayfixed-adoption.md`, or `2026-09-23-stayfixed-adoption-api.md` for one of
+several — spelled as the file is on disk, and it must pass `stayfixed plan check`. While the
 project runs the `trail` gate, the plan's row in the `trail.toml` beside the roadmap must declare
 a state under `[states]`, such as `in progress`: a first listing records a row with none as
 `delivered`, and says nothing. An `initialised` project is marked `adopting`. A project already past
@@ -1122,52 +1122,52 @@ that keeps its state: a project may carry any number of adoption plans, nothing 
 plan is found by its name. `begin` enforces nothing; a gate enforces when `adopt promote` moves it,
 which does not need `begin` first.
 
-**Writes** `keelline.toml`'s `[keelline] state` through the same editor as `keelline upgrade`, and
+**Writes** `stayfixed.toml`'s `[stayfixed] state` through the same editor as `stayfixed upgrade`, and
 the manifest's record of it when that record still describes the file. `--json` carries, on exit 0,
 `before` and `after`, the state on each side.
 
 | Exit | Meaning |
 |---|---|
 | 0 | the plan passes `plan check`; the project is `adopting`, or already was past `initialised` |
-| 1 | the plan has findings under `plan check`, or its trail row declares no state, and nothing was written; or `keelline.toml` is missing or does not load |
-| 2 | `PLAN` is not an adoption plan, there is no file at the path given (named without the path), or `keelline.toml` is refused |
+| 1 | the plan has findings under `plan check`, or its trail row declares no state, and nothing was written; or `stayfixed.toml` is missing or does not load |
+| 2 | `PLAN` is not an adoption plan, there is no file at the path given (named without the path), or `stayfixed.toml` is refused |
 
-## `keelline adopt promote [GATE …] [--base REF] [--builtin] [--root PATH] [--machine PATH]`
+## `stayfixed adopt promote [GATE …] [--base REF] [--builtin] [--root PATH] [--machine PATH]`
 
 Runs gates strictly on the tree as it is, and enforces those that pass by adding them to
-`[keelline] enforced`. With no `GATE`, it runs every configured gate that does not enforce yet,
+`[stayfixed] enforced`. With no `GATE`, it runs every configured gate that does not enforce yet,
 enforces each one that passes, names the rest with their finding counts, and exits 1 if any
 failed; the line names up to eight gates in each of its two lists and counts the rest, and
 `--json` carries every one. With names, they pass together or nothing is written, and a named
 gate that already enforces is refused rather than skipped. Once every configured gate enforces, the state becomes
 `installed` and `enforced` is emptied: under `installed` an empty list means every configured
 gate, so a gate the project adds later enforces from its first run — for a custom gate, the
-first run after it lands on the base branch, since `keelline gate` runs none before. An
+first run after it lands on the base branch, since `stayfixed gate` runs none before. An
 `adopting` project whose every configured gate already enforces — one that removed the last gate
 it had not promoted — is moved to `installed` with no gate run; a project that configures no
 gate is refused, since it has none to have earned. The state never moves back. A name, a gate
-already enforcing, nothing left to promote, a `keelline.toml` the editor cannot rewrite in place
+already enforcing, nothing left to promote, a `stayfixed.toml` the editor cannot rewrite in place
 and a manifest it cannot read are each refused before the first gate runs; a refusal from the
 editor names `state` and `enforced` together, one line each: as they stand when the check before
 the gates finds it, and as the command would write them when the write itself refuses, so
 following it either leaves the project as it was or makes the transition whole.
 
 `--base` is what `plan` and `commit` judge a range against, and what `bugs` compares the ledger
-with where `HEAD` forked from it, as for `keelline gate`: a 40-hex commit or a `refs/…` name,
+with where `HEAD` forked from it, as for `stayfixed gate`: a 40-hex commit or a `refs/…` name,
 `refs/remotes/origin/<project.base_branch>` by default. The reusable workflow judges against `[ci]
 gate_branch`, which is that branch unless the file sets it; where the two differ, pass `--base` to
 judge as CI will. Run on the base branch itself, that range is empty and those two gates pass
 having judged nothing; the pull request that carries a promotion faces every gate it promotes in
-its own run. A custom gate runs its command here, as it does under `keelline gate`, and only
-when that command is the one the base's `keelline.toml` gives it: a gate the base does not have,
+its own run. A custom gate runs its command here, as it does under `stayfixed gate`, and only
+when that command is the one the base's `stayfixed.toml` gives it: a gate the base does not have,
 or has with another command, is not run and not promoted, and is named `(not on the base)` with
-a `note:` saying to land it on the base branch first, because `keelline gate` would not run it
+a `note:` saying to land it on the base branch first, because `stayfixed gate` would not run it
 in the pull request that carries the promotion. A base that cannot be read, or has no
-`keelline.toml`, has no command, so every custom gate waits.
+`stayfixed.toml`, has no command, so every custom gate waits.
 
 A `docs` or `trail` gate that reads a file CI's checkout will not have is never promoted, since CI
 would fail the gate on every pull request (*The `docs` and `trail` gates judge tracked files*,
-under `keelline assess`). It could not run, is named `(could not run)`, and a `note:` for it names
+under `stayfixed assess`). It could not run, is named `(could not run)`, and a `note:` for it names
 up to eight of the files and counts the rest, each inside the path grammar or withheld, and says
 to commit them — an ignored one needs
 its ignore rule removed, or `git add -f` — and to point a symlink it names at a tracked file in the
@@ -1175,7 +1175,7 @@ repository, or to keep them out of git and take the gate out of `[gates] builtin
 tracks only under a name that differs in case gets a `note:` of its own, saying to spell it as
 `git ls-files` does; one git gave no answer about is named with a `note:` saying so.
 
-`--builtin` runs the built-in gates and no custom gate, as `keelline assess --builtin` does: for
+`--builtin` runs the built-in gates and no custom gate, as `stayfixed assess --builtin` does: for
 a clone whose commands you have not agreed to run, where the base is the clone author's and its
 having a command is no brake. A custom gate is promoted only by a run that ran its command, so
 each one is not run and not promoted, is named `(not run, as --builtin asked)` with a `note:`
@@ -1183,7 +1183,7 @@ saying that without `--builtin` the command runs them, and, named beside other g
 back as a gate not on the base does.
 
 `--json` carries, on exit 0 or 1, `before`, `after`, `gates` (a gate's row for each gate it ran,
-as `keelline assess` defines it, `enforcing` when this run promoted it), `promoted`, `failing`,
+as `stayfixed assess` defines it, `enforcing` when this run promoted it), `promoted`, `failing`,
 which maps each gate that ran and did not pass to its finding count, `unanswered`, the gates that
 could not run, `not_on_base`, the custom gates not run because the base does not have their
 command, `skipped`, the custom gates `--builtin` did not run, `untracked`, which maps each gate
@@ -1192,30 +1192,30 @@ ones below, and `case_differs`, which maps each gate not promoted because git tr
 reads only under a name that differs in case to those files, as read; a gate whose only such files
 differ in case is under `case_differs` alone. When a gate stays
 advisory, the summary ends with a line saying where its findings are
-(`keelline assess --json`, or `keelline assess --builtin --json` under `--builtin`, or the
+(`stayfixed assess --json`, or `stayfixed assess --builtin --json` under `--builtin`, or the
 gate's own command), and, when `plan`, `commit` or `bugs`
 could not run and the base is not in the checkout, a `note:` saying so and naming `--base` with
 the project's base branch, since a gate that could not run for want of the base says nothing
 about the tree.
 
-**There is no demotion.** Loosening is an edit to `keelline.toml`, and `keelline gate` refuses
+**There is no demotion.** Loosening is an edit to `stayfixed.toml`, and `stayfixed gate` refuses
 it to any pull request while anything enforces. It lands only through a push that bypasses
 branch protection, which is an owner's act and not a command. Removing or renaming a gate that
-`[keelline] enforced` lists is such an edit, and the same push must take the name out of that
-list, or `keelline.toml` no longer loads.
+`[stayfixed] enforced` lists is such an edit, and the same push must take the name out of that
+list, or `stayfixed.toml` no longer loads.
 
-**Writes** `keelline.toml`'s `[keelline] state` and `enforced` through the same editor as
-`keelline upgrade`, and the manifest's record of it when that record still describes the file —
+**Writes** `stayfixed.toml`'s `[stayfixed] state` and `enforced` through the same editor as
+`stayfixed upgrade`, and the manifest's record of it when that record still describes the file —
 and nothing when no gate is promoted and the state does not move. A custom gate writes whatever
 its command writes.
 
 | Exit | Meaning |
 |---|---|
 | 0 | every gate it ran passed and now enforces, or an adopting project whose every gate enforces was installed |
-| 1 | a gate failed, could not run, is a custom gate whose command the base does not have, or is a custom gate `--builtin` did not run: with names, nothing was written; without, the others were enforced; or `keelline.toml` is missing or does not load |
-| 2 | a name that is not a configured gate, a named gate that already enforces, nothing left to promote, a project that configures no gate, a `--base` outside its grammar (from the parser), a manifest that cannot be read, or `keelline.toml` refused |
+| 1 | a gate failed, could not run, is a custom gate whose command the base does not have, or is a custom gate `--builtin` did not run: with names, nothing was written; without, the others were enforced; or `stayfixed.toml` is missing or does not load |
+| 2 | a name that is not a configured gate, a named gate that already enforces, nothing left to promote, a project that configures no gate, a `--base` outside its grammar (from the parser), a manifest that cannot be read, or `stayfixed.toml` refused |
 
-## `keelline memory refs`
+## `stayfixed memory refs`
 
 Every backticked repository path a note names still exists. Notes are read as authoritative and
 age silently, so a path to a deleted module sends the next session after it. A candidate is
@@ -1245,20 +1245,20 @@ deliberately does not resolve in *italics*.
 
 ---
 
-## `keelline init --yes [--dry-run] [--name NAME] [--base-branch BRANCH] [--agent NAME …] [--profile NAME] [--memory-mode MODE] [--local ID …] [--no-ci] [--root PATH] [--machine PATH]`
+## `stayfixed init --yes [--dry-run] [--name NAME] [--base-branch BRANCH] [--agent NAME …] [--profile NAME] [--memory-mode MODE] [--local ID …] [--no-ci] [--root PATH] [--machine PATH]`
 
-Writes a repository's Keelline footprint, once. It is the only command that creates the
-documents every other command reads, and the only one that writes `keelline.toml`.
+Writes a repository's stayfixed footprint, once. It is the only command that creates the
+documents every other command reads, and the only one that writes `stayfixed.toml`.
 
-**`--yes` is required, and it means "take the defaults `keelline init --questions` shows".**
+**`--yes` is required, and it means "take the defaults `stayfixed init --questions` shows".**
 Without it nothing is written, and the refusal (`2`) names `--questions`.
 
 Each answer flag replaces one default and writes one key:
 - `--name` writes `[project] name`;
 - `--base-branch` writes `[project] base_branch` and `release_branch`; `[ci] gate_branch`,
   left out, is that branch, so the workflow gates the branch pull requests merge into;
-- `--agent`, once per harness, writes `[keelline] agents`;
-- `--profile` writes `[keelline] profile`, an empty value meaning none;
+- `--agent`, once per harness, writes `[stayfixed] agents`;
+- `--profile` writes `[stayfixed] profile`, an empty value meaning none;
 - `--memory-mode` writes `[memory] mode`;
 - `--local`, once per file, writes `[artifacts] local`.
 
@@ -1267,7 +1267,7 @@ a branch by naming the rule, never the value. A branch is a name git accepts as 
 letters, digits, `.`, `_`, `-` and `/` and led by a letter or digit: no `..`, `//`, component
 starting with `.` or ending in `.lock`, no trailing `/` or `.`, and not `HEAD`. The same
 grammar holds `[ci] gate_branch` and a detected base branch. Answer flags reach only a
-`keelline.toml` this run creates. Over one the repository already has, they are refused
+`stayfixed.toml` this run creates. Over one the repository already has, they are refused
 (`2`), because that file is the answer. Passing a default as its flag loads as the same
 configuration as not passing it.
 
@@ -1287,22 +1287,22 @@ When nothing answers, `init` detects:
   `[ci] gate_branch` left out is the base branch;
 - the agent surfaces from which of `.claude/` and `.codex/` the repository carries, both when
   it carries neither;
-- `[keelline] profile` from the first shipped profile whose markers sit at the root
+- `[stayfixed] profile` from the first shipped profile whose markers sit at the root
   (`python`: `pyproject.toml`, `setup.py`, `setup.cfg`, a requirements file, a `Pipfile` or a
   lockfile), written only when one is found.
 
 Both name candidates, the remote's segment and the directory name, are repository-authored.
 So one outside `[project] name`'s grammar is refused naming the grammar and the remedy, and
-never the value, unless `--name` answers it. With a `keelline.toml` you wrote, the file answers
+never the value, unless `--name` answers it. With a `stayfixed.toml` you wrote, the file answers
 it: one with no `[project] name` fails (`1`) with the loader's own sentence, whatever the
 repository suggests.
 
-**A `keelline.toml` you wrote is the answer sheet, not an obstacle.** Every key it carries is
+**A `stayfixed.toml` you wrote is the answer sheet, not an obstacle.** Every key it carries is
 read and kept: the name, the paths, the memory mode, the budgets, the gates. The file itself
 is not replaced. It is a create-once artifact, so a repository that already has one is
 reported `skip_modified` ("create-once, and the file is already there").
 
-The one change is a missing `[keelline] version`, the only key Keelline owns that the loader
+The one change is a missing `[stayfixed] version`, the only key stayfixed owns that the loader
 requires. This run writes it into the file in place, leaves every other line as it was, and
 says so in a `note:` line.
 
@@ -1311,15 +1311,15 @@ written. One the next command could not load fails (`1`) with the loader's own s
 nothing is written: no `[project] name`, a `state` outside `initialised`, `adopting` and
 `installed`, or an `enforced` list the loader holds against `state` and the gates.
 
-The paths it declares are where the footprint lands. A repository with no `keelline.toml` gets
+The paths it declares are where the footprint lands. A repository with no `stayfixed.toml` gets
 one written from the detected values and your answers, headed by a comment naming the four
-keys that are Keelline's to rewrite: `[keelline] version`, `state` and `enforced`, and
+keys that are stayfixed's to rewrite: `[stayfixed] version`, `state` and `enforced`, and
 `[ci] ref`. A file that cannot be read, is not UTF-8 text or is not valid TOML is a failure
-(`1`) naming the file. A repository that already carries `.keelline/manifest.json` is refused
-(`2`): re-running `init` is `keelline upgrade`. `keelline uninstall` later keeps a
-`keelline.toml` you wrote, the version line included. When that file configures
+(`1`) naming the file. A repository that already carries `.stayfixed/manifest.json` is refused
+(`2`): re-running `init` is `stayfixed upgrade`. `stayfixed uninstall` later keeps a
+`stayfixed.toml` you wrote, the version line included. When that file configures
 `[gates.custom]`, a `note:` names those gates, up to eight and then a count, and says that
-`keelline assess`, `keelline gate` and `keelline adopt promote` run their commands: in a clone,
+`stayfixed assess`, `stayfixed gate` and `stayfixed adopt promote` run their commands: in a clone,
 those are commands the clone wrote, and the dry run you read before `--yes` says so. The
 commands themselves never print.
 
@@ -1335,7 +1335,7 @@ either way.
 
 | id | pass | kind | target | what it holds |
 |---|---|---|---|---|
-| `config` | write-once | once | `keelline.toml` | the document this run rendered |
+| `config` | write-once | once | `stayfixed.toml` | the document this run rendered |
 | `agents-skeleton` | write-once | once | `[paths] agents_md` | a skeleton headed with the project's name, stating this project's own budgets |
 | `claude-md` | write-once | once | `CLAUDE.md` | a one-line pointer at `[paths] agents_md`, whatever that file is called |
 | `documentation-policy` | footprint | template | `<architecture>/documentation.md` | where each kind of fact belongs |
@@ -1348,18 +1348,18 @@ either way.
 | `trail` | footprint | template | `trail.toml` beside the roadmap | one theme, no declared states |
 | `specs-keep`, `plans-keep` | footprint | template | `<specs>/.gitkeep`, `<plans>/.gitkeep` | nothing, so the trail lists no documents |
 | `gitignore` | footprint | managed region | `.gitignore` | the same block `attach` writes |
-| `agents-md` | footprint | managed region | `[paths] agents_md` | which paths this repository's Keelline uses |
-| `ci-workflow` | footprint | template | `.github/workflows/keelline.yml` | the pinned call to the reusable gate |
-| `profile-rules` | footprint | template | `<keelline>/rules/<profile>.md` | the profile's rules, the one copy a project edits; only with `[keelline] profile` set |
-| `claude-rules` | footprint | template | `.claude/rules/keelline-<profile>.md` | a `paths:`-scoped pointer at `profile-rules` for Claude Code; only when `[keelline] agents` lists `claude` |
+| `agents-md` | footprint | managed region | `[paths] agents_md` | which paths this repository's stayfixed uses |
+| `ci-workflow` | footprint | template | `.github/workflows/stayfixed.yml` | the pinned call to the reusable gate |
+| `profile-rules` | footprint | template | `<stayfixed>/rules/<profile>.md` | the profile's rules, the one copy a project edits; only with `[stayfixed] profile` set |
+| `claude-rules` | footprint | template | `.claude/rules/stayfixed-<profile>.md` | a `paths:`-scoped pointer at `profile-rules` for Claude Code; only when `[stayfixed] agents` lists `claude` |
 
 With a profile set, the `agents-md` region also names the profile's rules file and lists the
 lines under its *Before the first command* heading, so every harness that reads `AGENTS.md` has
-them before its first command. A name in `[keelline] agents` that no harness answers to is
+them before its first command. A name in `[stayfixed] agents` that no harness answers to is
 counted in a `note:` line and never printed.
 
 **`--local` offers four files.** `documentation-policy`, `adr-template`, `ledger-runbook` and
-`roadmap-history` may be kept out of git, under `.keelline/local/artifacts/`, and every gate
+`roadmap-history` may be kept out of git, under `.stayfixed/local/artifacts/`, and every gate
 still passes. The others are not offered:
 - `bug-index`, `ledger-audits`, `roadmap` and `trail` are read by a gate at their committed
   paths. The index would read as stale, the ledger directory would be missing, the roadmap
@@ -1369,31 +1369,31 @@ still passes. The others are not offered:
 - `CLAUDE.md`, the `AGENTS.md` skeleton and its region, the workflow, and the profile's rules
   and Claude's pointer are read where they are committed.
 
-A `keelline.toml` you write may still list any id but `config`, `gitignore` and the profile's
+A `stayfixed.toml` you write may still list any id but `config`, `gitignore` and the profile's
 own. `--local` offers only these four.
 
 **The workflow pins what `[ci] ref` says, and nothing else.** The rendered file calls
-[the reusable workflow](#the-reusable-workflow) at the ref `keelline.toml` carries *after this
-run*, and those two are one value by construction — which is the invariant `keelline doctor`'s
+[the reusable workflow](#the-reusable-workflow) at the ref `stayfixed.toml` carries *after this
+run*, and those two are one value by construction — which is the invariant `stayfixed doctor`'s
 `ci-ref` row enforces from the other side ("the workflow pins a different ref from `[ci] ref`,
 so the gate that runs is not the one recorded"). On a repository this run creates the document
-for, the ref is the commit of the Keelline release running, asked of the public repository's own
+for, the ref is the commit of the stayfixed release running, asked of the public repository's own
 `v*` tags and written into `[ci] ref` beside the workflow. On a repository that already had a
-`keelline.toml`, that document's `[ci] ref` is not rewritten — all `init` may add there is a
-missing `[keelline] version`, with its `[keelline]` header when the file has none — so the workflow
+`stayfixed.toml`, that document's `[ci] ref` is not rewritten — all `init` may add there is a
+missing `[stayfixed] version`, with its `[stayfixed]` header when the file has none — so the workflow
 pins the ref **it** records, and `doctor` judges whether that is a released commit, which is its
 job.
 
 Seven states cost the artifact rather than the run, each reported under `skipped` with one
 sentence: `[ci] mode` is `none`; `[ci] mode` is `uvx`, whose form of the gate has not shipped; the
-public repository could not be asked for its tags; no released tag matches the Keelline running,
-which is every repository's state before the first release; the `keelline.toml` this repository
+public repository could not be asked for its tags; no released tag matches the stayfixed running,
+which is every repository's state before the first release; the `stayfixed.toml` this repository
 already had records no `[ci] ref`, so there is nothing a workflow could pin that anything records;
 `[ci] ref` is not a full-length commit sha, which is the only immutable form and the only one
 `init` renders — the mutable `v1` alias, from `1.0.0` on, is a file you write by hand, and until
 then a `0.x` project pins the commit; and `[ci] gate_branch` is not a plain branch name. `--no-ci`
 is the first of those on purpose: it puts `[ci] mode = "none"` into the document this run builds
-and asks no remote anything. **On a repository that already has a `keelline.toml` the flag governs
+and asks no remote anything. **On a repository that already has a `stayfixed.toml` the flag governs
 this run and nothing more** — that document is a create-once artifact, reported `skip_modified`, so
 the file still says whatever it said and the next `init` would ask the remote again. Writing `none`
 there is yours to do.
@@ -1401,44 +1401,44 @@ there is yours to do.
 **The two states about the remote are reported only on a run that creates the document.** On the
 adoption path the answer is the fifth one whatever the remote said, because it is the whole
 reason: a pin this run resolved would be written into a create-once file that is already there,
-so nothing would record it. Reporting "run `keelline init --yes` again with the network
+so nothing would record it. Reporting "run `stayfixed init --yes` again with the network
 reachable" there would send you back to a command that cannot help — by the time you read it,
-`.keelline/manifest.json` exists and `init` refuses to run again at all. `keelline upgrade` is
-the command that can: `[ci] ref` is one of Keelline's keys in any `keelline.toml`, so it records
+`.stayfixed/manifest.json` exists and `init` refuses to run again at all. `stayfixed upgrade` is
+the command that can: `[ci] ref` is one of stayfixed's keys in any `stayfixed.toml`, so it records
 a released commit there in place and renders the workflow around it. On a run that created the
-document, the unreachable remote's sentence names both remedies: `keelline init --yes` with the
-network reachable while nothing is written yet, and `keelline upgrade` once it is.
+document, the unreachable remote's sentence names both remedies: `stayfixed init --yes` with the
+network reachable while nothing is written yet, and `stayfixed upgrade` once it is.
 
-**Reads** `keelline.toml` when there is one, `.keelline/manifest.json`, `git` for the name
+**Reads** `stayfixed.toml` when there is one, `.stayfixed/manifest.json`, `git` for the name
 and the base branch and for the public repository's tags, which harness directories the root
 carries (`.claude/`, `.codex/`), each shipped profile's marker files at the root, every file
 an artifact targets, and `git check-ignore` for each existing file a write targets at a place
 a `[paths]` value chose.
 
-**Writes**, every one of them through the scaffold engine or `keelline.toml`'s key editor, so
+**Writes**, every one of them through the scaffold engine or `stayfixed.toml`'s key editor, so
 that every target goes through the containment walk and none may leave the project root or
 pass through a symlink:
-- `keelline.toml`, or only its missing `[keelline] version` when you wrote it;
+- `stayfixed.toml`, or only its missing `[stayfixed] version` when you wrote it;
 - `CLAUDE.md`, `[paths] agents_md` and `.gitignore`;
 - the documents in the table above (the profile's rules only when a profile is set, and the
-  Claude pointer only when a profile is set and `[keelline] agents` lists `claude`), each at its
+  Claude pointer only when a profile is set and `[stayfixed] agents` lists `claude`), each at its
   place in the table, except that a document `[artifacts] local` lists is written under
-  `.keelline/local/artifacts/` at that place instead;
-- `.github/workflows/keelline.yml`, where a ref is recorded;
-- `.keelline/manifest.json`;
-- `.keelline/local/artifacts.json`, when `[artifacts] local` lists anything.
+  `.stayfixed/local/artifacts/` at that place instead;
+- `.github/workflows/stayfixed.yml`, where a ref is recorded;
+- `.stayfixed/manifest.json`;
+- `.stayfixed/local/artifacts.json`, when `[artifacts] local` lists anything.
 
 Exits `0` on success. `1` on a finding: either plan carries refusals — the report's REFUSED section
-names each, nothing was written and no manifest exists — or a `keelline.toml` that cannot be read,
+names each, nothing was written and no manifest exists — or a `stayfixed.toml` that cannot be read,
 is not UTF-8 text or is not valid TOML, or the merged document the loader itself refuses (an unknown
 section or key, a `[project] name` outside its grammar, a value of the wrong type, a machine
-configuration file that does not load), or a `keelline.toml` you wrote that, with its version, the
+configuration file that does not load), or a `stayfixed.toml` you wrote that, with its version, the
 loader would refuse on the next command's load. `2` on a refusal above the plans: no `--yes`, an
-answer flag over an existing `keelline.toml`, an answer outside its grammar or its choices (from the
+answer flag over an existing `stayfixed.toml`, an answer outside its grammar or its choices (from the
 parser), a repository already initialised, a detected name outside the grammar that no `--name`
-answers, a `[keelline]` table the key editor cannot add a version to, a `keelline.toml` that is a
+answers, a `[stayfixed]` table the key editor cannot add a version to, a `stayfixed.toml` that is a
 symlink, which is never followed, a `[paths]` value outside the plain-path grammar, naming git's
-control directory or Keelline's own `.keelline/`, or reaching through a component that is a symlink
+control directory or stayfixed's own `.stayfixed/`, or reaching through a component that is a symlink
 — all three refused by the loader before a plan exists — two artifacts, of one pass or of either,
 that resolve to one file (`roadmap` and `roadmap_history` set to one path, or `roadmap =
 "CLAUDE.md"`), which is named with the two artifacts and their `[paths]` keys to separate, since
@@ -1452,22 +1452,22 @@ a repository because it timed out or is not installed (see `upgrade`'s boundary)
 report), `writes` (both plans' targets), `skipped`, `pin` (the release this run resolved,
 `{tag, sha}` or `null`), `asked`, `note`, `ref` — what `[ci] ref` says on disk after the run
 and so what the workflow pins, empty when no workflow was planned — `stamped`, whether this
-run's plan adds `[keelline] version` to a `keelline.toml` you wrote — written only by a run that
-is neither a dry run nor refused — `unknown_harnesses`, how many names in `[keelline] agents` no
+run's plan adds `[stayfixed] version` to a `stayfixed.toml` you wrote — written only by a run that
+is neither a dry run nor refused — `unknown_harnesses`, how many names in `[stayfixed] agents` no
 harness answers to, and `head_note`, the `note:` line that says `main` replaced an
 `origin/HEAD` outside the plain-branch grammar (the branch it named is never printed), that
 `main` stands because a remote is there and no `origin/HEAD` is recorded, or because git could
 not list the remotes, or that, with no remote, the branch checked out other than `main` became
 the base branch; empty otherwise. An answered `--base-branch` replaced nothing, so it leaves
 `head_note` empty.
-`custom_gates` lists the custom gates a `keelline.toml` you wrote configures, by name, and is empty
+`custom_gates` lists the custom gates a `stayfixed.toml` you wrote configures, by name, and is empty
 when this run writes the file.
 
 ---
 
-## `keelline init --questions [--root PATH] [--machine PATH]`
+## `stayfixed init --questions [--root PATH] [--machine PATH]`
 
-Prints the values `keelline init --yes` would take for the six things a person may answer, where
+Prints the values `stayfixed init --yes` would take for the six things a person may answer, where
 each came from, and the flag on `init --yes` that replaces it. It writes nothing. The `init` skill
 asks its questions from it, and a person reads it to see the defaults before choosing any.
 
@@ -1478,11 +1478,11 @@ one line saying how each is answered:
 detected:
   project.name: widget (origin remote; --name)
   project.base_branch: main (origin/HEAD; --base-branch)
-  keelline.agents: claude, codex (default; --agent)
-  keelline.profile: python (profile markers; --profile)
+  stayfixed.agents: claude, codex (default; --agent)
+  stayfixed.profile: python (profile markers; --profile)
   memory.mode: local-only (the preset's default; --memory-mode)
   artifacts.local: none (the preset's default; --local)
-each is answered by the flag its line names, on `keelline init --yes`; `keelline init --questions --json` carries them as a JSON Schema
+each is answered by the flag its line names, on `stayfixed init --yes`; `stayfixed init --questions --json` carries them as a JSON Schema
 ```
 
 Where a value came from is one of a fixed set of phrases. The name comes from the
@@ -1494,31 +1494,31 @@ when that names a plain branch under `refs/remotes/origin/`; with no remote at a
 remotes git could not list included, it is the `default`, `main`. The agents come from the `harness
 directories` the root carries; otherwise the `default` is every harness. The profile comes from
 `profile markers`, or there are `no profile markers`. The memory mode and the files kept out of
-git are `the preset's default`. Each default is exactly what `keelline init --yes` writes when
+git are `the preset's default`. Each default is exactly what `stayfixed init --yes` writes when
 that question is not answered. `origin/HEAD` goes stale after the remote's default branch is
 renamed, because git does not refresh one it has. That is why its source is printed: you can
 catch it.
 
 `--json` carries `questions`: a JSON Schema object (draft 2020-12) with six required
-`properties`. Each is keyed by the `keelline.toml` key its answer writes: `project.name`,
-`project.base_branch`, `keelline.agents`, `keelline.profile`, `memory.mode` and
+`properties`. Each is keyed by the `stayfixed.toml` key its answer writes: `project.name`,
+`project.base_branch`, `stayfixed.agents`, `stayfixed.profile`, `memory.mode` and
 `artifacts.local`. Each property carries three keys: `default` (absent for a name that is not
-derivable), `x-keelline-source` (the phrase above) and `x-keelline-flag` (the `init --yes` flag
+derivable), `x-stayfixed-source` (the phrase above) and `x-stayfixed-flag` (the `init --yes` flag
 that answers it). A choice is a `oneOf` of `const` and `title`, or `items.enum` for a list. The
 two free-text properties carry `pattern`, the grammar their flag enforces.
 
 The schema is modelled on MCP elicitation's flat form schema. A client may send it as a
-`requestedSchema` once it drops `pattern` and the `x-keelline-*` keys, which that subset does not
+`requestedSchema` once it drops `pattern` and the `x-stayfixed-*` keys, which that subset does not
 carry. Harness ask tools take lists of questions and options rather than a schema, so the `init`
 skill turns the properties into questions: the first four as one confirmation of their defaults,
 the rest one at a time, within each harness's limits. The flags validate the answers; the schema
 does not.
 
 It is refused (`2`) before anything beyond the root is read, in three cases:
-- the repository already carries `.keelline/manifest.json`: re-running `init` is
-  `keelline upgrade`;
-- it carries a `keelline.toml`, which answers these questions itself: edit it, then read the plan
-  with `keelline init --yes --dry-run`;
+- the repository already carries `.stayfixed/manifest.json`: re-running `init` is
+  `stayfixed upgrade`;
+- it carries a `stayfixed.toml`, which answers these questions itself: edit it, then read the plan
+  with `stayfixed init --yes --dry-run`;
 - any flag is given but `--root`, `--machine` and `--json`.
 
 `--yes` beside it is a usage error from the parser.
@@ -1534,89 +1534,89 @@ Exits `0` with the questions printed; `2` on a refusal.
 
 ---
 
-## `keelline upgrade [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`
+## `stayfixed upgrade [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`
 
-Refreshes a repository's footprint after a Keelline update, keeping every hand edit. It moves
-`[keelline] version` to the Keelline running, re-plans every footprint artifact against
-`.keelline/manifest.json` by hash, and never re-plans the write-once files: `keelline.toml`,
+Refreshes a repository's footprint after a stayfixed update, keeping every hand edit. It moves
+`[stayfixed] version` to the stayfixed running, re-plans every footprint artifact against
+`.stayfixed/manifest.json` by hash, and never re-plans the write-once files: `stayfixed.toml`,
 `CLAUDE.md` and the `AGENTS.md` skeleton are yours after `init`.
 
 `--dry-run` reports everything and writes nothing. `--force PATH` overwrites or removes one file the
 report named `skip_modified`, as a path relative to `--root` exactly as the report prints it; repeat
-it for each file. It reaches a file you edited, one Keelline never wrote, and a changed or
-unrecorded copy under `.keelline/local/artifacts/`, but not a file left at an artifact's old place
+it for each file. It reaches a file you edited, one stayfixed never wrote, and a changed or
+unrecorded copy under `.stayfixed/local/artifacts/`, but not a file left at an artifact's old place
 (`relocated and hand-edited`, or a recorded target the artifact cannot produce): that one is yours
 from then on, to keep or delete by hand. A leading `./` is dropped, and an absolute path or one with
 a `..` component is refused (`2`) naming the rule. A forced path no planned action names — a typo, a
 case difference, or a file with nothing to force — is counted in a `note:` line and forces nothing.
 
 **Four verdicts.** A file whose bytes are still the ones the manifest records is refreshed
-(`update`, or `region_update` for a managed region) when this Keelline renders it differently,
+(`update`, or `region_update` for a managed region) when this stayfixed renders it differently,
 and reported `unchanged` when it does not. One that is missing is created. One you edited is
-`skip_modified` and named, and stays as it is until `--force` names it. So is a file Keelline
-never wrote at a path it would write (`exists and Keelline did not write it`); forced, it is
-overwritten and recorded, and later runs judge it like any file Keelline wrote. An artifact this
+`skip_modified` and named, and stays as it is until `--force` names it. So is a file stayfixed
+never wrote at a path it would write (`exists and stayfixed did not write it`); forced, it is
+overwritten and recorded, and later runs judge it like any file stayfixed wrote. An artifact this
 configuration no longer produces is removed while its bytes are the ones recorded (`remove`),
 and skipped the same way when they are not.
 
-**What is rewritten in `keelline.toml`, and what is not.** Only the values Keelline owns:
-`[keelline] version` and, under `[ci] mode = "reusable"`, a `[ci] ref` that is a commit sha or
+**What is rewritten in `stayfixed.toml`, and what is not.** Only the values stayfixed owns:
+`[stayfixed] version` and, under `[ci] mode = "reusable"`, a `[ci] ref` that is a commit sha or
 empty. Every other byte stays where it was — comments, order, blank lines, your keys. A key written
 in a shape the editor does not rewrite in place (a dotted key, an inline table, a multi-line value)
 is refused (`2`) naming the key and the line to write by hand, before anything is written. When the
 manifest's `config` record still describes the file, it is re-stamped with the new bytes; when you
-have edited the file, it is not, so `keelline.toml` stays yours.
+have edited the file, it is not, so `stayfixed.toml` stays yours.
 
 **Version, `[ci] ref` and the workflow's pin move together or not at all.** Under
-`[ci] mode = "reusable"` the workflow pins Keelline by commit, so `[keelline] version`, `[ci] ref`
-and the `uses:` line in `.github/workflows/keelline.yml` are one value. When no released commit
-of the Keelline running is found — before its tag exists, or with the network unreachable — or
+`[ci] mode = "reusable"` the workflow pins stayfixed by commit, so `[stayfixed] version`, `[ci] ref`
+and the `uses:` line in `.github/workflows/stayfixed.yml` are one value. When no released commit
+of the stayfixed running is found — before its tag exists, or with the network unreachable — or
 when the workflow would not be rewritten to the new pin, neither key moves: a `note:` line says
-`[keelline] version` and `[ci] ref` were left as they are and why, and the rest of the footprint
-is still refreshed. A workflow you edited by hand, or one Keelline never wrote, is reported
+`[stayfixed] version` and `[ci] ref` were left as they are and why, and the rest of the footprint
+is still refreshed. A workflow you edited by hand, or one stayfixed never wrote, is reported
 `skip_modified` and moves with them only under `--force` with the path the report prints for it.
 When the report refuses the workflow, or the `CI:` line says none was rendered (a `[ci]
 gate_branch` outside the branch-name grammar, say), no flag moves them: the note says to put
-that right and run `keelline upgrade` again. The `CI:` line says the workflow pins `[ci] ref` only
+that right and run `stayfixed upgrade` again. The `CI:` line says the workflow pins `[ci] ref` only
 when this run created it, refreshed it or found it current; a workflow the report lists
 `skip_modified` or refuses was left as it is and may pin anything, and the line says so.
 
 **A `[ci] ref` that is not a commit is yours.** The `v1` alias, documented from `1.0.0` on, or any
-other value that is not a full-length sha, is a choice to track a moving Keelline, so `upgrade`
-moves `[keelline] version` alone: it never replaces that ref with a sha, and never renders a
+other value that is not a full-length sha, is a choice to track a moving stayfixed, so `upgrade`
+moves `[stayfixed] version` alone: it never replaces that ref with a sha, and never renders a
 workflow over the one you wrote around it. The `CI:` line says no workflow was rendered around the
 ref.
 
-**A project recording a newer Keelline is refused** (`2`), before anything is written: an older
+**A project recording a newer stayfixed is refused** (`2`), before anything is written: an older
 plugin would repin an older release and put older bytes over newer ones. The recorded version is
 read by its leading `X.Y.Z` first, so `1.0.0-rc1` is newer than a running `0.9.0`; with the same
 `X.Y.Z`, a release is newer than its own pre-release, so a project recording `1.0.0` is refused
-by a `1.0.0rc1` build. Update the Keelline plugin, then run `keelline upgrade` with it; never edit
-`[keelline] version` to get past it. A recorded version with no leading `X.Y.Z`, such as
+by a `1.0.0rc1` build. Update the stayfixed plugin, then run `stayfixed upgrade` with it; never edit
+`[stayfixed] version` to get past it. A recorded version with no leading `X.Y.Z`, such as
 `v1.0.0`, is refused too, because which way a move would go is unknown; set it to the release
 the project was last upgraded with. So is one sharing the running `X.Y.Z` and differing after it
-in a way Keelline does not order — two pre-releases, such as `1.0.0rc1` and `1.0.0rc2`, or a
+in a way stayfixed does not order — two pre-releases, such as `1.0.0rc1` and `1.0.0rc2`, or a
 post-release — and that refusal names the version running: set it to that by hand if it is the
 release the project should move to.
 
 **An artifact kept out of git is recorded out of git too.** One listed in `[artifacts] local` lives
-under `.keelline/local/artifacts/`, and the committed manifest never records it; instead
-`.keelline/local/artifacts.json`, which the ignore block keeps out of git like the artifacts,
-records the bytes Keelline last wrote there. A file still holding those bytes is refreshed like any
-other when this Keelline renders it differently. One that no longer does is `skip_modified`
-(`kept out of git, and changed since Keelline wrote it`), because nothing brings it back once it is
+under `.stayfixed/local/artifacts/`, and the committed manifest never records it; instead
+`.stayfixed/local/artifacts.json`, which the ignore block keeps out of git like the artifacts,
+records the bytes stayfixed last wrote there. A file still holding those bytes is refreshed like any
+other when this stayfixed renders it differently. One that no longer does is `skip_modified`
+(`kept out of git, and changed since stayfixed wrote it`), because nothing brings it back once it is
 overwritten, and `--force` with its path takes it; with that record gone, a file that is not exactly
-what this build writes is skipped the same way, saying nothing records what Keelline wrote there.
+what this build writes is skipped the same way, saying nothing records what stayfixed wrote there.
 When an id leaves `[artifacts] local`, or its `[paths]` value moves while it stays there, the
 artifact is written at its new place and the copy the record names at the old one is removed while
 it holds exactly the bytes recorded for it (`relocated`); otherwise it is `skip_modified`, stays
 recorded until it is gone, and `--force` with its path takes it. The record is read as untrusted,
 since a clone can commit it anyway: anything but its own exact shape is read as no record at all, it
-is never printed, it names nothing outside `.keelline/local/artifacts/`, and it vouches only for a
+is never printed, it names nothing outside `.stayfixed/local/artifacts/`, and it vouches only for a
 file there whose bytes are exactly the ones it states.
 
 **Retirement.** An artifact this configuration no longer produces — the profile's rules after
-`[keelline] profile` changes, its Claude Code pointer after `agents` drops `claude` — is removed
+`[stayfixed] profile` changes, its Claude Code pointer after `agents` drops `claude` — is removed
 only at a target this build could have written for it, and only while its bytes are the ones
 recorded. The workflow is removed only when `[ci] mode` is `"none"`; a mode this build does not
 render, such as `uvx`, is not a request to delete the gate. Every other record in the manifest is
@@ -1631,43 +1631,43 @@ commit can make `upgrade` rewrite it only while it holds exactly the bytes the s
 only at a path given exactly on the command line, which no commit can supply. A managed region is
 inserted into whatever file its key names: a commit that points `[paths] agents_md` at another
 tracked file gets the region written into that file, and the diff shows both the edit and the
-region. No `[paths]` value may name git's control directory or Keelline's own `.keelline/`, where
+region. No `[paths]` value may name git's control directory or stayfixed's own `.stayfixed/`, where
 attach's ledger and the local-only notes live out of git's sight; the loader refuses either, naming
 the key. And a committed `[paths]` value cannot put a write or a removal where git would hide it:
 the run is refused (`2`) before anything is written, dry run included, when all three of these hold
 for a file it would write or remove — the file exists, git ignores it, and it is at a place a
 `[paths]` value chose rather than where the preset puts that artifact. The refusal names each such
 file, as the report prints paths, and says to point the key at a path git does not ignore or take it
-out. A new file, a fixed name (`CLAUDE.md`, `keelline.toml`, `.gitignore`, the workflow, a harness's
+out. A new file, a fixed name (`CLAUDE.md`, `stayfixed.toml`, `.gitignore`, the workflow, a harness's
 rule) and a preset's own place are never refused, so a `CLAUDE.md` in your global excludes or a
-`keelline.toml` in `.git/info/exclude` works as before. A tracked file that matches an ignore
+`stayfixed.toml` in `.git/info/exclude` works as before. A tracked file that matches an ignore
 pattern is not ignored, because git shows every change to it; the artifacts `[artifacts] local`
-keeps under `.keelline/local/artifacts/` are exempt, since keeping them out of git is what that
+keeps under `.stayfixed/local/artifacts/` are exempt, since keeping them out of git is what that
 setting asks for; and outside a git work tree there is no guard, because there is no diff to hide
 from. Inside one (a `.git` in the root or a directory above it), a `git` that cannot answer, because
 it timed out or is not installed, refuses the run rather than letting it through. Run it on a
 checkout you trust. There are no hooks to re-trust afterwards: `init` writes no project-level hook
 entries, so an upgrade changes none.
 
-**Reads** `keelline.toml`, `.keelline/manifest.json`, `.keelline/local/artifacts.json`, every
+**Reads** `stayfixed.toml`, `.stayfixed/manifest.json`, `.stayfixed/local/artifacts.json`, every
 file an artifact targets, `git check-ignore` for each existing file a write or removal targets at
 a place a `[paths]` value chose, and, under `[ci] mode = "reusable"`, the public repository's
 tags.
 
 **Writes** the footprint through the scaffold engine — every `create`, `update`, `region_update`,
 `remove` and `relocated` in the report, and each file `--force` takes — then
-`.keelline/manifest.json`, the committed record, written even when a write or removal fails
-part-way, and `.keelline/local/artifacts.json`, the record kept out of git, only when what it
-records changed; then `keelline.toml`, last (with `.keelline/manifest.json` again when its
+`.stayfixed/manifest.json`, the committed record, written even when a write or removal fails
+part-way, and `.stayfixed/local/artifacts.json`, the record kept out of git, only when what it
+records changed; then `stayfixed.toml`, last (with `.stayfixed/manifest.json` again when its
 `config` record is re-stamped), so the version is the commit point: a run interrupted before it
 leaves the old version recorded, and the next run re-plans from there. Under `--dry-run`,
 nothing.
 
 Exits `0` when it applied the plan or there was nothing to do. `1` on a finding: the plan carries
-refusals — the report's REFUSED section names each, and nothing was written — or a `keelline.toml`
+refusals — the report's REFUSED section names each, and nothing was written — or a `stayfixed.toml`
 that does not load, as for every command. `2` on a refusal before any write: the repository is not
-initialised, `keelline.toml` is missing, it records a newer Keelline, a version with no leading
-`X.Y.Z` or one Keelline does not order against the running one, a key is written in a shape the
+initialised, `stayfixed.toml` is missing, it records a newer stayfixed, a version with no leading
+`X.Y.Z` or one stayfixed does not order against the running one, a key is written in a shape the
 editor refuses, two artifacts resolve to one file (named by artifact and `[paths]` key, as `init`
 names it), a profile artifact, `config` or `gitignore` is listed in `[artifacts] local`, git ignores
 (or inside a repository cannot say whether it ignores) an existing file the run would write or
@@ -1682,10 +1682,10 @@ prints as `(not a version)` or `(not a commit)`), `held` (the note's sentence, o
 
 ---
 
-## `keelline uninstall [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`
+## `stayfixed uninstall [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`
 
 Takes back what `init` and `upgrade` wrote. A file whose bytes are still the ones the manifest
-records is removed; Keelline's managed regions come out of files that hold other text, and such a
+records is removed; stayfixed's managed regions come out of files that hold other text, and such a
 file goes too only when nothing else was in it; the ledger goes last. A file you edited stays
 where it is, is reported `skip_modified` with its reason, and is counted in a `left in place`
 line. Every recorded artifact is judged, including one this configuration no longer produces, at
@@ -1703,41 +1703,41 @@ are `upgrade`'s: a leading `./` is dropped, an absolute path or one with a `..` 
 
 **Two passes, the footprint first.** The footprint pass removes files and takes the regions out;
 a region taken out of a file that keeps other text is reported as
-`remove  AGENTS.md  (retired; Keelline's part only, the file stays)`, and a line without that
+`remove  AGENTS.md  (retired; stayfixed's part only, the file stays)`, and a line without that
 tail means the file itself goes. Every command that prints a plan says it the same way.
-The write-once pass (`keelline.toml`, `CLAUDE.md` and the `AGENTS.md` skeleton) is planned again
-after it, so the skeleton is judged once Keelline's region has left `AGENTS.md`: untouched, it is
+The write-once pass (`stayfixed.toml`, `CLAUDE.md` and the `AGENTS.md` skeleton) is planned again
+after it, so the skeleton is judged once stayfixed's region has left `AGENTS.md`: untouched, it is
 byte for byte what `init` wrote and goes. A dry run cannot take the region out first, so it
 judges the skeleton with the region still in it and calls it edited; a `note:` line says so.
-**Forcing `AGENTS.md` takes Keelline's region out of it and never the skeleton**: a forced path
+**Forcing `AGENTS.md` takes stayfixed's region out of it and never the skeleton**: a forced path
 the footprint pass targets never reaches the write-once pass, compared as the engine places each
 file, so what you wrote into the skeleton is judged on its own bytes.
 
-**The ignore block goes last, and only over an empty `.keelline/local/`.** The `.gitignore` region
-is what keeps `.keelline/local/` out of git: attach's ledger, the local-only memory notes, and the
+**The ignore block goes last, and only over an empty `.stayfixed/local/`.** The `.gitignore` region
+is what keeps `.stayfixed/local/` out of git: attach's ledger, the local-only memory notes, and the
 artifacts `[artifacts] local` keeps out of git. So it is taken out in a pass of its own, after the
-disk shows nothing left under `.keelline/local/`. Every directory above a file a pass removed goes
+disk shows nothing left under `.stayfixed/local/`. Every directory above a file a pass removed goes
 once it is empty, deepest first, and so does every empty directory under
-`.keelline/local/artifacts/`, Keelline's own, which no `[paths]` value reaches; no other goes: an
-empty directory a `[paths]` value merely names may be yours. Then `keelline.toml`, which the
-write-once pass holds back for this point; then the ledger: `.keelline/assessment.json`,
-`.keelline/manifest.json`, and `.keelline/local/` and `.keelline/` once each is empty. A directory
+`.stayfixed/local/artifacts/`, stayfixed's own, which no `[paths]` value reaches; no other goes: an
+empty directory a `[paths]` value merely names may be yours. Then `stayfixed.toml`, which the
+write-once pass holds back for this point; then the ledger: `.stayfixed/assessment.json`,
+`.stayfixed/manifest.json`, and `.stayfixed/local/` and `.stayfixed/` once each is empty. A directory
 someone committed where a ledger file belongs stays. So does a harness's own directory
 (`.claude/`, `.codex/`, or the same name in any other case), even when it is empty, whoever made it:
 `init` may have created `.claude/` to hold the rule it wrote there, but nothing records who made an
 empty directory, and to `init` its presence means the project uses that harness. So a later `init`
-detects that harness and lists it in `[keelline] agents` until you remove the directory.
+detects that harness and lists it in `[stayfixed] agents` until you remove the directory.
 
 **Refused before any write** (`2`): the repository is not initialised; it is attached to an overlay,
-so run `keelline detach` first; `keelline.toml` is missing while the manifest records it, so restore
+so run `stayfixed detach` first; `stayfixed.toml` is missing while the manifest records it, so restore
 it; `[artifacts] local` names `config` or `gitignore`, which only work at the repository root, so
 take them out of the list; two artifacts resolve to one file, named as `init` names it;
-`.keelline/local/` holds files this run would not remove, such as notes, or an artifact kept out of
-git that changed since Keelline wrote it, which the refusal counts and never names; git ignores an
+`.stayfixed/local/` holds files this run would not remove, such as notes, or an artifact kept out of
+git that changed since stayfixed wrote it, which the refusal counts and never names; git ignores an
 existing file the run would remove or rewrite at a place a `[paths]` value chose, which the refusal
 names; or a `--force` path leaves `--root`. The count is exact before anything is written, including
-what taking a region out of a file kept out of git would leave behind; the record of what Keelline
-wrote there, `.keelline/local/artifacts.json`, is Keelline's own and goes once nothing else is left,
+what taking a region out of a file kept out of git would leave behind; the record of what stayfixed
+wrote there, `.stayfixed/local/artifacts.json`, is stayfixed's own and goes once nothing else is left,
 before the ignore block. Every artifact it records is judged, a copy left behind when its id left
 `[artifacts] local` or its `[paths]` value moved included, so an unedited one goes. Move the files
 out; one the report lists `skip_modified` in a file of its own there can be named with `--force`
@@ -1747,80 +1747,80 @@ reports the count in a `note:` line instead of refusing, even when its plans als
 its report still lists the edited file.
 
 **Refused part-way** (`2`): a file that cannot be written or removed, or files still under
-`.keelline/local/` after the write-once pass, which the count before any write should already have
-refused; move them out. What was removed stays removed and recorded, and `keelline.toml` and the
-manifest are still there, because they go last, unless the last pass removed `keelline.toml` and
+`.stayfixed/local/` after the write-once pass, which the count before any write should already have
+refused; move them out. What was removed stays removed and recorded, and `stayfixed.toml` and the
+manifest are still there, because they go last, unless the last pass removed `stayfixed.toml` and
 then could not write the manifest, which the next paragraph covers; so running the command again
 finishes from what the first run left, to the same end as a run that was never stopped.
 
-**Without `keelline.toml`, nothing the manifest records can be judged.** While the manifest still
+**Without `stayfixed.toml`, nothing the manifest records can be judged.** While the manifest still
 records the file, the run is refused (`2`) before any write, dry run included: restore
-`keelline.toml` (from git, for instance) and run it again. This command drops that record as it
+`stayfixed.toml` (from git, for instance) and run it again. This command drops that record as it
 removes the file, so the file was taken by something other than this command, or by a run of it that
 removed the file and then did not rewrite the manifest, because it was killed in between or the
 manifest could not be written; either way the restored file is judged like any other, and the run
 then goes on to the end. When nothing records it — a run stopped between removing it and removing
-the manifest, or a `keelline.toml` the project wrote itself before `init`, which `init` never
+the manifest, or a `stayfixed.toml` the project wrote itself before `init`, which `init` never
 records — every recorded file stays, a `note:` line gives their count, and only the ledger goes, so
 `init` and this command no longer refuse the repository. No other directory is pruned then, because
-nothing says where the configuration put its artifacts. A `keelline.toml` you wrote before `init`,
-which is there and recorded nowhere, is left as it is, with the keys Keelline wrote into it; a
+nothing says where the configuration put its artifacts. A `stayfixed.toml` you wrote before `init`,
+which is there and recorded nowhere, is left as it is, with the keys stayfixed wrote into it; a
 `note:` line says so, and `--json` carries `kept_config: true`.
 
 **The boundary.** Which artifacts exist, where each could be and every region's name are this
 build's. The `[paths]` value a target is built from and the digest a record carries are committed,
 so a commit can make `uninstall` remove a whole file only while it holds exactly the bytes the same
 commit records, and a region only where its key names; the diff shows both. No `[paths]` value may
-name git's control directory or Keelline's own `.keelline/`, and a symlinked `.keelline/` is
+name git's control directory or stayfixed's own `.stayfixed/`, and a symlinked `.stayfixed/` is
 refused. An existing file git ignores at a place a `[paths]` value chose is never removed or
 rewritten: the run is refused (`2`) before any removal, dry run included, by `upgrade`'s rule,
 naming the files, and so is a run inside a repository whose `git` cannot answer because it timed out
-or is not installed. Take Keelline's part out of them by hand, or take the `[paths]` key out of
-`keelline.toml`; the run then leaves those files where they are and lists them. That includes a file
-Keelline itself created at an ignored place a `[paths]` value chose (`roadmap = "build/roadmap.md"`
+or is not installed. Take stayfixed's part out of them by hand, or take the `[paths]` key out of
+`stayfixed.toml`; the run then leaves those files where they are and lists them. That includes a file
+stayfixed itself created at an ignored place a `[paths]` value chose (`roadmap = "build/roadmap.md"`
 under an ignored `build/`, say): creating it was allowed because nothing was there, and by the time
 `uninstall` runs it exists, so this refusal meets it, and taking the key out is the remedy that
 finishes the run. A `CLAUDE.md` or `AGENTS.md` your own excludes ignore is taken back like any
 other. Run it on a checkout you trust.
 
-**Reads** `keelline.toml`, `.keelline/manifest.json`, `.keelline/local/artifacts.json`, every file
+**Reads** `stayfixed.toml`, `.stayfixed/manifest.json`, `.stayfixed/local/artifacts.json`, every file
 an artifact targets, `git check-ignore` for each existing file a removal targets at a place a
-`[paths]` value chose, and what is under `.keelline/local/`.
+`[paths]` value chose, and what is under `.stayfixed/local/`.
 
 **Writes** only removals, and region removals, through the scaffold engine, and after each pass
-the two records of what is left: `.keelline/manifest.json`, which every pass rewrites, whether or
-not it finished, and `.keelline/local/artifacts.json`, the record kept out of git, which a pass
+the two records of what is left: `.stayfixed/manifest.json`, which every pass rewrites, whether or
+not it finished, and `.stayfixed/local/artifacts.json`, the record kept out of git, which a pass
 rewrites when it removed something that record names. Each pass also removes every directory
 above a file it removed, once that directory is empty. After the write-once pass it removes
-`.keelline/local/artifacts.json` and then prunes the empty directories it finds by walking
-`.keelline/local/artifacts/`, deepest first, that directory included; after the last pass, the
-ledger: `.keelline/assessment.json`, `.keelline/manifest.json`, then `.keelline/local/` and
-`.keelline/`, each once it is empty. A harness's own directory is never removed. When
-`keelline.toml` is gone and nothing records it, only the ledger is removed. Under `--dry-run`,
+`.stayfixed/local/artifacts.json` and then prunes the empty directories it finds by walking
+`.stayfixed/local/artifacts/`, deepest first, that directory included; after the last pass, the
+ledger: `.stayfixed/assessment.json`, `.stayfixed/manifest.json`, then `.stayfixed/local/` and
+`.stayfixed/`, each once it is empty. A harness's own directory is never removed. When
+`stayfixed.toml` is gone and nothing records it, only the ledger is removed. Under `--dry-run`,
 nothing.
 
 Exits `0` when it applied the plans, including when every recorded file was edited and nothing
 was removed but the ledger. `1` on a finding: a plan carries refusals — the report's REFUSED
-section names each, and nothing was removed — or a `keelline.toml` that does not load. `2` on the
-refusals above, before any write or part-way; a repository with no `.keelline/manifest.json` is
+section names each, and nothing was removed — or a `stayfixed.toml` that does not load. `2` on the
+refusals above, before any write or part-way; a repository with no `.stayfixed/manifest.json` is
 one of them.
 
 `--json` carries `dry_run`, `footprint` and `once` (each the plan's rendered report), `left` (the
 files left in place, each as the reports print it), `orphans` (a count), `note` (the dry run's
 order note, or the missing-configuration count, or empty) and `kept_locally` (how many files
-under `.keelline/local/` the run would leave, on a dry run and on a run whose plans refuse; `0` on
+under `.stayfixed/local/` the run would leave, on a dry run and on a run whose plans refuse; `0` on
 a run that removed what it planned).
 
 ---
 
-## `keelline overlay create --owner OWNER [--name NAME] (--template | --local) [--root PATH]`
+## `stayfixed overlay create --owner OWNER [--name NAME] (--template | --local) [--root PATH]`
 
 Creates the private overlay: the repository that holds your standing rules, your cross-project
 notes, and one record per repository bound to them. Nothing in it is any project's, which is why
 it is a repository of its own and why it is private.
 
 `--owner` is the account it belongs to and `--name` the repository name (default
-`keelline-private`). Both are held to one path segment matching `[a-z0-9][a-z0-9._-]*`, because
+`stayfixed-private`). Both are held to one path segment matching `[a-z0-9][a-z0-9._-]*`, because
 each becomes a directory name, half a remote path and later a marketplace selector; a value
 shaped like an option is refused rather than quoted. `--root` is the directory the instance is
 created *in*, not a project root, and defaults to the current directory.
@@ -1831,8 +1831,8 @@ network call. An invocation with neither is refused (`2`) naming both, so that c
 repository on an account is never something an omitted flag does.
 
 **`--template` needs a template repository of your own.** It names
-`<owner>/keelline-overlay-template`, which
-[`keelline overlay publish-template`](#keelline-overlay-publish-template---owner-owner---name-name---yes)
+`<owner>/stayfixed-overlay-template`, which
+[`stayfixed overlay publish-template`](#stayfixed-overlay-publish-template---owner-owner---name-name---yes)
 publishes to your account at each release. Until you have run that once, `--template` fails
 cleanly with `gh`'s own answer, and `--local` renders exactly the same tree here with no
 network call — an owner setting up a first overlay can use either.
@@ -1856,27 +1856,27 @@ asynchronous generation step that sometimes outlasts a clone. If the second atte
 empty, the command fails (`1`) naming both attempts and what GitHub said in between.
 
 **Writes**, on `--local`, the instance directory `<root>/<name>` with every file of the template
-plus `.keelline/manifest.json`. On `--template`, through `gh repo create <owner>/<name> --private
---template <owner>/keelline-overlay-template --clone`, a new private repository on GitHub under
+plus `.stayfixed/manifest.json`. On `--template`, through `gh repo create <owner>/<name> --private
+--template <owner>/stayfixed-overlay-template --clone`, a new private repository on GitHub under
 `<owner>` and its clone at `<root>/<name>` — or, when that clone brings nothing down, a clone
 from the retried `git clone`; a directory that already carries `.claude-plugin/` gets nothing.
 Exits `0` on success, `1` when no tree arrived, `2` on a refused name or a missing `--root`.
 
 ---
 
-## `keelline overlay init --owner OWNER [--root PATH]`
+## `stayfixed overlay init --owner OWNER [--root PATH]`
 
 Makes a created overlay yours. It rewrites all three manifests — `.claude-plugin/plugin.json`,
 `.claude-plugin/marketplace.json` and `.codex-plugin/plugin.json` — so their names carry your
-account (`keelline-overlay-octocat`, `keelline-overlay-marketplace-octocat`), because a harness
+account (`stayfixed-overlay-octocat`, `stayfixed-overlay-marketplace-octocat`), because a harness
 installs a plugin by the name in its manifest, and two owners' overlays under one configuration
 directory would otherwise be one plugin fighting itself; the Codex half is included for the same
 reason as the other two. The marketplace's own plugin entries are suffixed with it, so the
 listing still names a manifest that answers. A manifest this overlay does not carry is reported
 and skipped, not a failure.
 
-Each rewrite is re-stamped into `.keelline/manifest.json`, so `overlay upgrade` still sees these
-files as Keelline's own: without that, the file carrying `keelline.requires` read as hand-edited
+Each rewrite is re-stamped into `.stayfixed/manifest.json`, so `overlay upgrade` still sees these
+files as stayfixed's own: without that, the file carrying `stayfixed.requires` read as hand-edited
 from the moment you ran `init` and no release could ever refresh it again.
 
 It then runs `pre-commit install` in the overlay, which is one of the two secret scans the
@@ -1888,7 +1888,7 @@ Both halves are idempotent. A manifest that already carries the suffix is not re
 second run reports nothing renamed.
 
 **Writes** each of the three manifests that does not already carry the suffix and, where the
-overlay carries one that records a manifest it rewrote, `.keelline/manifest.json` — through the
+overlay carries one that records a manifest it rewrote, `.stayfixed/manifest.json` — through the
 same contained walk every other write in this project goes through; and, through the
 `pre-commit install` it runs in the overlay, the overlay's `pre-commit` git hook. Exits `0`; `1` on
 a manifest that exists and cannot be read or is not JSON; `2` on an owner that is not one path
@@ -1896,19 +1896,19 @@ segment, or on a scaffold manifest that cannot be trusted.
 
 ---
 
-## `keelline overlay upgrade [--root PATH] [--dry-run]`
+## `stayfixed overlay upgrade [--root PATH] [--dry-run]`
 
 **`--root` must name an overlay, and that is checked before anything is planned.** It defaults
 to `.`, and pointed at a directory that is not one this command used to create the overlay's
 sixteen files there — both plugin manifests, `hooks/hooks.json`, `.gitignore` and
 `.github/workflows/scan.yml` among them — report them as work done and exit `0`. An overlay is a
-tree whose two `.claude-plugin/` manifests name it `keelline-overlay[-<owner>]` and
-`keelline-overlay-marketplace[-<owner>]`, which is what `overlay create` renders and `overlay
+tree whose two `.claude-plugin/` manifests name it `stayfixed-overlay[-<owner>]` and
+`stayfixed-overlay-marketplace[-<owner>]`, which is what `overlay create` renders and `overlay
 init` renames; anything else is refused (`2`) with nothing written.
 
-Brings an overlay up to date with the template a newer Keelline ships. It is the project rule
+Brings an overlay up to date with the template a newer stayfixed ships. It is the project rule
 and not a second copy of it: a skeleton file you have not touched is refreshed, one you have
-edited is skipped and named, and the oracle is the digest `.keelline/manifest.json` recorded when
+edited is skipped and named, and the oracle is the digest `.stayfixed/manifest.json` recorded when
 the file was written. An overlay is where your own rules live, so a silent overwrite here would
 destroy the only copy of something.
 
@@ -1925,20 +1925,20 @@ file is empty, both held by a test. `--dry-run` first is how you read them befor
 code path that then runs, which is what makes the dry run worth reading.
 
 **Writes**, without `--dry-run`, every artifact the report lists as `create` or `update`, plus
-`.keelline/manifest.json`. Exits `0`; `1` when the report carries a REFUSED section, because
+`.stayfixed/manifest.json`. Exits `0`; `1` when the report carries a REFUSED section, because
 nothing would be written while one of those stands; `2` when `--root` is not an overlay, when the
 manifest itself cannot be trusted, or when a write is refused by the containment walk.
 
 ---
 
-## `keelline overlay publish-template --owner OWNER [--name NAME] [--yes]`
+## `stayfixed overlay publish-template --owner OWNER [--name NAME] [--yes]`
 
 Publishes the repository `overlay create --template` generates from: the shipped
-`templates/overlay/` tree, as one commit on `<owner>/keelline-overlay-template`.
+`templates/overlay/` tree, as one commit on `<owner>/stayfixed-overlay-template`.
 
 ```bash
-keelline overlay publish-template --owner you          # what it would create, mark and push
-keelline overlay publish-template --owner you --yes    # do it
+stayfixed overlay publish-template --owner you          # what it would create, mark and push
+stayfixed overlay publish-template --owner you --yes    # do it
 ```
 
 Six steps, in this order. It renders the shipped template into a scratch directory; it strips
@@ -1965,19 +1965,19 @@ credential that can write a second repository, so this is not a workflow and doe
 one: `gh` decides the protocol and carries the token. `gh` that cannot be run at all is a
 finding (`1`) naming it.
 
-`--owner` is your account and `--name` the repository (default `keelline-overlay-template`);
+`--owner` is your account and `--name` the repository (default `stayfixed-overlay-template`);
 both are held to one path segment, and the owner is lower-cased the way `overlay create` folds
-it. There is no `--root`: the tree is rendered from this Keelline's own package.
+it. There is no `--root`: the tree is rendered from this stayfixed's own package.
 
 **Writes**, without `--yes`, nothing outside a temporary directory this command creates and
 removes. With it, on GitHub through `gh` and `git`: the public repository `<owner>/<name>`, when
 there is none; its template flag, when it is not set; and a commit pushed to its default branch,
-unless it already carries this Keelline's template. The clone and the commit are made in the
+unless it already carries this stayfixed's template. The clone and the commit are made in the
 same temporary directory. Exits `0`; `1` on a `gh` or `git` that failed, `2` on a refusal.
 
 ---
 
-## `keelline attach --store PATH [--check] [--yes] [--trust-remote] [--root PATH] [--machine PATH]`
+## `stayfixed attach --store PATH [--check] [--yes] [--trust-remote] [--root PATH] [--machine PATH]`
 
 Binds this repository to your private overlay and links its note store in. After it, a session
 in this repository reads your cross-project notes and this project's own notes, and the
@@ -1986,18 +1986,18 @@ permissions and hook entries you keep in the overlay are merged into
 
 **`--machine` is honoured only from an interactive shell.** This is the command that turns the
 machine configuration into capability: the overlay root comes from that file, and from the
-overlay come allow rules, hook entries and standing rules. `KEELLINE_CONFIG` and
+overlay come allow rules, hook entries and standing rules. `STAYFIXED_CONFIG` and
 `XDG_CONFIG_HOME` are already gated the same way and for the same reason — a repository can set
 an environment variable through a committed settings file, and it can just as easily tell an
 agent to pass a flag. In a non-interactive session the flag is **refused** (`2`) rather than
 ignored, because silently falling back would read your real configuration while the caller
 believed it was reading the file it named. Omit it and the default file is read exactly as
-before; `keelline detach` follows the same rule.
+before; `stayfixed detach` follows the same rule.
 
 **`--store` names one directory and nothing else:** `<overlay>/projects/<project name>/memory`,
-where `<project name>` is the `[project] name` in this repository's `keelline.toml`. The overlay
+where `<project name>` is the `[project] name` in this repository's `stayfixed.toml`. The overlay
 root itself is **not** taken from that path — it comes from the `[overlay] root` your machine
-configuration records, which `keelline setup` writes. A `--store` anywhere else is refused (`2`),
+configuration records, which `stayfixed setup` writes. A `--store` anywhere else is refused (`2`),
 including a directory elsewhere under the same overlay: the session-start path holds every linked
 group to this project's own share, so attaching to a sibling would produce a store every session
 then refuses.
@@ -2011,7 +2011,7 @@ everything under **Writes** below that carries content from the overlay is named
 
 It exits `1` when that count is non-zero, the same way it does on a mismatch and for the same
 reason — both are findings you act on before the real run, and `attach` itself is what
-refuses. The count is a count: a group's name comes out of `keelline.toml`, so it is never
+refuses. The count is a count: a group's name comes out of `stayfixed.toml`, so it is never
 printed.
 
 Those standing-rule files are reported but **not** gated by `--yes`. The gate is about widening
@@ -2050,14 +2050,14 @@ project's `projects/<name>/claude/` equivalents, the overlay's `common/codex/` a
 `.claude/settings.json` — the committed one — is read for **nothing**: it is repository-controlled,
 and the repository never grants a capability.
 
-**Writes** the `keelline:ignore` region in `.gitignore` (which is what keeps
-`.keelline/local/` untracked, and is written first), `.claude/settings.local.json`,
-`.codex/rules/`, the ledger `.keelline/local/attach.json`, the link tree under `paths.memory` in
+**Writes** the `stayfixed:ignore` region in `.gitignore` (which is what keeps
+`.stayfixed/local/` untracked, and is written first), `.claude/settings.local.json`,
+`.codex/rules/`, the ledger `.stayfixed/local/attach.json`, the link tree under `paths.memory` in
 this checkout and in every existing worktree, the harness memory link, and — in the overlay —
 `projects/<name>/project.toml`, this project's note directories and, through the
 `pre-commit install` it runs there when the overlay carries a `.pre-commit-config.yaml` and no
 `pre-commit` hook yet, the overlay's `pre-commit` git hook. The ledger is the only record
-of which allow rules are Keelline's, because an allow rule cannot carry a marker the way a hook
+of which allow rules are stayfixed's, because an allow rule cannot carry a marker the way a hook
 entry can; `detach` reads it and nothing else.
 
 It also **removes** one file, in one case. The `autoMemoryDirectory` fallback is taken only while
@@ -2065,7 +2065,7 @@ the harness memory link cannot be made, so when the link becomes possible again 
 store's trust record lapses — that key is withdrawn in the same run. If it was all
 `.claude/settings.local.json` held, the file goes with it, because `{}` is not what that file
 looked like before `attach` created it. Nothing you wrote is ever what goes: the case only
-arises when Keelline's own key was the file's entire contents.
+arises when stayfixed's own key was the file's entire contents.
 
 **The harness memory link is written under a walk that follows no symlink.** The home
 directory itself is found and never created — a missing one is a refusal — and every component
@@ -2085,7 +2085,7 @@ groups that are still real directories, which are the two findings the paragraph
 and the same number for both; `2` on a refusal: a store outside the
 recorded overlay, a mismatch without `--trust-remote`, a widening without `--yes`, a checkout
 with no `origin` remote or with one whose URL is not UTF-8 text, which the overlay's record
-cannot hold, an existing `.keelline/local/attach.json` naming files or settings keys
+cannot hold, an existing `.stayfixed/local/attach.json` naming files or settings keys
 `attach` could not have written, a `memory.groups` entry that leaves this project's share of the
 overlay, a `memory.groups` entry that does not name a subdirectory of this project's
 `paths.memory`, or a `paths.memory` that is itself a symlink — a refusal distinct from that one,
@@ -2099,13 +2099,13 @@ became a symlink — between the moment it was checked and the moment it was wri
 
 ---
 
-## `keelline detach [--root PATH] [--machine PATH]`
+## `stayfixed detach [--root PATH] [--machine PATH]`
 
 Removes exactly what `attach` added, and leaves the binding alone.
 
-It reads `.keelline/local/attach.json` and acts on that and on nothing else *that it is willing
+It reads `.stayfixed/local/attach.json` and acts on that and on nothing else *that it is willing
 to believe*. A repository with no ledger fails (`1`) naming the missing file rather than guessing
-which allow rules were Keelline's from their content — that guess is the reason the ledger
+which allow rules were stayfixed's from their content — that guess is the reason the ledger
 exists, and getting it wrong removes a rule you wrote by hand. And the ledger is not an
 authority: `.gitignore` does not untrack a file a clone committed, so this path can arrive in a
 fresh checkout with contents nobody on your machine wrote. Every field is held to what `attach`
@@ -2114,39 +2114,39 @@ could have put there — `rules` to a single file under `.codex/rules/`, `settin
 rather than obeyed. A ledger claiming `settings_keys = ["permissions"]` would otherwise have
 deleted your whole `permissions` block, deny rules included.
 
-**Run it from the checkout you attached from.** `.keelline/local/` is untracked and per-checkout,
+**Run it from the checkout you attached from.** `.stayfixed/local/` is untracked and per-checkout,
 so a sibling worktree does not carry the ledger of the checkout the attach was run from and
 `detach --root <that worktree>` answers "no ledger" — there is nothing there to reverse. Once it
 starts it reaches every checkout of the repository, including the one that owns the store; it is
 only the *starting* point that has to be the one holding the record.
 
 **Writes**: it takes the recorded allow rules and the fallback key back out of
-`.claude/settings.local.json`, drops the hook entries marked `# keelline:…` there (a group that
+`.claude/settings.local.json`, drops the hook entries marked `# stayfixed:…` there (a group that
 mixes one of those with your own entry is split, never replaced), removes the `.codex/rules/`
 files it wrote, withdraws the link tree from this checkout and every worktree together with the
-harness memory link, removes the `keelline:ignore` region, and deletes the ledger,
-`.keelline/local/attach.json`. A file left holding nothing is removed rather than left empty.
-Last, each directory the ledger records `attach` as having created — of `.keelline/local/`,
-`.keelline/`, `.codex/rules/`, `.codex/` and `.claude/`, in that order — is removed when it is
+harness memory link, removes the `stayfixed:ignore` region, and deletes the ledger,
+`.stayfixed/local/attach.json`. A file left holding nothing is removed rather than left empty.
+Last, each directory the ledger records `attach` as having created — of `.stayfixed/local/`,
+`.stayfixed/`, `.codex/rules/`, `.codex/` and `.claude/`, in that order — is removed when it is
 empty, and left standing otherwise.
 
-**The `keelline:ignore` region in `.gitignore` goes only if the manifest does not record it.**
-On a repository `keelline init` set up, that block is the footprint's — recorded in
-`.keelline/manifest.json` as a scaffolded artifact, with the body `attach` writes — and it
+**The `stayfixed:ignore` region in `.gitignore` goes only if the manifest does not record it.**
+On a repository `stayfixed init` set up, that block is the footprint's — recorded in
+`.stayfixed/manifest.json` as a scaffolded artifact, with the body `attach` writes — and it
 stays. Ownership decides, not last writer: the block is committed, so withdrawing it would
-take a line out of a tracked file this command never wrote and leave `keelline upgrade`
+take a line out of a tracked file this command never wrote and leave `stayfixed upgrade`
 reading the footprint as hand-edited. A repository with no manifest is one no
 `init` has set up, and its region is withdrawn as before.
 
 A manifest this command **cannot read** — unreadable, not a JSON object, or written by a newer
-Keelline — is read as no answer rather than as an answer, so the block stays and the detach
+stayfixed — is read as no answer rather than as an answer, so the block stays and the detach
 finishes. That file is committed and `attach` never opens it, so a clone that ships a broken one
 would otherwise attach cleanly and then make every later `detach` exit `2` for ever, with the
 only way out being to delete a tracked file out of somebody else's repository. `--json` reports
-`ignore_region_removed: false`, and `keelline init` or a hand edit clears the block.
+`ignore_region_removed: false`, and `stayfixed init` or a hand edit clears the block.
 
-**Directories come back too, with one exception.** `attach` records which of `.keelline/local/`,
-`.keelline/`, `.codex/rules/`, `.codex/` and `.claude/` this repository did not have before it
+**Directories come back too, with one exception.** `attach` records which of `.stayfixed/local/`,
+`.stayfixed/`, `.codex/rules/`, `.codex/` and `.claude/` this repository did not have before it
 ran, and `detach` removes exactly those, last, once everything inside them is gone. The removal
 is `rmdir`: a directory still holding anything — your own `.codex/rules/` file, your
 `.claude/settings.json` — survives, and so does its parent. A directory that was already there
@@ -2164,18 +2164,18 @@ question you have already answered.
 
 Exits `0`; `1` when there is no ledger to read; `2` on a ledger naming files or settings keys
 `attach` could not have written, or on a `--machine` outside an interactive shell, for the
-reason `keelline attach` gives above.
+reason `stayfixed attach` gives above.
 
 ---
 
-## `keelline setup --preset NAME [--yes] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`
+## `stayfixed setup --preset NAME [--yes] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`
 
 Configures this machine from a preset: the machine configuration file's
 `[personal]` and `[machine]` tables, the deny rules and personal values in
 `<home>/.claude/settings.json`, and the preset's plugins, one install per plugin per configured
 harness. `--home` and `--machine` default to the home directory and to
-`~/.config/keelline/config.toml` — the file every reader reads, and not whatever
-`XDG_CONFIG_HOME` or `KEELLINE_CONFIG` names, because a machine file half the installation
+`~/.config/stayfixed/config.toml` — the file every reader reads, and not whatever
+`XDG_CONFIG_HOME` or `STAYFIXED_CONFIG` names, because a machine file half the installation
 cannot find is not a machine file. Both flags exist so this command can be pointed at a
 scratch destination instead of your real one, the same way every other command here takes
 `--root`. A scratch destination is **not a dry run**: the same files are written, at the paths
@@ -2198,8 +2198,8 @@ else: the machine configuration file is still `--machine`'s, and the harness mem
 under `--home`.
 
 `setup` is not the only command that writes outside a repository, and two others say so in their
-own sections: `keelline memory trust` records approval in `~/.config/keelline/trust.json`, and
-`keelline attach` places the harness memory link under `<home>/.claude/projects/`. It is the only
+own sections: `stayfixed memory trust` records approval in `~/.config/stayfixed/trust.json`, and
+`stayfixed attach` places the harness memory link under `<home>/.claude/projects/`. It is the only
 one that writes the machine configuration file and `<home>/.claude/settings.json`. `--root` (default `.`) is the project this invocation
 was run from; the only thing it is used for is refusing an `--overlay` any checkout of it could
 reach (below).
@@ -2217,9 +2217,9 @@ The `[personal]` values are mirrored into `pluginConfigs` in `<home>/.claude/set
 where Claude Code reads this plugin's own options, and that mirror is recomputed from the machine
 file on every run. The machine file wins: a value you set in Claude Code's plugin-config UI is
 overwritten by the next `setup`, because one of the two copies has to decide and the machine file
-is the one everything in Keelline reads.
+is the one everything in stayfixed reads.
 
-**Plugins are installed per configured harness**, from `[defaults.keelline] agents` (`claude`
+**Plugins are installed per configured harness**, from `[defaults.stayfixed] agents` (`claude`
 and `codex` by default) and from the preset's own per-harness marketplace table
 (`[plugins.<harness>]`). For each harness the preset declares a marketplace for, `setup`
 registers it (`claude plugin marketplace add <source>`; idempotent — an already-registered
@@ -2234,7 +2234,7 @@ failed call is a reported note, never a failure.
 **The overlay is touched only when `--overlay` names an answer**, and `--yes` does not imply
 one. `--overlay <path>` records an existing overlay's root; `--overlay create:<owner>/<name>`
 asks GitHub for a private repository from the template and initialises it, the same as
-`keelline overlay create --template` followed by `overlay init` — and inherits that flag's
+`stayfixed overlay create --template` followed by `overlay init` — and inherits that flag's
 unshipped precondition, the template repository nothing publishes yet. Creating one needs `--yes` —
 explicit confirmation for the one irreversible, outward-facing act this command performs — and
 refuses (`2`) without it. Recording an *existing* path needs no `--yes`
@@ -2242,7 +2242,7 @@ refuses (`2`) without it. Recording an *existing* path needs no `--yes`
 so the flag would be theatre there); instead the path itself is validated **before the first
 write** — before the machine file, the settings merge and the plugin installs, and for `create:`
 before `gh repo create` runs on anybody's account. It must exist; its two `.claude-plugin/`
-manifests must name it `keelline-overlay[-<owner>]` and `keelline-overlay-marketplace[-<owner>]`,
+manifests must name it `stayfixed-overlay[-<owner>]` and `stayfixed-overlay-marketplace[-<owner>]`,
 which is what `overlay create` renders and `overlay init` renames, rather than merely being
 present; and it must lie outside the repository `--root` names — not inside it, not above it, and
 not in another checkout of it, since a worktree is not a different repository and a clone ships
@@ -2273,7 +2273,7 @@ Everything else `create:` can be refused for — the missing `--yes`, a malforme
 is not one path segment, a destination the project root could reach or the machine file could not
 record — still happens before `gh` is run at all.
 
-The symlink refusal names the link, where it leads, and a `keelline setup --home …` that writes
+The symlink refusal names the link, where it leads, and a `stayfixed setup --home …` that writes
 the file the link leads to — and where no `--home` can express the layout, it says that instead
 of printing a command. `stow` folding a package to per-file links
 (`~/.claude/settings.json -> <dotfiles>/claude/settings.json`) is that case: `--home H` writes
@@ -2286,7 +2286,7 @@ nonzero exit.
 
 ---
 
-## `keelline setup --git-hooks [--uninstall] [--root PATH]`
+## `stayfixed setup --git-hooks [--uninstall] [--root PATH]`
 
 Installs the commit-message hook into this repository's own hooks directory — `git
 rev-parse --git-path hooks`, never `core.hooksPath`, which is global state this command has no
@@ -2304,17 +2304,17 @@ the two.
 
 **Writes** the hook file in `--root`'s hooks directory, and the `.local` file beside it only
 when a foreign hook was there to preserve, by renaming that hook. Under `--uninstall` it removes
-the hook file only when it is Keelline's, and renames the `.local` file beside it, when there is
+the hook file only when it is stayfixed's, and renames the `.local` file beside it, when there is
 one, back to `prepare-commit-msg`. Exits `0`; `2` when `--preset` is also given.
 
 ---
 
-## `keelline doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
+## `stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
 
 Sixteen checks over one installation. It **reports and never repairs**: every finding
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
-**Several subprocesses are run and every one of them only asks.** Keelline's own
+**Several subprocesses are run and every one of them only asks.** stayfixed's own
 `hooks/run-hook.sh` with `--version`; `git ls-remote --exit-code` against the public
 repository's tags, to judge `[ci] ref`, only when one is set; and the `git` queries the other
 rows need — where the overlay keeps its hooks, what its `origin` is, and where the note store
@@ -2329,7 +2329,7 @@ five-minute block. The other `git` questions are `gitenv`'s five seconds and the
 this area's own thirty.
 
 **The rendered workflow is read as a regular file, and to a bound.** That path is the
-repository's: a clone chooses what sits at `.github/workflows/keelline.yml`. Anything there that
+repository's: a clone chooses what sits at `.github/workflows/stayfixed.yml`. Anything there that
 is not a regular file — a directory, a symlink to a FIFO, a dangling link — is a warning naming
 the path and never the ref's own verdict, and so is a file past 256 KiB, the same bound the
 `diagnostics` row reads its log under. Not one byte of the file is printed on any arm, and a byte
@@ -2345,22 +2345,22 @@ nobody sees, so that is where they all are.
 
 | Check | What it answers | What it reads |
 |---|---|---|
-| `not-initialised` | whether there is a `keelline.toml` here, and whether it loads | `keelline.toml` |
-| `versions` | whether the project's `[keelline] version` is the Keelline running | `keelline.toml`, the package |
-| `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/keelline`, `hooks/hashes.json` |
-| `wrapper` | whether the wrapper can actually reach Keelline on this machine | one `run-hook.sh open --version`, and only under the plugin root this Keelline is part of |
-| `attached` | the overlay binding, and the shape of the harness memory path | `.keelline/local/attach.json`, `~/.claude/projects/<slug>/memory` |
-| `hook-entries` | every hook entry, counted by provenance, with any that claims the Keelline marker and is in no ledger named by position | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
-| `codex-trust` | whether any Keelline hook is untrusted on Codex | — |
-| `budgets` | every budget that overrides the preset, and every one the ceiling clamps | `keelline.toml`, the preset |
+| `not-initialised` | whether there is a `stayfixed.toml` here, and whether it loads | `stayfixed.toml` |
+| `versions` | whether the project's `[stayfixed] version` is the stayfixed running | `stayfixed.toml`, the package |
+| `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/stayfixed`, `hooks/hashes.json` |
+| `wrapper` | whether the wrapper can actually reach stayfixed on this machine | one `run-hook.sh open --version`, and only under the plugin root this stayfixed is part of |
+| `attached` | the overlay binding, and the shape of the harness memory path | `.stayfixed/local/attach.json`, `~/.claude/projects/<slug>/memory` |
+| `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker and is in no ledger named by position | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
+| `codex-trust` | whether any stayfixed hook is untrusted on Codex | — |
+| `budgets` | every budget that overrides the preset, and every one the ceiling clamps | `stayfixed.toml`, the preset |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
-| `cli-path` | whether `keelline` resolves on `PATH` | `PATH` |
+| `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
-| `overlay-requires` | whether the overlay this machine records requires a Keelline the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `keelline.toml` |
-| `ci-ref` | whether `[ci] ref` is the commit of a released Keelline tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/keelline.yml*, read as a regular file and to a bound |
+| `overlay-requires` | whether the overlay this machine records requires a stayfixed the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `stayfixed.toml` |
+| `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `store-debris` | files in the note store that are not notes | the note store |
-| `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl` |
-| `ignored-env` | `KEELLINE_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |
+| `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
+| `ignored-env` | `STAYFIXED_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |
 
 **Ten of the sixteen have a `skip` arm — sixteen arms between them: one no build can answer,
 and fifteen on a state of this machine or this repository.** A `skip` is **not** a finding and
@@ -2370,7 +2370,7 @@ The one no build can answer is `codex-trust`: it needs the hash Codex keys hook 
 no spike measured. `ci-ref` was counted beside it and is not any more, and neither is `files`.
 `init` writes `[ci] ref`, so what `ci-ref`'s skip reports is a state — this repository records
 none — and which state is the ordinary one moves with the release history rather than with any
-code here: while no released tag matches the Keelline running there is no commit to pin, so
+code here: while no released tag matches the stayfixed running there is no commit to pin, so
 `init` records nothing and the row skips on a correct installation; once a release exists, a
 repository `init` set up carries a ref and the row answers. `files` compares the installed
 plugin against the hashes the release recorded beside it, and skips only on a build carrying no
@@ -2382,7 +2382,7 @@ against, or the overlay could not be asked at all; `pre-commit` and `overlay-req
 no overlay root is recorded on this machine **or** when the root it records is not a directory
 — two different arms with two different sentences, because a machine that recorded an overlay
 and then moved it is not a machine that recorded none; `overlay-requires` again when the
-overlay declares no Keelline requirement; `bundles` and `store-debris`, when the note store does
+overlay declares no stayfixed requirement; `bundles` and `store-debris`, when the note store does
 not resolve; `diagnostics`, when no harness data root is set in the environment; and `ci-ref`,
 when no `[ci] ref` is recorded. `files` has a second state arm of its own — a plugin built
 before the release record existed carries none, and it says so rather than comparing anything.
@@ -2402,22 +2402,22 @@ Codex — and no command in that row's gift changes it.
 
 **The one to read first is the plugin root**, because it is the quietest and the worst. When
 this process can find no plugin root at all, `files` and `wrapper` both skip — two rows, no red,
-and every hook entry on this machine silent. Both carry a remedy: run `keelline doctor` from the
-plugin's own Keelline so its root answers for itself, or set `CLAUDE_PLUGIN_ROOT` to where the
+and every hook entry on this machine silent. Both carry a remedy: run `stayfixed doctor` from the
+plugin's own launcher, so its root answers for itself, or set `CLAUDE_PLUGIN_ROOT` to where the
 plugin is installed, which lets `files` read the wrapper even though `wrapper` still will not
 run it.
 
-One more case is not a skip but produces fifteen of them: with no `keelline.toml` in `--root`,
+One more case is not a skip but produces fifteen of them: with no `stayfixed.toml` in `--root`,
 or one that does not load, `not-initialised` goes **red** and every other check skips against it.
-The red row is the one to act on. A `keelline.toml` that is a symbolic link is one that does not
+The red row is the one to act on. A `stayfixed.toml` that is a symbolic link is one that does not
 load, whatever it points at, and the row says it is a link; for any other, the row names
-`keelline docs check`, which prints the loader's own message.
+`stayfixed docs check`, which prints the loader's own message.
 
 **What is printed, and what is not. There is no exception.** Counts, statuses, file paths this
-project chose and Keelline's own vocabulary print freely; a repository-authored string does not.
-`[keelline] version`, `[ci] ref`, a note's filename, a hook's command text, the marker id an
+project chose and stayfixed's own vocabulary print freely; a repository-authored string does not.
+`[stayfixed] version`, `[ci] ref`, a note's filename, a hook's command text, the marker id an
 entry claims, every field of the hook sink's diagnostics log and the reason the store would not
-resolve are all read and none is quoted back — `keelline doctor --json` is relayed to a model
+resolve are all read and none is quoted back — `stayfixed doctor --json` is relayed to a model
 verbatim by the `doctor` skill, so a byte a repository wrote reaching this report is a byte
 reaching the model outside `trust.wrap`.
 
@@ -2429,7 +2429,7 @@ nothing. A settings file that exists and cannot be read as hook entries is repor
 unlisted, so "all accounted for" must never mean "could not look".
 
 `diagnostics` is the same ruling in the other direction, and is why that row counts rather than
-quotes. Its three fields are Keelline's own vocabulary *for a log Keelline wrote*, and the log
+quotes. Its three fields are stayfixed's own vocabulary *for a log stayfixed wrote*, and the log
 is found through `${CLAUDE_PLUGIN_DATA}` — the same environment class a committed `env` block
 reaches — so this command never establishes that. Refusing a marker id that a grammar bounds and
 a cap limits, while printing an unbounded free-text `error` from a file of unknown provenance,
@@ -2437,7 +2437,7 @@ would not be a policy. The row reports how many failures are recorded and how ma
 seen, and the remedy names the file by its variable; you open it yourself.
 
 **A plugin root the environment named is read and never run.** `wrapper` launches
-`hooks/run-hook.sh` only under the root this Keelline derived from its own module path. With a
+`hooks/run-hook.sh` only under the root this stayfixed derived from its own module path. With a
 wheel installation there is no such root — which is what `uv tool install` gives, and what
 `cli-path`'s own remedy suggests — and `CLAUDE_PLUGIN_ROOT` or `PLUGIN_ROOT` may then name one:
 that root's wrapper is still read by `files`, for its executable bit, and `wrapper` reports
@@ -2450,9 +2450,9 @@ called the result green, would be worse than one that says it could not vouch fo
 
 ## The reusable workflow
 
-`.github/workflows/check.yml` is a `workflow_call` workflow a project runs its Keelline gates
-through. `keelline init` writes the caller —
-[`.github/workflows/keelline.yml`](#keelline-init---yes---dry-run---name-name---base-branch-branch---agent-name----profile-name---memory-mode-mode---local-id----no-ci---root-path---machine-path)
+`.github/workflows/check.yml` is a `workflow_call` workflow a project runs its stayfixed gates
+through. `stayfixed init` writes the caller —
+[`.github/workflows/stayfixed.yml`](#stayfixed-init---yes---dry-run---name-name---base-branch-branch---agent-name----profile-name---memory-mode-mode---local-id----no-ci---root-path---machine-path)
 — so most projects never type these lines; what follows is what that file contains, and what to
 write by hand if you would rather:
 
@@ -2468,7 +2468,7 @@ on:
 
 jobs:
   check:
-    uses: Nezhinskiy/keelline/.github/workflows/check.yml@<40-hex sha>
+    uses: stayfixed/stayfixed/.github/workflows/check.yml@<40-hex sha>
     with:
       base: main
 ```
@@ -2490,7 +2490,7 @@ as the check is required on the gate branch only.
 |---|---|---|
 | `base` | `""` | the branch the gates' configuration is read from; empty means the pull request's base, and on any other event the repository's default branch. On a pull request a value that disagrees with the pull request's own base is refused |
 | `path` | `"."` | the project root inside the caller's checkout, for a monorepo or a fixture. A **plain relative path** — letters, digits, `.`, `_`, `-` and `/`, with no `..` component — and anything else is refused before a gate runs, because the value reaches the run's own outputs, and those carry the base commit the gates' configuration is read from. A root any component of which is a symbolic link in the checkout is refused too |
-| `python-version` | `"3.13"` | the interpreter Keelline runs on; 3.11 is the floor |
+| `python-version` | `"3.13"` | the interpreter stayfixed runs on; 3.11 is the floor |
 | `only` | `""` | the checks to run, space-separated: `config` and any configured gate name. Empty runs the configuration check and every configured gate, and the configuration check runs whatever this names |
 | `timeout-minutes` | `15` | the job's time limit, a whole number of minutes from 5 to 60; any value the runner does not render as a whole number from 5 to 60 fails the job in its first step, before anything is checked out |
 
@@ -2501,17 +2501,17 @@ to it, and a called workflow cannot grant itself a scope the caller did not have
 checkout, with an error that names neither the cause nor the remedy. Give the calling job
 `permissions: { contents: read }` if the file sets any permissions at all.
 
-**One job, and what it runs.** The job, `gates`, checks out the caller, checks out Keelline **at
+**One job, and what it runs.** The job, `gates`, checks out the caller, checks out stayfixed **at
 the commit the `uses:` line pins** — read off the platform's own record of which reusable
 workflow is running, never off the caller's inputs, and asserted against `git rev-parse HEAD`
-before anything else runs — resolves the base to one commit, and runs `keelline gate` against it
+before anything else runs — resolves the base to one commit, and runs `stayfixed gate` against it
 in two steps. The first, "The configuration and the built-in gates", judges the configuration and
 runs the built-in gates, and executes nothing your repository wrote. The second, "The project's
 own gates", runs the commands `[gates.custom]` names, and only if the first passed. Each gate is
 advisory or enforcing, with every finding as an annotation, and each step that runs a check
 appends its results to the job summary. No resolver and no build backend; the network is the two
 checkouts, whatever `setup-python` fetches when the runner has no matching interpreter cached,
-and, on a pull request that moves `[ci] ref`, one listing of Keelline's public release tags.
+and, on a pull request that moves `[ci] ref`, one listing of stayfixed's public release tags.
 It is one job because a job is billed by the whole minute: a push costs one runner-minute, not
 one per gate. Its check, in the caller `init` writes, is `check / gates`.
 
@@ -2553,7 +2553,7 @@ verdict those files could rewrite it; in a later step, only its own results are 
 Within that step the base's enforced gates run first, and once one of them has failed no other
 custom gate starts, enforced or not, so the process that holds a failing verdict runs nothing
 more that the change can edit.
-What it guarantees, and how to pin those files, is in the `keelline gate` section.
+What it guarantees, and how to pin those files, is in the `stayfixed gate` section.
 
 **One row per gate, if you want one.** Each leg of a matrix in your own caller is its own check
 row and its own billed job:
@@ -2565,14 +2565,14 @@ jobs:
       fail-fast: false
       matrix:
         only: [docs, bugs, plan, commit, trail]
-    uses: Nezhinskiy/keelline/.github/workflows/check.yml@<40-hex sha>
+    uses: stayfixed/stayfixed/.github/workflows/check.yml@<40-hex sha>
     with:
       base: main
       only: ${{ matrix.only }}
 ```
 
 The list is yours to keep: a gate it leaves out never runs, and a custom gate added to
-`keelline.toml` needs a leg of its own. Every leg runs the configuration check as well as the
+`stayfixed.toml` needs a leg of its own. Every leg runs the configuration check as well as the
 gate it names, because `only:` sits in a file a pull request can edit: a change that loosens
 what the base enforces fails every leg. Require every leg's check, not only one.
 
@@ -2583,13 +2583,13 @@ two enforced gates that each run files the change can edit — a test suite and 
 rewrite what the second executes. A leg per such gate gives each a checkout no other gate has
 touched.
 
-**Where the configuration comes from.** `keelline gate` reads `keelline.toml` from the base
-commit and judges the tree's copy against it key by key; the `keelline gate` section has the
+**Where the configuration comes from.** `stayfixed gate` reads `stayfixed.toml` from the base
+commit and judges the tree's copy against it key by key; the `stayfixed gate` section has the
 table, what each input rests on, and how an owner lands a change it refuses. What this workflow
 adds: the base's **name** is the pull request's base as the platform reports it, held against
 the caller's `branches:` filter and its literal `base:`; its **commit** is
 `refs/remotes/origin/<base>` in the caller's own checkout, resolved once to a full sha that
-every gate reads; its **copy** is read at `path:`; the **Keelline that runs** is the one the
+every gate reads; its **copy** is read at `path:`; the **stayfixed that runs** is the one the
 caller's `uses:` line pins, whose commit the judging step passes as `--workflow-sha`; and the
 **verdict** is the exit status of the first step.
 
@@ -2610,7 +2610,7 @@ gates still run and still report but cannot stop a pull request that edits its o
 - **CODEOWNERS covering `/.github/`, with review from code owners required**, so a change to
   the caller needs someone other than its author. GitHub reads the rules from the base
   branch's copy; keep the file at `.github/CODEOWNERS`, where its own `/.github/` rule covers it
-  (`keelline assess` warns, `codeowners-scope`, when a line owns only the caller, or when a
+  (`stayfixed assess` warns, `codeowners-scope`, when a line owns only the caller, or when a
   later line with no owner takes a workflow back out of the `/.github/` rule);
 - **"Dismiss stale pull request approvals when new commits are pushed"**, or **"Require
   approval of the most recent reviewable push"**, so an approval of an innocuous `.github/` edit
@@ -2623,40 +2623,40 @@ gates still run and still report but cannot stop a pull request that edits its o
 - **branches required to be up to date before merging, or a merge queue**: a verdict is judged
   against the base as it was when the run started, and a base that tightened since would not be
   seen. The caller subscribes to `merge_group` for the gate branch's queue;
-- and one that is Keelline's, not yours: **a `v*` tag ruleset on the Keelline repository**,
+- and one that is stayfixed's, not yours: **a `v*` tag ruleset on the stayfixed repository**,
   because an upgrade is admitted only at a released tag's commit, and a tag that could move
   would move that anchor for every caller.
 
 Whoever may bypass branch protection holds the gate: "Do not allow bypassing the above settings"
-decides who that is, and a change the gate refuses lands by the direct push the `keelline gate`
+decides who that is, and a change the gate refuses lands by the direct push the `stayfixed gate`
 section describes.
 
 **Advisory or enforcing, per gate.** A gate is advisory until it enforces: its findings are
 warning annotations and the job stays green. An enforcing gate's findings are errors and fail
-the job. What enforces is what the base's `[keelline] enforced` names, with any gate the change
-itself adds there, and every configured gate once `[keelline] state` is `installed`.
-`keelline adopt promote` moves a gate across. Within a step, every gate runs whatever the one
+the job. What enforces is what the base's `[stayfixed] enforced` names, with any gate the change
+itself adds there, and every configured gate once `[stayfixed] state` is `installed`.
+`stayfixed adopt promote` moves a gate across. Within a step, every gate runs whatever the one
 before it said, so a project fixing its documents does not pay a round trip per finding; the one
 exception is a custom gate, which is not started once the run has failed. A custom gate runs
 in the second step, and only with the command the base gives it ("Which custom gates run" under
-`keelline gate`). The job's token is `contents: read` and neither checkout
+`stayfixed gate`). The job's token is `contents: read` and neither checkout
 keeps it, and the judging step's verdict was decided before any command started.
 
 **Pin it by SHA.** A reusable workflow's ref is resolved when the run is created, so `@v1` and
-`@dev` are a moving Keelline running against your repository. `keelline init` writes that pin,
-and writes it from `[ci] ref` in `keelline.toml` so that the file and the configuration cannot
+`@dev` are a moving stayfixed running against your repository. `stayfixed init` writes that pin,
+and writes it from `[ci] ref` in `stayfixed.toml` so that the file and the configuration cannot
 come apart: on a repository it initialises from scratch that value is the commit of the released
-Keelline running, read off the public repository's own `v*` tags rather than off anything the
-project says; on one that already had a `keelline.toml`, it is the ref that file records.
-`keelline upgrade` moves it, with `[keelline] version`, and the file says so in its own first
-lines. **A project with no release to pin gets no workflow at all**: before the first Keelline
+stayfixed running, read off the public repository's own `v*` tags rather than off anything the
+project says; on one that already had a `stayfixed.toml`, it is the ref that file records.
+`stayfixed upgrade` moves it, with `[stayfixed] version`, and the file says so in its own first
+lines. **A project with no release to pin gets no workflow at all**: before the first stayfixed
 tag there is no commit to name, so `init` reports the workflow skipped with the reason and writes
-nothing into `.github/`, and `keelline upgrade` renders it once a release matches. `@v1` is the
+nothing into `.github/`, and `stayfixed upgrade` renders it once a release matches. `@v1` is the
 documented opt-in for a project that would rather track the major, written by hand;
-`keelline upgrade` then moves `[keelline] version` alone and leaves the ref and that file as they
+`stayfixed upgrade` then moves `[stayfixed] version` alone and leaves the ref and that file as they
 are. The alias exists from `1.0.0` on: a `0.x` minor may break what the one before it did, so
 there is no `v0` to track, a `0.x` project pins the commit, and until the first `1.x` release
-`keelline doctor` reports `v1` red, as a tag the public repository does not carry.
+`stayfixed doctor` reports `v1` red, as a tag the public repository does not carry.
 `smoke-release.yml` in this repository runs the `owner/repo/…@ref` form on demand, at `@dev` and
 at the latest release's tag, so that the branch and tag forms are known to work — it is not a form
 this reference tells you to write.
@@ -2684,7 +2684,7 @@ checkouts, so nothing a gate reads can reach a token.
 ## Shared flags
 
 Six flags mean the same thing wherever they appear, and each has exactly one sentence. Both
-tables below are held to `keelline.command`'s own constants, row by row, by
+tables below are held to `stayfixed.command`'s own constants, row by row, by
 `tests/test_documents.py` — so a sentence cannot be spelled by hand here any more than it can be
 in a parser, which is the whole point of the rule.
 
@@ -2698,8 +2698,8 @@ in a parser, which is the whole point of the rule.
 | `--check` | report drift instead of writing, and fail if there is any |
 
 `--check` is the CI half of `--dry-run`: both read and write nothing, and `--check` fails when
-anything differs. `keelline bugs index`, `keelline docs trail`, `keelline memory index` and
-`keelline release hashes` all take it with that meaning.
+anything differs. `stayfixed bugs index`, `stayfixed docs trail`, `stayfixed memory index` and
+`stayfixed release hashes` all take it with that meaning.
 
 Five commands mean something else by a shared name. Each is a **named exception** — a decision
 that the flag means something else, not a sentence that drifted — and each has its own constant
@@ -2707,11 +2707,11 @@ beside the six above:
 
 | Command and flag | What it means there |
 |---|---|
-| `keelline overlay create --root` | directory to create it in (default: current directory) |
-| `keelline overlay init --root`, `keelline overlay upgrade --root` | the overlay root (default: current directory) |
-| `keelline setup --root` | the repository --git-hooks installs into, and the project root --overlay must not be recorded inside of (default: .) |
-| `keelline setup --machine` | the machine configuration file to write (default: ~/.config/keelline/config.toml, the file every reader reads) |
-| `keelline attach --check` | report the binding, the diff and the groups that never moved, and write nothing |
+| `stayfixed overlay create --root` | directory to create it in (default: current directory) |
+| `stayfixed overlay init --root`, `stayfixed overlay upgrade --root` | the overlay root (default: current directory) |
+| `stayfixed setup --root` | the repository --git-hooks installs into, and the project root --overlay must not be recorded inside of (default: .) |
+| `stayfixed setup --machine` | the machine configuration file to write (default: ~/.config/stayfixed/config.toml, the file every reader reads) |
+| `stayfixed attach --check` | report the binding, the diff and the groups that never moved, and write nothing |
 
 `attach --check` reports the way the other four do and exits differently on purpose: its `1` is
 a binding **mismatch**, not a non-empty diff. A diff carrying allow rules is the ordinary state
@@ -2723,11 +2723,11 @@ would widen would make the documented remedy itself a failure.
 
 ## Configuration
 
-`keelline.toml` in the project root, committed. Every value is repository-controlled, which is
+`stayfixed.toml` in the project root, committed. Every value is repository-controlled, which is
 why so few of them are trusted with anything.
 
 ```toml
-[keelline]
+[stayfixed]
 version = "0.1.0"        # required; there is no default
 state = "installed"      # initialised | adopting | installed — default: initialised
 enforced = []            # tool-owned: the gates promoted while adopting
@@ -2740,7 +2740,7 @@ name = "widget"          # one lowercase path segment
 base_branch = "main"
 release_branch = "main"
 
-[paths]                  # each must stay inside the root, and out of .git and .keelline
+[paths]                  # each must stay inside the root, and out of .git and .stayfixed
 agents_md = "AGENTS.md"
 architecture = "docs/architecture"
 runbooks = "docs/runbooks"
@@ -2752,7 +2752,7 @@ bug_index = "docs/bug-reports.md"
 roadmap = "docs/roadmap.md"
 roadmap_history = "docs/roadmap-history.md"
 memory = "docs/memory"
-keelline = "docs/keelline" # Keelline's own project files: <keelline>/rules/<profile>.md
+stayfixed = "docs/stayfixed" # stayfixed's own project files: <stayfixed>/rules/<profile>.md
 
 [memory]
 mode = "local-only"      # local-only | in-repo | overlay
@@ -2777,12 +2777,12 @@ volatile_ttl_days = 30
 
 [artifacts]
 local = []               # scaffold template ids whose artifact is written under
-                         # .keelline/local/artifacts/ instead of being committed; never
+                         # .stayfixed/local/artifacts/ instead of being committed; never
                          # config or gitignore, which only work at the repository root
 
 [ci]
 mode = "reusable"        # reusable | uvx | none — how this project means to be gated
-ref = ""                 # the commit of the Keelline release the workflow is pinned to;
+ref = ""                 # the commit of the stayfixed release the workflow is pinned to;
                          # `init` writes it; from 1.0.0, `v1` is the mutable opt-in
 gate_branch = "main"     # the branch the workflow gates; left out, [project] base_branch
 
@@ -2799,21 +2799,21 @@ types = ["feat", "fix", "docs", "test", "refactor", "style", "chore", "harden", 
 
 **Ten sections, and the list is closed**: a section this block does not show is refused when
 the file loads (`unknown section(s)`), so the grammar above is the whole of it. All three
-`[ci]` keys are read today: `mode` decides whether `keelline init` renders a CI workflow at all
+`[ci]` keys are read today: `mode` decides whether `stayfixed init` renders a CI workflow at all
 and which form, `gate_branch` is the branch the rendered workflow gates — it runs for pull
 requests into it and pushes to it, and passes it as a literal `base:`; left out, it is `[project]
-base_branch`, so a file that names `develop` as its base gates `develop`, and `keelline upgrade`
+base_branch`, so a file that names `develop` as its base gates `develop`, and `stayfixed upgrade`
 re-renders a caller you have not edited for that branch where an earlier release gated `main`;
 set `[ci] gate_branch = "main"` to keep the old one — and `ref` is written by `init` and judged by
 `doctor`'s `ci-ref` row. `[commit_messages] attribution_check` is read by
-`commit check`, `[commit_messages] types` by `keelline assess`'s commit-vocabulary probe,
-`[artifacts] local` by the scaffold engine, and `[gates]` and `[keelline] enforced` by
-`keelline assess`, `keelline gate` and the reusable workflow.
+`commit check`, `[commit_messages] types` by `stayfixed assess`'s commit-vocabulary probe,
+`[artifacts] local` by the scaffold engine, and `[gates]` and `[stayfixed] enforced` by
+`stayfixed assess`, `stayfixed gate` and the reusable workflow.
 
 Every value above is what a key you leave out takes, from the `recommended` preset — with three
-exceptions, and one line that is an example rather than a default. `[keelline] version` and
+exceptions, and one line that is an example rather than a default. `[stayfixed] version` and
 `[project] name` have no default at all and are yours to write: a file without `version` does
-not load at all (`[keelline] is missing required key(s): version`). And `[keelline] state`
+not load at all (`[stayfixed] is missing required key(s): version`). And `[stayfixed] state`
 defaults to `initialised` — it is one of `initialised`, `adopting` and `installed`, and the
 `installed` above shows a set value, not what an omitted key takes. `[ci] gate_branch` has no
 preset default: left out, it is `[project] base_branch`, whose default is `main`. Everything else
@@ -2823,23 +2823,23 @@ base_branch` and `release_branch` are branch names git accepts, from letters, di
 load, and the refusal names the key and never the value.
 
 **Gates.** A gate is one check run over a pull request. `[gates] builtin` names which of
-Keelline's own five the project runs, all of them by default, and each
+stayfixed's own five the project runs, all of them by default, and each
 `[gates.custom.<name>]` names one of the project's own: `run` is an argv to run from the
 project root, never through a shell, given `custom_timeout_seconds` to finish, and a non-zero
 exit is its one finding. A custom gate's name is one lowercase path segment, neither a
-built-in gate's name nor `config`, which names the configuration check. `keelline assess`,
-`keelline gate` and [the reusable workflow](#the-reusable-workflow) run exactly the configured
+built-in gate's name nor `config`, which names the configuration check. `stayfixed assess`,
+`stayfixed gate` and [the reusable workflow](#the-reusable-workflow) run exactly the configured
 gates. A custom gate runs only from a command a person or a workflow runs on purpose, never
 from a hook or `doctor`, so running such a command in a clone runs the commands that clone
 configured, as running its test suite would. The `docs` and `trail` gates judge tracked files,
 so a project that keeps its roadmap or its `AGENTS.md` out of git — ignored, never added, or
 written under `[artifacts] local` — drops `trail` or `docs` from `[gates] builtin`: those gates
-read the committed place, where in CI the file is not, and `keelline assess` reports such a gate
-and `keelline adopt promote` never enforces it.
+read the committed place, where in CI the file is not, and `stayfixed assess` reports such a gate
+and `stayfixed adopt promote` never enforces it.
 
-**Enforcement is per gate.** `[keelline] enforced` lists the gates promoted while a project
-adopts Keelline, and `state = "installed"` means every gate the project runs. Both keys are
-Keelline's to write (`keelline adopt begin` and `keelline adopt promote`),
+**Enforcement is per gate.** `[stayfixed] enforced` lists the gates promoted while a project
+adopts stayfixed, and `state = "installed"` means every gate the project runs. Both keys are
+stayfixed's to write (`stayfixed adopt begin` and `stayfixed adopt promote`),
 and the loader holds them together: an `initialised` project lists none, and an `installed`
 one lists every gate or none. So there are three shapes and no others: `initialised` with
 an empty list (nothing has begun), `adopting` with any list of configured gates, each named
@@ -2857,9 +2857,9 @@ trees `docs trail` lists, and `plans` is where `plan check` looks for the plans 
 `bugs` is the ledger's entry directory and `bug_index` its generated index — `bugs new`,
 `bugs index`, `bugs check` and `bugs renumber` all read both — and `runbooks` supplies the
 `<runbooks>/bug-reports.md` link that index's generated header writes. `memory` is the note
-store, which `memory refs` walks. `keelline` is the directory Keelline's own project files go
+store, which `memory refs` walks. `stayfixed` is the directory stayfixed's own project files go
 under, so that `uninstall` can account for them and a reader can find them; a stack profile's
-rules are the first, at `<keelline>/rules/<profile>.md`. The remaining three are read for their
+rules are the first, at `<stayfixed>/rules/<profile>.md`. The remaining three are read for their
 location alone, and so is every one of the others: `bugs check` treats the first component of
 every `[paths]` value that has more than one — `docs`, for the defaults — as a directory
 documents live in, and therefore as a place a citation of an entry file may be written and must
@@ -2894,7 +2894,7 @@ status that needs neither `severity:` nor `area:`. `severity` is `bugs new`'s re
 above its trail marker. The last four bound the memory store. A budget is only ever lowered: a
 value above the preset's is ignored rather than refused, so raising one is not an escape.
 
-`~/.config/keelline/config.toml` is yours, not the project's:
+`~/.config/stayfixed/config.toml` is yours, not the project's:
 
 ```toml
 [personal]
@@ -2903,15 +2903,15 @@ artifact_language = "en"
 preset = "recommended"   # the preset `setup` applies
 
 [overlay]
-root = "~/keelline-overlay"   # only read in overlay mode
+root = "~/stayfixed-overlay"   # only read in overlay mode
 ```
 
-`keelline setup` writes a third table, `[machine]`, into the same file — `version`, the
-Keelline that ran, and `installed`, the date it ran. It is `setup`'s record of what it did, not
+`stayfixed setup` writes a third table, `[machine]`, into the same file — `version`, the
+stayfixed that ran, and `installed`, the date it ran. It is `setup`'s record of what it did, not
 a setting: it is written, never hand-edited, and a file that has never had one loads fine.
 
 **This file's location is not selectable by a repository.** The path is
-`~/.config/keelline/config.toml`, and neither `KEELLINE_CONFIG` nor `XDG_CONFIG_HOME` changes
+`~/.config/stayfixed/config.toml`, and neither `STAYFIXED_CONFIG` nor `XDG_CONFIG_HOME` changes
 it: a committed `.claude/settings.json` `env` block would otherwise choose your overlay root
 and your trust record. Pass `--machine <path>` to read a different file — a path you typed
 rather than one an environment chose, and honoured by every reader of it.

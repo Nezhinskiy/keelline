@@ -172,7 +172,7 @@ def single_run(tempdir: Path | None = None) -> Iterator[Path]:
         return
 
 
-SCRATCH_PREFIX = "keelline-oracle-"
+SCRATCH_PREFIX = "stayfixed-oracle-"
 # The one-run-at-a-time lock, beside the scratch checkouts it exists to protect. A **file** and
 # not a directory, which is what keeps it out of `sweep_stale_scratch`'s own housekeeping: that
 # walk globs this prefix and removes directories, and the `is_dir()` arm is what spares this.

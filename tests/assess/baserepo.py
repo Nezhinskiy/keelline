@@ -1,5 +1,5 @@
 """A pull request's checkout, as the tests that read a base see it: a clone on branch `change`
-of an upstream whose `main` carries a `keelline.toml`.
+of an upstream whose `main` carries a `stayfixed.toml`.
 
 `tests/project/repos.py` is not reused: its repository has a fake `origin` URL and no
 remote-tracking ref, and the remote-tracking ref is exactly what a base is read from.
@@ -26,13 +26,13 @@ def clone(
 ) -> Path:
     """The clone; `under` is the project's directory inside the repository, `""` for the root.
 
-    `base` is the upstream's `keelline.toml`; bytes for a document that is not UTF-8. `also`
+    `base` is the upstream's `stayfixed.toml`; bytes for a document that is not UTF-8. `also`
     maps further files at the repository's top to their text, committed with the base.
     """
     upstream = tmp_path / "upstream"
     (upstream / under).mkdir(parents=True)
     git(upstream, "init", "-q", "-b", "main")
-    document = upstream / under / "keelline.toml"
+    document = upstream / under / "stayfixed.toml"
     if isinstance(base, bytes):
         document.write_bytes(base)
     else:
@@ -49,6 +49,6 @@ def clone(
 
 
 def shadow(project: Path, name: str) -> None:
-    """A tag spelled `name`, on a commit that carries no `keelline.toml` at all."""
+    """A tag spelled `name`, on a commit that carries no `stayfixed.toml` at all."""
     empty = git(project, "hash-object", "-t", "tree", "-w", os.devnull).strip()
     git(project, "tag", name, git(project, "commit-tree", empty, "-m", "nothing").strip())

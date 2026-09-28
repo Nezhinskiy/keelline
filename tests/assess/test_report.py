@@ -1,7 +1,7 @@
 """What a gate run hands a person: printed lines, the platform's workflow commands, a job summary.
 
 Every string here can reach a pull request's annotations or its job summary, which a reviewer
-reads as Keelline's own words. So each case holds one of two things: a repository-authored
+reads as stayfixed's own words. So each case holds one of two things: a repository-authored
 string (a finding's path outside the grammar a path may print in, a finding's detail) never
 reaches them, or the platform's bound (ten annotations per level per step, the rest dropped
 without a word) is counted rather than met silently.
@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from keelline.assess.gates import ALREADY_FAILED, COULD_NOT_RUN, STOPPED, GateResult, stopped
-from keelline.assess.report import (
+from stayfixed.assess.gates import ALREADY_FAILED, COULD_NOT_RUN, STOPPED, GateResult, stopped
+from stayfixed.assess.report import (
     BOOTSTRAP,
     NOT_ON_BASE,
     UNCHANGED,
@@ -23,9 +23,9 @@ from keelline.assess.report import (
     summary,
     workflow_commands,
 )
-from keelline.assess.rule import Change, ConfigVerdict, Verdict
-from keelline.config.loader import preset_defaults
-from keelline.findings import LISTED_LIMIT, Finding
+from stayfixed.assess.rule import Change, ConfigVerdict, Verdict
+from stayfixed.config.loader import preset_defaults
+from stayfixed.findings import LISTED_LIMIT, Finding
 
 
 def _run(
@@ -71,7 +71,7 @@ def test_an_advisory_gate_warns_and_an_enforcing_one_errors() -> None:
 
 def test_a_gate_that_could_not_run_is_annotated_at_its_level_with_its_fixed_reason() -> None:
     # A gate that could not judge the tree has no finding, so a pull request would see no
-    # annotation for it at all where the run still fails on it. Its reason is Keelline's own
+    # annotation for it at all where the run still fails on it. Its reason is stayfixed's own
     # fixed text, never an exception's. Mutation (oracle): "a gate that could not run is not
     # annotated" -> both lines are missing.
     reason = COULD_NOT_RUN.format(command="plan check --base <base>")
@@ -122,7 +122,7 @@ def test_a_path_is_written_from_the_repository_s_root() -> None:
         prefix="sub/",
     )
     assert workflow_commands(run) == [
-        "::error file=sub/keelline.toml::paths.bugs may not change this way in a pull request",
+        "::error file=sub/stayfixed.toml::paths.bugs may not change this way in a pull request",
         "::error file=sub/AGENTS.md,line=2::docs: missing-link",
     ]
 
@@ -165,7 +165,7 @@ def test_the_summary_says_how_the_configuration_was_judged() -> None:
     text = summary(advisory)
     assert "| tests | advisory | could not run | would fail |" in text
     assert "| bugs | advisory | 1 | would fail |" in text
-    assert "keelline.toml" not in text
+    assert "stayfixed.toml" not in text
 
 
 def test_the_exit_code_counts_only_what_enforces_and_what_the_rule_refused() -> None:
@@ -194,7 +194,7 @@ def test_a_gate_waiting_for_the_base_is_reported_and_fails_nothing() -> None:
 
 
 def test_a_gate_not_started_after_the_run_failed_says_so_everywhere_a_gate_prints() -> None:
-    # `keelline gate` starts no custom gate the base does not enforce once the run has failed.
+    # `stayfixed gate` starts no custom gate the base does not enforce once the run has failed.
     # Such a gate judged nothing, so it is not a passing one, and every place a gate prints
     # says it was not run and why, rather than `could not run`, which sends a reader to the
     # gate's own command to look for a fault it does not have. Advice: fixed text; the verdict

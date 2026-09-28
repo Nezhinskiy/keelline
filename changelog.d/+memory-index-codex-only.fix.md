@@ -1,4 +1,4 @@
-`keelline memory session-context --bundle index` now emits on Codex only. Claude Code reads
+`stayfixed memory session-context --bundle index` now emits on Codex only. Claude Code reads
 `MEMORY.md` natively, so injecting it there spent capped `SessionStart` slots on something the
 harness already had; Codex has no native auto-memory, which is what the bundle is for. Every
 other bundle is unchanged on both harnesses.

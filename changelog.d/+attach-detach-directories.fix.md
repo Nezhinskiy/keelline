@@ -1,5 +1,5 @@
-`keelline detach` now removes the directories the attach created, and not the ones it found.
-`.keelline/local/`, `.keelline/`, `.codex/rules/`, `.codex/` and `.claude/` used to survive every
+`stayfixed detach` now removes the directories the attach created, and not the ones it found.
+`.stayfixed/local/`, `.stayfixed/`, `.codex/rules/`, `.codex/` and `.claude/` used to survive every
 attach-and-detach cycle, so a repository that had been bound once could never be returned to the
 state it started in — and the round-trip test could not see it, because it walked files and not
 directories.

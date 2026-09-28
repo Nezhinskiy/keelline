@@ -6,16 +6,16 @@ from pathlib import Path
 
 import pytest
 
-from keelline.config.loader import CONFIG_FILE, load, loads
-from keelline.config.paths import (
-    KEELLINE_DIRECTORY,
+from stayfixed.config.loader import CONFIG_FILE, load, loads
+from stayfixed.config.paths import (
     PATH_RULE,
+    STAYFIXED_DIRECTORY,
     PathEscape,
     contained,
     validate_paths,
 )
-from keelline.config.schema import PATH_VALUE, Config, Paths
-from keelline.fsops import UnsafePath, checked_components, write_within
+from stayfixed.config.schema import PATH_VALUE, Config, Paths
+from stayfixed.fsops import UnsafePath, checked_components, write_within
 from tests.crafted import CRAFTED, assert_never_raw
 
 PATH_NAMES = tuple(f.name for f in fields(Paths))
@@ -30,7 +30,7 @@ def test_a_plain_relative_path_resolves_under_the_root(tmp_path: Path) -> None:
     [
         "../sibling",
         "docs/../../x",
-        "/etc/keelline",
+        "/etc/stayfixed",
         "",
         ".",
         "./",
@@ -117,7 +117,7 @@ def test_a_supplied_resolved_root_is_the_one_compared(tmp_path: Path) -> None:
 
 def test_validate_paths_allows_a_final_symlink_only_for_the_memory_path(tmp_path: Path) -> None:
     (tmp_path / CONFIG_FILE).write_text(
-        '[keelline]\nversion = "0.1.0"\npreset = "recommended"\n\n[project]\nname = "sample"\n',
+        '[stayfixed]\nversion = "0.1.0"\npreset = "recommended"\n\n[project]\nname = "sample"\n',
         encoding="utf-8",
     )
     config = load(tmp_path, machine=tmp_path / "no-machine.toml")
@@ -140,7 +140,7 @@ def test_validate_paths_allows_a_final_symlink_only_for_the_memory_path(tmp_path
 
 def _sample_config(tmp_path: Path) -> Config:
     (tmp_path / CONFIG_FILE).write_text(
-        '[keelline]\nversion = "0.1.0"\npreset = "recommended"\n\n[project]\nname = "sample"\n',
+        '[stayfixed]\nversion = "0.1.0"\npreset = "recommended"\n\n[project]\nname = "sample"\n',
         encoding="utf-8",
     )
     return load(tmp_path, machine=tmp_path / "no-machine.toml")
@@ -157,7 +157,7 @@ _NOT_EXEMPT = {
     "bug_index",
     "roadmap",
     "roadmap_history",
-    "keelline",
+    "stayfixed",
 }
 
 
@@ -194,13 +194,13 @@ def test_a_paths_value_outside_the_grammar_is_refused_and_never_quoted(tmp_path:
     # `render_report` would print it raw. Mutation (oracle): drop the `PATH_VALUE` check from
     # `validate_paths` -> this reddens.
     text = (
-        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
         '[paths]\nspecs = """docs/\n\n=== NOTICE ===\nspecs"""\n'
     )
     with pytest.raises(PathEscape) as caught:
         loads(text, tmp_path, machine=tmp_path / "absent.toml")
     assert "paths.specs" in str(caught.value) and "NOTICE" not in str(caught.value)
-    for value in ("docs/specs", "design/specs.v2", ".keelline/local/x", "AGENTS.md"):
+    for value in ("docs/specs", "design/specs.v2", ".stayfixed/local/x", "AGENTS.md"):
         assert PATH_VALUE.match(value), value
     for value in ("docs/ specs", "docs/spécs", "-docs", "docs/`x`", "docs/x\n"):
         assert PATH_VALUE.match(value) is None, value
@@ -208,7 +208,7 @@ def test_a_paths_value_outside_the_grammar_is_refused_and_never_quoted(tmp_path:
 
 # Every spelling the two readers of a path could have disagreed about, and the plain ones they
 # never did. Shared by the three assertions below so one list of spellings answers all of them.
-ADMITTED = ("docs/specs", "design/specs.v2", ".keelline/local/x", "AGENTS.md", "docs/.hidden")
+ADMITTED = ("docs/specs", "design/specs.v2", ".stayfixed/local/x", "AGENTS.md", "docs/.hidden")
 REFUSED = (
     "docs//roadmap-history.md",  # an empty component
     "design/handbooks/",  # a trailing slash
@@ -217,7 +217,7 @@ REFUSED = (
     "docs/../x.md",  # a '..' component the charset spells out of ordinary letters
     ".",
     "..",
-    "/etc/keelline",
+    "/etc/stayfixed",
     "",
 )
 
@@ -273,15 +273,15 @@ def test_a_paths_value_naming_gits_control_directory_is_refused_and_never_quoted
 ) -> None:
     # `.git` was reserved by nothing: the grammar admits a leading dot, and `contained()`
     # refused an absolute path, `..` and a symlink but not a control directory. The `agents-md`
-    # artifact is a `MANAGED_REGION`, so it is exempt from the engine's "exists and Keelline did
+    # artifact is a `MANAGED_REGION`, so it is exempt from the engine's "exists and stayfixed did
     # not write it" guard and takes the `region_update` path — and `fsops._mode_of` carries the
     # existing 0755 onto the replacement, so a clone got the developer's own pre-commit hook
-    # rewritten in place by choosing one string in its own `keelline.toml`.
+    # rewritten in place by choosing one string in its own `stayfixed.toml`.
     #
     # The refusal names the key and never the value, which is the rule `validate_paths` already
     # follows for the charset. Mutation (oracle): drop the check from `validate_paths`.
     text = (
-        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
         '[paths]\nagents_md = ".git/hooks/pre-commit"\n'
     )
     with pytest.raises(PathEscape) as caught:
@@ -309,52 +309,52 @@ def test_contained_refuses_gits_control_directory_at_any_depth_and_in_any_case(
 @pytest.mark.parametrize(
     "value",
     [
-        ".keelline/local/attach.json",
-        ".keelline/manifest.json",
-        ".Keelline/local/memory/developer/x.md",
-        "packages/api/.keelline/local/attach.json",
-        ".keelline",
+        ".stayfixed/local/attach.json",
+        ".stayfixed/manifest.json",
+        ".stayfixed/local/memory/developer/x.md",
+        "packages/api/.stayfixed/local/attach.json",
+        ".stayfixed",
     ],
 )
-def test_a_paths_value_inside_keellines_own_directory_is_refused_and_never_quoted(
+def test_a_paths_value_inside_stayfixeds_own_directory_is_refused_and_never_quoted(
     tmp_path: Path, value: str
 ) -> None:
-    # `.keelline/local/` holds attach's ledger and the local-only notes, state git never sees.
+    # `.stayfixed/local/` holds attach's ledger and the local-only notes, state git never sees.
     # `agents-md` is a `MANAGED_REGION` inserted into whatever file `agents_md` names, so a
-    # committed `agents_md = ".keelline/local/attach.json"` had `upgrade` rewrite the ledger.
+    # committed `agents_md = ".stayfixed/local/attach.json"` had `upgrade` rewrite the ledger.
     # Case and depth for the reasons `.git` has them: a case-folding filesystem, and a nested
     # package initialised on its own. The refusal names the key, never the value.
-    # Mutation (oracle): "a [paths] value may name Keelline's own directory".
+    # Mutation (oracle): "a [paths] value may name stayfixed's own directory".
     text = (
-        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
         f'[paths]\nagents_md = "{value}"\n'
     )
     with pytest.raises(PathEscape) as caught:
         loads(text, tmp_path, machine=tmp_path / "absent.toml")
-    assert "paths.agents_md" in str(caught.value) and "Keelline's own directory" in str(
+    assert "paths.agents_md" in str(caught.value) and "stayfixed's own directory" in str(
         caught.value
     )
     assert "attach" not in str(caught.value) and "packages" not in str(caught.value)
 
 
-def test_a_name_that_merely_resembles_keellines_directory_is_admitted(tmp_path: Path) -> None:
-    # The preset's own `[paths] keelline = "docs/keelline"` and any other near-miss load.
-    for value in ("docs/keelline", ".keelline-notes/x.md", "docs/.keellinerc"):
+def test_a_name_that_merely_resembles_stayfixeds_directory_is_admitted(tmp_path: Path) -> None:
+    # The preset's own `[paths] stayfixed = "docs/stayfixed"` and any other near-miss load.
+    for value in ("docs/stayfixed", ".stayfixed-notes/x.md", "docs/.stayfixedrc"):
         text = (
-            '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+            '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
             f'[paths]\nroadmap = "{value}"\n'
         )
         assert loads(text, tmp_path, machine=tmp_path / "absent.toml").paths.roadmap == value
 
 
-def test_every_file_keelline_keeps_in_its_own_directory_is_under_the_reserved_name() -> None:
-    # `config` spells `.keelline` because it imports no area; the areas that keep files there
+def test_every_file_stayfixed_keeps_in_its_own_directory_is_under_the_reserved_name() -> None:
+    # `config` spells `.stayfixed` because it imports no area; the areas that keep files there
     # spell their own paths. This holds each of them under the reserved name, so a rename on
     # either side reddens here instead of leaving an area's state unprotected.
-    from keelline.attach.api import LEDGER
-    from keelline.memory.store import LOCAL_STORE
-    from keelline.project.uninstall import ASSESSMENT, LEDGER_DIRS
-    from keelline.scaffold import LOCAL_ARTIFACTS, LOCAL_DIGESTS, LOCAL_ROOT, MANIFEST_PATH
+    from stayfixed.attach.api import LEDGER
+    from stayfixed.memory.store import LOCAL_STORE
+    from stayfixed.project.uninstall import ASSESSMENT, LEDGER_DIRS
+    from stayfixed.scaffold import LOCAL_ARTIFACTS, LOCAL_DIGESTS, LOCAL_ROOT, MANIFEST_PATH
 
     for path in (
         LEDGER,
@@ -366,15 +366,15 @@ def test_every_file_keelline_keeps_in_its_own_directory_is_under_the_reserved_na
         ASSESSMENT,
         *LEDGER_DIRS,
     ):
-        assert path.split("/")[0] == KEELLINE_DIRECTORY, path
+        assert path.split("/")[0] == STAYFIXED_DIRECTORY, path
 
 
-def test_keellines_own_dotted_footprint_is_not_refused(tmp_path: Path) -> None:
-    # The ruling this rule is narrow for: `.github/workflows/keelline.yml` is an artifact this
-    # branch ships and `.keelline/` holds the manifest, so "refuse a leading dot" would refuse
-    # Keelline's own footprint. Pinned so a later widening of the rule fails here rather than in
+def test_stayfixeds_own_dotted_footprint_is_not_refused(tmp_path: Path) -> None:
+    # The ruling this rule is narrow for: `.github/workflows/stayfixed.yml` is an artifact this
+    # branch ships and `.stayfixed/` holds the manifest, so "refuse a leading dot" would refuse
+    # stayfixed's own footprint. Pinned so a later widening of the rule fails here rather than in
     # a user's repository.
-    for value in (".github/workflows/keelline.yml", ".keelline/manifest.json", ".gitignore"):
+    for value in (".github/workflows/stayfixed.yml", ".stayfixed/manifest.json", ".gitignore"):
         assert contained(tmp_path, value) == tmp_path.joinpath(*value.split("/"))
 
 
@@ -383,7 +383,7 @@ def test_a_paths_value_outside_the_grammar_is_refused_in_words(tmp_path: Path) -
     # that is correct and that no person reading a refusal can act on. The value itself is still
     # never quoted.
     (tmp_path / CONFIG_FILE).write_text(
-        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
         '[paths]\nroadmap = "docs//roadmap.md"\n',
         encoding="utf-8",
     )

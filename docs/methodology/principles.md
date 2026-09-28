@@ -1,6 +1,6 @@
 # Principles
 
-Ten principles, numbered so the README can point at one. Each has a statement, what Keelline
+Ten principles, numbered so the README can point at one. Each has a statement, what stayfixed
 does about it today, its sources, and a **Backing** line whose vocabulary
 [README.md](README.md) defines. Citations resolve to [sources.md](sources.md).
 
@@ -11,7 +11,7 @@ closed vocabulary, and — for the severe ones — a line saying what the eviden
 establish. The index over those files is generated, refuses to overwrite content it did not
 write, and is never the place a fact is entered.
 
-**What Keelline does.** `bugs new` allocates the next identifier across every ref, `bugs
+**What stayfixed does.** `bugs new` allocates the next identifier across every ref, `bugs
 index` renders the index as a pure function of the entries, `bugs check` sweeps the code
 roots for identifiers with no entry behind them and entries whose evidence boundary is the
 template's placeholder, and `bugs renumber` moves an entry and rewrites every mention, leaving a
@@ -37,7 +37,7 @@ skills in the format every harness reads [S4] [S14].
 a sentence saying why no mutation exists. A test that cannot fail is not a test; a test that
 fails for a reason other than the one it names proves nothing about that reason.
 
-**What Keelline does.** `mutations.toml` declares, for each load-bearing guard, the one line
+**What stayfixed does.** `mutations.toml` declares, for each load-bearing guard, the one line
 to change and the tests that must go red when it does; `scripts/mutation_oracle.py` applies
 each, runs only the named tests, and fails on a survivor, on a `before` line that no longer
 exists, and on a named test that does not pass on the clean tree first. CI runs the whole
@@ -61,9 +61,9 @@ to where the evidence lives. The index carries one line per note — a trigger a
 note settles — and is rendered from those lines, never edited by hand. An entry that can be
 quoted gets quoted instead of opened, so an entry must not read as a finished claim.
 
-**What Keelline does.** Each note's `index:` line is the routing line; `memory index`
+**What stayfixed does.** Each note's `index:` line is the routing line; `memory index`
 renders `MEMORY.md` from them under a declared section order and harvests back any line a
-second writer appended, so the harness's own memory writer and Keelline share one directory
+second writer appended, so the harness's own memory writer and stayfixed share one directory
 without either rewriting the other's keys. `memory inventory` reports each note's size and
 whether its line is curated, harvested or provisional; `memory refs` checks that every path a
 note names still exists; `docs check --memory-graph` checks the link graph.
@@ -89,7 +89,7 @@ Those cannot be routed, because there is no moment at which anyone would look on
 then the reply is in the wrong language. They are injected in full at session start, ranked,
 and never truncated. Everything else is a pointer the index routes to.
 
-**What Keelline does.** `memory session-context` renders four bundles — preset rules,
+**What stayfixed does.** `memory session-context` renders four bundles — preset rules,
 standing rules, volatile notes, the index — each across numbered parts sized to the
 platform's per-entry cap, and `memory fit` reports a bundle that does not fit its slots.
 Standing rules are flagged when they outgrow their budget and still delivered, because a
@@ -114,7 +114,7 @@ names, paths inside the project and document layout; they may never set standing
 widen permissions, install hooks, pick a write path outside the root, or select their own
 enforcement level.
 
-**What Keelline does.** Notes that live in the repository reach the model only after
+**What stayfixed does.** Notes that live in the repository reach the model only after
 `memory trust --in-repo-memory` recorded a hash of the store, and then inside a delimited
 region with a per-invocation nonce that says "this is data". Every write goes through a
 path walk that refuses a symlink at any component and refuses to leave the project root.
@@ -138,7 +138,7 @@ platform blocks on a non-zero exit — before a tool call — and never on sessi
 exit codes are ignored, or on prompt submission, where a blocking exit erases the prompt.
 A guard that cannot fail closed must say so rather than pretend.
 
-**What Keelline does today.** Every handler declares its policy, `open` or `closed`; the
+**What stayfixed does today.** Every handler declares its policy, `open` or `closed`; the
 guards over a shell call, a commit message and a test run are closed, the memory handlers
 open. Not this, yet: the guarantee belongs in a shell wrapper rather than in Python, because
 a Python process cannot fail closed about its own absence — the wrapper is designed to probe
@@ -164,9 +164,9 @@ not take. A gate should run advisory until the repository has been brought to th
 where it would pass, and only then enforce — and the decision to enforce should be read from
 the base branch, never from the change under review.
 
-**What Keelline does today.** The state machine ships per gate. `keelline assess` inventories
-what stands between a repository and enforcement. `keelline adopt begin` starts an adoption
-with a plan, and `keelline adopt promote` enforces every gate that passes now and names the
+**What stayfixed does today.** The state machine ships per gate. `stayfixed assess` inventories
+what stands between a repository and enforcement. `stayfixed adopt begin` starts an adoption
+with a plan, and `stayfixed adopt promote` enforces every gate that passes now and names the
 rest, or enforces the gates it is given only if all of them pass. The gate a pull request faces
 reads the base branch's configuration and admits only a change that tightens it, under the
 repository settings `docs/cli.md` names. What it does not do yet is hold the line inside a gate
@@ -189,7 +189,7 @@ travel as a plugin that declares a dependency on the public one and carries its 
 manifest — installable on a fresh machine by the same command that installs everything
 else, private by construction, and never a prerequisite for the public tool to be useful.
 
-**What Keelline does today.** The public plugin runs with `memory.mode = "local-only"` and
+**What stayfixed does today.** The public plugin runs with `memory.mode = "local-only"` and
 no overlay; `overlay` mode, `attach` and the template repository are later work packages.
 The memory store's resolution already honours an overlay symlink only when its target lies
 inside a recorded overlay root that binds this repository's remote.
@@ -215,7 +215,7 @@ reach installed users. A project's reference to a shared workflow is a full-leng
 SHA written by the tool that installed it and bumped by the tool that upgrades it; a
 floating alias is a documented opt-in.
 
-**What Keelline does.** `release check` cross-checks the version across `pyproject.toml`,
+**What stayfixed does.** `release check` cross-checks the version across `pyproject.toml`,
 the lockfile, the package, both plugin manifests and `CHANGELOG.md`; the marketplace
 entries carry no version because the plugin's own overrides it silently [S6]. Changelog
 entries are fragments assembled at release [S12]. The CLI installs from a git tag with no
@@ -234,7 +234,7 @@ is built on it. And everything durable — documents, comments, commits, pull re
 written in one language, whatever language the conversation is in, because artifacts are
 read by tools, by later contributors and by a possible public extraction.
 
-**What Keelline does.** The freshness rule is the row grammar of [sources.md](sources.md)
+**What stayfixed does.** The freshness rule is the row grammar of [sources.md](sources.md)
 and a test over it; the artifact language is a machine-level setting (`artifact_language`)
 beside the reply language, so the split is configured once per person rather than restated
 per project. The four "harness" sources in the [README](README.md) are the freshness rule's

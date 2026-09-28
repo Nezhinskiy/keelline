@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from keelline.assess.gates import BUILTIN
-from keelline.assess.probes import PROBES
+from stayfixed.assess.gates import BUILTIN
+from stayfixed.assess.probes import PROBES
 from tests.test_documents import principle_sections
 
 

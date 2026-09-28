@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from keelline.cli import build_parser, discover_registrars, run
-from keelline.errors import Refusal
-from keelline.overlay.api import create, init_instance
-from keelline.overlay.upgrade import upgrade
-from keelline.scaffold import MANIFEST_PATH, Verb, digest
+from stayfixed.cli import build_parser, discover_registrars, run
+from stayfixed.errors import Refusal
+from stayfixed.overlay.api import create, init_instance
+from stayfixed.overlay.upgrade import upgrade
+from stayfixed.scaffold import MANIFEST_PATH, Verb, digest
 from tests.overlay.test_create import FakeRunner
 
 
@@ -77,7 +77,7 @@ def test_a_directory_that_is_not_an_overlay_is_refused_before_anything_is_writte
     tmp_path: Path,
 ) -> None:
     # `--root` defaults to `.` and was checked nowhere: in a directory
-    # holding a `README.md` and a `src/main.py`, `keelline overlay upgrade --root .` created
+    # holding a `README.md` and a `src/main.py`, `stayfixed overlay upgrade --root .` created
     # the whole overlay — both plugin manifests, `hooks/hooks.json`, `common/**`, `.gitignore`
     # and `.github/workflows/scan.yml` — reported them as work done and exited 0. (Fourteen
     # files when the defect was found; `OVERLAY_FILES` is sixteen now, which is why the
@@ -113,8 +113,8 @@ def test_the_cli_exits_two_rather_than_zero_on_a_directory_that_is_not_an_overla
 def test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release(tmp_path: Path) -> None:
     # `overlay init` rewrote both manifests behind the scaffold ledger, so
     # every later `upgrade` reported `skip_modified .claude-plugin/plugin.json (hand-edited)` —
-    # for the one file carrying `keelline.requires`, the version-compatibility declaration the
-    # README advertises, and attributing to the owner an edit Keelline itself made. `init` now
+    # for the one file carrying `stayfixed.requires`, the version-compatibility declaration the
+    # README advertises, and attributing to the owner an edit stayfixed itself made. `init` now
     # re-stamps each record with the bytes it wrote.
     #
     # Mutation (`mutations.toml`, "overlay init writes the manifests behind the scaffold
@@ -130,7 +130,7 @@ def test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release(tmp_path:
     # Still a manifest that names this overlay — a release moving the file is what is being
     # modelled, not an owner breaking it — but with the older body a release has left behind.
     (root / ".claude-plugin" / "plugin.json").write_text(
-        json.dumps({"name": "keelline-overlay-octocat", "version": "0.0.0"}) + "\n",
+        json.dumps({"name": "stayfixed-overlay-octocat", "version": "0.0.0"}) + "\n",
         encoding="utf-8",
     )
     _restamp(root, ".claude-plugin/plugin.json")

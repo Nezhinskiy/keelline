@@ -8,7 +8,7 @@ package and read by another, and a stub on both sides of a seam agrees with itse
 **Every step runs the real launcher.** Each one used to call a library function, so the
 argv wiring of eight commands — the flag names, the `--yes` gate reached through argparse, the
 `--machine` refusal from a pipe, the JSON `doctor` prints — was exercised by nothing that ran
-them in order. `_cli` below runs `scripts/keelline` in a subprocess, which is how a person and
+them in order. `_cli` below runs `scripts/stayfixed` in a subprocess, which is how a person and
 how a skill reach these commands.
 
 Nothing here touches the network, the real `~`, or any harness binary. `HOME` is a scratch
@@ -37,12 +37,12 @@ from pathlib import Path
 
 import pytest
 
-import keelline
-from keelline.attach.hooks import NOT_ATTACHED, REAL_DIRECTORIES
-from keelline.config.loader import CONFIG_FILE, load
-from keelline.doctor.api import OK, RED, SKIP, run_checks
-from keelline.memory.api import DELIMITER, PROJECTS, harness_memory_path, markers
-from keelline.runner import Completed
+import stayfixed
+from stayfixed.attach.hooks import NOT_ATTACHED, REAL_DIRECTORIES
+from stayfixed.config.loader import CONFIG_FILE, load
+from stayfixed.doctor.api import OK, RED, SKIP, run_checks
+from stayfixed.memory.api import DELIMITER, PROJECTS, harness_memory_path, markers
+from stayfixed.runner import Completed
 from tests.floor import developer_free_environ
 from tests.gitfixture import git
 from tests.snapshot import (
@@ -70,7 +70,7 @@ NOTE = (
     f"metadata:\n  type: rule\n  startup: 1\n---\n\n{RULE_BODY}\n"
 )
 
-CONFIG = """[keelline]
+CONFIG = """[stayfixed]
 version = "{version}"
 state = "installed"
 
@@ -105,7 +105,7 @@ def _project(tmp_path: Path, *, mode: str, initialised: bool = False) -> Path:
 
     **`initialised` does not run `init` here.** It builds the repository `init` is run *over*:
     notes already in `paths.memory` as real directories, `[ci] mode = "none"`, and one commit,
-    so the history predates Keelline. `keelline init --yes` is `_install_path`'s step 0, which
+    so the history predates stayfixed. `stayfixed init --yes` is `_install_path`'s step 0, which
     is where the launcher environment lives. The flag keeps the name `_install_path` gives it,
     because renaming one of the pair would split them.
 
@@ -113,11 +113,11 @@ def _project(tmp_path: Path, *, mode: str, initialised: bool = False) -> Path:
     would have `init` reach for the release pin and a remote, which is a different test's subject.
     The commit matters because `init` then writes its footprint on top of a tree that was already
     committed, which is the order an adopting project meets it in, and the notes moved later are
-    notes that were tracked before Keelline arrived.
+    notes that were tracked before stayfixed arrived.
     """
     root = tmp_path / "project"
     root.mkdir(parents=True, exist_ok=True)
-    document = CONFIG.format(version=keelline.__version__, project=PROJECT, mode=mode)
+    document = CONFIG.format(version=stayfixed.__version__, project=PROJECT, mode=mode)
     if initialised:
         document += '[ci]\nmode = "none"\n'
     (root / CONFIG_FILE).write_text(document, encoding="utf-8")
@@ -136,7 +136,7 @@ def _project(tmp_path: Path, *, mode: str, initialised: bool = False) -> Path:
             "user.name=a",
             "commit",
             "-qm",
-            "chore: before keelline",
+            "chore: before stayfixed",
         )
     return root
 
@@ -204,7 +204,7 @@ def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.Complet
     env["PATH"] = f"{walk.bin}{os.pathsep}{env.get('PATH', '')}"
     env["CLAUDE_PLUGIN_ROOT"] = str(ROOT)
     env["CLAUDE_PLUGIN_DATA"] = str(walk.data)
-    command = [sys.executable, str(ROOT / "scripts" / "keelline"), *argv]
+    command = [sys.executable, str(ROOT / "scripts" / "stayfixed"), *argv]
     if not tty:
         return subprocess.run(
             command,
@@ -258,7 +258,7 @@ def _install_path(tmp_path: Path, *, initialised: bool = False, attach: bool = T
     project is exactly the shape of tree a hostile clone can ship.
 
     `initialised` walks the same steps over a repository that already has its notes in
-    `paths.memory` and has had `keelline init` run over it, which is the shape the owner's own
+    `paths.memory` and has had `stayfixed init` run over it, which is the shape the owner's own
     repository is in. Step 4 then has one more beat in the middle: `--check` finds the group
     that never moved and exits 1, the notes are moved by hand — the owner's act, which no
     command performs — and the attach is taken over a repository with nothing to link over.
@@ -273,7 +273,7 @@ def _install_path(tmp_path: Path, *, initialised: bool = False, attach: bool = T
     """
     home = tmp_path / "home"
     data = tmp_path / "plugin-data"
-    machine = tmp_path / "config" / "keelline" / "config.toml"
+    machine = tmp_path / "config" / "stayfixed" / "config.toml"
     machine.parent.mkdir(parents=True)
     bin_dir = tmp_path / "bin"
     _fake_binaries(bin_dir)
@@ -281,9 +281,9 @@ def _install_path(tmp_path: Path, *, initialised: bool = False, attach: bool = T
     root = _project(tmp_path, mode="overlay", initialised=initialised)
     overlays = tmp_path / "overlays"
     overlays.mkdir()
-    # Where `overlay create --root <overlays> --name keelline-private` puts it, which
+    # Where `overlay create --root <overlays> --name stayfixed-private` puts it, which
     # `overlay.create.target_root` computes from the arguments alone.
-    overlay = overlays / "keelline-private"
+    overlay = overlays / "stayfixed-private"
     store = overlay / PROJECTS / PROJECT / "memory"
     walk = Walkthrough(root, overlay, machine, home, data, store, bin_dir)
 
@@ -293,12 +293,12 @@ def _install_path(tmp_path: Path, *, initialised: bool = False, attach: bool = T
         return done
 
     # 0. the project footprint, on the repository that came with notes and a history. `init`
-    # adopts the `keelline.toml` already there without rewriting it (a `Kind.ONCE` artifact
+    # adopts the `stayfixed.toml` already there without rewriting it (a `Kind.ONCE` artifact
     # whose file is present is skipped), so the document above is still the document below,
     # and the manifest is the witness that the footprint pass ran.
     if initialised:
         step("init", "--yes", "--root", str(root), "--machine", str(machine))
-        assert (root / ".keelline" / "manifest.json").is_file(), "`init` recorded no manifest"
+        assert (root / ".stayfixed" / "manifest.json").is_file(), "`init` recorded no manifest"
     # 1. the overlay, rendered from the shipped template with no network call.
     step(
         "overlay",
@@ -306,7 +306,7 @@ def _install_path(tmp_path: Path, *, initialised: bool = False, attach: bool = T
         "--owner",
         OWNER,
         "--name",
-        "keelline-private",
+        "stayfixed-private",
         "--local",
         "--root",
         str(overlays),
@@ -402,10 +402,10 @@ def _session(
     """One `hooks.json` entry, run the way a harness runs it: through the wrapper, raw.
 
     `HOME` and `--machine` both point into the scratch tree, so nothing here can read the
-    developer's own `~/.claude` or `~/.config/keelline`.
+    developer's own `~/.claude` or `~/.config/stayfixed`.
 
-    `machine=False` for `keelline hook <event>`, which takes no such flag: the dispatcher hands
-    every handler `machine=None` on purpose, so a handler reads `<HOME>/.config/keelline/` and
+    `machine=False` for `stayfixed hook <event>`, which takes no such flag: the dispatcher hands
+    every handler `machine=None` on purpose, so a handler reads `<HOME>/.config/stayfixed/` and
     nothing a session can name. `HOME` above is what keeps that inside the scratch tree, and a
     caller that wants the hook path to see a machine file puts one there.
     """
@@ -432,7 +432,7 @@ def _bundle(walk: Walkthrough, bundle: str, part: int = 1) -> subprocess.Complet
 def _doctor_env(walk: Walkthrough) -> dict[str, str]:
     """The environment a harness session has: a data root, and neither ignored variable."""
     # `HOME` is here because `doctor`'s `wrapper` check hands this environment to a real
-    # subprocess: without it the wrapper's `keelline --version` builds the default machine path
+    # subprocess: without it the wrapper's `stayfixed --version` builds the default machine path
     # out of the developer's own home directory, which is a read this suite does not make.
     return {
         "PATH": os.environ.get("PATH", ""),
@@ -516,7 +516,7 @@ def test_a_wrapped_bundle_arrives_with_both_of_its_region_markers(tmp_path: Path
     # `in-repo` mode, because that is the mode in which a store is repository data and a region
     # is what wraps it. Same wrapper, same command, same scratch machine file.
     root = _project(tmp_path, mode="in-repo")
-    machine = tmp_path / "config" / "keelline" / "config.toml"
+    machine = tmp_path / "config" / "stayfixed" / "config.toml"
     machine.parent.mkdir(parents=True)
     notes = root / "docs" / "memory" / "project-stable"
     notes.mkdir(parents=True)
@@ -547,14 +547,14 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
     # The walkthrough's own steps are repeated here rather than reused, because the snapshot has
     # to be taken between `setup` and `attach` and `_install_path` runs both.
     home = tmp_path / "home"
-    machine = tmp_path / "config" / "keelline" / "config.toml"
+    machine = tmp_path / "config" / "stayfixed" / "config.toml"
     machine.parent.mkdir(parents=True)
     bin_dir = tmp_path / "bin"
     _fake_binaries(bin_dir)
     root = _project(tmp_path, mode="overlay")
     overlays = tmp_path / "overlays"
     overlays.mkdir()
-    overlay = overlays / "keelline-private"
+    overlay = overlays / "stayfixed-private"
     store = overlay / PROJECTS / PROJECT / "memory"
     walk = Walkthrough(root, overlay, machine, home, tmp_path / "plugin-data", store, bin_dir)
 
@@ -568,7 +568,7 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
         "--owner",
         OWNER,
         "--name",
-        "keelline-private",
+        "stayfixed-private",
         "--local",
         "--root",
         str(overlays),
@@ -605,11 +605,11 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
     # Green meaning: no `red`, and the only `skip`s are the one this build cannot answer — the
     # Codex hook-trust hash nothing has measured yet — and `ci-ref`, which skips on a state this
     # fixture is in rather than on a limit of the build: it records no `[ci] ref`, because no
-    # released tag matches the Keelline running here for `init` to have pinned.
+    # released tag matches the stayfixed running here for `init` to have pinned.
     # `files` is not among them: the release ships `hooks/hashes.json`, and this walk runs
     # against the checkout, so the row compares the three shipped files against the record
     # committed beside them and is green. A `files` back in this list means the
-    # record went stale — `uv run keelline release hashes` is what refreshes it.
+    # record went stale — `uv run stayfixed release hashes` is what refreshes it.
     walk = _install_path(tmp_path)
     rows = _doctor(walk)
     assert [row["name"] for row in rows if row["status"] == RED] == []
@@ -620,7 +620,7 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
     assert next(row for row in rows if row["name"] == "files")["status"] == OK
 
 
-# What `keelline.doctor` says it launches, in `__init__`'s own paragraph and again in
+# What `stayfixed.doctor` says it launches, in `__init__`'s own paragraph and again in
 # `docs/cli.md`: four subprocesses on a green attached installation *besides* the `ci-ref` row,
 # which the stub runner below answers in process rather than launching — so four here and five
 # in production on a repository that records a `[ci] ref`, which is what both documents now say.
@@ -643,7 +643,7 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
     #
     # `Popen` and not `subprocess.run`: `run` is a wrapper around it, so patching the lower of
     # the two counts a caller that reached past `run` as well. `ci-ref` is not among these — it
-    # goes through `keelline.runner.Runner`, which the stub below answers, and it is the only
+    # goes through `stayfixed.runner.Runner`, which the stub below answers, and it is the only
     # one that would leave the machine.
     #
     # **The one test here that keeps the library seam**, and the reason is the measurement
@@ -708,7 +708,7 @@ def test_attach_refuses_machine_from_a_pipe_and_honours_it_from_a_terminal(tmp_p
 
 def test_init_then_the_walkthrough_ends_with_the_rule_in_a_session(tmp_path: Path) -> None:
     # The whole slice, in the order the owner walks it and on the repository shape they
-    # actually have: a project with notes already in it, `keelline init` run over it, the
+    # actually have: a project with notes already in it, `stayfixed init` run over it, the
     # attach refused because those notes never moved, the notes moved by hand, the attach
     # taken, and a session reading the moved note back through the wrapper.
     #
@@ -723,13 +723,13 @@ def test_init_then_the_walkthrough_ends_with_the_rule_in_a_session(tmp_path: Pat
     assert RULE_BODY in done.stdout
     rows = _doctor(walk)
     assert len(rows) == 16 and not [row for row in rows if row["status"] == RED]
-    assert (walk.root / ".keelline" / "manifest.json").is_file()
+    assert (walk.root / ".stayfixed" / "manifest.json").is_file()
 
 
 def test_a_session_before_the_attach_is_told_what_is_missing(tmp_path: Path) -> None:
     # The handler through the wrapper, on the one state it exists for: initialised, not yet
     # attached, notes still in the repository. It reads the machine file the hook path reads —
-    # `<home>/.config/keelline/config.toml` — and not the walkthrough's own, so the walkthrough's
+    # `<home>/.config/stayfixed/config.toml` — and not the walkthrough's own, so the walkthrough's
     # file is copied there for the hook alone.
     #
     # The envelope is raw JSON with `additionalContext` inside; both constants are single lines
@@ -739,7 +739,7 @@ def test_a_session_before_the_attach_is_told_what_is_missing(tmp_path: Path) -> 
     # What would break it: drop either line from the handler, or let the binding read as bound
     # or the group count as zero, and the corresponding `in` fails.
     walk = _install_path(tmp_path, initialised=True, attach=False)
-    hook_machine = walk.home / ".config" / "keelline" / "config.toml"
+    hook_machine = walk.home / ".config" / "stayfixed" / "config.toml"
     hook_machine.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(walk.machine, hook_machine)
     done = _session(walk, "hook", "SessionStart", machine=False)
@@ -749,17 +749,17 @@ def test_a_session_before_the_attach_is_told_what_is_missing(tmp_path: Path) -> 
 
 
 def test_detach_on_an_initialised_project_leaves_the_footprint(tmp_path: Path) -> None:
-    # The ignore region's ownership, end to end. `init` recorded the `keelline:ignore` region as the
-    # footprint's, so the detach that takes back everything `attach` added leaves that block where
-    # it is — and the manifest with it, because `detach` never touches the scaffold ledger.
+    # The ignore region's ownership, end to end. `init` recorded the `stayfixed:ignore` region as
+    # the footprint's, so the detach that takes back everything `attach` added leaves that block
+    # where it is — and the manifest with it, because `detach` never touches the scaffold ledger.
     #
     # What would break it: withdraw the region unconditionally and `.gitignore` loses its
     # block, so the byte comparison fails.
     walk = _install_path(tmp_path, initialised=True)
     ignore_before = (walk.root / ".gitignore").read_text(encoding="utf-8")
     # Non-vacuous: the block this asserts survives has to be there before the detach.
-    assert "keelline:ignore" in ignore_before
+    assert "stayfixed:ignore" in ignore_before
     done = _cli(walk, "detach", "--root", str(walk.root), "--machine", str(walk.machine), tty=True)
     assert done.returncode == 0, done.stderr
     assert (walk.root / ".gitignore").read_text(encoding="utf-8") == ignore_before
-    assert (walk.root / ".keelline" / "manifest.json").is_file()
+    assert (walk.root / ".stayfixed" / "manifest.json").is_file()

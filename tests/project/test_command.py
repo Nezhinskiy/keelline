@@ -1,4 +1,4 @@
-"""`keelline init` through the real parser: the flags, the exit codes and the `--json` keys.
+"""`stayfixed init` through the real parser: the flags, the exit codes and the `--json` keys.
 
 Nothing here reaches the network, and it is kept out three ways. Every case that writes or plans
 a footprint but one goes through `_invoke`, which appends `--no-ci`: with `[ci] mode` set to
@@ -22,22 +22,22 @@ from typing import Any
 
 import pytest
 
-from keelline.cli import build_parser, discover_registrars, run
-from keelline.config.loader import load, loads
-from keelline.config.schema import NAME_RULE, Config
-from keelline.findings import LISTED_LIMIT
-from keelline.project.commands import CUSTOM_GATES, STAMPED, run_init
-from keelline.project.init import (
+from stayfixed.cli import build_parser, discover_registrars, run
+from stayfixed.config.loader import load, loads
+from stayfixed.config.schema import NAME_RULE, Config
+from stayfixed.findings import LISTED_LIMIT
+from stayfixed.project.commands import CUSTOM_GATES, STAMPED, run_init
+from stayfixed.project.init import (
     HEAD_CURRENT,
     HEAD_DEFAULTED,
     HEAD_REMOTES_UNKNOWN,
     HEAD_UNRECORDED,
 )
-from keelline.project.templates import _ci
-from keelline.project.uninstall import KEPT_CONFIG
-from keelline.release.api import Resolution
-from keelline.runner import Completed
-from keelline.scaffold import Manifest
+from stayfixed.project.templates import _ci
+from stayfixed.project.uninstall import KEPT_CONFIG
+from stayfixed.release.api import Resolution
+from stayfixed.runner import Completed
+from stayfixed.scaffold import Manifest
 from tests.cli import cli
 from tests.gitfixture import git, needs_git
 from tests.project.repos import DOCUMENT, repository
@@ -88,13 +88,13 @@ def test_without_yes_the_command_refuses_and_names_the_command_that_prints_the_q
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The refusal names the command that prints the questions, so a relayer has the next step.
-    # Mutation (by hand): the refusal names `keelline init` alone -> the first `in` reddens.
+    # Mutation (by hand): the refusal names `stayfixed init` alone -> the first `in` reddens.
     root = repository(tmp_path)
     code, printed = _invoke(root, tmp_path)
     assert code == 2 and printed == ""
     stderr = capsys.readouterr().err
-    assert "`keelline init --questions`" in stderr and "--yes" in stderr
-    assert not (root / ".keelline").exists()
+    assert "`stayfixed init --questions`" in stderr and "--yes" in stderr
+    assert not (root / ".stayfixed").exists()
 
 
 @needs_git
@@ -110,7 +110,7 @@ def test_a_dry_run_prints_both_reports_and_says_it_wrote_nothing(tmp_path: Path)
     assert "CLAUDE.md" in data["once"] and "CLAUDE.md" not in data["footprint"]
     assert ".gitignore" in data["footprint"]
     assert data["adopted"] is False and data["pin"] is None
-    assert set(data["writes"]) >= {"CLAUDE.md", "keelline.toml", ".gitignore"}
+    assert set(data["writes"]) >= {"CLAUDE.md", "stayfixed.toml", ".gitignore"}
     assert not (root / "CLAUDE.md").exists()
 
 
@@ -128,7 +128,7 @@ def test_a_real_run_prints_both_reports_in_full_and_the_ci_line(tmp_path: Path) 
     assert "create         CLAUDE.md  (new)" in printed
     assert "create         docs/adr/0000-template.md  (new)" in printed
     assert "CI: skipped — [ci] mode is none" in printed
-    assert (root / ".keelline" / "manifest.json").is_file()
+    assert (root / ".stayfixed" / "manifest.json").is_file()
 
 
 @needs_git
@@ -136,12 +136,12 @@ def test_a_refused_footprint_exits_one_with_the_refused_section_in_that_report(
     tmp_path: Path,
 ) -> None:
     root = repository(tmp_path)
-    (root / "AGENTS.md").write_text("# Mine\n\n<!-- keelline:harness:end -->\n", encoding="utf-8")
+    (root / "AGENTS.md").write_text("# Mine\n\n<!-- stayfixed:harness:end -->\n", encoding="utf-8")
     code, printed = _invoke(root, tmp_path, "--yes", "--json")
     assert code == 1, printed
     data = json.loads(printed)
     assert "REFUSED" in data["footprint"] and "REFUSED" not in data["once"]
-    assert not (root / ".keelline").exists()
+    assert not (root / ".stayfixed").exists()
     # And in plain text, which is the output a person meets on this path: the REFUSED section
     # with the artifact and the engine's reason, and a heading that does not claim otherwise.
     code, plain = _invoke(root, tmp_path, "--yes")
@@ -179,15 +179,15 @@ def test_a_hostile_gate_branch_is_reported_as_a_skipped_workflow_and_not_as_a_pi
     # the one case in this module that does not pass `--no-ci` — so the command really reaches the
     # release area; the runner it would use is stubbed at the seam `commands.py` builds it from, so
     # no network call is made and the answer is one released tag.
-    from keelline import runner as runner_module
+    from stayfixed import runner as runner_module
 
     root = repository(tmp_path)
     # A recorded ref as well: the branch check is reached only once there is a ref to render,
     # and it is deliberately not the sha the stub listing resolves, so the assertions below can
     # tell the two sources apart.
     recorded = "e" * 40
-    (root / "keelline.toml").write_text(
-        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+    (root / "stayfixed.toml").write_text(
+        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
         f'[ci]\nref = "{recorded}"\ngate_branch = "main\'; rm -rf"\n',
         encoding="utf-8",
     )
@@ -209,15 +209,15 @@ def test_an_adopted_ref_is_reported_as_the_repositorys_own_and_not_as_a_release(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The summary's third arm, and the one the invariant needs: a workflow was planned, but from
-    # the ref `keelline.toml` already recorded rather than from the pin this run resolved. Naming
+    # the ref `stayfixed.toml` already recorded rather than from the pin this run resolved. Naming
     # the resolved release here would assert that the gate GitHub runs is that release's, which
     # is exactly what `doctor`'s `ci-ref` row would then report as red.
-    from keelline import runner as runner_module
+    from stayfixed import runner as runner_module
 
     root = repository(tmp_path)
     recorded = "e" * 40
-    (root / "keelline.toml").write_text(
-        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+    (root / "stayfixed.toml").write_text(
+        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
         f'[ci]\nmode = "reusable"\nref = "{recorded}"\n',
         encoding="utf-8",
     )
@@ -235,13 +235,13 @@ def test_an_adopted_ref_is_reported_as_the_repositorys_own_and_not_as_a_release(
     assert code == 0, plain
     assert "CI: the workflow pins the [ci] ref this repository already recorded" in plain
     assert f"v0.1.0@{sha}" not in plain
-    workflow = (root / ".github" / "workflows" / "keelline.yml").read_text(encoding="utf-8")
+    workflow = (root / ".github" / "workflows" / "stayfixed.yml").read_text(encoding="utf-8")
     assert f"check.yml@{recorded}" in workflow and sha not in workflow
 
 
 def _ci_config(mode: str, ref: str, tmp_path: Path) -> Config:
     text = (
-        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
         f'[ci]\nmode = "{mode}"\nref = "{ref}"\n'
     )
     return loads(text, tmp_path, machine=tmp_path / "absent.toml")
@@ -301,19 +301,19 @@ def test_the_ci_line_has_no_arm_no_run_can_reach(tmp_path: Path) -> None:
 
 @needs_git
 def test_a_harness_no_adapter_serves_is_counted_and_never_named(tmp_path: Path) -> None:
-    # `[keelline] agents` is repository-authored, so the report prints how many names went
+    # `[stayfixed] agents` is repository-authored, so the report prints how many names went
     # unserved and none of them. Mutation: print the loaded `agents` names beside the count on
     # the note line -> the `cursor` and ESC assertion reddens. (Printing them instead of the
     # count reddens the note assertion first, which proves nothing about the names.)
     root = repository(tmp_path)
-    (root / "keelline.toml").write_text(
-        '[keelline]\nversion = "0.1.0"\nagents = ["claude", "cursor\\u001b[31m"]\n\n'
+    (root / "stayfixed.toml").write_text(
+        '[stayfixed]\nversion = "0.1.0"\nagents = ["claude", "cursor\\u001b[31m"]\n\n'
         '[project]\nname = "widget"\n',
         encoding="utf-8",
     )
     code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
     assert code == 0, printed
-    assert "note: 1 name(s) in [keelline] agents name no harness" in printed
+    assert "note: 1 name(s) in [stayfixed] agents name no harness" in printed
     assert "cursor" not in printed and "\x1b" not in printed
     code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
     assert json.loads(printed)["unknown_harnesses"] == 1
@@ -338,7 +338,7 @@ def test_questions_print_each_default_with_its_source_and_write_nothing(tmp_path
     assert code == 0, printed
     assert json.loads(printed)["questions"]["type"] == "object"
     assert_snapshot_unchanged(root, before)
-    assert not (root / ".keelline").exists()
+    assert not (root / ".stayfixed").exists()
 
 
 @needs_git
@@ -360,13 +360,13 @@ def test_questions_take_no_flag_that_writes_or_plans(
     assert code == 2 and printed == ""
     with pytest.raises(SystemExit):
         _run(root, tmp_path, "--questions", "--yes")
-    assert not (root / ".keelline").exists()
+    assert not (root / ".stayfixed").exists()
 
 
 @needs_git
 def test_a_remote_head_outside_the_grammar_is_noted_and_never_quoted(tmp_path: Path) -> None:
     # `init --yes` writes `main` where `origin/HEAD` named a branch outside the grammar, so the
-    # report says the default replaced it, in Keelline's words, without the remote's. Mutation
+    # report says the default replaced it, in stayfixed's words, without the remote's. Mutation
     # (by hand): the note dropped from the report -> the note assertion reddens.
     root = repository(tmp_path)
     code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
@@ -406,19 +406,19 @@ def test_a_pushed_repository_on_a_feature_branch_gates_main_and_says_how_to_reco
     git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
     git(root, "remote", "set-url", "origin", str(bare))
     git(root, "push", "-q", "-u", "origin", "main")
-    git(root, "checkout", "-q", "-b", "chore/adopt-keelline")
+    git(root, "checkout", "-q", "-b", "chore/adopt-stayfixed")
     code, printed = _invoke(root, tmp_path, "--yes")
     assert code == 0 and f"note: {HEAD_UNRECORDED}" in printed, printed
     assert "`git remote set-head origin --auto`" in HEAD_UNRECORDED
     assert load(root).project.base_branch == "main"
-    assert "chore/adopt-keelline" not in (root / "keelline.toml").read_text(encoding="utf-8")
+    assert "chore/adopt-stayfixed" not in (root / "stayfixed.toml").read_text(encoding="utf-8")
     # Once `origin/HEAD` is recorded, it answers, and there is nothing to note.
     other = repository(tmp_path / "b")
     git(other, "commit", "-q", "--allow-empty", "-m", "one")
     git(other, "remote", "set-url", "origin", str(bare))
     git(other, "fetch", "-q", "origin")
     git(other, "remote", "set-head", "origin", "--auto")
-    git(other, "checkout", "-q", "-b", "chore/adopt-keelline")
+    git(other, "checkout", "-q", "-b", "chore/adopt-stayfixed")
     code, printed = _invoke(other, tmp_path, "--yes", "--dry-run", "--json")
     assert code == 0 and json.loads(printed)["head_note"] == "", printed
     git(other, "remote", "set-head", "origin", "--delete")
@@ -453,7 +453,7 @@ def test_a_repository_whose_only_remote_is_upstream_gates_main_and_says_how_to_a
         git(tmp_path, "clone", "-q", "--bare", str(seed), str(bare))
         git(tmp_path, "clone", "-q", "-o", "upstream", str(bare), "widget")
         root = tmp_path / "widget"
-    git(root, "checkout", "-q", "-b", "chore/adopt-keelline")
+    git(root, "checkout", "-q", "-b", "chore/adopt-stayfixed")
     code, printed = _invoke(root, tmp_path, "--yes", "--name", "widget")
     assert code == 0 and f"note: {HEAD_UNRECORDED}" in printed, printed
     assert "--base-branch BRANCH" in HEAD_UNRECORDED
@@ -467,7 +467,7 @@ def test_remotes_git_cannot_list_leave_main_with_a_note_of_their_own(
     # No answer to `git remote` is not "no remote": the branch checked out is not taken, and the
     # note says git could not tell. Mutation (oracle): "remotes git cannot list are never noted"
     # -> the note is missing.
-    from keelline.gitenv import git_run as real
+    from stayfixed.gitenv import git_run as real
 
     root = repository(tmp_path, origin=None)
     git(root, "symbolic-ref", "HEAD", "refs/heads/develop")
@@ -475,7 +475,7 @@ def test_remotes_git_cannot_list_leave_main_with_a_note_of_their_own(
     def unanswered(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
         return (-1, "") if args[0] == "remote" else real(where, *args, **kwargs)
 
-    monkeypatch.setattr("keelline.project.detect.git_run", unanswered)
+    monkeypatch.setattr("stayfixed.project.detect.git_run", unanswered)
     code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
     assert code == 0 and json.loads(printed)["head_note"] == HEAD_REMOTES_UNKNOWN, printed
 
@@ -506,7 +506,7 @@ def _answers(schema: dict[str, Any]) -> list[str]:
         value = question.get("default", "widget" if key == "project.name" else None)
         assert value is not None, key
         for item in value if isinstance(value, list) else [value]:
-            argv += [question["x-keelline-flag"], item]
+            argv += [question["x-stayfixed-flag"], item]
     return argv
 
 
@@ -588,22 +588,22 @@ def test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing(
     assert "\\Z" not in err
     if "--name" in argv:
         assert NAME_RULE in err
-    assert not (root / ".keelline").exists() and not (root / "keelline.toml").exists()
+    assert not (root / ".stayfixed").exists() and not (root / "stayfixed.toml").exists()
 
 
 @needs_git
 def test_an_answer_over_a_document_the_user_wrote_is_refused(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Answers reach only a document this run creates; a `keelline.toml` already there is the
+    # Answers reach only a document this run creates; a `stayfixed.toml` already there is the
     # answer, so a flag over it would be silently dropped. Mutation (oracle): "an answer
-    # overrides a keelline.toml the user wrote" -> the first run adopts the file and exits 0.
+    # overrides a stayfixed.toml the user wrote" -> the first run adopts the file and exits 0.
     root = repository(tmp_path)
-    (root / "keelline.toml").write_text(DOCUMENT, encoding="utf-8")
+    (root / "stayfixed.toml").write_text(DOCUMENT, encoding="utf-8")
     before = snapshot(root)
     code, printed = _invoke(root, tmp_path, "--yes", "--name", "other")
     assert code == 2 and printed == ""
-    assert "already has a keelline.toml" in capsys.readouterr().err
+    assert "already has a stayfixed.toml" in capsys.readouterr().err
     code, printed = _invoke(root, tmp_path, "--name", "other")
     assert code == 2 and printed == ""
     assert "--yes" in capsys.readouterr().err
@@ -617,14 +617,14 @@ def test_a_refused_adoption_says_its_version_would_be_written(tmp_path: Path) ->
     # refused adoption reports its version stamp as written".
     root = repository(tmp_path)
     hand_written = '[project]\nname = "widget"\n'
-    (root / "keelline.toml").write_text(hand_written, encoding="utf-8")
+    (root / "stayfixed.toml").write_text(hand_written, encoding="utf-8")
     (root / "CLAUDE.md").mkdir()
     code, printed = _invoke(root, tmp_path, "--yes")
     assert code == 1, printed
     assert STAMPED.format(verb="would write") in printed
     assert STAMPED.format(verb="wrote") not in printed
-    assert (root / "keelline.toml").read_text(encoding="utf-8") == hand_written
-    assert not (root / ".keelline" / "manifest.json").exists()
+    assert (root / "stayfixed.toml").read_text(encoding="utf-8") == hand_written
+    assert not (root / ".stayfixed" / "manifest.json").exists()
 
 
 def _gates(*names: str) -> str:
@@ -635,12 +635,12 @@ def _gates(*names: str) -> str:
 def test_an_adopted_document_s_custom_gates_are_named_in_a_note_before_anything_runs_them(
     tmp_path: Path,
 ) -> None:
-    # A clone's `keelline.toml` configures commands, and `keelline assess`, the next step of
+    # A clone's `stayfixed.toml` configures commands, and `stayfixed assess`, the next step of
     # the adoption, runs them: the dry run the person approves has to say so, naming each gate
     # (the loader holds names to a grammar) and never a command. Mutation (declared): the note
     # left out -> the dry run says nothing about the commands.
     root = repository(tmp_path)
-    (root / "keelline.toml").write_text(DOCUMENT + _gates("tests", "lint"), encoding="utf-8")
+    (root / "stayfixed.toml").write_text(DOCUMENT + _gates("tests", "lint"), encoding="utf-8")
     code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
     assert json.loads(printed)["custom_gates"] == ["lint", "tests"]
     for argv in (("--yes", "--dry-run"), ("--yes",)):
@@ -651,11 +651,11 @@ def test_an_adopted_document_s_custom_gates_are_named_in_a_note_before_anything_
 
 
 @needs_git
-def test_uninstall_says_it_keeps_a_keelline_toml_you_wrote(tmp_path: Path) -> None:
+def test_uninstall_says_it_keeps_a_stayfixed_toml_you_wrote(tmp_path: Path) -> None:
     # An adopted file is recorded nowhere, so no report line named it, and it stays with the
     # version `init` added. The note says so. Mutation (by hand): the note dropped -> no line.
     root = repository(tmp_path)
-    (root / "keelline.toml").write_text(DOCUMENT, encoding="utf-8")
+    (root / "stayfixed.toml").write_text(DOCUMENT, encoding="utf-8")
     code, printed = _invoke(root, tmp_path, "--yes")
     assert code == 0, printed
     code, out, err = cli(root, tmp_path, "uninstall", "--dry-run")
@@ -664,7 +664,7 @@ def test_uninstall_says_it_keeps_a_keelline_toml_you_wrote(tmp_path: Path) -> No
     code, out, err = cli(root, tmp_path, "uninstall", "--json")
     assert code == 0, err
     assert json.loads(out)["kept_config"] is True
-    assert (root / "keelline.toml").is_file()
+    assert (root / "stayfixed.toml").is_file()
 
 
 @needs_git
@@ -678,7 +678,7 @@ def test_past_the_listed_limit_the_custom_gate_note_counts_the_rest(
     # a limit of its own" -> the exactly-the-limit case reddens.
     root = repository(tmp_path)
     names = [f"g{n:02}" for n in range(LISTED_LIMIT + extra)]
-    (root / "keelline.toml").write_text(DOCUMENT + _gates(*names), encoding="utf-8")
+    (root / "stayfixed.toml").write_text(DOCUMENT + _gates(*names), encoding="utf-8")
     code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
     assert code == 0, printed
     shown = ", ".join(names[:LISTED_LIMIT]) + (f", and {extra} more" if extra else "")
@@ -698,7 +698,7 @@ def test_an_adopted_document_without_a_version_is_named_in_a_note(tmp_path: Path
     # The one line `init` writes into a file a person wrote is said, in the text and in
     # `--json`. Mutation (oracle): "an adopted document's added version goes unmentioned".
     root = repository(tmp_path)
-    (root / "keelline.toml").write_text('[project]\nname = "widget"\n', encoding="utf-8")
+    (root / "stayfixed.toml").write_text('[project]\nname = "widget"\n', encoding="utf-8")
     code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
     assert code == 0, printed
     assert STAMPED.format(verb="would write") in printed

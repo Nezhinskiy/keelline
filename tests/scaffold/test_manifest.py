@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from keelline.config.paths import PathEscape
-from keelline.scaffold.manifest import (
+from stayfixed.config.paths import PathEscape
+from stayfixed.scaffold.manifest import (
     FORMAT,
     MANIFEST_PATH,
     Kind,
@@ -63,7 +63,7 @@ def test_the_format_is_recorded_so_a_migration_can_key_on_it(tmp_path: Path) -> 
     assert Manifest.read(tmp_path).format == FORMAT
 
 
-def test_a_manifest_from_a_newer_keelline_refuses(tmp_path: Path) -> None:
+def test_a_manifest_from_a_newer_stayfixed_refuses(tmp_path: Path) -> None:
     Manifest({}).with_record(a_record()).write(tmp_path)
     raw = raw_of(tmp_path)
     raw["format"] = FORMAT + 1
@@ -79,14 +79,14 @@ def test_records_are_written_in_id_order(tmp_path: Path) -> None:
 
 
 def test_a_malformed_manifest_refuses_rather_than_reading_as_empty(tmp_path: Path) -> None:
-    (tmp_path / ".keelline").mkdir()
+    (tmp_path / ".stayfixed").mkdir()
     (tmp_path / MANIFEST_PATH).write_text("{not json", encoding="utf-8")
     with pytest.raises(ManifestError):
         Manifest.read(tmp_path)
 
 
 def test_an_unknown_kind_refuses(tmp_path: Path) -> None:
-    (tmp_path / ".keelline").mkdir()
+    (tmp_path / ".stayfixed").mkdir()
     (tmp_path / MANIFEST_PATH).write_text(
         json.dumps(
             {
@@ -112,7 +112,7 @@ def test_an_unknown_kind_refuses(tmp_path: Path) -> None:
 
 
 def test_a_record_missing_a_field_refuses(tmp_path: Path) -> None:
-    (tmp_path / ".keelline").mkdir()
+    (tmp_path / ".stayfixed").mkdir()
     (tmp_path / MANIFEST_PATH).write_text(
         json.dumps({"artifacts": {"a": {"id": "a", "kind": "template", "location": "repo"}}}),
         encoding="utf-8",
@@ -123,24 +123,24 @@ def test_a_record_missing_a_field_refuses(tmp_path: Path) -> None:
 
 def test_the_manifest_is_written_atomically_and_readably(tmp_path: Path) -> None:
     Manifest({}).with_record(a_record()).write(tmp_path)
-    directory = tmp_path / ".keelline"
+    directory = tmp_path / ".stayfixed"
     assert sorted(p.name for p in directory.iterdir()) == ["manifest.json"]
     assert stat.S_IMODE((tmp_path / MANIFEST_PATH).stat().st_mode) == 0o644
 
 
-def test_a_symlinked_keelline_directory_refuses_the_write(tmp_path: Path) -> None:
+def test_a_symlinked_stayfixed_directory_refuses_the_write(tmp_path: Path) -> None:
     # `write_atomically` takes a path, so it makes the parent with `Path.mkdir` and replaces
-    # through `os.replace`: both follow a symlink at `.keelline` and neither is a containment
+    # through `os.replace`: both follow a symlink at `.stayfixed` and neither is a containment
     # check. The ledger is the one file this module knows the location of, so the check is here.
     victim = tmp_path / "victim"
     victim.mkdir()
-    (tmp_path / ".keelline").symlink_to(victim, target_is_directory=True)
+    (tmp_path / ".stayfixed").symlink_to(victim, target_is_directory=True)
     with pytest.raises(PathEscape, match="symlink"):
         Manifest({}).with_record(a_record()).write(tmp_path)
     assert list(victim.iterdir()) == []
 
 
-def test_a_symlinked_keelline_directory_refuses_the_read_rather_than_trusting_it(
+def test_a_symlinked_stayfixed_directory_refuses_the_read_rather_than_trusting_it(
     tmp_path: Path,
 ) -> None:
     # Reading through the link is not merely a read outside the root: the records decide which
@@ -149,7 +149,7 @@ def test_a_symlinked_keelline_directory_refuses_the_read_rather_than_trusting_it
     victim = tmp_path / "victim"
     victim.mkdir()
     Manifest({}).with_record(a_record(target="somebody-elses.md")).write(victim)
-    (tmp_path / ".keelline").symlink_to(victim, target_is_directory=True)
+    (tmp_path / ".stayfixed").symlink_to(victim, target_is_directory=True)
     with pytest.raises(PathEscape, match="symlink"):
         Manifest.read(tmp_path)
 

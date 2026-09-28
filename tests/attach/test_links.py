@@ -11,13 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from keelline import fsops
-from keelline.attach.api import LEDGER
-from keelline.attach.write import Attached, attach
-from keelline.config.loader import load
-from keelline.config.schema import Config
-from keelline.errors import Refusal
-from keelline.memory.api import PartialLink, harness_memory_path
+from stayfixed import fsops
+from stayfixed.attach.api import LEDGER
+from stayfixed.attach.write import Attached, attach
+from stayfixed.config.loader import load
+from stayfixed.config.schema import Config
+from stayfixed.errors import Refusal
+from stayfixed.memory.api import PartialLink, harness_memory_path
 from tests.attach.test_binding import CONFIG, DEFAULT_MEMORY, _machine
 from tests.attach.test_write import FakeRunner
 from tests.gitfixture import git as _git
@@ -34,7 +34,7 @@ def _bound(tmp_path: Path) -> tuple[Path, Path, Path]:
     """A committed repository in overlay mode, and the overlay that already records it."""
     root = tmp_path / "project"
     root.mkdir(parents=True)
-    # A home directory that is already there. Keelline finds the machine owner's home and
+    # A home directory that is already there. stayfixed finds the machine owner's home and
     # never creates it — `worktree.harness_link_parts` makes it the containment anchor, and
     # the `O_NOFOLLOW` walk vouches for every component below an anchor and never for the
     # anchor itself — so a home that is not there is a refusal, which
@@ -51,7 +51,7 @@ def _bound(tmp_path: Path) -> tuple[Path, Path, Path]:
     )
     (overlay / "common" / "claude").mkdir(parents=True)
     (overlay / "common" / "codex").mkdir(parents=True)
-    (root / "keelline.toml").write_text(CONFIG.format(name="p"), encoding="utf-8")
+    (root / "stayfixed.toml").write_text(CONFIG.format(name="p"), encoding="utf-8")
     (root / ".gitignore").write_text(f"{DEFAULT_MEMORY}/\n", encoding="utf-8")
     _git(root, "init", "-q", "-b", "main")
     _git(root, "remote", "add", "origin", "git@example.com:o/p.git")
@@ -141,9 +141,9 @@ def test_the_harness_fallback_is_recorded_so_it_can_be_withdrawn(tmp_path: Path)
     # records is a setting that outlives its reason.
     import json
 
-    from keelline.attach.api import ledger
-    from keelline.memory.api import resolve
-    from keelline.memory.trust import record
+    from stayfixed.attach.api import ledger
+    from stayfixed.memory.api import resolve
+    from stayfixed.memory.trust import record
 
     root, store, machine = _bound(tmp_path)
     home = tmp_path / "home"
@@ -170,8 +170,8 @@ def _settings(root: Path) -> dict[str, object]:
 
 
 def _trusted(root: Path, machine: Path) -> None:
-    from keelline.memory.api import resolve
-    from keelline.memory.trust import record
+    from stayfixed.memory.api import resolve
+    from stayfixed.memory.trust import record
 
     config = _config(root, machine)
     store = resolve(root, config, machine=machine)
@@ -185,7 +185,7 @@ def test_a_second_attach_neither_forgets_the_fallback_nor_lets_it_outlive_its_re
     # `memory/worktree.py`'s own rule, one function over: "a gate evaluated once, at creation,
     # over state that persists is not a gate". A settings value is exactly such state, and this
     # is the channel that module calls the one hop that leaves its gate — read by the harness's
-    # native reader, outside every delimiter and trust record Keelline controls.
+    # native reader, outside every delimiter and trust record stayfixed controls.
     #
     # The sequence measured: attach with a real directory where the link belongs, so the
     # fallback is taken and recorded; then a `git pull` adds a note, which lapses the trust
@@ -196,7 +196,7 @@ def test_a_second_attach_neither_forgets_the_fallback_nor_lets_it_outlive_its_re
     #
     # Mutation: `mutations.toml`'s "the settings fallback outlives the gate that allowed it" —
     # make `_harness_fallback` return early when the link is no longer needed.
-    from keelline.attach.api import ledger
+    from stayfixed.attach.api import ledger
 
     root, store, machine = _bound(tmp_path)
     home = tmp_path / "home"
@@ -220,7 +220,7 @@ def test_the_fallback_goes_when_the_symlink_it_stood_in_for_can_be_made(tmp_path
     # gone the link is made and the setting has no reason left. It used to be left in the file
     # while the ledger was reset to `[]` around it, so `detach` left it behind for good — two
     # readers pointed at the store, one of them recorded nowhere.
-    from keelline.attach.api import ledger
+    from stayfixed.attach.api import ledger
 
     root, store, machine = _bound(tmp_path)
     home = tmp_path / "home"
@@ -245,7 +245,7 @@ def test_a_second_attach_that_changes_nothing_still_records_the_standing_fallbac
     # recorded the key would pass both. While the real directory is still in the way, every
     # later attach must go on recording the key that is still in the file — which is the defect
     # in its original direction, since the ledger is what `detach` reads.
-    from keelline.attach.api import ledger
+    from stayfixed.attach.api import ledger
 
     root, store, machine = _bound(tmp_path)
     home = tmp_path / "home"
@@ -282,14 +282,14 @@ def test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too(
     # The mirror shape, and it had the mirror defect: `detach_main` was applied to `--root` and
     # the loop skipped the owner, so a detach run from a worktree withdrew that worktree's tree
     # twice and left the owning checkout's — and its harness link — in place.
-    from keelline.attach.write import detach
+    from stayfixed.attach.write import detach
 
     root, store, machine = _bound(tmp_path)
     side = tmp_path / "side"
     _git(root, "worktree", "add", "-q", str(side), "-b", "side")
     home = tmp_path / "home"
     # Attached from the worktree as well, because the ledger `detach` reads lives under
-    # `.keelline/local/` in the checkout the attach was run from, and that directory is
+    # `.stayfixed/local/` in the checkout the attach was run from, and that directory is
     # untracked — a sibling worktree does not have one.
     _attach(side, store, machine, home)
     # Non-vacuous: there is nothing to withdraw unless both trees were built.
@@ -327,7 +327,7 @@ def test_withdrawing_the_fallback_never_takes_anything_else_out_of_that_file(
     tmp_path: Path,
 ) -> None:
     # The guard on the case above, and the one that matters: the removal may only ever fire when
-    # Keelline's own key was the file's entire contents. An owner's own setting beside it keeps
+    # stayfixed's own key was the file's entire contents. An owner's own setting beside it keeps
     # the file, and keeps itself.
     root, store, machine = _bound(tmp_path)
     home = tmp_path / "home"
