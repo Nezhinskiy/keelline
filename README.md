@@ -80,22 +80,13 @@ later package.
 
 ## Install
 
-<!-- RELEASING.md section 2, step 5 replaces EVERYTHING between the two
-`release-install` markers below — not just the first paragraph — with exactly the text in this
-comment, at the first release, with X.Y.Z the version that was tagged. The extent is marked
-rather than described because the replacement carries its own two code blocks: swapping only
-the opening paragraph would leave the untagged install commands and the "From the first
-release on" promise standing underneath it, so the released README would name two different
-install commands and make a forward reference that the release itself had just falsified.
-Written here so that the release commit is an edit and not a composition:
-
-**Released as X.Y.Z.** Both commands below install that release. The plugin form takes the
+**Released as 0.1.0.** Both commands below install that release. The plugin form takes the
 tag, and `uv tool install stayfixed` resolves from PyPI:
 
 As a Claude Code plugin:
 
 ```
-/plugin marketplace add stayfixed/stayfixed@vX.Y.Z
+/plugin marketplace add stayfixed/stayfixed@v0.1.0
 /plugin install stayfixed@stayfixed-marketplace
 ```
 
@@ -104,33 +95,6 @@ As a command-line tool:
 ```bash
 uv tool install stayfixed
 ```
--->
-
-<!-- release-install:begin -->
-
-**Nothing is released yet.** There is no version tag, so nothing is on PyPI and both commands
-below install the repository's default branch as it stands rather than a release. `uv tool
-install stayfixed` does not resolve today; the form that does is here.
-
-As a Claude Code plugin:
-
-```
-/plugin marketplace add stayfixed/stayfixed
-/plugin install stayfixed@stayfixed-marketplace
-```
-
-As a command-line tool:
-
-```bash
-uv tool install git+https://github.com/stayfixed/stayfixed
-```
-
-From the first release on, the same command takes the tag —
-`uv tool install git+https://github.com/stayfixed/stayfixed@<tag>` — which is the pinned form
-with no resolver to run at hook time that [principle 9](docs/methodology/principles.md)
-describes, and the published package makes the bare name work.
-
-<!-- release-install:end -->
 
 In CI, a project calls the reusable workflow at a commit SHA;
 [docs/cli.md](docs/cli.md#the-reusable-workflow) shows the caller `stayfixed init` writes.

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import tomllib
+from collections.abc import Iterable
 from pathlib import Path
 
 from stayfixed import __version__
@@ -154,10 +155,13 @@ def test_every_changelog_fragment_carries_towncriers_orphan_prefix() -> None:
 
     No `mutations.toml` entry: the invariant is over a set of file *names* and the oracle
     applies a textual change to a file's *contents*, so there is no line for it to mutate.
-    The non-vacuity guard is the floor below.
+    The directory is empty right after a release, so the rule is also shown to reject a name
+    without the prefix, which keeps the check from passing on nothing.
     """
-    fragments = sorted(
-        path.name for path in (ROOT / "changelog.d").iterdir() if path.name.endswith(".md")
-    )
-    assert len(fragments) >= 20, fragments
-    assert [name for name in fragments if not name.startswith("+")] == []
+    assert _unprefixed(["+a.feature.md", "b.fix.md", ".gitkeep"]) == ["b.fix.md"]
+    assert _unprefixed(path.name for path in (ROOT / "changelog.d").iterdir()) == []
+
+
+def _unprefixed(names: Iterable[str]) -> list[str]:
+    """The fragment files among `names` that lack towncrier's orphan prefix."""
+    return sorted(name for name in names if name.endswith(".md") and not name.startswith("+"))

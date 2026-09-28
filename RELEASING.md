@@ -137,15 +137,12 @@ step 7's sentence true.
    The same folding applies to a `Changed` entry that changed something never released.
    `release check --tag` cannot judge this: it counts pending fragments and never reads them.
 
-5. **Edit the README's install section, then commit.** In `README.md`, replace everything
-   between `<!-- release-install:begin -->` and `<!-- release-install:end -->` — the markers,
-   included — with the text in the HTML comment directly above them, which carries the two
-   tagged install forms. **The whole marked region, not only the "Nothing is released yet."
-   paragraph**: the replacement brings its own code blocks, so a partial swap would leave the
-   untagged install commands standing beneath the tagged ones and keep a "From the first
-   release on…" promise that the release just falsified. It is written in the comment so this
-   is an edit and not a composition. Do it now: the commit below is the release commit, and
-   after step 6 the tag points at whatever this commit contains.
+5. **Edit the README's install section, then commit.** `README.md`'s Install section names the
+   release twice, in **Released as X.Y.Z.** and in the tagged `/plugin marketplace add
+   stayfixed/stayfixed@vX.Y.Z`; set both to the new version. `tests/test_documents.py` fails
+   until they name the version the tree carries, and the release workflow runs the suite on the
+   tag. Do it now: the commit below is the release commit, and after step 6 the tag points at
+   whatever this commit contains.
 
    ```bash
    git commit -am "chore(release): X.Y.Z"

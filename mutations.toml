@@ -5752,17 +5752,16 @@ reddens = [
   "tests/scripts/test_mutation_oracle.py::test_a_leaked_scratch_checkout_is_swept_where_git_worktree_prune_will_not_take_it",
 ]
 
-# `RELEASING.md` step 5 said to replace "the **Nothing is released yet.** paragraph" with text that
-# carries its own two code blocks — so the literal reading left the untagged install commands
-# standing beneath the tagged ones, plus a "From the first release on" promise the release had just
-# falsified. The extent is markers now.
+# The README's Install section is what an adopter copies. Before 0.1.0 it carried the untagged
+# install forms; from the release on it names the tagged release and PyPI, and an untagged `git+`
+# install beside them would be a second command naming a different tree.
 [[mutation]]
-name = "the README's release-install region loses the marker the release step names"
+name = "the README's Install section offers an untagged install again"
 file = "README.md"
-before = "<!-- release-install:begin -->"
-after = "<!-- an ordinary comment -->"
+before = "uv tool install stayfixed\n```"
+after = "uv tool install git+https://github.com/stayfixed/stayfixed\n```"
 reddens = [
-  "tests/test_documents.py::test_the_release_step_and_the_readme_agree_on_what_it_replaces",
+  "tests/test_documents.py::test_the_readme_installs_the_release_the_tree_carries",
 ]
 
 # The harness guard for the sweep. `main` deletes every `stayfixed-oracle-*` directory under
