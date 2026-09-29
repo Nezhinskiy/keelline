@@ -291,7 +291,15 @@ event, and writes the harness's expected output.
 Not something to run by hand. Its exit-code policy differs from every other command: an internal
 error refuses (`2`) only on `PreToolUse`, and degrades open (`0`) everywhere else — on
 `UserPromptSubmit` an exit `2` erases what you typed, so a bug in stayfixed must not cost you
-your prompt. A `stayfixed.toml` that does not load takes the same path.
+your prompt. A `stayfixed.toml` that does not load takes the same path, and standard error names
+the kind of fault in stayfixed's own words rather than calling it an internal error:
+`stayfixed: stayfixed.toml does not load (a file or value the loader refuses)` — a file it cannot
+read, one that is not TOML, or a value it refuses — or `(a path that leaves the project or passes
+through a symlink)` — a symlinked `AGENTS.md` is the second, since
+`agents_md` is a `[paths]` key — followed by `; refused` or `; continuing open`, and a pointer
+to `stayfixed docs check` for the detail. The loader's own message is never printed here:
+it carries the repository's text, and a refused `PreToolUse` shows this stream to the model.
+`stayfixed docs check` loads the same file and prints that message in full.
 
 A `stayfixed.toml` that is a symbolic link is never read, whatever it points at, and no handler
 runs. On `PreToolUse` the call is refused (`2`), and on every other event, `SessionStart`

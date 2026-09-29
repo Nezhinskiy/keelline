@@ -12714,6 +12714,28 @@ reddens = [
   "tests/memory/test_commands.py::test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it[no-record]",
 ]
 
+# A `stayfixed.toml` that does not load reached the generic handler and printed `internal error`
+# with the loader's message, which reads as a stayfixed bug and carries the repository's text to
+# the model on a refused `PreToolUse`. The two named branches are the guard; their exit code
+# matches the generic one's, so only the words can tell them apart.
+[[mutation]]
+name = "the hook reports an unloadable config as an internal error"
+file = "src/stayfixed/hooks/commands.py"
+before = "            except PathEscape:"
+after = "            except OSError:"
+reddens = [
+  "tests/hooks/test_hook_command.py::test_an_unloadable_config_refuses_a_tool_call_in_its_own_words[escaping-path]",
+]
+
+[[mutation]]
+name = "the hook prints a refused value's own text as an internal error"
+file = "src/stayfixed/hooks/commands.py"
+before = "            except ConfigError:"
+after = "            except OSError:"
+reddens = [
+  "tests/hooks/test_hook_command.py::test_an_unloadable_config_refuses_a_tool_call_in_its_own_words[refused-value]",
+]
+
 # `gh` resolves an unqualified `OWNER/REPO` on `GH_HOST`, which the runner keeps, so on a GitHub
 # Enterprise host the fallback named whoever owns `stayfixed` there and the owner's private overlay
 # was generated from it. Named with its host, it is looked up on github.com.
@@ -12738,6 +12760,18 @@ reddens = [
   "tests/overlay/test_create.py::test_a_local_render_over_an_existing_repository_says_what_it_found",
 ]
 
+# A machine record naming an overlay root that is no longer there read as "no record of this
+# project; run `stayfixed attach`", and `attach --store <new place>` refuses a store outside the
+# recorded root -- a refusal whose way out was a command that refuses.
+[[mutation]]
+name = "a recorded overlay root that is gone reads as an unrecorded project"
+file = "src/stayfixed/memory/store.py"
+before = "        if not overlay.is_dir():"
+after = "        if False:"
+reddens = [
+  "tests/memory/test_commands.py::test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it[overlay-gone]",
+]
+
 # CI's rendered-artifact check accepted any directory named `.git`, so an empty `mkdir .git` stood
 # in for the repository `overlay create --local` makes on `main`.
 [[mutation]]
@@ -12750,16 +12784,4 @@ reddens = [
   "tests/scripts/test_check_artifacts.py::test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main[another-branch]",
   "tests/scripts/test_check_artifacts.py::test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main[detached]",
   "tests/scripts/test_check_artifacts.py::test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main[not-utf8]",
-]
-
-# A machine record naming an overlay root that is no longer there read as "no record of this
-# project; run `stayfixed attach`", and `attach --store <new place>` refuses a store outside the
-# recorded root -- a refusal whose way out was a command that refuses.
-[[mutation]]
-name = "a recorded overlay root that is gone reads as an unrecorded project"
-file = "src/stayfixed/memory/store.py"
-before = "        if not overlay.is_dir():"
-after = "        if False:"
-reddens = [
-  "tests/memory/test_commands.py::test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it[overlay-gone]",
 ]
