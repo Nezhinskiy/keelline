@@ -24,8 +24,8 @@ below accounts for. These are the ones that are yours to fill in:
 
 | Path | What it holds |
 |---|---|
-| `common/rules/` | your personal standing rules, injected at the start of every session |
-| `common/memory/` | notes that belong to you rather than to one project |
+| `common/rules/` | reserved, and read by nothing yet: a personal standing rule is a note in `common/memory/` that carries `metadata.startup` |
+| `common/memory/` | notes that belong to you rather than to one project, and your personal standing rules: a note carrying `metadata.startup` is injected in full at the start of every session |
 | `common/claude/permissions.json` | **your own** `permissions.allow` rules. `stayfixed attach` merges this list into a bound repository's `.claude/settings.local.json`, and nothing else in the file is read — a `deny` list here reaches nothing. It ships empty, because a plugin author may never grant a permission; only you may, on your own instance. |
 | `common/claude/hooks.json` | **your own** hook entries, merged into a bound repository the same way. Ships empty for the same reason. |
 | `common/codex/common.rules` | the same, for the other harness: one standing-rule file, which `attach` copies into a bound repository's `.codex/rules/`. Ships with a header comment and nothing else. |
@@ -56,3 +56,16 @@ Run `stayfixed overlay init` once after creating this repository. It suffixes th
 marketplace names with your account so two overlays never collide, and installs the secret
 scan. After that, `stayfixed attach` binds a repository to it and `stayfixed overlay upgrade`
 refreshes the files you have not edited when a new stayfixed is released.
+
+## Installing it as a plugin
+
+This repository is also a Claude Code plugin, and nothing installs it for you. Two commands do,
+with the names `stayfixed overlay init` gave it (`<owner>` is your account and `<name>` this
+repository's name):
+
+```bash
+claude plugin marketplace add git@github.com:<owner>/<name>.git
+claude plugin install stayfixed-overlay-<owner>@stayfixed-overlay-marketplace-<owner>
+```
+
+The harness clones it with your own credentials, so the repository stays private.

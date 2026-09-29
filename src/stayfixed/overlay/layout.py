@@ -46,7 +46,12 @@ CAPABILITY_NAMES = (f"{COMMON_CLAUDE}/permissions.json", f"{COMMON_CLAUDE}/hooks
 # those as directories on purpose. `tests/overlay/test_template.py` accounts for the tree
 # by this rule; a fourth such directory needs no edit there. The root `README.md` is not a
 # placeholder — the rule applies to a basename BELOW a directory, never to the root.
-PLACEHOLDER_NAMES = ("README.md", "SKILL.md")
+#
+# `_README.md` is the spelling for a directory the note reader walks: `memory.notes.walk` reads
+# every `*.md` in a note store as a note and skips a name that starts with `_`, so a `README.md`
+# there is a note with no frontmatter and `memory index --check` fails on it in every project
+# attached to the overlay. `common/memory/` is that directory.
+PLACEHOLDER_NAMES = ("README.md", "_README.md", "SKILL.md")
 
 OVERLAY_FILES = (
     PLUGIN_MANIFEST,
@@ -55,7 +60,7 @@ OVERLAY_FILES = (
     "hooks/hooks.json",
     "skills/attach/SKILL.md",
     f"{COMMON_RULES}/README.md",
-    f"{COMMON_MEMORY}/README.md",
+    f"{COMMON_MEMORY}/_README.md",
     *CAPABILITY_NAMES,
     f"{COMMON_CODEX}/common.rules",
     f"{PROJECTS}/README.md",

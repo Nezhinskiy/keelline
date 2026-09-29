@@ -560,6 +560,67 @@ def test_the_scratch_render_publish_template_uses_is_not_a_repository(tmp_path: 
     assert not (rendered / ".git").exists()
 
 
+# --- the manifests the harness validates -------------------------------------------------------
+
+
+def test_init_names_the_owner_and_the_author_the_harness_asks_for(tmp_path: Path) -> None:
+    # A marketplace with no `owner` fails `claude plugin validate`, and a plugin manifest with no
+    # `author` draws a warning on every install. The template ships a neutral placeholder for
+    # both and `init` is where the account it belongs to goes in. Mutation: drop the owner/author
+    # branch of `_rename` → the placeholder is still there after init and this reddens.
+    created = create(
+        "octo", "stayfixed-private", source="local", root=tmp_path, runner=FakeRunner()
+    )
+    init_instance(created.root, "OctoCat", runner=FakeRunner())
+    market = json.loads((created.root / ".claude-plugin" / "marketplace.json").read_text())
+    assert market["owner"] == {"name": "octocat"}
+    for relative in (".claude-plugin/plugin.json", ".codex-plugin/plugin.json"):
+        manifest = json.loads((created.root / relative).read_text(encoding="utf-8"))
+        assert manifest["author"] == {"name": "octocat"}, relative
+
+
+def test_init_completes_an_overlay_whose_template_predates_the_owner_and_author(
+    tmp_path: Path,
+) -> None:
+    # The owner's own published template is used first, and one published by an earlier stayfixed
+    # carries neither key. `init` is the one command that runs on every such overlay, so it adds
+    # what is missing rather than leaving a marketplace the harness refuses.
+    created = create(
+        "octo", "stayfixed-private", source="local", root=tmp_path, runner=FakeRunner()
+    )
+    for relative, removed in (
+        (".claude-plugin/marketplace.json", "owner"),
+        (".claude-plugin/plugin.json", "author"),
+        (".codex-plugin/plugin.json", "author"),
+    ):
+        path = created.root / relative
+        document = json.loads(path.read_text(encoding="utf-8"))
+        del document[removed]
+        path.write_text(json.dumps(document), encoding="utf-8")
+    init_instance(created.root, "octo", runner=FakeRunner())
+    market = json.loads((created.root / ".claude-plugin" / "marketplace.json").read_text())
+    assert market["owner"] == {"name": "octo"}
+    plugin = json.loads((created.root / ".claude-plugin" / "plugin.json").read_text())
+    assert plugin["author"] == {"name": "octo"}
+
+
+def test_init_keeps_an_author_the_owner_wrote_themselves(tmp_path: Path) -> None:
+    # Only the placeholder is replaced: a person who put their own name in `author` before
+    # running `init`, or who runs it a second time, keeps it.
+    created = create(
+        "octo", "stayfixed-private", source="local", root=tmp_path, runner=FakeRunner()
+    )
+    path = created.root / ".claude-plugin" / "plugin.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["author"] = {"name": "Jane Doe", "email": "jane@example.com"}
+    path.write_text(json.dumps(document), encoding="utf-8")
+    init_instance(created.root, "octo", runner=FakeRunner())
+    assert json.loads(path.read_text(encoding="utf-8"))["author"] == {
+        "name": "Jane Doe",
+        "email": "jane@example.com",
+    }
+
+
 def test_init_names_the_codex_manifest_after_the_owner_too(tmp_path: Path) -> None:
     # `init_instance`'s own docstring gives the rationale — a harness
     # installs a plugin by the name in its manifest, so two owners' overlays under one

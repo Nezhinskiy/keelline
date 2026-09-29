@@ -89,6 +89,18 @@ NOT_FOUND_ANSWER = "Could not resolve to a Repository"
 # owners' overlays under one Codex configuration were one plugin fighting itself, which is the
 # exact wording `init_instance`'s own docstring gives as the rationale.
 MANIFESTS = (PLUGIN_MANIFEST, MARKETPLACE_MANIFEST, CODEX_PLUGIN_MANIFEST)
+# What the template carries where an account goes, and what `init_instance` replaces with the
+# owner's. A marketplace has to name an `owner` for `claude plugin validate` to accept it, and a
+# plugin manifest an `author` for it to stop warning; neither can be the owner's before there is
+# an owner, so the shipped file holds this neutral stand-in. `templates/overlay/` carries the same
+# string, and `tests/overlay/test_template.py` reads it from there.
+PLACEHOLDER_ACCOUNT = "your-account"
+# Which key of each manifest names the account: the marketplace's owner, the plugins' author.
+ACCOUNT_KEYS = {
+    PLUGIN_MANIFEST: "author",
+    MARKETPLACE_MANIFEST: "owner",
+    CODEX_PLUGIN_MANIFEST: "author",
+}
 
 
 @dataclass(frozen=True)
@@ -465,6 +477,8 @@ def _rename(root: Path, relative: str, suffix: str) -> str | None:
     if (renamed := _suffixed(document.get("name"), suffix)) is not None:
         document["name"] = renamed
         changed = True
+    if _named_for(document, ACCOUNT_KEYS[relative], suffix):
+        changed = True
     # The marketplace's entries name the plugin they publish, so an entry left unsuffixed would
     # advertise a plugin whose manifest no longer answers to that name.
     entries = document.get("plugins")
@@ -478,6 +492,29 @@ def _rename(root: Path, relative: str, suffix: str) -> str | None:
     body = json.dumps(document, indent=2) + "\n"
     fsops.write_within(root, relative, body)
     return body
+
+
+def _named_for(document: dict[str, object], key: str, account: str) -> bool:
+    """Put `account` under `document[key]["name"]` where nobody has put a name; whether it changed.
+
+    "Where nobody has": the key is absent (an overlay generated from a template that predates it,
+    which is exactly what an owner's own published copy can be), or its name is the template's
+    `PLACEHOLDER_ACCOUNT`. A name the owner wrote, and any other field beside it (an email, a
+    URL), stay: `init` is run more than once and by people who edited the file first, and an
+    account name that overwrote a person's own would be a rewrite of something stayfixed does not
+    own. A value of another shape (`"author": "a string"`) is left alone for the same reason.
+    """
+    current = document.get(key)
+    if current is None:
+        document[key] = {"name": account}
+        return True
+    if (
+        isinstance(current, dict)
+        and current.get("name", PLACEHOLDER_ACCOUNT) == PLACEHOLDER_ACCOUNT
+    ):
+        current["name"] = account
+        return True
+    return False
 
 
 def _install_secret_scan(root: Path, runner: Runner) -> str:

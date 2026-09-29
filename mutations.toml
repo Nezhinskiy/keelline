@@ -3744,6 +3744,52 @@ reddens = [
   "tests/overlay/test_create.py::test_a_local_overlay_carries_a_real_repository_on_main",
 ]
 
+# The overlay's marketplace and manifests validate: `claude plugin validate` refuses a marketplace
+# with no `owner`, and `init` is what puts the account in.
+[[mutation]]
+name = "overlay init leaves the template's owner and author placeholders"
+file = "src/stayfixed/overlay/create.py"
+before = "    if _named_for(document, ACCOUNT_KEYS[relative], suffix):"
+after = "    if False:"
+reddens = [
+  "tests/overlay/test_create.py::test_init_names_the_owner_and_the_author_the_harness_asks_for",
+  "tests/overlay/test_create.py::test_init_completes_an_overlay_whose_template_predates_the_owner_and_author",
+]
+
+[[mutation]]
+name = "the overlay template ships a marketplace with no owner"
+file = "src/stayfixed/templates/overlay/.claude-plugin/marketplace.json"
+before = """  "owner": {
+    "name": "your-account"
+  },
+"""
+after = ""
+reddens = [
+  "tests/overlay/test_template.py::test_the_overlay_ships_a_marketplace_and_manifests_the_harness_validates",
+]
+
+# The overlay's `common/memory/` is a note store, and its documentation is `_README.md` only
+# because the walk skips a name that starts with `_`. Without the skip that file is a note with no
+# frontmatter, and `memory index --check` fails in every project attached to a fresh overlay.
+[[mutation]]
+name = "the note walk stops skipping underscore-prefixed files"
+file = "src/stayfixed/memory/notes.py"
+before = '''            if path.name.startswith((".", "_")):'''
+after = '''            if path.name.startswith("."):'''
+reddens = [
+  "tests/overlay/test_template.py::test_nothing_in_a_fresh_common_memory_fails_the_note_reader",
+]
+
+# A directory's README that promises what nothing does. Nothing reads `common/rules/`.
+[[mutation]]
+name = "the rules directory's README promises injection again"
+file = "src/stayfixed/templates/overlay/common/rules/README.md"
+before = "Nothing reads this directory yet."
+after = "Everything here is injected at the start of every session."
+reddens = [
+  "tests/overlay/test_template.py::test_no_rendered_markdown_says_a_rules_file_is_injected",
+]
+
 # `init_instance`'s own rationale — a harness installs a plugin by the name in its manifest, so
 # two owners' overlays under one configuration directory are one plugin fighting itself — applies
 # to Codex exactly as it does to Claude Code, and the project ships a Codex half of everything

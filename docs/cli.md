@@ -1895,6 +1895,20 @@ reason as the other two. The marketplace's own plugin entries are suffixed with 
 listing still names a manifest that answers. A manifest this overlay does not carry is reported
 and skipped, not a failure.
 
+It also puts your account where the harness asks for one: the marketplace's `owner` (without it
+`claude plugin validate` refuses the marketplace) and each plugin manifest's `author`, as
+`{"name": "<account>"}`. Only where nobody has put a name: the template's placeholder is replaced
+and an absent key is added, so an overlay generated from an older template becomes valid, but a
+name you wrote yourself, and anything else beside it, stays.
+
+**Installing the overlay as a plugin is two commands**, with the names this command produced
+(`<owner>` is your account and `<name>` the overlay repository's name), and nothing runs them for
+you:
+
+```bash
+claude plugin marketplace add git@github.com:<owner>/<name>.git
+claude plugin install stayfixed-overlay-<owner>@stayfixed-overlay-marketplace-<owner>
+```
 
 Each rewrite is re-stamped into `.stayfixed/manifest.json`, so `overlay upgrade` still sees these
 files as stayfixed's own: without that, the file carrying `stayfixed.requires` read as hand-edited
