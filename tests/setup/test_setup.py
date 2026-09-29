@@ -834,8 +834,8 @@ def test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay(tmp_p
 
 def test_an_overlay_that_holds_the_project_root_is_refused(tmp_path: Path) -> None:
     # The containment refused `candidate == project` or `project in candidate.parents` and nothing
-    # else, so a *parent* passed — and `git worktree add .worktrees/x`, which this project's own
-    # `worktree-by-default` preset rule makes the ordinary case, puts `--root` exactly there. A
+    # else, so a *parent* passed — and `git worktree add .worktrees/x`, which is how feature work is
+    # ordinarily started, puts `--root` exactly there. A
     # clone shipping its two manifests at its own root was then accepted as the machine's trust
     # anchor.
     #

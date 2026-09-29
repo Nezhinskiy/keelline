@@ -6,13 +6,14 @@ description: Configure the machine for stayfixed — the preset, the personal pa
 # Machine setup
 
 1. Run `stayfixed setup --preset recommended` and relay what it writes to the machine
-   configuration file and which plugins and standing rules the preset enables. It asks nothing;
+   configuration file and which plugins the preset enables. It asks nothing;
    `--yes` exists only to confirm creating an overlay repository (step 4).
 2. For the commit-message hook, run `stayfixed setup --git-hooks` inside the repository and
    relay what it installed and what existing hook it kept and chained to;
    `stayfixed setup --git-hooks --uninstall` restores it.
 3. Personal parameters (reply language, artifact language) are the user's to set; do not
-   guess them.
+   guess them. Nothing in this release reads either: a language preference the user wants
+   followed is a personal standing rule, a note with `metadata.startup` in the overlay.
 4. Offer the private overlay — one repository holding the user's own standing rules,
    cross-project notes and per-project bindings. `setup` is what records it, through
    `--overlay`, and there are two ways in:

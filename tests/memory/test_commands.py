@@ -9,6 +9,7 @@ import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.findings import LISTED_LIMIT
+from stayfixed.memory import bundles as bundles_module
 from stayfixed.memory.api import DELIMITER
 from stayfixed.printed import UNPRINTABLE
 from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
@@ -987,6 +988,12 @@ def test_every_other_bundle_is_harness_neutral(
     # Claude Code would empty the channel the whole store exists for, and
     # `scripts/smoke_hooks.py` would still pass because it runs under Claude Code.
     store = _a_trusted_store_with_an_index(project)
+    # The shipped preset carries no rules, so `preset-rules` would be empty under both harnesses
+    # for a reason that says nothing about the harness: a preset that has one is what puts the
+    # bundle under this assertion.
+    monkeypatch.setattr(
+        bundles_module, "load_preset", lambda name: {"rules": {"greeting": "Hello there."}}
+    )
     for bundle in ("preset-rules", "standing-rules", "volatile-notes"):
         claude = _session_context(
             store, monkeypatch, capsys, bundle=bundle, env={"CLAUDE_PLUGIN_ROOT": "/p"}
@@ -996,3 +1003,15 @@ def test_every_other_bundle_is_harness_neutral(
         )
         assert claude != "", bundle
         assert _without_nonces(claude) == _without_nonces(codex), bundle
+
+
+def test_the_recommended_preset_prints_nothing_for_preset_rules(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The `SessionStart` entry for this bundle still runs on every session, and for the shipped
+    # preset it says nothing: stayfixed imposes no standing rule. Through the real command with
+    # the real preset (`CONFIG` names `recommended`), under both harnesses, exit 0 and no bytes.
+    # Mutation: put a `[rules]` string back in `recommended.toml` → this reddens.
+    store = _a_trusted_store_with_an_index(project)
+    for env in ({"CLAUDE_PLUGIN_ROOT": "/p"}, {"PLUGIN_ROOT": "/p"}):
+        assert _session_context(store, monkeypatch, capsys, bundle="preset-rules", env=env) == ""

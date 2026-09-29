@@ -62,12 +62,12 @@ controls:
   stops this half from standing for nothing.
 * **it must lie outside the repository the agent works in**, which now means outside *every*
   checkout of it. The old check refused `candidate == project` or `project in candidate.parents`
-  and nothing else, so a parent directory and a sibling worktree both passed — and this
-  project's own `worktree-by-default` preset rule makes `--root` a worktree, which is exactly
-  the shape that passed. It now also refuses a candidate that *holds* the project root, and a
-  candidate inside, holding or equal to any checkout of the project root's repository that `git`
-  can name: what a repository ships reaches its own checkouts and nowhere else, so refusing
-  every checkout of it removes the tree a clone can stage.
+  and nothing else, so a parent directory and a sibling worktree both passed — and working
+  in a worktree, which is ordinary, makes `--root` one, which is exactly the shape that passed.
+  It now also refuses a candidate that *holds* the project root, and a candidate inside, holding
+  or equal to any checkout of the project root's repository that `git` can name: what a
+  repository ships reaches its own checkouts and nowhere else, so refusing every checkout of it
+  removes the tree a clone can stage.
   `_outside_the_project` says how `git` is asked and from which side, and why. It is not a claim
   that the same bytes cannot be somewhere else on the machine — a separate clone of the same
   remote passes — only that the owner put them there. When `git` gives no answer for the project
@@ -707,10 +707,10 @@ def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
     `git worktree add .worktrees/x` produces and which the first draft accepted. The `git` arms
     are the sibling case the paths cannot see: `stayfixed.worktrees/feature` is not under
     `stayfixed/`, so a clone committing its own manifests at its own root passed the path arm
-    whenever `--root` was one of its worktrees — and this project's own preset rule makes
-    `--root` a worktree by default. The first applies the path arm to every checkout
-    `_repository` lists; the second, `_candidate_repository`, catches the checkouts that list
-    names by their git directory. See each for why it is asked from the side it is.
+    whenever `--root` was one of its worktrees — and working in a worktree makes `--root` one.
+    The first applies the path arm to every checkout `_repository` lists; the second,
+    `_candidate_repository`, catches the checkouts that list names by their git directory. See
+    each for why it is asked from the side it is.
 
     **What it does not cover, stated rather than implied.** When `git` gives no answer for the
     project root, the `git` arms are silent and only the path arm stands — `_repository` says

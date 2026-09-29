@@ -84,14 +84,17 @@ table rather than a summary the only affordable shape.
 ## 4. Standing rules arrive whole; everything else is routed
 
 **Statement.** A small set of rules holds for a whole session whatever it turns out to be
-about — which language each audience gets, what to do at a design fork, where new work goes.
-Those cannot be routed, because there is no moment at which anyone would look one up; by
-then the reply is in the wrong language. They are injected in full at session start, ranked,
-and never truncated. Everything else is a pointer the index routes to.
+about. Those cannot be routed, because there is no moment at which anyone would look one up:
+by the time one is needed, the session has already acted without it. They are injected in full
+at session start, ranked, and never truncated. Everything else is a pointer the index routes
+to.
 
-**What stayfixed does.** `memory session-context` renders four bundles — preset rules,
-standing rules, volatile notes, the index — each across numbered parts sized to the
-platform's per-entry cap, and `memory fit` reports a bundle that does not fit its slots.
+**What stayfixed does.** Which rules those are is each person's to write, and stayfixed ships
+none: a standing rule is a note with `metadata.startup` in the overlay's `common/memory/` or a
+project's memory, and the `recommended` preset carries no `[rules]` table. `memory
+session-context` renders four bundles — preset rules, standing rules, volatile notes, the
+index — each across numbered parts sized to the platform's per-entry cap, and `memory fit`
+reports a bundle that does not fit its slots.
 Standing rules are flagged when they outgrow their budget and still delivered, because a
 standing rule that does not arrive is a standing rule that gets broken; volatile notes
 degrade to descriptions instead.
@@ -235,9 +238,10 @@ written in one language, whatever language the conversation is in, because artif
 read by tools, by later contributors and by a possible public extraction.
 
 **What stayfixed does.** The freshness rule is the row grammar of [sources.md](sources.md)
-and a test over it; the artifact language is a machine-level setting (`artifact_language`)
-beside the reply language, so the split is configured once per person rather than restated
-per project. The four "harness" sources in the [README](README.md) are the freshness rule's
+and a test over it. The language half is a person's own standing rule, a note with
+`metadata.startup`, and stayfixed enforces nothing about it: the machine configuration's
+`artifact_language` and `reply_language` are recorded by `stayfixed setup` and read by nothing
+in this release. The four "harness" sources in the [README](README.md) are the freshness rule's
 own worked example: the term moved from a company blog [S27] to a discipline [S28] to an
 open-sourced platform [S30] and a research framing [S29] in nine months, with the pattern
 essay it all descends from [S31] published eleven months before the earliest of the four

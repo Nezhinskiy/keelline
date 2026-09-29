@@ -152,7 +152,7 @@ run it by hand except to see what a session actually receives.
 
 | Bundle | What it is |
 |---|---|
-| `preset-rules` | Rules from your own preset. Never repository content, so never gated. |
+| `preset-rules` | The `[rules]` table of the configured preset, when it has one. The shipped `recommended` preset has none, so this bundle prints nothing for it: your own standing rules are notes carrying `metadata.startup`, which `standing-rules` injects. Never repository content, so never gated. |
 | `standing-rules` | Every note flagged `startup`, in full, ranked. Never truncated — only flagged when the set outgrows its budget, because a standing rule that does not arrive is a standing rule that gets broken. |
 | `volatile-notes` | Dated, perishable notes, in full; over budget, descriptions only. |
 | `index` | `MEMORY.md` itself, so the model can route. **Emitted on Codex only**: Claude Code reads `MEMORY.md` natively, so injecting it there would spend capped `SessionStart` slots on something the harness already has. On any other harness this bundle prints nothing and exits `0`. The harness is read from this process's own environment, so the same command answers differently in a Codex session and a Claude Code one. |
@@ -2934,13 +2934,18 @@ value above the preset's is ignored rather than refused, so raising one is not a
 
 ```toml
 [personal]
-reply_language = ""      # chat replies; durable artifacts stay in the artifact language
-artifact_language = "en"
+reply_language = ""      # recorded; nothing in this release reads it
+artifact_language = "en" # recorded; nothing in this release reads it
 preset = "recommended"   # the preset `setup` applies
 
 [overlay]
 root = "~/stayfixed-overlay"   # only read in overlay mode
 ```
+
+`reply_language` and `artifact_language` are kept for you and read by nothing in this release:
+they meant something only through the `recommended` preset's standing rule about which language
+each audience gets, which the preset no longer carries. To state a language preference, write a
+personal standing rule, a note with `metadata.startup` in your overlay's `common/memory/`.
 
 `stayfixed setup` writes a third table, `[machine]`, into the same file — `version`, the
 stayfixed that ran, and `installed`, the date it ran. It is `setup`'s record of what it did, not

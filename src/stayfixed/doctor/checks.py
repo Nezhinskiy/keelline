@@ -1101,10 +1101,11 @@ def _budgets(context: Context) -> Row:
 # `native_caps.hook_output_chars`. `doctor` reports a bundle that does not fit *and* one that
 # reaches the cap, and the second needs a threshold that the first does not.
 #
-# A fraction and not `parts == slots`: `preset-rules` has one slot and any preset at all fills it,
-# so that predicate warns on every correct installation and says nothing. A named cap
-# (CONTRIBUTING.md#named-caps), and the shipped file that changes with it is `hooks/hooks.json`,
-# which is where a slot count is raised when this warning turns out to be right.
+# A fraction and not `parts == slots`: `preset-rules` has one slot and a preset that carries rules
+# fills it, so that predicate warns on every correct installation that has any and says nothing.
+# A named cap (CONTRIBUTING.md#named-caps), and the shipped file that changes with it is
+# `hooks/hooks.json`, which is where a slot count is raised when this warning turns out to be
+# right.
 NEARLY_FULL = 0.9
 
 

@@ -201,7 +201,7 @@ before = '        f"### {name}\n\n{body.strip()}" for name, body in rules.items(
 after = '        f"### {name}\n\n{body}" for name, body in rules.items() if isinstance(body, str)'
 reddens = [
   "tests/memory/test_bundles.py::test_a_rule_renders_as_one_heading_one_blank_line_and_a_stripped_body",
-  "tests/memory/test_bundles.py::test_no_shipped_rule_renders_with_padding",
+  "tests/memory/test_bundles.py::test_no_rule_of_a_preset_written_as_toml_renders_with_padding",
 ]
 
 # A preset is data read at run time and this bundle runs inside a handler whose policy is
@@ -3788,6 +3788,22 @@ before = "Nothing reads this directory yet."
 after = "Everything here is injected at the start of every session."
 reddens = [
   "tests/overlay/test_template.py::test_no_rendered_markdown_says_a_rules_file_is_injected",
+]
+
+# stayfixed supports standing rules and imposes none: the shipped preset carries no `[rules]` table.
+[[mutation]]
+name = "the recommended preset imposes a standing rule again"
+file = "src/stayfixed/presets/recommended.toml"
+before = """[plugins]
+# Installed by `setup --preset recommended`"""
+after = """[rules]
+imposed = "Ask before acting."
+
+[plugins]
+# Installed by `setup --preset recommended`"""
+reddens = [
+  "tests/memory/test_bundles.py::test_the_recommended_preset_imposes_no_standing_rule",
+  "tests/memory/test_commands.py::test_the_recommended_preset_prints_nothing_for_preset_rules",
 ]
 
 # `init_instance`'s own rationale — a harness installs a plugin by the name in its manifest, so
