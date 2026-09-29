@@ -383,11 +383,12 @@ _UNBOUND_CAUSES = {UNBOUND: NO_RECORD, NO_ORIGIN: NO_REMOTE, MISMATCH: REMOTE_MI
 # Asked before any of the four: a machine record naming an overlay root that is not there (the
 # overlay moved, or this machine never cloned it) read as "no record of this project", whose way
 # out, `stayfixed attach`, refuses a `--store` outside the root the machine records. The root is
-# the owner's own configuration and goes in the detail through `printed.quoted`.
+# the owner's own configuration and not the repository's, so it is part of this sentence, through
+# `printed.quoted`, rather than a detail printed inside the region that marks repository text.
 OVERLAY_GONE = (
-    "the overlay root the machine configuration records is not a directory on this machine; "
-    "record where the overlay is now with `stayfixed setup --preset NAME --overlay PATH`, then "
-    "run `stayfixed attach`"
+    "the overlay root the machine configuration records, {root}, is not a directory on this "
+    "machine; record where the overlay is now with `stayfixed setup --preset NAME --overlay "
+    "PATH`, then run `stayfixed attach`"
 )
 
 
@@ -570,7 +571,7 @@ def _resolve_at(
                 "no overlay root is recorded in the machine configuration; run `stayfixed setup`"
             )
         if not overlay.is_dir():
-            return None, Unresolved(OVERLAY_GONE, quoted(str(overlay)))
+            return None, Unresolved(OVERLAY_GONE.format(root=quoted(str(overlay))))
         unbound = _bound(overlay, config.project.name, root)
         if unbound is not None:
             return None, unbound

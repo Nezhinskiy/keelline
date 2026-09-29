@@ -480,6 +480,47 @@ def test_a_probe_failure_is_printed_without_letting_it_drive_a_terminal(tmp_path
     assert "\x1b" not in message
 
 
+HOSTILE = Completed(1, "", "HTTP 500\n::error::forged\x1b[2J")
+
+
+@pytest.mark.parametrize(
+    "answers",
+    [
+        pytest.param({THE_OWNERS_PROBE: A_TEMPLATE, "gh repo create": HOSTILE}, id="repo-create"),
+        pytest.param(
+            {THE_OWNERS_PROBE: A_TEMPLATE, "gh repo view octo/stayfixed-private": HOSTILE},
+            id="clone-and-view",
+        ),
+    ],
+)
+def test_what_gh_and_git_print_cannot_drive_a_terminal(
+    tmp_path: Path, answers: dict[str, Completed]
+) -> None:
+    # The probe's answer was clipped and quoted, and every other subprocess answer this command
+    # quotes, `gh repo create`'s, `gh repo view`'s and `git clone`'s, was printed raw: a line break
+    # followed by `::error::` is a workflow command in a CI log, and an escape drives a terminal.
+    # They are all clipped in the one place that reads them, `_detail`.
+    #
+    # Mutation: `mutations.toml`'s "a subprocess's answer is quoted raw".
+    runner = FakeRunner(answers={**answers, "git clone": HOSTILE})
+    with pytest.raises(Failure) as failed:
+        create("octo", "stayfixed-private", source="template", root=tmp_path, runner=runner)
+    message = str(failed.value)
+    assert "forged" in message
+    assert "\n::error::" not in message
+    assert "\x1b" not in message
+
+
+def test_what_git_init_prints_cannot_drive_a_terminal(tmp_path: Path) -> None:
+    # The same for the `--local` branch's `git init`, whose failure is a note.
+    runner = FakeRunner(answers={"git init": HOSTILE})
+    created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=runner)
+    message = " ".join(created.notes)
+    assert "forged" in message
+    assert "\n::error::" not in message
+    assert "\x1b" not in message
+
+
 def test_a_gh_that_is_not_installed_costs_one_subprocess_at_the_probe(tmp_path: Path) -> None:
     # Absent at the very first question: one launch, the launch failure named, no
     # `gh repo create`, no clone, no wait.
@@ -513,8 +554,8 @@ def test_a_local_overlay_is_a_git_repository_on_main_with_no_remote(tmp_path: Pa
     # git repository"): the `git init` call is deleted → this reddens.
     runner = FakeRunner()
     created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=runner)
-    assert runner.calls == [["git", "init", "-b", "main"]]
-    assert runner.cwds == [created.root]
+    assert runner.calls == [["git", "init"], ["git", "symbolic-ref", "HEAD", "refs/heads/main"]]
+    assert runner.cwds == [created.root, created.root]
     assert not any(argv[0] == "gh" for argv in runner.calls), "`--local` touches no GitHub"
     message = " ".join(created.notes)
     assert "git remote add origin git@github.com:octo/stayfixed-private.git" in message
@@ -523,7 +564,7 @@ def test_a_local_overlay_is_a_git_repository_on_main_with_no_remote(tmp_path: Pa
 
 def test_a_local_overlay_carries_a_real_repository_on_main(tmp_path: Path) -> None:
     # The same claim against a real `git`, because a stub records the argv and cannot say whether
-    # the argv makes a repository: `-b main` is `git`'s own and `HEAD` is where it shows.
+    # the argv makes a repository: `symbolic-ref` is `git`'s own and `HEAD` is where it shows.
     import shutil
 
     if shutil.which("git") is None:
@@ -547,7 +588,33 @@ def test_a_git_that_cannot_init_is_a_note_and_the_tree_is_kept(tmp_path: Path) -
     assert (created.root / ".claude-plugin" / "plugin.json").is_file()
     message = " ".join(created.notes)
     assert "git could not be run" in message
-    assert "git init -b main" in message
+    assert "could not be run" in message and "did not run" not in message
+    assert "`git init` and `git symbolic-ref HEAD refs/heads/main`" in message
+
+
+def test_a_git_older_than_2_28_still_leaves_a_repository_on_main(tmp_path: Path) -> None:
+    # `git init -b` arrived in git 2.28, and an older `git` refuses the option: the run said
+    # `git init -b main` "did not run" and told the owner to run the same failing command.
+    # `git init` and then `git symbolic-ref HEAD refs/heads/main` name the branch on every
+    # version.
+    #
+    # Mutation: `mutations.toml`'s "overlay create --local asks git init for its branch".
+    runner = FakeRunner(answers={"git init -b": Completed(129, "", "error: unknown switch `b'")})
+    created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=runner)
+    assert ["git", "init", "-b", "main"] not in runner.calls
+    assert "made it a git repository on main" in " ".join(created.notes)
+
+
+def test_a_git_init_that_ran_and_failed_is_said_to_have_failed(tmp_path: Path) -> None:
+    # A `git` that ran and exited non-zero ran: the note says how it ended, not that it did not
+    # run.
+    #
+    # Mutation: `mutations.toml`'s "a git init that failed is said not to have run".
+    runner = FakeRunner(answers={"git init": Completed(128, "", "fatal: cannot mkdir")})
+    created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=runner)
+    message = " ".join(created.notes)
+    assert "`git init` exited 128" in message
+    assert "did not run" not in message and "could not be run" not in message
 
 
 def test_the_scratch_render_publish_template_uses_is_not_a_repository(tmp_path: Path) -> None:

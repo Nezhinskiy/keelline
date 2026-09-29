@@ -128,7 +128,8 @@ other `--store` is resolved at the path it names, under the same rules as before
 
 **When there is no store, the refusal says why** (exit `1`). An overlay root the machine
 configuration records that is not a directory on this machine — the overlay moved, or was never
-cloned here — is said first, with the root inside the region and `stayfixed setup --preset NAME
+cloned here — is said first, with the root named in stayfixed's own sentence (it is your
+machine configuration's, not the repository's) and `stayfixed setup --preset NAME
 --overlay PATH` as the way out, since `attach` refuses a store outside the recorded root. A
 binding that does not hold names which of its four causes it is, in stayfixed's own words before
 the region that carries the repository's: this checkout has no `origin` remote (add it, then run
@@ -1895,13 +1896,19 @@ measurement:** the one trial run against it did not reproduce the race, and one 
 rule out an asynchronous generation step that sometimes outlasts a clone. If the second attempt
 is still empty, the command fails (`1`) naming both attempts and what GitHub said in between.
 
-**`--local` leaves a git repository.** After rendering, it runs `git init -b main` in the instance
-directory and prints the two commands that give it a remote once you have created the private
-repository on GitHub: `git remote add origin git@github.com:<owner>/<name>.git` and
-`git push -u origin main`. A `git` that cannot run is a note, not a failure: the tree is there
-and the note says the command to run. An instance directory that is already a git repository is
-left as it is — no `git init`, its branch and remotes unchanged — and the note says so.
-`pre-commit install` is `overlay init`'s.
+**`--local` leaves a git repository.** After rendering, it runs `git init` and
+`git symbolic-ref HEAD refs/heads/main` in the instance directory (not `git init -b main`, which a
+`git` older than 2.28 refuses) and prints the two commands that give it a remote once you have
+created the private repository on GitHub: `git remote add origin git@github.com:<owner>/<name>.git`
+and `git push -u origin main`. A `git` that cannot run, or that runs and fails, is a note, not a
+failure: the tree is there, and the note says how the command ended and the commands to run. An
+instance directory that is already a git repository is left as it is — no `git init`, its branch
+and remotes unchanged — and the note says so. `pre-commit install` is `overlay init`'s.
+
+What `gh`, `git` and `pre-commit` print is quoted in these lines as it came, except that one
+holding anything but a plain path is escaped, so a line break or an escape sequence in it cannot
+start a line of its own or drive a terminal, and one longer than 120 characters is cut to its
+first 120 and its length.
 
 **Writes**, on `--local`, the instance directory `<root>/<name>` with every file of the template
 plus `.stayfixed/manifest.json`, and `<root>/<name>/.git`, the repository `git init` makes there

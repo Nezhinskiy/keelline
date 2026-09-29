@@ -220,19 +220,37 @@ def _initialise_repository(
             rendered,
             "it was already a git repository, and its branch and remotes were left as they were",
         )
-    done = runner.run(["git", "init", "-b", "main"], target)
+    # `git init` and then the branch, and not `git init -b main`: `-b` arrived in git 2.28, and an
+    # older `git` refuses the option, so the one command that makes the repository failed there.
+    # `symbolic-ref` names the unborn branch on every version.
     remote = (
         f"`git remote add origin git@github.com:{account}/{name}.git` and "
         f"`git push -u origin main` once you have created the private repository "
         f"{account}/{name} on GitHub"
     )
+    step = "git init"
+    done = runner.run(["git", "init"], target)
+    if done.code == 0:
+        step = "git symbolic-ref HEAD refs/heads/main"
+        done = runner.run(["git", "symbolic-ref", "HEAD", "refs/heads/main"], target)
     if done.code != 0:
         return (
             rendered,
-            f"`git init -b main` did not run ({_detail(done)}), so this is not a git repository "
-            f"yet: run `git init -b main` in it, then {remote}",
+            f"`{step}` {_ended(done)} ({_detail(done)}), so this is not a git repository on main "
+            f"yet: run `git init` and `git symbolic-ref HEAD refs/heads/main` in it, then {remote}",
         )
     return (rendered, f"made it a git repository on main with no remote; give it one with {remote}")
+
+
+def _ended(done: Completed) -> str:
+    """How a subprocess that did not succeed ended, in words true of each way: one that could
+    not be launched did not run, one that hung did not finish, and one that ran has an exit
+    code."""
+    if done.code == NOT_FOUND:
+        return "could not be run"
+    if done.code == TIMED_OUT:
+        return "did not finish"
+    return f"exited {done.code}"
 
 
 def _detail(done: Completed) -> str:
@@ -243,8 +261,13 @@ def _detail(done: Completed) -> str:
     not be run: …")` and the failure below still said "GitHub did not confirm the repository
     exists; check `gh auth status`" — a cause that was not the cause, about a binary that was
     not there. The same idiom `setup.run` uses for its notes.
+
+    **Clipped here, once, for every caller.** What `gh`, `git` and `pre-commit` print is not text
+    this project wrote: a proxy or a wrapper can put a line break and `::error::` in it, which a
+    CI runner reads as a workflow command, or an escape sequence, which drives a terminal.
+    `printed.clipped` escapes both and bounds the length.
     """
-    return done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"
+    return clipped(done.stderr.strip() or done.stdout.strip() or f"exit {done.code}")
 
 
 def _template_for(owner: str, *, root: Path, runner: Runner) -> str:
@@ -260,9 +283,8 @@ def _template_for(owner: str, *, root: Path, runner: Runner) -> str:
     `NOT_FOUND_ANSWER` on stderr can. A launch failure, a timeout, an authentication or network
     failure and an answer that is not the JSON asked for are each a state in which this run does
     not know whether the owner has a template, and guessing "no" would silently generate the
-    overlay of somebody who has one from somebody else's. What `gh` said is quoted, through
-    `printed.clipped`: it reaches a terminal and a CI log, and it is not a string this project
-    wrote.
+    overlay of somebody who has one from somebody else's. What `gh` said is quoted through
+    `_detail`, which clips it.
     """
     mine = f"{owner}/{TEMPLATE_REPOSITORY}"
     theirs = PUBLISHED_TEMPLATE
@@ -283,7 +305,7 @@ def _template_for(owner: str, *, root: Path, runner: Runner) -> str:
     else:
         what = f"exited {probe.code}"
     raise Failure(
-        f"`gh repo view {mine} …` {what} ({clipped(_detail(probe))}), so it is not known whether "
+        f"`gh repo view {mine} …` {what} ({_detail(probe)}), so it is not known whether "
         f"you have published a template, and nothing was created."
         + ("" if launched else " Install `gh` and authenticate it, or render the overlay locally.")
         + f" {TEMPLATE_PRECONDITION}"
@@ -614,8 +636,7 @@ def _install_secret_scan(root: Path, runner: Runner) -> str:
     done: Completed = runner.run(["pre-commit", "install"], root)
     if done.code == 0:
         return "installed the commit-time secret scan with `pre-commit install`"
-    detail = done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"
     return (
-        f"`pre-commit install` did not run ({detail}), so the commit-time secret scan is not "
-        f"installed; install pre-commit and run it in {root}. The push-time scan still runs"
+        f"`pre-commit install` did not run ({_detail(done)}), so the commit-time secret scan "
+        f"is not installed; install pre-commit and run it in {root}. The push-time scan still runs"
     )

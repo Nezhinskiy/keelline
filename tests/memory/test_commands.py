@@ -1147,4 +1147,8 @@ def test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it(
         # `setup --overlay` does; `attach --store <new place>` refuses a store outside the
         # recorded overlay, so it is not the first thing to run.
         assert "setup" in lead and "--overlay" in lead
-        assert "moved-away" in said.split(DELIMITER, 1)[1]
+        # The root is the owner's own machine configuration, not the repository's: it prints as
+        # stayfixed's own words, quoted, and never inside the region that marks repository text.
+        # Mutation: `mutations.toml`'s "the recorded overlay root is printed as repository text".
+        assert "moved-away" in lead
+        assert DELIMITER not in said

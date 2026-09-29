@@ -3754,7 +3754,7 @@ reddens = [
 [[mutation]]
 name = "overlay create --local leaves no git repository"
 file = "src/stayfixed/overlay/create.py"
-before = '''    done = runner.run(["git", "init", "-b", "main"], target)'''
+before = '''    done = runner.run(["git", "init"], target)'''
 after = '''    done = Completed(0, "", "")'''
 reddens = [
   "tests/overlay/test_create.py::test_a_local_overlay_is_a_git_repository_on_main_with_no_remote",
@@ -13431,6 +13431,52 @@ before = '        and current.get("name", PLACEHOLDER_ACCOUNT) == PLACEHOLDER_AC
 after = "        and True"
 reddens = [
   "tests/overlay/test_create.py::test_init_keeps_an_author_the_owner_wrote_themselves",
+]
+
+# What `gh`, `git clone`, `git init` and `pre-commit` print reached a terminal and a CI log raw: a
+# line break followed by `::error::` is a workflow command there, and an escape drives a terminal.
+[[mutation]]
+name = "a subprocess's answer is quoted raw"
+file = "src/stayfixed/overlay/create.py"
+before = '    return clipped(done.stderr.strip() or done.stdout.strip() or f"exit {done.code}")'
+after = '    return done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"'
+reddens = [
+  "tests/overlay/test_create.py::test_what_gh_and_git_print_cannot_drive_a_terminal[repo-create]",
+  "tests/overlay/test_create.py::test_what_gh_and_git_print_cannot_drive_a_terminal[clone-and-view]",
+  "tests/overlay/test_create.py::test_what_git_init_prints_cannot_drive_a_terminal",
+  "tests/overlay/test_create.py::test_a_probe_failure_is_printed_without_letting_it_drive_a_terminal",
+]
+
+# `git init -b` arrived in git 2.28; an older `git` refused it and the `--local` overlay was left
+# without a repository.
+[[mutation]]
+name = "overlay create --local asks git init for its branch"
+file = "src/stayfixed/overlay/create.py"
+before = '    done = runner.run(["git", "init"], target)'
+after = '    done = runner.run(["git", "init", "-b", "main"], target)'
+reddens = [
+  "tests/overlay/test_create.py::test_a_git_older_than_2_28_still_leaves_a_repository_on_main",
+  "tests/overlay/test_create.py::test_a_local_overlay_is_a_git_repository_on_main_with_no_remote",
+]
+
+[[mutation]]
+name = "a git init that failed is said not to have run"
+file = "src/stayfixed/overlay/create.py"
+before = '    return f"exited {done.code}"'
+after = '    return "did not run"'
+reddens = [
+  "tests/overlay/test_create.py::test_a_git_init_that_ran_and_failed_is_said_to_have_failed",
+]
+
+# The recorded overlay root is the owner's machine configuration, and was printed inside the
+# region that marks repository text.
+[[mutation]]
+name = "the recorded overlay root is printed as repository text"
+file = "src/stayfixed/memory/store.py"
+before = "            return None, Unresolved(OVERLAY_GONE.format(root=quoted(str(overlay))))"
+after = '            return None, Unresolved(OVERLAY_GONE.format(root="it"), quoted(str(overlay)))'
+reddens = [
+  "tests/memory/test_commands.py::test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it[overlay-gone]",
 ]
 
 # CI's rendered-artifact check accepted any directory named `.git`, so an empty `mkdir .git` stood

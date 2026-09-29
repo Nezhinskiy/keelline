@@ -2,4 +2,7 @@ When a real `stayfixed.toml` does not load (a file or value the loader refuses, 
 entry that leaves the project or passes through a symlink, such as a symlinked `AGENTS.md`),
 `stayfixed hook` now says so in its own words and points at `stayfixed docs check` for the
 detail, instead of printing `internal error` with the loader's message. The verdict per event is
-unchanged: a `PreToolUse` call is still refused, and every other event still continues open.
+unchanged: a `PreToolUse` call is still refused, and every other event still continues open. On
+0.1.1 a refused `PreToolUse` printed that message on the stderr the model reads, and it could
+carry a key, a table name or a `[paths]` value the repository chose (plain names only: letters,
+digits, `.`, `_` and `-`, and in a path also `/`); it now prints only stayfixed's own words.

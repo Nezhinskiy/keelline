@@ -88,7 +88,7 @@ def check_sdist(path: Path) -> list[str]:
     return findings
 
 
-# What `git init -b main` leaves in `.git/HEAD`.
+# What `git init` followed by `git symbolic-ref HEAD refs/heads/main` leaves in `.git/HEAD`.
 MAIN_HEAD = b"ref: refs/heads/main\n"
 
 
