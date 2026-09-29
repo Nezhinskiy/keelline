@@ -48,6 +48,7 @@ hides everything, where `attach` changes nothing and so never needs the file at 
 
 from __future__ import annotations
 
+import contextlib
 import os
 import tempfile
 from collections.abc import Callable, Sequence
@@ -75,7 +76,10 @@ EXCLUDE_NOTE = "# stayfixed attach: this machine's links, rules and settings, no
 # one it added is taken back when nothing follows the block.
 EXCLUDE_CREATED = "# stayfixed attach: this file was created for this block."
 EXCLUDE_ENDED = "# stayfixed attach: the line before this block had no line ending until attach."
-_RECORDS = (EXCLUDE_CREATED, EXCLUDE_ENDED)
+# The third, for a repository made without git's templates, which has no `info/` directory until
+# the block's write makes one: the detach that removes the file takes the directory back too.
+EXCLUDE_DIRECTORY_CREATED = "# stayfixed attach: this file's directory was created for this block."
+_RECORDS = (EXCLUDE_CREATED, EXCLUDE_ENDED, EXCLUDE_DIRECTORY_CREATED)
 # The characters git's pattern syntax gives a meaning to inside a path, each escaped with a
 # backslash so the line matches the one path it was written for. A space is escaped too: a
 # trailing one is dropped by git unless it is.
@@ -113,6 +117,9 @@ class ExcludeWrite:
 
     path: Path
     text: str | None
+    # With `text` `None`: the directory holding the file was created for the block as well, so it
+    # goes too when the file's removal leaves it empty.
+    directory_created: bool = False
 
 
 def unignored(root: Path, relatives: Sequence[str]) -> tuple[str, ...]:
@@ -254,6 +261,7 @@ def planned_block(root: Path, relatives: Sequence[str]) -> ExcludeWrite | None:
     if earlier is None:
         records = [
             *((EXCLUDE_CREATED,) if read is None else ()),
+            *((EXCLUDE_DIRECTORY_CREATED,) if not path.parent.is_dir() else ()),
             *((EXCLUDE_ENDED,) if current and not current.endswith(("\n", "\r")) else ()),
         ]
     else:
@@ -319,7 +327,7 @@ def withdrawn_block(root: Path) -> ExcludeWrite | None:
     if EXCLUDE_ENDED in records and current.startswith(remaining):
         remaining = remaining.removesuffix(_ending(remaining))
     if EXCLUDE_CREATED in records and not remaining:
-        return ExcludeWrite(path, None)
+        return ExcludeWrite(path, None, EXCLUDE_DIRECTORY_CREATED in records)
     return ExcludeWrite(path, remaining)
 
 
@@ -337,6 +345,10 @@ def write(planned: ExcludeWrite) -> None:
     try:
         if planned.text is None:
             fsops.remove_within(planned.path.parent, planned.path.name)
+            if planned.directory_created:
+                # `rmdir`, so a directory anything else has written into since stays.
+                with contextlib.suppress(OSError):
+                    fsops.rmdir_within(planned.path.parent.parent, planned.path.parent.name)
             return
         fsops.write_atomically(planned.path, planned.text, errors="surrogateescape")
     except OSError as exc:

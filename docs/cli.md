@@ -2205,8 +2205,10 @@ with no approval recorded for the store yet, it cannot be. A checkout that alrea
 them in its own exclude file or a global excludes file gets no block, and one that already hides
 `.stayfixed/local/` and `.stayfixed/assessment.json` by any means, `.gitignore` included, gets no
 `.gitignore` change, so `git status` after an attach shows at most the `stayfixed:ignore` region.
-`.gitignore` is never written beyond that region. When the exclude file did not exist, or its last
-line had no line ending, the block says so in a comment line of its own, which is what lets
+`.gitignore` is never written beyond that region. When the exclude file did not exist, when the
+directory it goes in did not exist either (a repository made without git's templates has no
+`info/`, and the write creates it), or when its last line had no line ending, the block says so in
+a comment line of its own, which is what lets
 `detach`, from whichever checkout runs it last, give the file back byte for byte. The file is read
 as bytes, so bytes in it that are not UTF-8 are kept exactly and refuse nothing.
 
@@ -2330,9 +2332,10 @@ files it wrote, withdraws the link tree from this checkout and every worktree to
 harness memory link, removes the `stayfixed:ignore` region and the `stayfixed:attach` block in
 the repository's exclude file, and deletes the ledger, `.stayfixed/local/attach.json`. A file
 left holding nothing is removed rather than left empty — for the exclude file, only when `attach`
-created it, which the block records, so an exclude file you had, empty or not, stays; the line
-ending `attach` added to your exclude file's last line before its block is taken back too, when
-nothing follows the block. The exclude file is read and written as bytes, so bytes in it that are
+created it, which the block records, so an exclude file you had, empty or not, stays, and the
+`info/` directory it sat in goes with it only when `attach` created that too and it is empty; the
+line ending `attach` added to your exclude file's last line before its block is taken back too,
+when nothing follows the block. The exclude file is read and written as bytes, so bytes in it that are
 not UTF-8 are kept as they are. An exclude file that is a symlink is left alone, because `attach`
 never writes through one. **The exclude block stays while another checkout is attached.** The
 exclude file is shared by every worktree of the repository, while the ledger, the settings file

@@ -1175,3 +1175,36 @@ def test_a_ledger_no_attach_of_that_checkout_wrote_does_not_keep_the_block(
     removed = _detach(root, machine, home)
     assert removed.exclude_block_kept is False
     assert removed.exclude_block_removed is True
+
+
+def test_an_info_directory_attach_created_is_removed_by_detach(tmp_path: Path) -> None:
+    # A repository made without git's templates has no `.git/info/` at all, and the write of the
+    # exclude file created it; `detach` removed the file and left the directory behind. The block
+    # records that its directory was created for it, and `detach` takes the directory back when
+    # it is empty.
+    #
+    # Mutation: `mutations.toml`'s "detach leaves the info directory attach created".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    info = _exclude_file(root).parent
+    shutil.rmtree(info)
+    _attach(root, store, machine, home, confirmed=True)
+    # Non-vacuous: the attach did create the directory for its block.
+    assert _exclude_file(root).is_file()
+    _detach(root, machine, home)
+    assert not info.exists()
+
+
+def test_an_info_directory_the_owner_had_survives_detach(tmp_path: Path) -> None:
+    # The other half: a directory that was there before the attach, even empty, is not the
+    # attach's to take.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    info = _exclude_file(root).parent
+    _exclude_file(root).unlink()
+    assert info.is_dir() and not any(info.iterdir())
+    _attach(root, store, machine, home, confirmed=True)
+    _detach(root, machine, home)
+    assert info.is_dir()

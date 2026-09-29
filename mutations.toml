@@ -13513,3 +13513,32 @@ after = "            pass"
 reddens = [
   "tests/attach/test_detach.py::test_a_ledger_no_attach_of_that_checkout_wrote_does_not_keep_the_block[unreadable]",
 ]
+
+# A repository made without git's templates has no `.git/info/`; the block's write created it, and
+# `detach` removed the file and left the directory behind.
+[[mutation]]
+name = "detach leaves the info directory attach created"
+file = "src/stayfixed/attach/exclude.py"
+before = "            if planned.directory_created:"
+after = "            if False:"
+reddens = [
+  "tests/attach/test_detach.py::test_an_info_directory_attach_created_is_removed_by_detach",
+]
+
+[[mutation]]
+name = "the exclude block forgets that it created the info directory"
+file = "src/stayfixed/attach/exclude.py"
+before = "            *((EXCLUDE_DIRECTORY_CREATED,) if not path.parent.is_dir() else ()),"
+after = ""
+reddens = [
+  "tests/attach/test_detach.py::test_an_info_directory_attach_created_is_removed_by_detach",
+]
+
+[[mutation]]
+name = "detach removes an info directory the owner had"
+file = "src/stayfixed/attach/exclude.py"
+before = "        return ExcludeWrite(path, None, EXCLUDE_DIRECTORY_CREATED in records)"
+after = "        return ExcludeWrite(path, None, True)"
+reddens = [
+  "tests/attach/test_detach.py::test_an_info_directory_the_owner_had_survives_detach",
+]
