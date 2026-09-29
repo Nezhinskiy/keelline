@@ -79,7 +79,13 @@ EXCLUDE_ENDED = "# stayfixed attach: the line before this block had no line endi
 # The third, for a repository made without git's templates, which has no `info/` directory until
 # the block's write makes one: the detach that removes the file takes the directory back too.
 EXCLUDE_DIRECTORY_CREATED = "# stayfixed attach: this file's directory was created for this block."
-_RECORDS = (EXCLUDE_CREATED, EXCLUDE_ENDED, EXCLUDE_DIRECTORY_CREATED)
+# The fourth: the owner's last line ended in a lone `\r`, which `attach` ended with `\n` alone.
+# The bytes `X\r` + `\n` and `X` + `\r\n` are the same, so `detach` cannot tell which ending it
+# added from the file, and reads it here.
+EXCLUDE_ENDED_AFTER_CR = (
+    "# stayfixed attach: the line before this block ended in a lone carriage return until attach."
+)
+_RECORDS = (EXCLUDE_CREATED, EXCLUDE_ENDED, EXCLUDE_DIRECTORY_CREATED, EXCLUDE_ENDED_AFTER_CR)
 # The characters git's pattern syntax gives a meaning to inside a path, each escaped with a
 # backslash so the line matches the one path it was written for. A space is escaped too: a
 # trailing one is dropped by git unless it is.
@@ -262,7 +268,9 @@ def planned_block(root: Path, relatives: Sequence[str]) -> ExcludeWrite | None:
         records = [
             *((EXCLUDE_CREATED,) if read is None else ()),
             *((EXCLUDE_DIRECTORY_CREATED,) if not path.parent.is_dir() else ()),
+            # git's line end, `\n` alone: a last line ending in a lone `\r` is not ended.
             *((EXCLUDE_ENDED,) if current and not current.endswith(("\n", "\r")) else ()),
+            *((EXCLUDE_ENDED_AFTER_CR,) if current.endswith("\r") else ()),
         ]
     else:
         records = [record for record in _RECORDS if record in _lines(earlier)]
@@ -309,7 +317,8 @@ def withdrawn_block(root: Path) -> ExcludeWrite | None:
     rather than refused, because `attach` never writes through one, so a block behind a link is
     not one this command put there.
 
-    Byte for byte, from what the block records (`EXCLUDE_CREATED`, `EXCLUDE_ENDED`): a file
+    Byte for byte, from what the block records (`EXCLUDE_CREATED`, `EXCLUDE_ENDED`,
+    `EXCLUDE_ENDED_AFTER_CR`, `EXCLUDE_DIRECTORY_CREATED`): a file
     created for the block and left holding nothing is removed, and a line ending `attach` added
     before the block is taken back when nothing follows it. With the owner's own line after the
     block, taking it back would join two lines, so it stays.
@@ -325,18 +334,20 @@ def withdrawn_block(root: Path) -> ExcludeWrite | None:
     remaining = drop(current, EXCLUDE_REGION, Style.HASH)
     # Nothing follows the block exactly when what is left is what came before it.
     if EXCLUDE_ENDED in records and current.startswith(remaining):
-        remaining = remaining.removesuffix(_ending(remaining))
+        remaining = remaining.removesuffix(_added_ending(remaining))
+    if EXCLUDE_ENDED_AFTER_CR in records and current.startswith(remaining):
+        remaining = remaining.removesuffix("\n")
     if EXCLUDE_CREATED in records and not remaining:
         return ExcludeWrite(path, None, EXCLUDE_DIRECTORY_CREATED in records)
     return ExcludeWrite(path, remaining)
 
 
-def _ending(text: str) -> str:
-    """The line ending `text` ends with, or `""`."""
-    for ending in ("\r\n", "\n", "\r"):
-        if text.endswith(ending):
-            return ending
-    return ""
+def _added_ending(text: str) -> str:
+    """The line ending `attach` added at the end of `text`, the owner's file with it: `upsert`
+    ends a line with `\r\n` in a file that already holds one, and with `\n` otherwise. The line
+    it ended did not end in `\r` (that case is `EXCLUDE_ENDED_AFTER_CR`'s), so a `\r\n` at the
+    end is the whole ending it added."""
+    return "\r\n" if text.endswith("\r\n") else "\n" if text.endswith("\n") else ""
 
 
 def write(planned: ExcludeWrite) -> None:

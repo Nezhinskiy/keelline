@@ -1914,3 +1914,56 @@ def test_a_settings_file_an_earlier_attach_wrote_is_hidden_by_the_next_one(
     assert not _check_ignore(root, SETTINGS)
     _attach_confirmed(root, store, machine, home)
     assert _check_ignore(root, SETTINGS)
+
+
+def _exclude_files() -> list[bytes | None]:
+    """Every exclude file of up to two pattern lines, each ended by `\\n`, `\\r\\n`, a lone `\\r`
+    or `\\r\\r\\n`, with the last one also left unended, plus an absent and an empty file."""
+    endings = [b"\n", b"\r\n", b"\r", b"\r\r\n"]
+    files: list[bytes | None] = [None, b""]
+    for first in endings:
+        files += [b"/a0" + first, b"/a0"]
+        for second in endings:
+            files += [b"/a0" + first + b"/a1" + second, b"/a0" + first + b"/a1"]
+    return list(dict.fromkeys(files))
+
+
+def test_the_exclude_block_hides_what_git_hid_and_gives_every_file_back(tmp_path: Path) -> None:
+    # Checked against git itself, not against a model of it: for each exclude file, what git hides
+    # with the block is what it hid without it plus the placed path, and taking the block out
+    # gives the bytes back. git ends a line at `\n` and then drops one `\r` before it, so a file
+    # holding `\r\n` whose last line ended `/a1\r` used to get `\r\n` appended, and git read
+    # `/a1\r`, a pattern for another name.
+    #
+    # Mutations: `mutations.toml`'s "a hash region ends a line after a lone carriage return with
+    # the file's own ending" and "detach takes back a whole CRLF after a lone carriage return".
+    from stayfixed.attach import exclude
+
+    repo = tmp_path / "r"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    for name in ("a0", "a1", "linked"):
+        (repo / name).write_text("x", encoding="utf-8")
+    path = repo / ".git" / "info" / "exclude"
+
+    def hidden() -> set[str]:
+        return set(run_git(repo, "check-ignore", "--", "a0", "a1", "linked").stdout.split())
+
+    wrong = []
+    for held in _exclude_files():
+        if held is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(held)
+        before = hidden()
+        planned = exclude.planned_block(repo, ["linked"])
+        assert planned is not None
+        exclude.write(planned)
+        with_block = hidden()
+        withdrawn = exclude.withdrawn_block(repo)
+        assert withdrawn is not None
+        exclude.write(withdrawn)
+        after = path.read_bytes() if path.exists() else None
+        if with_block != before | {"linked"} or after != held:
+            wrong.append((held, sorted(before), sorted(with_block), after))
+    assert wrong == []

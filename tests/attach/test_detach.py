@@ -1146,6 +1146,30 @@ def test_detach_writes_nothing_through_an_exclude_file_that_became_a_symlink(
     assert not detached.exclude_block_removed
 
 
+def test_an_exclude_file_ending_in_a_lone_carriage_return_keeps_its_last_pattern(
+    tmp_path: Path,
+) -> None:
+    # git ends a line at `\n` alone, so an exclude file ending `/zz\r` holds the pattern `/zz` on
+    # an unended last line. The block was read as starting a new line after the `\r`, so its first
+    # marker was glued onto that line and `zz` showed in `git status` while the repository was
+    # attached. The file comes back byte for byte on detach.
+    #
+    # Mutations: `mutations.toml`'s "a hash region reads a lone carriage return as a line end",
+    # "the exclude block reads a lone carriage return as a line end" and "detach takes back a
+    # line ending attach never added".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    held = b"/qq\n/zz\r"
+    _exclude_file(root).write_bytes(held)
+    (root / "zz").write_text("mine\n", encoding="utf-8")
+    assert "zz" not in git(root, "status", "--porcelain")
+    _attach(root, store, machine, home, confirmed=True)
+    assert "zz" not in git(root, "status", "--porcelain")
+    _detach(root, machine, home)
+    assert _exclude_file(root).read_bytes() == held
+
+
 @pytest.mark.parametrize("kind", ["committed", "unreadable"])
 def test_a_ledger_no_attach_of_that_checkout_wrote_does_not_keep_the_block(
     tmp_path: Path, kind: str

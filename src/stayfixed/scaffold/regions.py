@@ -8,6 +8,12 @@ its own `.gitignore` while one section of each is refreshed by `upgrade`.
 and never re-joins with `"\\n"`: a file with CRLF endings, or a form feed in a paragraph, must
 come back out as it went in. `str.splitlines()` alone splits on eleven characters and
 normalises all of them.
+
+**Where a line ends depends on who reads the file.** A hash-style region lives in a file git reads
+(`.gitignore`, `info/exclude`), and git ends a line at `\n` alone: read as also ending at a lone
+`\r`, a last line `/zz\r` counted as ended, the block's begin marker was glued onto it, and git
+lost the `/zz` pattern. A Markdown region keeps the lone `\r` as a line end, as a Markdown reader
+does.
 """
 
 from __future__ import annotations
@@ -18,6 +24,8 @@ from enum import StrEnum
 from stayfixed.errors import Refusal
 
 _LINE = re.compile(r"[^\r\n]*(?:\r\n|\r|\n)?")
+# git's own split, for `Style.HASH`: a line ends at `\n` alone, and a `\r` before it is the line's.
+_GIT_LINE = re.compile(r"[^\n]*\n?")
 
 
 class RegionError(Refusal):
@@ -35,9 +43,14 @@ def markers(name: str, style: Style) -> tuple[str, str]:
     return (f"# stayfixed:{name}:begin", f"# stayfixed:{name}:end")
 
 
-def _lines(text: str) -> list[str]:
-    """Every line with its own ending preserved; `"".join(_lines(t)) == t` for any `t`."""
-    return [m.group(0) for m in _LINE.finditer(text) if m.group(0)]
+def _lines(text: str, style: Style) -> list[str]:
+    """Every line with its own ending preserved; `"".join(_lines(t, s)) == t` for any `t`."""
+    pattern = _GIT_LINE if style is Style.HASH else _LINE
+    return [m.group(0) for m in pattern.finditer(text) if m.group(0)]
+
+
+def _ended(line: str, style: Style) -> bool:
+    return line.endswith("\n") if style is Style.HASH else line.endswith(("\n", "\r"))
 
 
 def _newline(text: str) -> str:
@@ -73,7 +86,7 @@ def extract(text: str, name: str, style: Style) -> str | None:
     template rendered, and a template that ends with a newline would otherwise be reported
     hand-edited on every run.
     """
-    lines = _lines(text)
+    lines = _lines(text, style)
     found = _bounds(lines, name, style, name)
     if found is None:
         return None
@@ -86,21 +99,25 @@ def upsert(text: str, name: str, body: str, style: Style) -> str:
     begin, end = markers(name, style)
     newline = _newline(text)
     block = [begin + newline]
-    block += [line if line.endswith(("\n", "\r")) else line + newline for line in _lines(body)]
+    block += [line if _ended(line, style) else line + newline for line in _lines(body, style)]
     block.append(end + newline)
-    lines = _lines(text)
+    lines = _lines(text, style)
     found = _bounds(lines, name, style, name)
     if found is None:
         head = list(lines)
-        if head and not head[-1].endswith(("\n", "\r")):
-            head[-1] = head[-1] + newline
+        if head and not _ended(head[-1], style):
+            # git drops one `\r` before the `\n` that ends a line, so a last line ending in a
+            # lone `\r` is ended by `\n` alone: the file's own `\r\n` there would leave git
+            # reading the pattern with a `\r` on it, a pattern for another name.
+            lone_cr = style is Style.HASH and head[-1].endswith("\r")
+            head[-1] = head[-1] + ("\n" if lone_cr else newline)
         return "".join(head + block)
     start, stop = found
     return "".join(lines[:start] + block + lines[stop + 1 :])
 
 
 def drop(text: str, name: str, style: Style) -> str:
-    lines = _lines(text)
+    lines = _lines(text, style)
     found = _bounds(lines, name, style, name)
     if found is None:
         return text
