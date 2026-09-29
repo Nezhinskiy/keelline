@@ -124,7 +124,10 @@ def test_the_local_source_touches_no_network(tmp_path: Path) -> None:
     # test may exercise end to end.
     runner = FakeRunner()
     created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=runner)
-    assert runner.calls == []
+    # "Touches no network" is a claim about `gh`: the one local call is `git init`, asserted on
+    # its own below. It used to read `runner.calls == []`, which was that claim while `--local`
+    # ran nothing at all.
+    assert [argv for argv in runner.calls if argv[0] == "gh"] == []
     assert (created.root / ".claude-plugin" / "plugin.json").is_file()
     assert (created.root / "hooks" / "hooks.json").is_file()
 
@@ -499,6 +502,64 @@ def test_a_gh_that_is_not_installed_costs_one_subprocess_at_the_probe(tmp_path: 
     assert waited == []
 
 
+# --- `--local` leaves a repository -------------------------------------------------------------
+
+
+def test_a_local_overlay_is_a_git_repository_on_main_with_no_remote(tmp_path: Path) -> None:
+    # `create --local` used to leave a bare directory, so the owner's next step (commit it, push
+    # it to a private repository) began with a `git init` nobody had told them about. The init
+    # is `create`'s `--local` branch and not `_render_locally`, which `publish-template` also
+    # uses for its scratch render. Mutation (`mutations.toml`, "overlay create --local leaves no
+    # git repository"): the `git init` call is deleted → this reddens.
+    runner = FakeRunner()
+    created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=runner)
+    assert runner.calls == [["git", "init", "-b", "main"]]
+    assert runner.cwds == [created.root]
+    assert not any(argv[0] == "gh" for argv in runner.calls), "`--local` touches no GitHub"
+    message = " ".join(created.notes)
+    assert "git remote add origin git@github.com:octo/stayfixed-private.git" in message
+    assert "git push -u origin main" in message
+
+
+def test_a_local_overlay_carries_a_real_repository_on_main(tmp_path: Path) -> None:
+    # The same claim against a real `git`, because a stub records the argv and cannot say whether
+    # the argv makes a repository: `-b main` is `git`'s own and `HEAD` is where it shows.
+    import shutil
+
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    from stayfixed.runner import subprocess_runner
+
+    created = create(
+        "octo", "stayfixed-private", source="local", root=tmp_path, runner=subprocess_runner()
+    )
+    head = (created.root / ".git" / "HEAD").read_text(encoding="utf-8").strip()
+    assert head == "ref: refs/heads/main"
+    config = (created.root / ".git" / "config").read_text(encoding="utf-8")
+    assert "[remote" not in config, "no remote: the owner adds it once the repository exists"
+
+
+def test_a_git_that_cannot_init_is_a_note_and_the_tree_is_kept(tmp_path: Path) -> None:
+    # The tree is already rendered when `git init` runs, so a missing `git` cannot un-render it;
+    # refusing would only hide a directory that exists. The note says what to run.
+    runner = FakeRunner(answers={"git": Completed(127, "", "git could not be run: [Errno 2] git")})
+    created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=runner)
+    assert (created.root / ".claude-plugin" / "plugin.json").is_file()
+    message = " ".join(created.notes)
+    assert "git could not be run" in message
+    assert "git init -b main" in message
+
+
+def test_the_scratch_render_publish_template_uses_is_not_a_repository(tmp_path: Path) -> None:
+    # `_render_locally` is shared with `publish-template`, whose scratch tree is cloned over and
+    # then replaced: a `.git` of its own there would be pushed as a nested repository. The init
+    # belongs to the `--local` branch alone.
+    from stayfixed.overlay.create import _render_locally
+
+    rendered = _render_locally(tmp_path, "scratch")
+    assert not (rendered / ".git").exists()
+
+
 def test_init_names_the_codex_manifest_after_the_owner_too(tmp_path: Path) -> None:
     # `init_instance`'s own docstring gives the rationale — a harness
     # installs a plugin by the name in its manifest, so two owners' overlays under one
@@ -539,3 +600,42 @@ def test_a_manifest_this_overlay_does_not_carry_is_a_note_not_a_failure(tmp_path
     result = init_instance(created.root, "octo", runner=FakeRunner())
     assert ".codex-plugin/plugin.json" not in result.renamed
     assert any(".codex-plugin/plugin.json" in note for note in result.notes)
+
+
+def test_a_local_render_over_an_existing_repository_says_what_it_found(tmp_path: Path) -> None:
+    # `--local` renders into `<root>/<name>` whether or not a repository is already there, and
+    # `git init` over one is a no-op that changes neither its branch nor its remotes. The note
+    # said "made it a git repository on main with no remote" anyway -- about a repository on
+    # another branch with an `origin` -- and told the owner to add a remote it already had.
+    #
+    # Mutation (`mutations.toml`, "overlay create --local reads an existing repository as one it
+    # made"): the check for an existing repository is dropped → this reddens.
+    import shutil
+
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    from stayfixed.runner import subprocess_runner
+    from tests.gitfixture import git
+
+    target = tmp_path / "stayfixed-private"
+    target.mkdir()
+    git(target, "init", "-q", "-b", "work")
+    git(target, "remote", "add", "origin", "git@example.com:octo/stayfixed-private.git")
+    created = create(
+        "octo", "stayfixed-private", source="local", root=tmp_path, runner=subprocess_runner()
+    )
+    message = " ".join(created.notes)
+    assert "already a git repository" in message
+    assert "made it a git repository" not in message
+    assert "git remote add origin" not in message
+    head = (created.root / ".git" / "HEAD").read_text(encoding="utf-8").strip()
+    assert head == "ref: refs/heads/work"
+    assert '[remote "origin"]' in (created.root / ".git" / "config").read_text(encoding="utf-8")
+
+
+def test_a_local_render_over_an_existing_repository_runs_no_git_init(tmp_path: Path) -> None:
+    # The stub half: over an existing repository there is nothing for `git init` to do.
+    (tmp_path / "stayfixed-private" / ".git").mkdir(parents=True)
+    runner = FakeRunner()
+    create("octo", "stayfixed-private", source="local", root=tmp_path, runner=runner)
+    assert runner.calls == []

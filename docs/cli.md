@@ -1826,8 +1826,8 @@ shaped like an option is refused rather than quoted. `--root` is the directory t
 created *in*, not a project root, and defaults to the current directory.
 
 **Neither source is a default.** `--template` asks GitHub to generate a private repository from
-a template repository and clone it; `--local` renders the shipped template here and makes no
-network call. An invocation with neither is refused (`2`) naming
+a template repository and clone it; `--local` renders the shipped template here, makes a git
+repository of it, and makes no network call. An invocation with neither is refused (`2`) naming
 both, so that creating a repository on an account is never something an omitted flag does.
 
 **`--template` uses your template when you have published one, and the publisher's otherwise.**
@@ -1864,8 +1864,18 @@ measurement:** the one trial run against it did not reproduce the race, and one 
 rule out an asynchronous generation step that sometimes outlasts a clone. If the second attempt
 is still empty, the command fails (`1`) naming both attempts and what GitHub said in between.
 
+**`--local` leaves a git repository.** After rendering, it runs `git init -b main` in the instance
+directory and prints the two commands that give it a remote once you have created the private
+repository on GitHub: `git remote add origin git@github.com:<owner>/<name>.git` and
+`git push -u origin main`. A `git` that cannot run is a note, not a failure: the tree is there
+and the note says the command to run. An instance directory that is already a git repository is
+left as it is — no `git init`, its branch and remotes unchanged — and the note says so.
+`pre-commit install` is `overlay init`'s.
+
 **Writes**, on `--local`, the instance directory `<root>/<name>` with every file of the template
-plus `.stayfixed/manifest.json`. On `--template`, through `gh repo create <owner>/<name> --private --template <template> --clone`, where
+plus `.stayfixed/manifest.json`, and `<root>/<name>/.git`, the repository `git init` makes there
+when there is none yet. On
+`--template`, through `gh repo create <owner>/<name> --private --template <template> --clone`, where
 `<template>` is `<owner>/stayfixed-overlay-template` or
 `github.com/stayfixed/stayfixed-overlay-template` as above, a new private repository on GitHub under
 `<owner>` and its clone at `<root>/<name>` — or, when that clone brings nothing down, a clone

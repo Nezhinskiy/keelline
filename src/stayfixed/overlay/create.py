@@ -3,7 +3,7 @@
 Two sources, one result. `--template` asks GitHub to generate a private repository from a public
 template and clone it — the owner's own `<owner>/stayfixed-overlay-template` when they have
 published one, and the publisher's otherwise; `--local` renders `templates/overlay/` here through
-the scaffold engine, and touches no network. A template and not a
+the scaffold engine, makes a git repository of it, and touches no network. A template and not a
 fork: a fork's visibility is bound to the upstream network and cannot be made private, and an
 overlay that is not private is the one outcome this whole area exists to prevent.
 
@@ -175,12 +175,48 @@ def create(
         # `--root`, which is a refusal a person can act on rather than an internal error.
         raise Refusal(f"{root} is not a directory; name one that exists with --root")
     if source == "local":
-        return Created(
-            _render_locally(root, name),
-            source,
-            ("rendered from the shipped template; no network call was made",),
-        )
+        target = _render_locally(root, name)
+        # Here and not in `_render_locally`, which `publish-template` also renders through: its
+        # scratch tree is cloned over and replaced, and a repository of its own there would be
+        # pushed as a nested one. A repository is what this owner does next with the tree (commit
+        # it, give it a private remote), so it is made now, on `main`, with no remote: the remote
+        # is a repository that has to exist on GitHub first, and that is the owner's to create.
+        return Created(target, source, _initialise_repository(target, account, name, runner))
     return _from_template(account, name, root=root, runner=runner, wait=wait)
+
+
+def _initialise_repository(
+    target: Path, account: str, name: str, runner: Runner
+) -> tuple[str, str]:
+    """The notes a `--local` run ends with: the repository it made, and how to give it a remote.
+
+    A `git` that cannot run is a note and not a failure: the tree is on disk by now, so refusing
+    would hide a directory that exists, and the note says the one command that finishes the job.
+
+    A directory that is already a repository is left as it is: `git init` over one changes
+    neither its branch nor its remotes, so a note saying it was made one on `main` with no remote
+    would be false about a repository on another branch with an `origin`.
+    """
+    rendered = "rendered from the shipped template; no network call was made"
+    git_dir = target / ".git"
+    if git_dir.exists() or git_dir.is_symlink():
+        return (
+            rendered,
+            "it was already a git repository, and its branch and remotes were left as they were",
+        )
+    done = runner.run(["git", "init", "-b", "main"], target)
+    remote = (
+        f"`git remote add origin git@github.com:{account}/{name}.git` and "
+        f"`git push -u origin main` once you have created the private repository "
+        f"{account}/{name} on GitHub"
+    )
+    if done.code != 0:
+        return (
+            rendered,
+            f"`git init -b main` did not run ({_detail(done)}), so this is not a git repository "
+            f"yet: run `git init -b main` in it, then {remote}",
+        )
+    return (rendered, f"made it a git repository on main with no remote; give it one with {remote}")
 
 
 def _detail(done: Completed) -> str:

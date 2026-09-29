@@ -21,7 +21,7 @@ Three things this looks at, each of which was an inline CI step or nothing at al
   permission error rather than as a broken install.
 * **A rendered overlay.** `overlay create --local` is the one working source for a first
   overlay, and what it leaves behind has to be the files the package ships plus the scaffold
-  ledger — no more and no less.
+  ledger — no more and no less — inside a git repository, which `--local` initialises.
 """
 
 from __future__ import annotations
@@ -88,12 +88,38 @@ def check_sdist(path: Path) -> list[str]:
     return findings
 
 
+# What `git init -b main` leaves in `.git/HEAD`.
+MAIN_HEAD = b"ref: refs/heads/main\n"
+
+
 def check_render(root: Path) -> list[str]:
+    """The rendered tree minus its repository must be the expected files exactly.
+
+    `overlay create --local` initialises a git repository on `main` in what it renders, so
+    `.git/` is part of the contract and is asked for, not merely stepped over: only a `.git` that
+    is a directory is set aside from the comparison, a tree without one is a finding, and so is
+    one whose `HEAD` does not name `refs/heads/main`, which is how a directory that merely has the
+    name (an empty `mkdir .git`) or a repository on another branch is told apart with no
+    subprocess. Anything else, a stray file beside it or in a directory that only shares its
+    prefix, is compared as before.
+    """
     expected = {*OVERLAY_FILES, str(MANIFEST_PATH)}
-    found = {str(p.relative_to(root)) for p in root.rglob("*") if p.is_file()}
-    return [f"rendered: missing {n}" for n in sorted(expected - found)] + [
-        f"rendered: unexpected {n}" for n in sorted(found - expected)
-    ]
+    repository = root / ".git"
+    inside = repository.is_dir()
+    head = repository / "HEAD"
+    # Bytes, compared: a `HEAD` that is not text is a finding like any other, never a traceback.
+    on_main = inside and head.is_file() and head.read_bytes() == MAIN_HEAD
+    found = {
+        str(p.relative_to(root))
+        for p in root.rglob("*")
+        if p.is_file() and not (inside and p.is_relative_to(repository))
+    }
+    return (
+        ([] if inside else ["rendered: missing .git"])
+        + ([] if on_main or not inside else ["rendered: .git is not a repository on main"])
+        + [f"rendered: missing {n}" for n in sorted(expected - found)]
+        + [f"rendered: unexpected {n}" for n in sorted(found - expected)]
+    )
 
 
 def main(argv: list[str]) -> int:

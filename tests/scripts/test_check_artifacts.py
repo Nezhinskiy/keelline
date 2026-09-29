@@ -120,19 +120,88 @@ def test_a_member_missing_from_the_sdist_is_named(tmp_path: Path) -> None:
     assert findings == ["sdist: missing hooks/hashes.json"], findings
 
 
-def test_a_rendered_overlay_is_exactly_the_shipped_files_plus_the_manifest(tmp_path: Path) -> None:
-    module = checker()
-    root = tmp_path / "rendered"
+def _rendered(root: Path, *, repository: bool = True) -> Path:
+    """What `overlay create --local` leaves: the shipped files, the manifest and a repository."""
     for relative in (*OVERLAY_FILES, str(MANIFEST_PATH)):
         (root / relative).parent.mkdir(parents=True, exist_ok=True)
         (root / relative).write_text("x", encoding="utf-8")
+    if repository:
+        (root / ".git" / "hooks").mkdir(parents=True)
+        (root / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+        (root / ".git" / "hooks" / "pre-commit.sample").write_text("x", encoding="utf-8")
+    return root
+
+
+def test_a_rendered_overlay_is_exactly_the_shipped_files_plus_the_manifest(tmp_path: Path) -> None:
+    module = checker()
+    root = _rendered(tmp_path / "rendered")
     # The walk is stated non-empty before anything is concluded from a difference of sets:
     # `check_render` reads `root.rglob("*")`, and a walk that found nothing is the one input
     # that can make a set comparison agree for the wrong reason.
-    assert [p for p in root.rglob("*") if p.is_file()]
+    assert [p for p in root.rglob("*") if p.is_file() and ".git" not in p.parts]
     assert module.check_render(root) == []
     (root / "extra.txt").write_text("x", encoding="utf-8")
     assert module.check_render(root) == ["rendered: unexpected extra.txt"]
+
+
+def test_a_rendered_overlay_is_a_repository_and_a_tree_without_one_fails(tmp_path: Path) -> None:
+    # `overlay create --local` initialises a repository in what it renders, so the repository is
+    # part of the contract: the check asks for `.git` and does not merely step over it. A tree
+    # that is otherwise exact but has none is a `--local` that stopped initialising.
+    #
+    # Mutation (declared): the missing-repository finding is deleted.
+    module = checker()
+    root = _rendered(tmp_path / "rendered", repository=False)
+    assert module.check_render(root) == ["rendered: missing .git"]
+
+
+def test_the_repository_directory_does_not_hide_an_unexpected_file_beside_it(
+    tmp_path: Path,
+) -> None:
+    # Leaving `.git/` out of the walk must not leave out anything else: a stray file next to it,
+    # or in a directory that only shares its prefix, is still an unexpected file.
+    #
+    # Mutation (declared): the walk skips any path whose first component starts with `.git`.
+    module = checker()
+    root = _rendered(tmp_path / "rendered")
+    (root / ".gitx").mkdir()
+    (root / ".gitx" / "stray.txt").write_text("x", encoding="utf-8")
+    (root / "stray.txt").write_text("x", encoding="utf-8")
+    findings = module.check_render(root)
+    assert findings == ["rendered: unexpected .gitx/stray.txt", "rendered: unexpected stray.txt"]
+
+
+@pytest.mark.parametrize(
+    "head",
+    [None, "ref: refs/heads/master\n", "0123456789abcdef0123456789abcdef01234567\n", b"\xff\n"],
+    ids=["no-head", "another-branch", "detached", "not-utf8"],
+)
+def test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main(
+    tmp_path: Path, head: str | bytes | None
+) -> None:
+    # Any directory named `.git` passed, so an empty `mkdir .git` stood in for the repository
+    # `--local` makes. `HEAD` naming `refs/heads/main` says both that it is a repository and that
+    # it is on the branch the contract names, with no subprocess.
+    #
+    # Mutation: `mutations.toml`'s "the rendered-artifact check takes any directory named .git".
+    module = checker()
+    root = _rendered(tmp_path / "rendered", repository=False)
+    (root / ".git").mkdir()
+    # A `HEAD` that is not UTF-8 is a finding like any other, not a traceback out of the check.
+    if isinstance(head, bytes):
+        (root / ".git" / "HEAD").write_bytes(head)
+    elif head is not None:
+        (root / ".git" / "HEAD").write_text(head, encoding="utf-8")
+    assert module.check_render(root) == ["rendered: .git is not a repository on main"]
+
+
+def test_a_git_file_and_not_a_directory_is_not_the_repository(tmp_path: Path) -> None:
+    # A worktree's `.git` is a file; `--local` makes a directory. A file there is a different
+    # answer from the one the contract states.
+    module = checker()
+    root = _rendered(tmp_path / "rendered", repository=False)
+    (root / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+    assert module.check_render(root) == ["rendered: missing .git", "rendered: unexpected .git"]
 
 
 def test_rendered_without_a_directory_is_the_usage_message_and_not_a_dist_walk(
