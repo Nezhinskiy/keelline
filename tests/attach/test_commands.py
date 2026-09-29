@@ -20,6 +20,7 @@ from stayfixed.config.schema import Config
 from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
 from tests.attach.test_write import LEDGER, RULE, SETTINGS, _overlay_grants
 from tests.cli import cli
+from tests.gitfixture import run_git
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -464,3 +465,27 @@ def test_a_harness_link_that_waits_for_approval_is_said_with_the_way_out(tmp_pat
     assert code == 0
     assert "--in-repo-memory" not in out
     assert harness_memory_path(root, tmp_path / "home").is_symlink()
+
+
+def test_detachs_line_says_when_it_kept_the_block_another_checkout_needs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The exclude block is shared by every checkout; a detach that keeps it for a worktree still
+    # attached says so on its line and in `--json`, rather than leaving the owner to find the
+    # block and wonder why a detach did not take it.
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,))
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    side = tmp_path / "side"
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-qm", "the project, committed so the worktree has it too")
+    run_git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    assert invoke(["attach", *_flags(root, store, machine), "--yes"]) == 0
+    assert invoke(["attach", *_flags(side, store, machine), "--yes"]) == 0
+    capsys.readouterr()
+    assert invoke(["detach", "--root", str(root), "--machine", str(machine)]) == 0
+    assert "the exclude block was kept" in capsys.readouterr().out
+    assert invoke(["detach", "--root", str(side), "--machine", str(machine), "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["exclude_block_kept"] is False
+    assert data["exclude_block_removed"] is True

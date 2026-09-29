@@ -57,6 +57,7 @@ from stayfixed.config.paths import contained
 from stayfixed.errors import Refusal
 from stayfixed.gitenv import git_run
 from stayfixed.guards.api import git_path
+from stayfixed.printed import quoted
 from stayfixed.scaffold import Style, drop, extract, upsert
 
 # What `git rev-parse --git-path` is asked for, and the region's name in it: the block reads
@@ -64,6 +65,15 @@ from stayfixed.scaffold import Style, drop, extract, upsert
 EXCLUDE = "info/exclude"
 EXCLUDE_REGION = "attach"
 EXCLUDE_NOTE = "# stayfixed attach: this machine's links, rules and settings, not a collaborator's."
+# Two facts about the file around the block, recorded inside the block because the file is shared
+# by every checkout while each ledger is one checkout's: whichever checkout's `detach` takes the
+# block last reads them there and gives the file back byte for byte. `EXCLUDE_CREATED`: there was
+# no file before the block, so a file the block leaves holding nothing is removed. `EXCLUDE_ENDED`:
+# the owner's last line had no line ending and the block had to start on a line of its own, so the
+# one it added is taken back when nothing follows the block.
+EXCLUDE_CREATED = "# stayfixed attach: this file was created for this block."
+EXCLUDE_ENDED = "# stayfixed attach: the line before this block had no line ending until attach."
+_RECORDS = (EXCLUDE_CREATED, EXCLUDE_ENDED)
 # The characters git's pattern syntax gives a meaning to inside a path, each escaped with a
 # backslash so the line matches the one path it was written for. A space is escaped too: a
 # trailing one is dropped by git unless it is.
@@ -72,21 +82,26 @@ UNANSWERED = (
     "git could not say which of the files `attach` places are already ignored, so nothing was "
     "written; run it again once `git check-ignore` works in this repository"
 )
-# The path is git's answer about this checkout's own git directory, not a value the repository
-# chose, so it prints.
+# The path is git's answer about this checkout's own git directory, and it prints through
+# `printed.quoted`: the checkout's directory name usually comes from the clone URL.
 LINKED = (
     "{path} is a symlink, and `attach` writes the repository's exclude file only as a real file; "
     "nothing was written. Replace the link with the file it points at and run it again"
 )
-UNREADABLE = "{path} cannot be read as text ({reason}), so nothing was written"
+UNREADABLE = "{path} cannot be read ({reason}), so nothing was written"
 
 
 @dataclass(frozen=True)
 class ExcludeWrite:
-    """The whole new text of the exclude file, computed before `attach`'s first write."""
+    """The whole new text of the exclude file, computed before the first write; `None` when the
+    file is to be removed, which only a file created for the block and left holding nothing is.
+
+    The text is the file's bytes decoded with `surrogateescape`, so bytes that are not UTF-8 —
+    the owner's own file, which git reads as bytes — go back out exactly as they came in.
+    """
 
     path: Path
-    text: str
+    text: str | None
 
 
 def unignored(root: Path, relatives: Sequence[str]) -> tuple[str, ...]:
@@ -175,13 +190,17 @@ def pattern(relative: str) -> str | None:
     return "/" + "".join(f"\\{char}" if char in _SPECIAL else char for char in relative)
 
 
-def _read(path: Path) -> str:
+def _read(path: Path) -> str | None:
+    """The exclude file's bytes as text that encodes back to them exactly, or `None` when there is
+    no file. Never a refusal for its content: git reads the file as bytes, so a byte that is not
+    UTF-8 is the owner's and is kept, not a reason to stop `attach` or `detach`."""
     try:
-        return path.read_text(encoding="utf-8") if path.is_file() else ""
-    except UnicodeDecodeError:
-        raise Refusal(UNREADABLE.format(path=path, reason="not UTF-8")) from None
+        raw = path.read_bytes()
+    except FileNotFoundError:
+        return None
     except OSError as exc:
-        raise Refusal(UNREADABLE.format(path=path, reason=fsops.said(exc))) from exc
+        raise Refusal(UNREADABLE.format(path=quoted(str(path)), reason=fsops.said(exc))) from exc
+    return raw.decode("utf-8", "surrogateescape")
 
 
 def _patterns(body: str | None) -> list[str]:
@@ -193,8 +212,11 @@ def _patterns(body: str | None) -> list[str]:
     among them un-hid a file the owner's own excludes hide (`gitenv.answer_lines` gives the same
     rule for git's answers).
     """
-    lines = (line.removesuffix("\r") for line in (body or "").split("\n"))
-    return [line for line in lines if line and not line.startswith("#")]
+    return [line for line in _lines(body) if line and not line.startswith("#")]
+
+
+def _lines(body: str | None) -> list[str]:
+    return [line.removesuffix("\r") for line in (body or "").split("\n")]
 
 
 def planned_block(root: Path, relatives: Sequence[str]) -> ExcludeWrite | None:
@@ -214,10 +236,20 @@ def planned_block(root: Path, relatives: Sequence[str]) -> ExcludeWrite | None:
         return None
     path = git_path(root, EXCLUDE, "exclude file")
     if path.is_symlink():
-        raise Refusal(LINKED.format(path=path))
-    current = _read(path)
-    kept = _patterns(extract(current, EXCLUDE_REGION, Style.HASH))
-    body = "\n".join([EXCLUDE_NOTE, *kept, *(line for line in lines if line not in kept)])
+        raise Refusal(LINKED.format(path=quoted(str(path))))
+    read = _read(path)
+    current = read or ""
+    earlier = extract(current, EXCLUDE_REGION, Style.HASH)
+    if earlier is None:
+        records = [
+            *((EXCLUDE_CREATED,) if read is None else ()),
+            *((EXCLUDE_ENDED,) if current and not current.endswith(("\n", "\r")) else ()),
+        ]
+    else:
+        records = [record for record in _RECORDS if record in _lines(earlier)]
+    kept = _patterns(earlier)
+    new = (line for line in lines if line not in kept)
+    body = "\n".join([EXCLUDE_NOTE, *records, *kept, *new])
     updated = upsert(current, EXCLUDE_REGION, body, Style.HASH)
     return None if updated == current else ExcludeWrite(path, updated)
 
@@ -229,15 +261,41 @@ def withdrawn_block(root: Path) -> ExcludeWrite | None:
     block opened twice is a `RegionError` knowable at the start. A symlinked file is left alone
     rather than refused, because `attach` never writes through one, so a block behind a link is
     not one this command put there.
+
+    Byte for byte, from what the block records (`EXCLUDE_CREATED`, `EXCLUDE_ENDED`): a file
+    created for the block and left holding nothing is removed, and a line ending `attach` added
+    before the block is taken back when nothing follows it. With the owner's own line after the
+    block, taking it back would join two lines, so it stays.
     """
     path = git_path(root, EXCLUDE, "exclude file")
     if path.is_symlink() or not path.is_file():
         return None
-    current = _read(path)
+    current = _read(path) or ""
+    body = extract(current, EXCLUDE_REGION, Style.HASH)
+    if body is None:
+        return None
+    records = _lines(body)
     remaining = drop(current, EXCLUDE_REGION, Style.HASH)
-    return None if remaining == current else ExcludeWrite(path, remaining)
+    # Nothing follows the block exactly when what is left is what came before it.
+    if EXCLUDE_ENDED in records and current.startswith(remaining):
+        remaining = remaining.removesuffix(_ending(remaining))
+    if EXCLUDE_CREATED in records and not remaining:
+        return ExcludeWrite(path, None)
+    return ExcludeWrite(path, remaining)
+
+
+def _ending(text: str) -> str:
+    """The line ending `text` ends with, or `""`."""
+    for ending in ("\r\n", "\n", "\r"):
+        if text.endswith(ending):
+            return ending
+    return ""
 
 
 def write(planned: ExcludeWrite) -> None:
-    """Replace the exclude file in one rename; the path is git's answer, not a configured one."""
-    fsops.write_atomically(planned.path, planned.text)
+    """Replace the exclude file in one rename, or remove it; the path is git's answer, not a
+    configured one."""
+    if planned.text is None:
+        fsops.remove_within(planned.path.parent, planned.path.name)
+        return
+    fsops.write_atomically(planned.path, planned.text, errors="surrogateescape")

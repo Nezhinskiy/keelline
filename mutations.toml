@@ -3555,15 +3555,20 @@ before = '''    checkouts = _checkouts(root)
         harness_anchor(tree, home)
     ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
     # The `info/exclude` block is found above the first withdrawal for the same reason: `git`
-    # names the file and a region opened twice refuses, and both are knowable now.
-    hidden = exclude.withdrawn_block(root)
+    # names the file and a region opened twice refuses, and both are knowable now. It is shared
+    # by every checkout while the ledger, the settings file and the `.codex/rules/` copies are
+    # each checkout's own, so it stays while another checkout still holds a ledger: taking it
+    # would show that checkout's settings file and rule copies in its `git status`.
+    kept = _another_attached(root, checkouts)
+    hidden = None if kept else exclude.withdrawn_block(root)
     allow_removed = _withdraw_settings(root, recorded)'''
 after = '''    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
-    hidden = exclude.withdrawn_block(root)
     allow_removed = _withdraw_settings(root, recorded)
     checkouts = _checkouts(root)
     for tree in checkouts:
-        harness_anchor(tree, home)'''
+        harness_anchor(tree, home)
+    kept = _another_attached(root, checkouts)
+    hidden = None if kept else exclude.withdrawn_block(root)'''
 reddens = [
   "tests/attach/test_detach.py::test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn",
 ]
@@ -12825,8 +12830,8 @@ reddens = [
 [[mutation]]
 name = "the exclude block is re-read at every line separator"
 file = "src/stayfixed/attach/exclude.py"
-before = '    lines = (line.removesuffix("\r") for line in (body or "").split("\n"))'
-after = "    lines = iter((body or \"\").splitlines())"
+before = '    return [line.removesuffix("\r") for line in (body or "").split("\n")]'
+after = "    return (body or \"\").splitlines()"
 reddens = [
   "tests/attach/test_write.py::test_an_earlier_blocks_line_is_kept_whole_whatever_it_holds",
 ]
@@ -12900,10 +12905,65 @@ reddens = [
 [[mutation]]
 name = "the exclude block forgets what an earlier attach hid"
 file = "src/stayfixed/attach/exclude.py"
-before = "    kept = _patterns(extract(current, EXCLUDE_REGION, Style.HASH))"
+before = "    kept = _patterns(earlier)"
 after = "    kept: list[str] = []"
 reddens = [
   "tests/attach/test_write.py::test_the_block_keeps_what_an_earlier_attach_hid_when_the_grant_changes",
+]
+
+# The exclude block is shared by every checkout, while each ledger, settings file and set of rule
+# copies is one checkout's. Detaching the main checkout took the block while a worktree was still
+# attached, and that worktree's settings file and rule copy showed in its `git status`.
+[[mutation]]
+name = "detach takes the shared block while another checkout is attached"
+file = "src/stayfixed/attach/write.py"
+before = "    hidden = None if kept else exclude.withdrawn_block(root)"
+after = "    hidden = exclude.withdrawn_block(root)"
+reddens = [
+  "tests/attach/test_detach.py::test_detaching_one_checkout_keeps_the_block_another_attached_checkout_needs",
+]
+
+# An exclude file `attach` created for its block was left behind empty by `detach`.
+[[mutation]]
+name = "detach leaves the exclude file attach created"
+file = "src/stayfixed/attach/exclude.py"
+before = "    if EXCLUDE_CREATED in records and not remaining:"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_detach.py::test_an_exclude_file_attach_created_is_removed_by_detach",
+]
+
+# `attach` ends the owner's last line so its block starts on a line of its own; `detach` left that
+# line ending behind.
+[[mutation]]
+name = "detach keeps the line ending attach added"
+file = "src/stayfixed/attach/exclude.py"
+before = "    if EXCLUDE_ENDED in records and current.startswith(remaining):"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_detach.py::test_an_exclude_file_with_no_final_line_ending_comes_back_without_one[lf]",
+]
+
+# The exclude file is the owner's and git reads it as bytes. Read as UTF-8 text, a byte outside it
+# refused both `attach` and `detach`.
+[[mutation]]
+name = "the exclude file is read as UTF-8 text"
+file = "src/stayfixed/attach/exclude.py"
+before = '    return raw.decode("utf-8", "surrogateescape")'
+after = '    return raw.decode("utf-8")'
+reddens = [
+  "tests/attach/test_detach.py::test_an_exclude_file_that_is_not_utf8_neither_blocks_attach_nor_detach",
+]
+
+# The checkout's directory name usually comes from the clone URL, so the exclude file's path is
+# printed through `printed.quoted`; raw, a line break in it starts a line of the refusal.
+[[mutation]]
+name = "the exclude file's symlink refusal prints its path raw"
+file = "src/stayfixed/attach/exclude.py"
+before = "        raise Refusal(LINKED.format(path=quoted(str(path))))"
+after = "        raise Refusal(LINKED.format(path=path))"
+reddens = [
+  "tests/attach/test_detach.py::test_the_exclude_file_refusals_print_the_path_through_the_quoting_rule",
 ]
 
 # `gh` resolves an unqualified `OWNER/REPO` on `GH_HOST`, which the runner keeps, so on a GitHub

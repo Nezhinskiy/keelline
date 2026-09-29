@@ -857,3 +857,157 @@ def test_a_tracked_settings_file_the_owners_symlinked_exclude_hides_does_not_ref
     assert attached.settings_written
     assert RULE in (root / SETTINGS).read_text(encoding="utf-8")
     assert elsewhere.read_bytes() == outside
+
+
+# --- the exclude block is shared by every checkout, and is taken back exactly ----------------
+
+
+def _exclude_file(root: Path) -> Path:
+    return root / ".git" / "info" / "exclude"
+
+
+def test_detaching_one_checkout_keeps_the_block_another_attached_checkout_needs(
+    tmp_path: Path,
+) -> None:
+    # The block lives in the exclude file every worktree shares, while the ledger, the settings
+    # file and the `.codex/rules/` copies are per checkout. Detaching the main checkout took the
+    # block away while a worktree was still attached, and `git status` there listed that
+    # worktree's settings file and rule copy.
+    #
+    # Mutation: `mutations.toml`'s "detach takes the shared block while another checkout is
+    # attached".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    side = tmp_path / "side"
+    git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    _attach(root, store, machine, home, confirmed=True)
+    _attach(side, store, machine, home, confirmed=True)
+    # Non-vacuous: the worktree is attached, with files of its own for the block to hide.
+    assert (side / LEDGER).is_file()
+    assert (side / SETTINGS).is_file() and (side / ".codex" / "rules" / "common.rules").is_file()
+    removed = _detach(root, machine, home)
+    assert removed.exclude_block_kept is True
+    assert removed.exclude_block_removed is False
+    assert extract(_exclude_file(root).read_text(encoding="utf-8"), "attach", Style.HASH)
+    status = git(side, "status", "--porcelain", "--untracked-files=all")
+    assert SETTINGS not in status
+    assert ".codex/rules/common.rules" not in status
+    # The last attached checkout's detach takes the block.
+    last = _detach(side, machine, home)
+    assert last.exclude_block_removed is True and last.exclude_block_kept is False
+    assert extract(_exclude_file(root).read_text(encoding="utf-8"), "attach", Style.HASH) is None
+
+
+def test_an_exclude_file_attach_created_is_removed_by_detach(tmp_path: Path) -> None:
+    # A repository whose `info/exclude` does not exist (`git init` with no templates) got one
+    # from `attach`, and `detach` left it behind empty, against "a file left holding nothing is
+    # removed rather than left empty".
+    #
+    # Mutation: `mutations.toml`'s "detach leaves the exclude file attach created".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    _exclude_file(root).unlink(missing_ok=True)
+    _attach(root, store, machine, home, confirmed=True)
+    # Non-vacuous: the attach did create the file for its block.
+    assert extract(_exclude_file(root).read_text(encoding="utf-8"), "attach", Style.HASH)
+    _detach(root, machine, home)
+    assert not _exclude_file(root).exists()
+
+
+def test_an_exclude_file_that_was_there_and_empty_stays_there_and_empty(tmp_path: Path) -> None:
+    # The other half: an empty file the owner had is the owner's, and survives the round trip.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    _exclude_file(root).write_bytes(b"")
+    _attach(root, store, machine, home, confirmed=True)
+    assert extract(_exclude_file(root).read_text(encoding="utf-8"), "attach", Style.HASH)
+    _detach(root, machine, home)
+    assert _exclude_file(root).read_bytes() == b""
+
+
+@pytest.mark.parametrize("ending", ["\n", "\r\n"], ids=["lf", "crlf"])
+def test_an_exclude_file_with_no_final_line_ending_comes_back_without_one(
+    tmp_path: Path, ending: str
+) -> None:
+    # The block starts on a line of its own, so `attach` ends the owner's last line first, and
+    # `detach` left that line ending behind. The block records that it added one, and `detach`
+    # takes it back when nothing follows the block.
+    #
+    # Mutation: `mutations.toml`'s "detach keeps the line ending attach added".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    held = f"# the owner's{ending}/owner-only".encode()
+    _exclude_file(root).write_bytes(held)
+    _attach(root, store, machine, home, confirmed=True)
+    # Non-vacuous: the attach wrote its block after a line it had to end.
+    assert (
+        _exclude_file(root)
+        .read_bytes()
+        .startswith(f"# the owner's{ending}/owner-only{ending}".encode())
+    )
+    # A second attach that rewrites the block carries the record along.
+    _grant(store.parents[2], allow=(RULE, "Bash(ls:*)"))
+    _attach(root, store, machine, home, confirmed=True)
+    _detach(root, machine, home)
+    assert _exclude_file(root).read_bytes() == held
+
+
+def test_a_line_the_owner_added_after_the_block_keeps_its_line_ending(tmp_path: Path) -> None:
+    # The line ending `attach` added sits before the block; with the owner's own line after it,
+    # taking it back would join two lines, so it stays.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    _exclude_file(root).write_bytes(b"/owner-only")
+    _attach(root, store, machine, home, confirmed=True)
+    with _exclude_file(root).open("a", encoding="utf-8") as stream:
+        stream.write("/added-later\n")
+    _detach(root, machine, home)
+    assert _exclude_file(root).read_bytes() == b"/owner-only\n/added-later\n"
+
+
+def test_an_exclude_file_that_is_not_utf8_neither_blocks_attach_nor_detach(
+    tmp_path: Path,
+) -> None:
+    # The exclude file is the owner's, and git reads it as bytes. Read as UTF-8 text, a byte
+    # outside it -- a comment in Latin-1, say -- refused `attach` and `detach` both. Its bytes are
+    # kept exactly, in the attach and in the round trip.
+    #
+    # Mutation: `mutations.toml`'s "the exclude file is read as UTF-8 text".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    held = "# propriété de l'équipe\n/owner-only\n".encode("latin-1")
+    _exclude_file(root).write_bytes(held)
+    _attach(root, store, machine, home, confirmed=True)
+    written = _exclude_file(root).read_bytes()
+    assert written.startswith(held)
+    assert b"# stayfixed:attach:begin" in written
+    _detach(root, machine, home)
+    assert _exclude_file(root).read_bytes() == held
+
+
+def test_the_exclude_file_refusals_print_the_path_through_the_quoting_rule(
+    tmp_path: Path,
+) -> None:
+    # The checkout's directory name usually comes from the clone URL, so the exclude file's path
+    # is printed through `printed.quoted`, which escapes a line break or an escape sequence in
+    # it, as the store's refusals already print theirs.
+    #
+    # Mutation: `mutations.toml`'s "the exclude file's symlink refusal prints its path raw".
+    from stayfixed.attach.exclude import planned_block
+
+    root = tmp_path / "clone\n::error::x"
+    root.mkdir()
+    git(root, "init", "-q", "-b", "main")
+    exclude = _exclude_file(root)
+    exclude.unlink(missing_ok=True)
+    exclude.symlink_to(tmp_path / "elsewhere")
+    with pytest.raises(Refusal) as refused:
+        planned_block(root, ["placed"])
+    assert "symlink" in str(refused.value)
+    assert "\n" not in str(refused.value)

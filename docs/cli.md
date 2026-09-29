@@ -2159,7 +2159,10 @@ with no approval recorded for the store yet, it cannot be. A checkout that alrea
 them in its own exclude file or a global excludes file gets no block, and one that already hides
 `.stayfixed/local/` and `.stayfixed/assessment.json` by any means, `.gitignore` included, gets no
 `.gitignore` change, so `git status` after an attach shows at most the `stayfixed:ignore` region.
-`.gitignore` is never written beyond that region.
+`.gitignore` is never written beyond that region. When the exclude file did not exist, or its last
+line had no line ending, the block says so in a comment line of its own, which is what lets
+`detach`, from whichever checkout runs it last, give the file back byte for byte. The file is read
+as bytes, so bytes in it that are not UTF-8 are kept exactly and refuse nothing.
 
 It also **removes** one file, in one case. The `autoMemoryDirectory` fallback is taken only while
 the harness memory link cannot be made, so when the link becomes possible again — or when the
@@ -2235,8 +2238,16 @@ mixes one of those with your own entry is split, never replaced), removes the `.
 files it wrote, withdraws the link tree from this checkout and every worktree together with the
 harness memory link, removes the `stayfixed:ignore` region and the `stayfixed:attach` block in
 the repository's exclude file, and deletes the ledger, `.stayfixed/local/attach.json`. A file
-left holding nothing is removed rather than left empty. An exclude file that is a symlink is left
-alone, because `attach` never writes through one. Then it removes, each only when empty: the
+left holding nothing is removed rather than left empty — for the exclude file, only when `attach`
+created it, which the block records, so an exclude file you had, empty or not, stays; the line
+ending `attach` added to your exclude file's last line before its block is taken back too, when
+nothing follows the block. The exclude file is read and written as bytes, so bytes in it that are
+not UTF-8 are kept as they are. An exclude file that is a symlink is left alone, because `attach`
+never writes through one. **The exclude block stays while another checkout is attached.** The
+exclude file is shared by every worktree of the repository, while the ledger, the settings file
+and the `.codex/rules/` copies are each checkout's own; so when another checkout still holds a
+ledger, the block is kept for its files, the line ends by saying so, and `--json` reports
+`exclude_block_kept: true`. The detach of the last attached checkout takes it. Then it removes, each only when empty: the
 `paths.memory` directory in every checkout it withdrew a tree from, the directories above it in
 this checkout that the ledger records `attach` as having created (`docs/`, for the preset's
 place), and the `~/.claude/projects/<slug>/` directory each harness memory link sat in. Last,

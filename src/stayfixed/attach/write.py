@@ -1190,6 +1190,9 @@ class Detached:
     links: Links
     directories_removed: tuple[str, ...] = ()
     exclude_block_removed: bool = False
+    # The block was left in place because another checkout of this repository still holds a
+    # ledger: the exclude file is shared, and that checkout's files still need hiding.
+    exclude_block_kept: bool = False
 
 
 def _emptied(raw: dict[str, Any]) -> dict[str, Any]:
@@ -1406,6 +1409,12 @@ def _withdraw_memory_directories(
     return tuple(removed)
 
 
+def _another_attached(root: Path, checkouts: list[Path]) -> bool:
+    """Whether a checkout of this repository other than `root` holds an attach ledger."""
+    own = root.resolve()
+    return any(tree != own and (tree / LEDGER).is_file() for tree in checkouts)
+
+
 def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     """Remove exactly what `attach` added, reading the ledger for what that was.
 
@@ -1459,8 +1468,12 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
         harness_anchor(tree, home)
     ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
     # The `info/exclude` block is found above the first withdrawal for the same reason: `git`
-    # names the file and a region opened twice refuses, and both are knowable now.
-    hidden = exclude.withdrawn_block(root)
+    # names the file and a region opened twice refuses, and both are knowable now. It is shared
+    # by every checkout while the ledger, the settings file and the `.codex/rules/` copies are
+    # each checkout's own, so it stays while another checkout still holds a ledger: taking it
+    # would show that checkout's settings file and rule copies in its `git status`.
+    kept = _another_attached(root, checkouts)
+    hidden = None if kept else exclude.withdrawn_block(root)
     allow_removed = _withdraw_settings(root, recorded)
     rules_removed: list[str] = []
     for rule in recorded.rules:
@@ -1491,4 +1504,5 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
         Links([], revoked),
         directories + memory,
         hidden is not None,
+        kept,
     )

@@ -138,14 +138,22 @@ def run_detach(args: argparse.Namespace) -> Result:
         "directories_removed": len(removed.directories_removed),
         # A boolean this command computed, so it prints.
         "exclude_block_removed": removed.exclude_block_removed,
+        # A boolean this command computed, so it prints.
+        "exclude_block_kept": removed.exclude_block_kept,
     }
+    kept = (
+        "; the exclude block was kept, because another checkout of this repository is still "
+        "attached"
+        if removed.exclude_block_kept
+        else ""
+    )
     return Result(
         f"detached: {len(removed.allow_removed)} allow rule(s), "
         f"{len(removed.entries_removed)} hook entr(ies), "
         f"{len(removed.rules_removed)} Codex rule file(s), "
         f"{len(removed.links.revoked)} link(s), "
         f"{len(removed.directories_removed)} directory(ies); "
-        f"the binding record was left in place",
+        f"the binding record was left in place{kept}",
         data,
     )
 
