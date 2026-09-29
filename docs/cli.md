@@ -2137,13 +2137,20 @@ of which allow rules are stayfixed's, because an allow rule cannot carry a marke
 entry can; `detach` reads it and nothing else.
 
 **What it places, it hides from git, unless git hides it already.** The link tree (`MEMORY.md`
-and one link per group), each `.codex/rules/` file and `.claude/settings.local.json` are this
-machine's own, so each one `git check-ignore` does not already report as ignored is listed in the
-exclude-file block, one anchored line per path; a tracked file is not ignored in that sense and is
-listed like any other. A checkout that already hides all of them — in its own exclude file, a
-global excludes file or `.gitignore` — gets no block and no `.gitignore` change, so `git status`
-after an attach shows at most the `stayfixed:ignore` region. `.gitignore` is never written beyond
-that region.
+and one link per group), each `.codex/rules/` file and — on a run that writes it, or after one
+that did — `.claude/settings.local.json` are this machine's own, so each one `git check-ignore`
+does not already report as ignored is listed in the exclude-file block, one anchored line per
+path; a tracked file is not ignored in that sense and is listed like any other. A path this run
+does not write is not listed and is not held to the project either, so a `.claude` linked in
+from elsewhere is refused, before the first write, only when the overlay grants something to
+merge into it. The `autoMemoryDirectory` fallback is never written through such a link: where it
+would be taken — a real directory already sits where the harness memory link goes, and the store
+is approved — `attach` skips it and its line says what the harness link is missing and what to
+do. Whether the fallback may be taken is decided before the first write too; on a first attach,
+with no approval recorded for the store yet, it cannot be. A checkout that already hides all of
+them — in its own exclude file, a global excludes file or `.gitignore` — gets no block and no
+`.gitignore` change, so `git status` after an attach shows at most the `stayfixed:ignore`
+region. `.gitignore` is never written beyond that region.
 
 It also **removes** one file, in one case. The `autoMemoryDirectory` fallback is taken only while
 the harness memory link cannot be made, so when the link becomes possible again — or when the
@@ -2151,6 +2158,11 @@ store's trust record lapses — that key is withdrawn in the same run. If it was
 `.claude/settings.local.json` held, the file goes with it, because `{}` is not what that file
 looked like before `attach` created it. Nothing you wrote is ever what goes: the case only
 arises when stayfixed's own key was the file's entire contents.
+
+**When the harness memory link waits for approval, `attach` says so.** The link exposes the
+link tree, which sits inside the repository, so it is made only once the store is approved; until
+then the run's line ends with a note to run `stayfixed memory trust --in-repo-memory`, then
+`stayfixed attach` again.
 
 **The harness memory link is written under a walk that follows no symlink.** The home
 directory itself is found and never created — a missing one is a refusal — and every component

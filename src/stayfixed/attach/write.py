@@ -80,6 +80,7 @@ from stayfixed.memory.api import (
     PROJECTS,
     Links,
     PartialLink,
+    approval_recorded,
     attach_main,
     detach_main,
     harness_anchor,
@@ -553,16 +554,69 @@ def _absent_memory_parents(root: Path, config: Config) -> tuple[str, ...]:
     return tuple(name for name in _memory_parents(config) if not (root / name).is_dir())
 
 
-def _placed(binding: Binding, config: Config) -> tuple[str, ...]:
-    """Every path `attach` can put into the project besides the ledger, which `.gitignore`'s
-    region covers: the link tree (`linked_names`, the same list `attach_main` walks), each rule
-    copy `codex_rules` enumerates, and the settings file. These are what `attach.exclude`
-    hides, so a name missing here is a file every `git status` lists."""
+def _placed(binding: Binding, config: Config, *, settings: bool) -> tuple[str, ...]:
+    """Every path this run puts into the project besides the ledger, which `.gitignore`'s region
+    covers: the link tree (`linked_names`, the same list `attach_main` walks), each rule copy
+    `codex_rules` enumerates, and the settings file when `settings` says this run writes it or an
+    earlier one did. These are what `attach.exclude` hides and holds inside the project.
+
+    **Only what is written, because each candidate is also a containment refusal.** A `.claude`
+    the owner keeps elsewhere and links in is an ordinary layout, and an overlay that grants
+    nothing gives this run nothing to write there — so the settings file on such a run is neither
+    a reason to refuse nor a line in the block for a file `attach` never made."""
     return (
         *(f"{config.paths.memory}/{name}" for name in linked_names(config)),
         *(target for target, _ in codex_rules(binding)),
-        LOCAL_SETTINGS,
+        *((LOCAL_SETTINGS,) if settings else ()),
     )
+
+
+def _fallback_possible(
+    root: Path, config: Config, *, machine: Path | None, home: Path | None
+) -> bool:
+    """Whether this run may take the settings-file fallback, answered before its first write.
+
+    `_harness_fallback` writes the settings file when the gate wants the harness link and the
+    link is not there to point at the store. `_link` leaves only one thing standing where the link
+    goes — a real entry, which is what the harness makes of the path on its own — so a path that
+    is absent or already a symlink is a link this run makes, and no fallback. Where a real entry
+    sits, the gate is asked of the store as it resolves now; a store that does not resolve yet —
+    a first attach, before the link tree exists — is answered "possible", because the gate cannot
+    be asked of it and the question decides a refusal. The two agree with `_harness_fallback`
+    by construction, so its write is never one this run did not hold to the project and hide
+    above its first write.
+
+    **A first attach is answered too, without the link tree.** `resolve` needs the tree this run
+    is about to build, so before it exists the gate is asked the one question it can be: does
+    this machine record any approval for a store at `paths.memory`? None is a gate that cannot
+    open, which is the ordinary first attach; a record, current or stale, is one that might, and
+    is answered "possible", because this answer decides a refusal.
+    """
+    harness = harness_memory_path(root, home)
+    if harness.is_symlink() or not harness.exists():
+        return False
+    store = resolve(root, config, machine=machine)
+    if store is None:
+        return approval_recorded(root / config.paths.memory, machine)
+    return harness_link_needed(store, config)
+
+
+def _settings_containable(root: Path) -> bool:
+    """Whether `.claude/settings.local.json` stays inside the project: `False` for a `.claude`
+    linked in from elsewhere, where no write of this run's may land."""
+    try:
+        contained(root, LOCAL_SETTINGS)
+    except PathEscape:
+        return False
+    return True
+
+
+def _settings_placed(previous: AttachLedger | None, document: str) -> bool:
+    """Whether an earlier attach put something of its own into the settings file: a rule or an
+    entry its ledger records, or the fallback key the file still holds."""
+    if previous is not None and (previous.allow or previous.entries or previous.settings_keys):
+        return True
+    return bool(document.strip()) and FALLBACK_KEY in settings_document(document)
 
 
 def _write_ledger(
@@ -825,6 +879,30 @@ def _recorded_keys(root: Path) -> tuple[str, ...]:
     return (FALLBACK_KEY,) if FALLBACK_KEY in settings_document(local_document(root)) else ()
 
 
+def _fallback_wanted(
+    root: Path, config: Config, *, machine: Path | None, home: Path | None
+) -> str | None:
+    """The store directory the fallback would record, or `None` when the gate does not want the
+    harness link or the link already points at the store."""
+    store = resolve(root, config, machine=machine)
+    if store is None or not harness_link_needed(store, config):
+        return None
+    harness = harness_memory_path(root, home)
+    if harness.is_symlink() and harness.readlink() == store.path.resolve():
+        return None
+    return str(store.path.resolve())
+
+
+# Said instead of taking the fallback where it would write through a `.claude` linked in from
+# elsewhere. Nothing in it is repository-authored, so it prints.
+FALLBACK_UNAVAILABLE = (
+    "the harness memory link could not be created, because a real directory already sits where "
+    "it goes, and the settings-file fallback was not taken, because this checkout's `.claude` is "
+    "linked in from elsewhere and stayfixed writes nothing through it; move that directory "
+    "aside, or make `.claude` a real directory, then run `stayfixed attach` again"
+)
+
+
 def _harness_fallback(
     root: Path, config: Config, *, machine: Path | None, home: Path | None
 ) -> tuple[str, ...]:
@@ -857,12 +935,7 @@ def _harness_fallback(
     byte-for-byte. It can only fire when stayfixed's own key was all the file held, so nothing of
     the owner's is ever what goes.
     """
-    store = resolve(root, config, machine=machine)
-    wanted: str | None = None
-    if store is not None and harness_link_needed(store, config):
-        harness = harness_memory_path(root, home)
-        if not (harness.is_symlink() and harness.readlink() == store.path.resolve()):
-            wanted = str(store.path.resolve())
+    wanted = _fallback_wanted(root, config, machine=machine, home=home)
     document = settings_document(local_document(root))
     if document.get(FALLBACK_KEY) == wanted:
         # Includes the ordinary case where the key is absent and is not wanted: nothing to do,
@@ -1036,6 +1109,11 @@ def attach(
     # here for all of them. A `<slug>` component that is itself a symlink is left to the
     # per-call floor in `harness_anchor`, which is a `Refusal` either way.
     harness_anchor(root, home)
+    # The ledger's own path, held to the project before anything reads or writes under it: it is
+    # the one path this run writes inside the project that no candidate below names, so a
+    # `.stayfixed` committed as a link is refused here by name rather than by the walk that
+    # writes the ledger, after every write before it.
+    contained(root, LEDGER)
     previous = _existing_ledger(root)
     # Above every write, because the first of them creates `.stayfixed/local/` and the answer
     # would then be wrong by exactly the directory this run brought into existence.
@@ -1046,16 +1124,27 @@ def attach(
     # `info/exclude` block only for the paths `attach` places that are. Each can refuse — git
     # cannot answer, a path leaves the project, the exclude file is a symlink — and each
     # refusal is made while nothing has been written.
+    # The settings merge is computed here, before any write, because whether it writes decides
+    # whether the settings file is a candidate at all (`_placed`).
+    document = local_document(root)
+    merged = _merged_settings(document, diff, binding)
+    written = merged != document
+    # The fallback's write is decided here too, for the same reason: it is the one write to the
+    # settings file that happens after the links, and a refusal it earned there would come after
+    # every write above it.
+    possible = _fallback_possible(root, config, machine=machine, home=home)
+    # A `.claude` linked in from elsewhere takes the fallback off the table rather than refusing
+    # the run: the link is a layout the owner chose, and the note below says what the harness
+    # link is missing and how to get it.
+    fallback = possible and _settings_containable(root)
+    settings = written or fallback or _settings_placed(previous, document)
     ignore_needed = bool(exclude.unignored(root, IGNORED))
-    hidden = exclude.planned_block(root, _placed(binding, config))
+    hidden = exclude.planned_block(root, _placed(binding, config, settings=settings))
     if ignore_needed:
         _write_ignore_region(root)
     if hidden is not None:
         exclude.write(hidden)
     rules = _codex_rules(root, binding)
-    document = local_document(root)
-    merged = _merged_settings(document, diff, binding)
-    written = merged != document
     if written:
         fsops.write_within(root, LOCAL_SETTINGS, merged)
     # What an earlier attach left in the settings file, carried into the ledger written before
@@ -1067,7 +1156,12 @@ def attach(
     _prepare_store(binding, config)
     links = _link_everywhere(root, binding, config, machine=machine, home=home)
     notes = [] if (note := _secret_scan(binding, runner)) is None else [note]
-    keys = _harness_fallback(root, config, machine=machine, home=home)
+    unavailable = False
+    if _settings_containable(root):
+        keys = _harness_fallback(root, config, machine=machine, home=home)
+    else:
+        keys = carried
+        unavailable = _fallback_wanted(root, config, machine=machine, home=home) is not None
     if keys != carried:
         _write_ledger(root, binding, diff, rules, keys, previous, absent, parents)
         written = True
@@ -1076,6 +1170,8 @@ def attach(
             f"the harness memory link could not be created, so {FALLBACK_KEY} was recorded in "
             f"{LOCAL_SETTINGS} instead; `stayfixed detach` removes it"
         )
+    elif unavailable:
+        notes.append(FALLBACK_UNAVAILABLE)
     elif _harness_waits(root, config, machine=machine):
         notes.append(HARNESS_WAITS)
     return Attached(written, rules, recorded, tuple(notes), links)

@@ -72,6 +72,7 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         # ask this area whether it may, to see a store that was trusted and is not any more,
         # and to tell a broken record from an unapproved store.
         "may_inject",
+        "approval_recorded",  # the gate answered for a store attach has not built yet
         "changed",
         "TrustState",
         "UnreadableTrustRecord",

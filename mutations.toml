@@ -3036,9 +3036,6 @@ before = """    if ignore_needed:
     if hidden is not None:
         exclude.write(hidden)
     rules = _codex_rules(root, binding)
-    document = local_document(root)
-    merged = _merged_settings(document, diff, binding)
-    written = merged != document
     if written:
         fsops.write_within(root, LOCAL_SETTINGS, merged)
     # What an earlier attach left in the settings file, carried into the ledger written before
@@ -3049,9 +3046,6 @@ before = """    if ignore_needed:
 after = """    if hidden is not None:
         exclude.write(hidden)
     rules = _codex_rules(root, binding)
-    document = local_document(root)
-    merged = _merged_settings(document, diff, binding)
-    written = merged != document
     if written:
         fsops.write_within(root, LOCAL_SETTINGS, merged)
     # What an earlier attach left in the settings file, carried into the ledger written before
@@ -3531,10 +3525,15 @@ before = '''    previous = _existing_ledger(root)
     # would then be wrong by exactly the directory this run brought into existence.
     absent = _absent_directories(root)
     parents = _absent_memory_parents(root, config)'''
-after = '''    absent = _absent_directories(root)
-    parents = _absent_memory_parents(root, config)
-    _write_ignore_region(root)
-    previous = _existing_ledger(root)'''
+# The write is put above the read rather than the read moved below the writes: `previous` is also
+# read by the settings-candidate question above the first write, so moving the read would break
+# the name instead of the order.
+after = '''    _write_ignore_region(root)
+    previous = _existing_ledger(root)
+    # Above every write, because the first of them creates `.stayfixed/local/` and the answer
+    # would then be wrong by exactly the directory this run brought into existence.
+    absent = _absent_directories(root)
+    parents = _absent_memory_parents(root, config)'''
 reddens = [
   "tests/attach/test_write.py::test_a_ledger_no_attach_could_have_written_is_refused_before_the_first_write",
 ]
@@ -5207,8 +5206,8 @@ reddens = [
 [[mutation]]
 name = "attach discovers the harness anchor from inside the link step"
 file = "src/stayfixed/attach/write.py"
-before = "    harness_anchor(root, home)\n    previous = _existing_ledger(root)"
-after = "    previous = _existing_ledger(root)"
+before = "    harness_anchor(root, home)\n    # The ledger's own path, held to the project"
+after = "    # The ledger's own path, held to the project"
 reddens = [
   "tests/attach/test_links.py::test_a_home_whose_claude_is_a_symlink_refuses_above_every_write",
 ]
@@ -12746,6 +12745,65 @@ before = "        return None, Unresolved(said, str(base))"
 after = "        return None, Unresolved(None, str(base))"
 reddens = [
   "tests/docs/test_commands.py::test_docs_check_says_why_the_graph_had_no_store_to_check[no-directory]",
+]
+
+# The settings file is a candidate for the exclude block, and so a containment refusal, only on a
+# run that writes it (or after one that did): a `.claude` linked in from elsewhere with nothing to
+# merge is an ordinary layout, not a reason to refuse, and not a file to list.
+[[mutation]]
+name = "attach hides the settings file on a run that never writes it"
+file = "src/stayfixed/attach/write.py"
+before = "        *((LOCAL_SETTINGS,) if settings else ()),"
+after = "        LOCAL_SETTINGS,"
+reddens = [
+  "tests/attach/test_write.py::test_a_symlinked_claude_directory_the_run_never_writes_into_is_not_refused",
+]
+
+# The settings-file fallback is written after the links. Decided only there, its write through a
+# symlinked `.claude` failed with an `OSError` after every earlier write, and its exclude line was
+# written by a second, late plan whose symlink refusal came after the writes too.
+[[mutation]]
+name = "attach decides the settings fallback only once it has written"
+file = "src/stayfixed/attach/write.py"
+before = "    possible = _fallback_possible(root, config, machine=machine, home=home)"
+after = "    possible = False"
+reddens = [
+  "tests/attach/test_detach.py::test_a_symlinked_exclude_file_is_refused_first_when_only_the_fallback_needs_a_line",
+  "tests/attach/test_detach.py::test_the_settings_fallback_written_after_the_links_is_hidden_too",
+]
+
+# The ledger's path is the one project path `attach` writes that no exclude candidate names, so
+# nothing held it to the project by name above the first write.
+[[mutation]]
+name = "attach stops holding the ledger's path to the project"
+file = "src/stayfixed/attach/write.py"
+before = "    contained(root, LEDGER)"
+after = "    pass"
+reddens = [
+  "tests/attach/test_write.py::test_a_symlinked_stayfixed_directory_is_refused_before_anything_is_written",
+]
+
+# Where `.claude` is linked in from elsewhere the fallback is off the table: taking it either wrote
+# through the link after every earlier write or refused an ordinary layout outright.
+[[mutation]]
+name = "attach takes the fallback through a linked-in .claude"
+file = "src/stayfixed/attach/write.py"
+before = "    fallback = possible and _settings_containable(root)"
+after = "    fallback = possible"
+reddens = [
+  "tests/attach/test_detach.py::test_a_fallback_that_would_write_through_a_symlinked_claude_is_skipped_with_a_note",
+]
+
+# A first attach has no link tree for `resolve`, and answered "the fallback is possible" whenever
+# the harness had made its own memory directory -- which, beside a linked-in `.claude`, refused an
+# attach that had been going through.
+[[mutation]]
+name = "a first attach treats the unapproved gate as possibly open"
+file = "src/stayfixed/attach/write.py"
+before = "        return approval_recorded(root / config.paths.memory, machine)"
+after = "        return True"
+reddens = [
+  "tests/attach/test_detach.py::test_a_first_attach_with_a_symlinked_exclude_that_hides_everything_attaches",
 ]
 
 # `gh` resolves an unqualified `OWNER/REPO` on `GH_HOST`, which the runner keeps, so on a GitHub

@@ -691,3 +691,129 @@ def test_detach_takes_back_the_exclude_block_the_empty_directories_and_the_harne
     assert not (root / "docs").exists()
     assert not harness.parent.exists()
     assert _directories(root) == before
+
+
+def test_the_settings_fallback_written_after_the_links_is_hidden_too(tmp_path: Path) -> None:
+    # The settings file is a candidate for the exclude block only on a run that writes it, and
+    # the fallback key is written after the links. Whether it will be is decided before the
+    # first write (`write._fallback_possible`), so the run hides the file in its one block.
+    #
+    # Mutation: `mutations.toml`'s "attach decides the settings fallback only once it has
+    # written" reddens this through `check-ignore`.
+    from tests.attach.test_write import _check_ignore
+
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    assert not (root / SETTINGS).exists()
+    resolved = resolve(root, _config(root, machine), machine=machine)
+    assert resolved is not None
+    record(resolved, _config(root, machine))
+    harness_memory_path(root, home).mkdir(parents=True)
+    _attach(root, store, machine, home)
+    # Non-vacuous: the fallback was taken, so the file exists and is this run's.
+    assert "autoMemoryDirectory" in (root / SETTINGS).read_text(encoding="utf-8")
+    assert _check_ignore(root, SETTINGS)
+    # `.gitignore` shows, as it should: the fixture tracks it and the attach added its region.
+    status = git(root, "status", "--porcelain", "--untracked-files=all")
+    assert SETTINGS not in status
+
+
+def _fallback_forced(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+    """An attached repository whose store is approved and whose harness link cannot be made —
+    a real directory already sits where it goes — so the next attach takes the settings-file
+    fallback. Returns `(root, store, machine, home)` with no settings file written yet."""
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    resolved = resolve(root, _config(root, machine), machine=machine)
+    assert resolved is not None
+    record(resolved, _config(root, machine))
+    harness_memory_path(root, home).mkdir(parents=True)
+    assert not (root / SETTINGS).exists()
+    return root, store, machine, home
+
+
+def test_a_fallback_that_would_write_through_a_symlinked_claude_is_skipped_with_a_note(
+    tmp_path: Path,
+) -> None:
+    # The fallback writes the settings file, and a `.claude` linked in from elsewhere is a layout
+    # the owner chose, not something to write through or refuse. So the fallback is not taken:
+    # the run goes through, writes nothing behind the link, and says what the harness link is
+    # missing and how to get it. Before, the write failed with an `OSError` after every earlier
+    # write; then, a refusal took the whole attach away from an ordinary layout.
+    #
+    # Mutation: `mutations.toml`'s "attach takes the fallback through a linked-in .claude".
+    from stayfixed.attach.write import FALLBACK_UNAVAILABLE
+
+    root, store, machine, home = _fallback_forced(tmp_path)
+    (tmp_path / "dotfiles-claude").mkdir()
+    (root / ".claude").symlink_to(tmp_path / "dotfiles-claude", target_is_directory=True)
+    attached = _attach(root, store, machine, home)
+    assert attached.notes == (FALLBACK_UNAVAILABLE,)
+    assert not attached.settings_written
+    assert list((tmp_path / "dotfiles-claude").iterdir()) == []
+    # Nothing to hide, so the block names no settings file.
+    exclude = (root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+    assert SETTINGS not in exclude
+
+
+def test_a_symlinked_exclude_file_is_refused_first_when_only_the_fallback_needs_a_line(
+    tmp_path: Path,
+) -> None:
+    # Every other path this run places is ignored already, so the only exclude line the run
+    # needs is the fallback's settings file. That need is known before the first write, and so
+    # is the refusal of a symlinked exclude file.
+    root, store, machine, home = _fallback_forced(tmp_path)
+    exclude = root / ".git" / "info" / "exclude"
+    held = [
+        line for line in exclude.read_text(encoding="utf-8").splitlines() if SETTINGS not in line
+    ]
+    elsewhere = tmp_path / "exclude-elsewhere"
+    elsewhere.write_text("\n".join([*held, "/.codex/rules/", ".stayfixed/"]) + "\n", "utf-8")
+    exclude.unlink()
+    exclude.symlink_to(elsewhere)
+    overlay = store.parents[2]
+    project_files, overlay_files = snapshot(root), snapshot(overlay)
+    outside = elsewhere.read_bytes()
+    with pytest.raises(Refusal) as refused:
+        _attach(root, store, machine, home)
+    assert "symlink" in str(refused.value)
+    assert_snapshot_unchanged(root, project_files)
+    assert_snapshot_unchanged(overlay, overlay_files)
+    assert elsewhere.read_bytes() == outside
+    assert not (root / SETTINGS).exists()
+
+
+def test_a_first_attach_with_a_symlinked_exclude_that_hides_everything_attaches(
+    tmp_path: Path,
+) -> None:
+    # A real directory at the harness path, the harness's own, does not make a first attach need
+    # the fallback: no approval is recorded for a store that does not exist yet, so the gate
+    # cannot open and no settings file is written. A symlinked exclude file that already hides
+    # every path the run places is therefore never written, and never refused.
+    #
+    # Mutation: `mutations.toml`'s "a first attach treats the unapproved gate as possibly open":
+    # the settings file becomes a candidate, the exclude file must take a line, and its symlink
+    # is refused. (The linked-`.claude` case in `test_write.py` cannot see this guard: the
+    # fallback is off the table there for the link alone.)
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    harness_memory_path(root, home).mkdir(parents=True)
+    exclude = root / ".git" / "info" / "exclude"
+    elsewhere = tmp_path / "exclude-elsewhere"
+    held = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
+    # Everything the run places, and not the settings file: the run does not write it, so it is
+    # not a candidate, and nothing is left for the exclude file to take.
+    elsewhere.write_text(held + "/.codex/rules/\n.stayfixed/\n", encoding="utf-8")
+    exclude.unlink(missing_ok=True)
+    exclude.symlink_to(elsewhere)
+    outside = elsewhere.read_bytes()
+    attached = _attach(root, store, machine, home)
+    # Non-vacuous: the attach did run to the end and placed its tree.
+    assert attached.links.created
+    assert elsewhere.read_bytes() == outside
+    assert not (root / SETTINGS).exists()

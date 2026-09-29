@@ -1349,3 +1349,93 @@ def test_the_first_attach_leaves_an_index_behind_its_link(tmp_path: Path) -> Non
     assert index.is_file(), "the index link dangles"
     code, out, err = cli(root, tmp_path, "memory", "index", "--check", machine=machine)
     assert code == 0, out + err
+
+
+def test_a_symlinked_claude_directory_the_run_never_writes_into_is_not_refused(
+    tmp_path: Path,
+) -> None:
+    # A `.claude` kept elsewhere and linked in is an ordinary layout, and an overlay that grants
+    # nothing gives `attach` nothing to write there. The exclude block's candidates are what this
+    # run writes, so the settings file is neither a reason to refuse nor a line in the block.
+    #
+    # Mutation: `mutations.toml`'s "attach hides the settings file on a run that never writes it".
+    root, store, machine = _attachable(tmp_path)
+    _committed(root)
+    (tmp_path / "dotfiles-claude").mkdir()
+    (root / ".claude").symlink_to(tmp_path / "dotfiles-claude", target_is_directory=True)
+    _attach_confirmed(root, store, machine, tmp_path / "home")
+    # Non-vacuous: the attach did run to the end and wrote a block for what it did place.
+    body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
+    assert body is not None and f"/{DEFAULT_MEMORY}/developer" in body
+    assert SETTINGS not in body
+    assert not (tmp_path / "dotfiles-claude" / "settings.local.json").exists()
+
+
+def test_a_run_that_would_write_through_a_symlinked_claude_directory_still_refuses(
+    tmp_path: Path,
+) -> None:
+    # The other half: when the overlay grants a rule, the settings file is written, and a
+    # `.claude` that is a link is refused before anything is written, as before.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    (tmp_path / "dotfiles-claude").mkdir()
+    (root / ".claude").symlink_to(tmp_path / "dotfiles-claude", target_is_directory=True)
+    before = snapshot(root)
+    assert before
+    with pytest.raises(Refusal):
+        _attach_confirmed(root, store, machine, tmp_path / "home")
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_symlinked_stayfixed_directory_is_refused_before_anything_is_written(
+    tmp_path: Path,
+) -> None:
+    # The ledger is written under `.stayfixed/local/`, and nothing above the first write held
+    # that path to the project by name: a clone committing `.stayfixed` as a link was refused
+    # only because `git check-ignore` will not answer about a path beyond a symlink, with a
+    # message blaming git. Held to the project first, so the refusal says what is wrong.
+    #
+    # Mutation: `mutations.toml`'s "attach stops holding the ledger's path to the project".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
+    (tmp_path / "elsewhere").mkdir()
+    (root / ".stayfixed").symlink_to(tmp_path / "elsewhere", target_is_directory=True)
+    before = snapshot(root)
+    assert before
+    with pytest.raises(Refusal) as refused:
+        _attach_confirmed(root, store, machine, tmp_path / "home")
+    # Named for what it is. Before, the refusal came by accident from `git check-ignore`, which
+    # will not answer about a path beyond a symlink, and blamed git.
+    assert "symlink" in str(refused.value)
+    assert_snapshot_unchanged(root, before)
+    assert list((tmp_path / "elsewhere").iterdir()) == []
+
+
+def test_a_first_attach_beside_the_harnesss_own_memory_and_a_linked_claude_attaches(
+    tmp_path: Path,
+) -> None:
+    # The harness makes `~/.claude/projects/<slug>/memory` a real directory of its own, a
+    # `.claude` linked in from elsewhere is an ordinary layout, and an overlay that grants
+    # nothing gives `attach` nothing to merge. On a first attach the store has no approval, so
+    # the harness link is withheld and no settings-file fallback is ever wanted: the attach goes
+    # through, says the link waits, writes no settings file and leaves `git status` clean but for
+    # the region `init` owns.
+    from stayfixed.memory.api import harness_memory_path
+
+    root, store, machine = _attachable(tmp_path)
+    home = tmp_path / "home"
+    harness_memory_path(root, home).mkdir(parents=True)
+    (tmp_path / "dotfiles-claude").mkdir()
+    (root / ".claude").symlink_to(tmp_path / "dotfiles-claude", target_is_directory=True)
+    _committed(root)  # the link is the project's own, committed like the rest of it
+    attached = attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=home,
+    )
+    assert attached.notes == (HARNESS_WAITS,)
+    assert not attached.settings_written
+    assert list((tmp_path / "dotfiles-claude").iterdir()) == []
+    assert _status(root) == ["?? .gitignore"]

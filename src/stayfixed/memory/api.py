@@ -14,7 +14,7 @@ forty-five had no importer anywhere in `src/`, `scripts/` or `tests/`. An area t
 something absent from this list grows it deliberately, in a commit that says which area and why
 — it does not import a private module of this area.
 
-Twenty-seven names are imported from outside this area today, and the areas that reach for them
+Twenty-eight names are imported from outside this area today, and the areas that reach for them
 are `attach`, `doctor` and `docs`: the resolver and its store (`resolve`, `Store`,
 `overlay_root`, `permitted_roots`, `main_checkout`, and `resolved`, which `docs check
 --memory-graph` reads so that a store that does not resolve is said rather than skipped), the
@@ -22,10 +22,12 @@ overlay layout `attach` writes and `overlay` renders (`PROJECTS`, `PROJECT_RECOR
 `COMMON_GROUP`), the link tree
 (`link`, `attach_main`, `detach_main`, `harness_anchor`, `harness_link_needed`,
 `harness_memory_path`, `Links`, `PartialLink`, and `linked_names`, which `attach` reads to hide
-every name the tree holds from git), the bundles `doctor` reports on (`fit`,
-`render`, `SLOTS`), the wiki-link grammar and the note walk the graph check reads
-(`WIKI_LINK`, `walk`), the binding's git answer (`origin_remote`, `GitUnavailable`), and the
-trust region `tests/test_install_path.py` asserts end to end (`DELIMITER`, `markers`).
+every name the tree holds from git), whether the machine records any approval for a store that
+does not exist yet (`approval_recorded`, which `attach` asks before a first link tree is built),
+the bundles `doctor` reports on (`fit`, `render`, `SLOTS`), the wiki-link grammar and the note
+walk the graph check reads (`WIKI_LINK`, `walk`), the binding's git answer (`origin_remote`,
+`GitUnavailable`), and the trust region `tests/test_install_path.py` asserts end to end
+(`DELIMITER`, `markers`).
 
 **Thirteen more have no importer and stay, each for a reason written here**, because a name
 kept in silence is what made this pass necessary:
@@ -113,6 +115,7 @@ from stayfixed.memory.trust import (
     TrustState,
     UnreadableTrustRecord,
     UnsafeNote,
+    approval_recorded,
     changed,
     markers,
     may_inject,
@@ -151,6 +154,7 @@ __all__ = [
     "Unresolved",
     "UnsafeNote",
     "Walk",
+    "approval_recorded",
     "attach_main",
     "changed",
     "detach_main",

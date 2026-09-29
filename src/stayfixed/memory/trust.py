@@ -280,6 +280,16 @@ def _recorded(machine: Path | None) -> dict[str, str]:
     return {k: v for k, v in raw.items() if isinstance(v, str)}
 
 
+def approval_recorded(path: Path, machine: Path | None) -> bool:
+    """Whether this machine records any approval for a store at `path`, whatever its digest.
+
+    For a caller that must answer the gate before the store exists: `attach` asks it on a first
+    attach, before the link tree `resolve` needs is built. No record at all is a gate that cannot
+    open for that store, whatever it will hold; a record, current or not, is one that might.
+    """
+    return str(path.resolve()) in _recorded(machine)
+
+
 def state(store: Store, config: Config) -> TrustState:
     current = store_digest(store, config)
     recorded = _recorded(store.machine).get(_key(store))
