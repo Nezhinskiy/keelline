@@ -607,6 +607,8 @@ def test_init_completes_an_overlay_whose_template_predates_the_owner_and_author(
 def test_init_keeps_an_author_the_owner_wrote_themselves(tmp_path: Path) -> None:
     # Only the placeholder is replaced: a person who put their own name in `author` before
     # running `init`, or who runs it a second time, keeps it.
+    #
+    # Mutation: `mutations.toml`'s "overlay init replaces an author the owner wrote".
     created = create(
         "octo", "stayfixed-private", source="local", root=tmp_path, runner=FakeRunner()
     )

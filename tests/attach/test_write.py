@@ -30,7 +30,7 @@ from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import PROJECT_RECORD
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
 from stayfixed.runner import Completed
-from stayfixed.scaffold import Style, extract, owned_ids
+from stayfixed.scaffold import Style, drop, extract, owned_ids
 
 # The fixture the binding tests already build, reused rather than copied: one spelling of the
 # overlay layout keeps the two modules from drifting apart about what `--store` names.
@@ -1568,8 +1568,11 @@ def test_a_run_that_would_write_through_a_symlinked_claude_directory_still_refus
     (root / ".claude").symlink_to(tmp_path / "dotfiles-claude", target_is_directory=True)
     before = snapshot(root)
     assert before
-    with pytest.raises(Refusal):
+    with pytest.raises(Refusal) as refused:
         _attach_confirmed(root, store, machine, tmp_path / "home")
+    # Refused for the reason it has: the containment asked of each placed path names the link.
+    # Mutation: `mutations.toml`'s "the exclude block stops holding placed paths to the project".
+    assert "symlink" in str(refused.value)
     assert_snapshot_unchanged(root, before)
 
 
@@ -1722,6 +1725,28 @@ def test_a_group_with_a_space_or_a_non_ascii_name_is_still_hidden() -> None:
     assert pattern("notes/заметки") == "/notes/заметки"
 
 
+@pytest.mark.parametrize(
+    ("name", "line"),
+    [
+        ("notes/a*b", "/notes/a\\*b"),
+        ("notes/a?b", "/notes/a\\?b"),
+        ("notes/a[b", "/notes/a\\[b"),
+        ("notes/a\\b", "/notes/a\\\\b"),
+    ],
+    ids=["star", "question", "bracket", "backslash"],
+)
+def test_each_pattern_character_in_a_group_name_is_escaped(name: str, line: str) -> None:
+    # A `memory.groups` entry is the repository's, and git reads `*`, `?`, `[` and `\` in an
+    # exclude line as pattern syntax: a group named `*` unescaped would hide every untracked note
+    # under `paths.memory`, and `\` would escape whatever follows it. Only the space escape was
+    # asserted, so any one of these could leave `_SPECIAL` unnoticed.
+    #
+    # Mutations: `mutations.toml`'s four "the exclude line leaves ... unescaped" entries.
+    from stayfixed.attach.exclude import pattern
+
+    assert pattern(name) == line
+
+
 # --- every refusal is made before the first write ---------------------------------------------
 
 
@@ -1839,3 +1864,53 @@ def test_an_exclude_file_whose_write_fails_is_a_refusal_naming_it(tmp_path: Path
     finally:
         shut.chmod(0o755)
     assert "info/exclude" in str(refused.value)
+
+
+def test_a_trusted_store_keeps_its_approval_when_attach_renders_its_missing_index(
+    tmp_path: Path,
+) -> None:
+    # A store approved while it had no `MEMORY.md`, which is how a 0.1.x first attach left it,
+    # gets its index rendered by the next attach. The render rewrites a file the approval covers,
+    # so it carries the approval across its own write, as `memory index` does; without that the
+    # re-attach revoked the owner's approval and withheld the harness link with "has no approval
+    # yet".
+    #
+    # Mutation: `mutations.toml`'s "attach's index render drops the store's approval".
+    from stayfixed.config.loader import load
+    from stayfixed.memory.api import harness_memory_path, resolve
+    from stayfixed.memory.trust import record
+
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    home = tmp_path / "home"
+    _attach_it(root, store, machine, home)
+    (store / "MEMORY.md").unlink()
+    config = load(root, machine=machine)
+    resolved = resolve(root, config, machine=machine)
+    assert resolved is not None
+    assert record(resolved, config).trusted
+    attached = _attach_it(root, store, machine, home)
+    assert (store / "MEMORY.md").is_file()
+    assert HARNESS_WAITS not in attached.notes
+    assert harness_memory_path(root, home).is_symlink()
+
+
+def test_a_settings_file_an_earlier_attach_wrote_is_hidden_by_the_next_one(
+    tmp_path: Path,
+) -> None:
+    # The upgrade path: a 0.1.x attach merged the overlay's rules into the settings file and
+    # recorded them in its ledger, and kept no exclude block. The next attach, with nothing new
+    # to merge, writes no settings, and it is the earlier ledger that says the file is
+    # stayfixed's to hide; asked only of this run's writes, the file stayed in `git status`.
+    #
+    # Mutation: `mutations.toml`'s "attach forgets the settings file an earlier attach wrote".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    _committed(root)
+    home = tmp_path / "home"
+    _attach_confirmed(root, store, machine, home)
+    exclude = _exclude(root)
+    exclude.write_text(
+        drop(exclude.read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH), encoding="utf-8"
+    )
+    assert not _check_ignore(root, SETTINGS)
+    _attach_confirmed(root, store, machine, home)
+    assert _check_ignore(root, SETTINGS)

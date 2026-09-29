@@ -1047,6 +1047,34 @@ def test_the_store_named_by_its_overlay_path_is_the_store_the_link_tree_names(
     assert invoke(["memory", "index", "--check", *named]) == 0
 
 
+@needs_git
+def test_the_share_named_outside_overlay_mode_is_the_store_it_names(overlay_project: Path) -> None:
+    # The rule above is overlay mode's: there the share is the far end of the link tree. A
+    # repository in any other mode has no link tree, so `--store` naming the same directory is an
+    # override like any other and resolves to that directory, not to `paths.memory`.
+    #
+    # Mutation: `mutations.toml`'s "an override naming the share is dropped in every mode".
+    from stayfixed.config.loader import load
+    from stayfixed.memory.store import resolved
+
+    config_file = overlay_project / "stayfixed.toml"
+    config_file.write_text(
+        config_file.read_text(encoding="utf-8").replace('mode = "overlay"', 'mode = "in-repo"'),
+        encoding="utf-8",
+    )
+    machine = overlay_project.parent / "machine.toml"
+    share = overlay_project.parent / "overlay" / "projects" / "widget" / "memory"
+    (share / "developer").mkdir()
+    store, why = resolved(
+        overlay_project,
+        load(overlay_project, machine=machine),
+        override=str(share),
+        machine=machine,
+    )
+    assert why is None and store is not None
+    assert store.path.resolve() == share.resolve()
+
+
 def _binding_project(tmp_path: Path, cause: str) -> tuple[Path, Path]:
     """An attached-shaped overlay project whose binding fails for exactly one of its four causes."""
     root = tmp_path / "project"

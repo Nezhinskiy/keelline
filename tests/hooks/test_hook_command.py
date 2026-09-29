@@ -48,7 +48,12 @@ release_branch = "main"
 
 
 def hook(
-    event: str, stdin: str, cwd: Path, *args: str, data: Path | None = None
+    event: str,
+    stdin: str,
+    cwd: Path,
+    *args: str,
+    data: Path | None = None,
+    home: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Spawn `stayfixed hook <event> [args…]` with a fixed environment.
 
@@ -65,6 +70,10 @@ def hook(
     }
     if data is not None:
         env["CLAUDE_PLUGIN_DATA"] = str(data)
+    if home is not None:
+        # A hook reads the machine file at `$HOME/.config/stayfixed/config.toml` and nowhere a
+        # repository can name, so a case about that file gives the hook a home of its own.
+        env["HOME"] = str(home)
     return subprocess.run(
         [sys.executable, "-m", "stayfixed", "hook", event, *args],
         input=stdin,
@@ -341,3 +350,22 @@ def test_the_command_the_hook_points_at_prints_the_detail(
     code, out, err = cli(project, tmp_path, "docs", "check")
     assert code in (1, 2)
     assert CHOSEN in out + err
+
+
+def test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml(tmp_path: Path) -> None:
+    # The machine configuration is loaded beside `stayfixed.toml`, and its own error is a
+    # `ConfigError` too: caught with them, it was reported as "stayfixed.toml does not load" and
+    # sent the owner to `stayfixed docs check` about a file that loads. It keeps the generic
+    # verdict, which names its own class; the file is the owner's, not the repository's.
+    #
+    # Mutation: `mutations.toml`'s "the hook blames a broken machine file on stayfixed.toml".
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
+    home = tmp_path / "home"
+    (home / ".config" / "stayfixed").mkdir(parents=True)
+    (home / ".config" / "stayfixed" / "config.toml").write_text("[overlay\n", encoding="utf-8")
+    completed = hook("PreToolUse", json.dumps(TOOL_CALL), project, home=home)
+    assert completed.returncode == 2
+    assert "stayfixed.toml does not load" not in completed.stderr
+    assert "MachineConfigError" in completed.stderr

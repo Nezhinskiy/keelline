@@ -13300,6 +13300,139 @@ reddens = [
   "tests/test_binding_answers.py::test_a_checkout_with_no_origin_hears_one_cause_and_one_way_out_everywhere",
 ]
 
+# --- load-bearing guards that had no test to redden ---------------------------------------------
+
+# A doubled block in the exclude file is knowable before anything is withdrawn; found after the
+# settings withdrawal, it left the repository half-detached with the settings gone and the links
+# in place.
+[[mutation]]
+name = "detach finds the exclude block after it has withdrawn the settings"
+file = "src/stayfixed/attach/write.py"
+before = """    hidden = None if kept else exclude.withdrawn_block(root)
+    _refuse_unwithdrawable(root, recorded, checkouts, config)
+    allow_removed = _withdraw_settings(root, recorded)"""
+after = """    _refuse_unwithdrawable(root, recorded, checkouts, config)
+    allow_removed = _withdraw_settings(root, recorded)
+    hidden = None if kept else exclude.withdrawn_block(root)"""
+reddens = [
+  "tests/attach/test_detach.py::test_a_doubled_exclude_block_refuses_detach_naming_the_exclude_file",
+]
+
+# A `memory.groups` entry is the repository's, and each of these is pattern syntax to git: a group
+# named `*` unescaped hides every untracked note under `paths.memory`.
+[[mutation]]
+name = "the exclude line leaves a star unescaped"
+file = "src/stayfixed/attach/exclude.py"
+before = '_SPECIAL = frozenset("\\*?[ ")'
+after = '_SPECIAL = frozenset("\\?[ ")'
+reddens = ["tests/attach/test_write.py::test_each_pattern_character_in_a_group_name_is_escaped[star]"]
+
+[[mutation]]
+name = "the exclude line leaves a question mark unescaped"
+file = "src/stayfixed/attach/exclude.py"
+before = '_SPECIAL = frozenset("\\*?[ ")'
+after = '_SPECIAL = frozenset("\\*[ ")'
+reddens = [
+  "tests/attach/test_write.py::test_each_pattern_character_in_a_group_name_is_escaped[question]",
+]
+
+[[mutation]]
+name = "the exclude line leaves a bracket unescaped"
+file = "src/stayfixed/attach/exclude.py"
+before = '_SPECIAL = frozenset("\\*?[ ")'
+after = '_SPECIAL = frozenset("\\*? ")'
+reddens = [
+  "tests/attach/test_write.py::test_each_pattern_character_in_a_group_name_is_escaped[bracket]",
+]
+
+[[mutation]]
+name = "the exclude line leaves a backslash unescaped"
+file = "src/stayfixed/attach/exclude.py"
+before = '_SPECIAL = frozenset("\\*?[ ")'
+after = '_SPECIAL = frozenset("*?[ ")'
+reddens = [
+  "tests/attach/test_write.py::test_each_pattern_character_in_a_group_name_is_escaped[backslash]",
+]
+
+# Each path the block would list is held to the project before git is asked about it; without it a
+# `.claude` linked in from elsewhere was refused only by accident, by a later write.
+[[mutation]]
+name = "the exclude block stops holding placed paths to the project"
+file = "src/stayfixed/attach/exclude.py"
+before = "        contained(root, relative, allow_final_symlink=True)"
+after = "        pass"
+reddens = [
+  "tests/attach/test_write.py::test_a_run_that_would_write_through_a_symlinked_claude_directory_still_refuses",
+]
+
+# The index `attach` renders rewrites a file the store's approval covers; without carrying the
+# approval across it, the re-attach of a store approved at 0.1.x revoked it and withheld the
+# harness link.
+[[mutation]]
+name = "attach's index render drops the store's approval"
+file = "src/stayfixed/memory/worktree.py"
+before = "    trust.refresh_if_trusted(store, config, before, [written])"
+after = "    pass"
+reddens = [
+  "tests/attach/test_write.py::test_a_trusted_store_keeps_its_approval_when_attach_renders_its_missing_index",
+]
+
+# A broken machine file raises a `ConfigError` too; caught with the others, the hook blamed it on
+# `stayfixed.toml` and pointed at `stayfixed docs check` about a file that loads.
+[[mutation]]
+name = "the hook blames a broken machine file on stayfixed.toml"
+file = "src/stayfixed/hooks/commands.py"
+before = """            except MachineConfigError:
+                # The machine file's fault, not `stayfixed.toml`'s: this line would name the
+                # wrong file, so it keeps the generic verdict below.
+                raise
+"""
+after = ""
+reddens = [
+  "tests/hooks/test_hook_command.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
+]
+
+# Outside overlay mode a `--store` naming the overlay's share is an override like any other.
+[[mutation]]
+name = "an override naming the share is dropped in every mode"
+file = "src/stayfixed/memory/store.py"
+before = '    if override is None or overlay is None or config.memory.mode != "overlay":'
+after = "    if override is None or overlay is None:"
+reddens = [
+  "tests/memory/test_commands.py::test_the_share_named_outside_overlay_mode_is_the_store_it_names",
+]
+
+# `attach` never writes through a symlinked exclude file, so `detach` must not read a block
+# through one and replace the link with a regular file.
+[[mutation]]
+name = "detach reads the block through a symlinked exclude file"
+file = "src/stayfixed/attach/exclude.py"
+before = "    if path.is_symlink() or not path.is_file():"
+after = "    if not path.is_file():"
+reddens = [
+  "tests/attach/test_detach.py::test_detach_writes_nothing_through_an_exclude_file_that_became_a_symlink",
+]
+
+# The upgrade path: a settings file a 0.1.x attach wrote, recorded in its ledger, with no exclude
+# block; the next attach writes nothing there and must still hide it.
+[[mutation]]
+name = "attach forgets the settings file an earlier attach wrote"
+file = "src/stayfixed/attach/write.py"
+before = "    if previous is not None and (previous.allow or previous.entries or previous.settings_keys):"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_write.py::test_a_settings_file_an_earlier_attach_wrote_is_hidden_by_the_next_one",
+]
+
+[[mutation]]
+name = "overlay init replaces an author the owner wrote"
+file = "src/stayfixed/overlay/create.py"
+before = '        and current.get("name", PLACEHOLDER_ACCOUNT) == PLACEHOLDER_ACCOUNT'
+after = "        and True"
+reddens = [
+  "tests/overlay/test_create.py::test_init_keeps_an_author_the_owner_wrote_themselves",
+]
+
 # CI's rendered-artifact check accepted any directory named `.git`, so an empty `mkdir .git` stood
 # in for the repository `overlay create --local` makes on `main`.
 [[mutation]]

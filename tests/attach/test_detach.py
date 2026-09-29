@@ -1123,3 +1123,24 @@ def test_a_doubled_exclude_block_refuses_detach_naming_the_exclude_file(tmp_path
         _detach(root, machine, home)
     assert "info/exclude" in str(refused.value)
     assert_snapshot_unchanged(root, before)
+
+
+def test_detach_writes_nothing_through_an_exclude_file_that_became_a_symlink(
+    tmp_path: Path,
+) -> None:
+    # `attach` never writes through a symlinked exclude file, so a block behind one is not one it
+    # put there, and `detach` leaves the link and the file it points at alone rather than reading
+    # the block through it and replacing the link with a regular file.
+    #
+    # Mutation: `mutations.toml`'s "detach reads the block through a symlinked exclude file".
+    root, _store, machine, home = _withdrawable(tmp_path)
+    path = _exclude_file(root)
+    elsewhere = tmp_path / "dotfiles-exclude"
+    shutil.move(path, elsewhere)
+    path.symlink_to(elsewhere)
+    held = elsewhere.read_bytes()
+    assert b"stayfixed:attach:begin" in held
+    detached = _detach(root, machine, home)
+    assert path.is_symlink()
+    assert elsewhere.read_bytes() == held
+    assert not detached.exclude_block_removed
