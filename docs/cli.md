@@ -1989,7 +1989,13 @@ file is empty, both held by a test. `--dry-run` first is how you read them befor
 code path that then runs, which is what makes the dry run worth reading.
 
 **Writes**, without `--dry-run`, every artifact the report lists as `create` or `update`, plus
-`.stayfixed/manifest.json`. Exits `0`; `1` when the report carries a REFUSED section, because
+`.stayfixed/manifest.json`. It also **removes** one file a release no longer ships,
+`common/memory/README.md`, which is `_README.md` now because the note reader reads every other
+`.md` there as a note, and it does so only when the file holds what stayfixed wrote there: the
+digest `.stayfixed/manifest.json` recorded, or, in an overlay with no manifest (one generated from
+a template, since `publish-template` leaves it out), the file 0.1.0 and 0.1.1 shipped. Any other
+copy may hold your own words, so it is listed as `skip_modified` with the way out: rename it to
+`_README.md`. Exits `0`; `1` when the report carries a REFUSED section, because
 nothing would be written while one of those stands; `2` when `--root` is not an overlay, when the
 manifest itself cannot be trusted, or when a write is refused by the containment walk.
 
@@ -2130,7 +2136,8 @@ link tree under `paths.memory` in this checkout and in every existing worktree, 
 link, and — in the overlay — `projects/<name>/project.toml`, this project's note directories,
 `projects/<name>/memory/MEMORY.md` when the store has none yet (rendered as `stayfixed memory
 index` renders it, so the index link never dangles and `memory index --check` passes right after
-a first attach) and, through the
+a first attach, in an overlay created by this release or brought up to it by `overlay upgrade`,
+which removes the `common/memory/README.md` 0.1.x shipped) and, through the
 `pre-commit install` it runs there when the overlay carries a `.pre-commit-config.yaml` and no
 `pre-commit` hook yet, the overlay's `pre-commit` git hook. The ledger is the only record
 of which allow rules are stayfixed's, because an allow rule cannot carry a marker the way a hook

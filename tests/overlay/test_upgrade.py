@@ -136,3 +136,101 @@ def test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release(tmp_path:
     _restamp(root, ".claude-plugin/plugin.json")
     moved = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
     assert moved[".claude-plugin/plugin.json"] is Verb.UPDATE
+
+
+# --- a file an earlier release shipped and this one does not --------------------------------
+
+# The bytes 0.1.0 and 0.1.1 shipped at `common/memory/README.md`, whole: the note reader read the
+# file as a note with no frontmatter, so `memory index --check` failed in every project attached to
+# the overlay. Held here in full so the digest `overlay upgrade` removes the file by is checked
+# against the file it names rather than against itself.
+SHIPPED_MEMORY_README = (
+    "# Cross-project notes\n"
+    "\n"
+    "Notes that are true across your projects: how you like to work, what you have learned "
+    "about a\n"
+    "tool you use everywhere, standing preferences that are not rules.\n"
+    "\n"
+    "This directory is the store a bound repository links to as its `developer` group, alongside\n"
+    "that project's own notes under `projects/<name>/memory/`. The routing index a session "
+    "reads is\n"
+    "rendered from both; it is generated, so write the notes and let the index follow.\n"
+    "\n"
+    "A note about one project goes under `projects/<name>/memory/` instead. Keeping the two apart\n"
+    "is what stops one client's work reaching another client's session.\n"
+)
+MEMORY_README = "common/memory/README.md"
+
+
+def _with_the_shipped_memory_readme(root: Path, *, ledger: bool, text: str) -> Path:
+    """An overlay carrying the retired file, with the ledger an earlier `--local` render leaves
+    or with none, as an overlay generated from a template has (`publish-template` strips it)."""
+    path = root / MEMORY_README
+    path.write_text(text, encoding="utf-8")
+    manifest = root / MANIFEST_PATH
+    if not ledger:
+        manifest.unlink()
+        return path
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    document["artifacts"][MEMORY_README] = {
+        "id": MEMORY_README,
+        "kind": "template",
+        "location": "repo",
+        "target": MEMORY_README,
+        "template": f"overlay/{MEMORY_README}",
+        "version": "0.1.1",
+        "sha256": digest(SHIPPED_MEMORY_README),
+    }
+    manifest.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize("ledger", [True, False], ids=["recorded", "no-ledger"])
+def test_the_memory_readme_a_release_shipped_is_removed(tmp_path: Path, ledger: bool) -> None:
+    # `common/memory/README.md` became `_README.md`, which the note reader skips, and `upgrade`
+    # created the new name beside the old one: the old one stayed, and `memory index --check`
+    # went on reporting it unreadable. An overlay `--local` rendered carries a ledger that
+    # records the file; one generated from a template carries none, and there the bytes a
+    # release shipped are the only evidence the file is stayfixed's.
+    #
+    # Mutations: `mutations.toml`'s "a retired overlay file the ledger records is kept" and "a
+    # retired overlay file holding the shipped bytes is kept".
+    root = _an_overlay(tmp_path)
+    path = _with_the_shipped_memory_readme(root, ledger=ledger, text=SHIPPED_MEMORY_README)
+    planned = upgrade(root, dry_run=True).plan
+    removed = [a for a in planned.actions if a.verb is Verb.REMOVE]
+    assert [a.target for a in removed] == [MEMORY_README]
+    # Non-vacuous: the dry run left it, and the real run takes it and keeps the new name.
+    assert path.is_file()
+    upgrade(root, dry_run=False)
+    assert not path.exists()
+    assert (root / "common" / "memory" / "_README.md").is_file()
+
+
+@pytest.mark.parametrize("ledger", [True, False], ids=["recorded", "no-ledger"])
+def test_an_edited_memory_readme_is_kept_and_the_report_says_what_to_do(
+    tmp_path: Path, ledger: bool
+) -> None:
+    # A copy that is not the shipped bytes may hold the owner's own words, and nothing else holds
+    # them, so it is never removed: the report names it and the way out, since the note reader
+    # still reads it as a note.
+    #
+    # Mutations: `mutations.toml`'s "a retired overlay file with no ledger is removed whatever it
+    # holds" and "a kept retired overlay file is named without its way out".
+    root = _an_overlay(tmp_path)
+    edited = SHIPPED_MEMORY_README + "\nMy own line.\n"
+    path = _with_the_shipped_memory_readme(root, ledger=ledger, text=edited)
+    planned = upgrade(root, dry_run=True).plan
+    kept = {a.target: a for a in planned.actions}[MEMORY_README]
+    assert kept.verb is Verb.SKIP_MODIFIED
+    assert "_README.md" in kept.reason
+    upgrade(root, dry_run=False)
+    assert path.read_text(encoding="utf-8") == edited
+
+
+def test_the_digest_held_for_the_retired_readme_is_the_shipped_files() -> None:
+    # The constant and the bytes it names, checked against each other. No mutation: a changed
+    # digest reddens the removal test above through the no-ledger case.
+    from stayfixed.overlay.template import SHIPPED_MEMORY_README as held
+
+    assert digest(SHIPPED_MEMORY_README) == held

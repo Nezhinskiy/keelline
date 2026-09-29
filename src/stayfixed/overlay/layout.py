@@ -72,3 +72,10 @@ OVERLAY_FILES = (
 )
 
 CAPABILITY_FILES = CAPABILITY_NAMES
+
+# Files an earlier release shipped and this one does not, which `overlay upgrade` removes where
+# they still hold what stayfixed wrote (`overlay.template.retired`). `common/memory/README.md` is
+# `_README.md` now, for the reason `PLACEHOLDER_NAMES` gives. None of them is ever a member of
+# `OVERLAY_FILES`: `tests/overlay/test_template.py` holds that.
+RETIRED_MEMORY_README = f"{COMMON_MEMORY}/README.md"
+RETIRED_OVERLAY_FILES = (RETIRED_MEMORY_README,)
