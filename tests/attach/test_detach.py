@@ -1144,3 +1144,34 @@ def test_detach_writes_nothing_through_an_exclude_file_that_became_a_symlink(
     assert path.is_symlink()
     assert elsewhere.read_bytes() == held
     assert not detached.exclude_block_removed
+
+
+@pytest.mark.parametrize("kind", ["committed", "unreadable"])
+def test_a_ledger_no_attach_of_that_checkout_wrote_does_not_keep_the_block(
+    tmp_path: Path, kind: str
+) -> None:
+    # The block stays while another checkout still holds a ledger, and any file at the ledger's
+    # path counted: a clone that committed `.stayfixed/local/attach.json` has it in every
+    # worktree, and one that will not parse records no attach, so the block was kept for good.
+    # Only an untracked ledger that reads as one counts now.
+    #
+    # Mutations: `mutations.toml`'s "detach counts a committed ledger as another attach" and
+    # "detach counts an unreadable ledger as another attach".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    side = tmp_path / "side"
+    _attach(root, store, machine, home, confirmed=True)
+    if kind == "committed":
+        git(root, "add", "-f", LEDGER)
+        git(root, "commit", "-qm", "a ledger somebody committed")
+        git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    else:
+        git(root, "worktree", "add", "-q", str(side), "-b", "side")
+        (side / LEDGER).parent.mkdir(parents=True)
+        (side / LEDGER).write_text("{not json", encoding="utf-8")
+    # Non-vacuous: the other checkout has a file at the ledger's path.
+    assert (side / LEDGER).is_file()
+    removed = _detach(root, machine, home)
+    assert removed.exclude_block_kept is False
+    assert removed.exclude_block_removed is True

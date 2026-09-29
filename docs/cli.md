@@ -2338,7 +2338,10 @@ never writes through one. **The exclude block stays while another checkout is at
 exclude file is shared by every worktree of the repository, while the ledger, the settings file
 and the `.codex/rules/` copies are each checkout's own; so when another checkout still holds a
 ledger, the block is kept for its files, the line ends by saying so, and `--json` reports
-`exclude_block_kept: true`. The detach of the last attached checkout takes it.
+`exclude_block_kept: true`. The detach of the last attached checkout takes it. Only a ledger an
+attach wrote counts: one git does not track (a clone that committed the file has it in every
+worktree) and that reads as a ledger. A `git` that cannot say whether the file is tracked counts
+it, and the block stays.
 
 Then it removes, each only when empty: the `paths.memory` directory in this checkout when the
 ledger records `attach` as having created it, and in every other checkout it withdrew a tree from

@@ -1583,9 +1583,27 @@ def _refuse_unwithdrawable(
 
 
 def _another_attached(root: Path, checkouts: list[Path]) -> bool:
-    """Whether a checkout of this repository other than `root` holds an attach ledger."""
+    """Whether a checkout of this repository other than `root` holds an attach ledger.
+
+    Only a ledger an attach in that checkout wrote counts: one git does not track, since
+    `attach` never commits it and a clone that did puts the file in every worktree, and one that
+    reads as a ledger, since a file that does not records no attach. Either kind used to keep the
+    shared exclude block for good. A `git` that cannot say whether the file is tracked counts it,
+    which keeps the block: the answer that hides too much rather than too little.
+    """
     own = root.resolve()
-    return any(tree != own and (tree / LEDGER).is_file() for tree in checkouts)
+    for tree in checkouts:
+        if tree == own or not (tree / LEDGER).is_file():
+            continue
+        code, tracked = git_run(tree, "ls-files", "-z", "--", LEDGER)
+        if code == 0 and tracked:
+            continue
+        try:
+            ledger(tree)
+        except (Failure, Refusal):
+            continue
+        return True
+    return False
 
 
 def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:

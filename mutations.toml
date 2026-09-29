@@ -13492,3 +13492,24 @@ reddens = [
   "tests/scripts/test_check_artifacts.py::test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main[detached]",
   "tests/scripts/test_check_artifacts.py::test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main[not-utf8]",
 ]
+
+# The shared exclude block stays while another checkout holds a ledger, and any file at the
+# ledger's path counted: a committed ledger is in every worktree, and a file that does not parse
+# records no attach, so either kept the block for good.
+[[mutation]]
+name = "detach counts a committed ledger as another attach"
+file = "src/stayfixed/attach/write.py"
+before = "        if code == 0 and tracked:"
+after = "        if False:"
+reddens = [
+  "tests/attach/test_detach.py::test_a_ledger_no_attach_of_that_checkout_wrote_does_not_keep_the_block[committed]",
+]
+
+[[mutation]]
+name = "detach counts an unreadable ledger as another attach"
+file = "src/stayfixed/attach/write.py"
+before = "            ledger(tree)"
+after = "            pass"
+reddens = [
+  "tests/attach/test_detach.py::test_a_ledger_no_attach_of_that_checkout_wrote_does_not_keep_the_block[unreadable]",
+]
