@@ -94,7 +94,9 @@ MANIFESTS = (PLUGIN_MANIFEST, MARKETPLACE_MANIFEST, CODEX_PLUGIN_MANIFEST)
 # owner's. A marketplace has to name an `owner` for `claude plugin validate` to accept it, and a
 # plugin manifest an `author` for it to stop warning; neither can be the owner's before there is
 # an owner, so the shipped file holds this neutral stand-in. `templates/overlay/` carries the same
-# string, and `tests/overlay/test_template.py` reads it from there.
+# string, and `tests/overlay/test_create.py`'s
+# `test_init_names_the_owner_and_the_author_the_harness_asks_for` renders the template and fails
+# when the two drift apart.
 PLACEHOLDER_ACCOUNT = "your-account"
 # Which key of each manifest names the account: the marketplace's owner, the plugins' author.
 ACCOUNT_KEYS = {

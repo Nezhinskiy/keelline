@@ -522,9 +522,14 @@ def _names_own_share(override: str | None, config: Config, overlay: Path | None)
     return Path(override).expanduser().resolve() == own.resolve()
 
 
+# A store and no reason, or no store and the reason: `resolved`'s answer, which never holds both
+# and never neither.
+Resolution = tuple[Store, None] | tuple[None, Unresolved]
+
+
 def _resolve_at(
     root: Path, config: Config, override: str | None, machine: Path | None
-) -> tuple[Store | None, Unresolved | None]:
+) -> Resolution:
     mode = config.memory.mode
     overlay = overlay_root(machine)
     if _names_own_share(override, config, overlay):
@@ -600,7 +605,7 @@ def resolved(
     *,
     override: str | None = None,
     machine: Path | None = None,
-) -> tuple[Store | None, Unresolved | None]:
+) -> Resolution:
     """The store and, when there is none, why — in **one** pass.
 
     `resolve` and `refusal_reason` each walk the whole resolution, and a caller that needs both
@@ -612,17 +617,19 @@ def resolved(
 
     The reason's `detail` is repository-authored text: see `refusal_reason` for what that
     obliges a consumer to do with it. Its `said` is stayfixed's own and prints as it is.
+
+    There is always exactly one of the two, and the type says so (`Resolution`): a caller that
+    tests `found[0] is None` holds a reason, and has no "no reason" case to invent words for.
     """
-    store, reason = _resolve_at(root, config, override, machine)
-    if store is not None:
-        return store, None
+    found = _resolve_at(root, config, override, machine)
+    if found[0] is not None:
+        return found
     # A worktree resolves through the checkout it is *registered against*, never through
     # whatever a redirected `GIT_DIR` named and never merely because a directory sits above it.
     parent = _registered_worktree(root)
     if parent is None:
-        return None, reason
-    upstream, upstream_reason = _resolve_at(parent, config, override, machine)
-    return upstream, None if upstream is not None else upstream_reason
+        return found
+    return _resolve_at(parent, config, override, machine)
 
 
 def resolve(

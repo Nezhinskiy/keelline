@@ -69,9 +69,7 @@ def _machine(args: argparse.Namespace) -> Path | None:
 _SAID = "no memory store: {said}; the detail below is repository-authored text, shown as data"
 
 
-def _no_store(reason: Unresolved | None) -> Failure:
-    if reason is None:
-        return Failure("no memory store")
+def _no_store(reason: Unresolved) -> Failure:
     if reason.detail is None:
         return Failure(f"no memory store: {reason.said}")
     lead = _SAID.format(said=reason.said)
@@ -86,10 +84,10 @@ def _store(args: argparse.Namespace) -> tuple[Store, Config]:
     # twice, four `git` queries with a five-second timeout apiece each time, so a hanging `git`
     # cost a refused `memory session-context` up to forty seconds — once per `SessionStart`
     # bundle entry.
-    store, reason = resolved(root, config, override=args.store, machine=machine)
-    if store is None:
-        raise _no_store(reason)
-    return store, config
+    found = resolved(root, config, override=args.store, machine=machine)
+    if found[0] is None:
+        raise _no_store(found[1])
+    return found[0], config
 
 
 # What `bundles.blocks` returns `[]` for, said where a person will read it. The failure this
