@@ -3042,7 +3042,7 @@ before = """    if ignore_needed:
     # the links so that a `PartialLink` half way through still leaves `detach` able to remove
     # it. The real answer is taken again below, after the only function that can change it.
     carried = _recorded_keys(root)
-    _write_ledger(root, binding, diff, rules, carried, previous, absent, parents)"""
+    _write_ledger(root, binding, diff, rules, carried, previous, absent, parents, memory_created)"""
 after = """    if hidden is not None:
         exclude.write(hidden)
     rules = _codex_rules(root, binding)
@@ -3052,7 +3052,7 @@ after = """    if hidden is not None:
     # the links so that a `PartialLink` half way through still leaves `detach` able to remove
     # it. The real answer is taken again below, after the only function that can change it.
     carried = _recorded_keys(root)
-    _write_ledger(root, binding, diff, rules, carried, previous, absent, parents)
+    _write_ledger(root, binding, diff, rules, carried, previous, absent, parents, memory_created)
     if ignore_needed:
         _write_ignore_region(root)"""
 reddens = [
@@ -12988,6 +12988,39 @@ before = "    if git_dir.exists() or git_dir.is_symlink():"
 after = "    if False:"
 reddens = [
   "tests/overlay/test_create.py::test_a_local_render_over_an_existing_repository_says_what_it_found",
+]
+
+# `attach` records which directories above `paths.memory` it created; an empty `docs/` the owner
+# already had is not on the record and survives `detach`. Nothing tested that half.
+[[mutation]]
+name = "detach removes a directory above paths.memory it never made"
+file = "src/stayfixed/attach/write.py"
+before = "        if name in recorded.memory_parents and _rmdir_if_empty(root, name):"
+after = "        if _rmdir_if_empty(root, name):"
+reddens = [
+  "tests/attach/test_detach.py::test_an_empty_docs_directory_the_owner_had_survives_the_round_trip",
+]
+
+# `detach` removed `paths.memory` whenever it was empty, taking an empty directory the owner had
+# made before the attach.
+[[mutation]]
+name = "detach removes a paths.memory it never made"
+file = "src/stayfixed/attach/write.py"
+before = "            if recorded.memory_created and _rmdir_if_empty(tree, config.paths.memory):"
+after = "            if _rmdir_if_empty(tree, config.paths.memory):"
+reddens = [
+  "tests/attach/test_detach.py::test_an_empty_memory_directory_the_owner_had_survives_the_round_trip",
+]
+
+# A second attach finds `paths.memory` the first one made; a ledger rewritten from that run alone
+# forgot it, and `detach` then left the directory behind.
+[[mutation]]
+name = "a second attach forgets that the first created paths.memory"
+file = "src/stayfixed/attach/write.py"
+before = '        "memory_created": memory_created or (previous is not None and previous.memory_created),'
+after = '        "memory_created": memory_created,'
+reddens = [
+  "tests/attach/test_detach.py::test_detach_takes_back_the_exclude_block_the_empty_directories_and_the_harness_slug",
 ]
 
 # A machine record naming an overlay root that is no longer there read as "no record of this

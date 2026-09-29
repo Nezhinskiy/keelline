@@ -2247,10 +2247,14 @@ never writes through one. **The exclude block stays while another checkout is at
 exclude file is shared by every worktree of the repository, while the ledger, the settings file
 and the `.codex/rules/` copies are each checkout's own; so when another checkout still holds a
 ledger, the block is kept for its files, the line ends by saying so, and `--json` reports
-`exclude_block_kept: true`. The detach of the last attached checkout takes it. Then it removes, each only when empty: the
-`paths.memory` directory in every checkout it withdrew a tree from, the directories above it in
-this checkout that the ledger records `attach` as having created (`docs/`, for the preset's
-place), and the `~/.claude/projects/<slug>/` directory each harness memory link sat in. Last,
+`exclude_block_kept: true`. The detach of the last attached checkout takes it.
+
+Then it removes, each only when empty: the `paths.memory` directory in this checkout when the
+ledger records `attach` as having created it, and in every other checkout it withdrew a tree from
+(no ledger of this run's records what was there, and that tree was built by `attach` or by the
+worktree-link handler); the directories above it in this checkout that the ledger records
+`attach` as having created (`docs/`, for the preset's place); and the `~/.claude/projects/<slug>/`
+directory each harness memory link sat in. Last,
 each directory the ledger records `attach` as having created — of `.stayfixed/local/`,
 `.stayfixed/`, `.codex/rules/`, `.codex/` and `.claude/`, in that order — is removed when it is
 empty, and left standing otherwise.
@@ -2272,12 +2276,13 @@ only way out being to delete a tracked file out of somebody else's repository. `
 
 **Directories come back too.** `attach` records which of `.stayfixed/local/`, `.stayfixed/`,
 `.codex/rules/`, `.codex/`, `.claude/` and the directories above `paths.memory` this repository
-did not have before it ran, and `detach` removes exactly those once everything inside them is
-gone, with the `paths.memory` directory itself. The removal is `rmdir`: a directory still holding
+did not have before it ran, and whether it had `paths.memory` itself, and `detach` removes exactly
+those once everything inside them is gone. The removal is `rmdir`: a directory still holding
 anything — your own `.codex/rules/` file, your `.claude/settings.json`, a note that never moved
-into the overlay — survives, and so does its parent. A directory above `paths.memory` that was
-already there before the attach is not on the record and is never touched. The round trip is
-byte-for-byte.
+into the overlay — survives, and so does its parent. A directory above or at `paths.memory` that
+was already there before the attach, empty or not, is not on the record and is never touched. The
+round trip is byte-for-byte in the checkout you attached from; in another worktree, an empty
+`paths.memory` goes whether or not it was there before.
 
 **It does not touch `projects/<name>/project.toml`.** That record is your consent to the binding,
 not local state: deleting it would turn every later re-attach into a first attach and re-ask a

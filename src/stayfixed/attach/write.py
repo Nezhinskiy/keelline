@@ -231,7 +231,9 @@ class AttachLedger:
     `memory_parents` is the same record for the directories above `paths.memory` — `docs/`, for
     the preset's place — which only the configuration can name, so it is bounded where the
     configuration is in hand: `detach` keeps only the members that are ancestors of the
-    `paths.memory` it loaded, and removes those with `rmdir` too.
+    `paths.memory` it loaded, and removes those with `rmdir` too. `memory_created` says whether
+    this checkout had no `paths.memory` directory before the attach; a committed `true` costs at
+    most an empty directory, because `rmdir` is the only removal it drives.
 
     `entries` keys must parse as marker ids, because `_write_ledger` builds them with
     `scaffold.marker_id` and nothing else can appear there.
@@ -255,6 +257,7 @@ class AttachLedger:
     settings_keys: tuple[str, ...]
     directories: tuple[str, ...] = ()
     memory_parents: tuple[str, ...] = ()
+    memory_created: bool = False
 
 
 def _rule_is_writable(rule: str) -> bool:
@@ -348,6 +351,7 @@ def ledger(root: Path) -> AttachLedger:
         settings_keys=keys,
         directories=directories,
         memory_parents=tuple(d for d in raw.get("memory_parents", []) if isinstance(d, str)),
+        memory_created=raw.get("memory_created") is True,
     )
 
 
@@ -554,6 +558,12 @@ def _absent_memory_parents(root: Path, config: Config) -> tuple[str, ...]:
     return tuple(name for name in _memory_parents(config) if not (root / name).is_dir())
 
 
+def _memory_absent(root: Path, config: Config) -> bool:
+    """Whether this checkout has no `paths.memory` directory, asked before the first write for the
+    reason `_absent_directories` is: an empty one the owner made is theirs, and survives."""
+    return not (root / config.paths.memory).is_dir()
+
+
 def _placed(binding: Binding, config: Config, *, settings: bool) -> tuple[str, ...]:
     """Every path this run puts into the project besides the ledger, which `.gitignore`'s region
     covers: the link tree (`linked_names`, the same list `attach_main` walks), each rule copy
@@ -628,6 +638,7 @@ def _write_ledger(
     previous: AttachLedger | None,
     directories: tuple[str, ...],
     memory_parents: tuple[str, ...],
+    memory_created: bool,
 ) -> None:
     """Record what this attach may remove again — the union with what an earlier one claimed.
 
@@ -686,6 +697,8 @@ def _write_ledger(
         "settings_keys": list(settings_keys),
         "directories": [name for name in CREATED_DIRS if name in made],
         "memory_parents": sorted(above, key=lambda name: (-name.count("/"), name)),
+        # The same union once more: a second attach finds the directory the first one made.
+        "memory_created": memory_created or (previous is not None and previous.memory_created),
     }
     fsops.write_within(root, LEDGER, json.dumps(document, indent=2, sort_keys=True) + "\n")
 
@@ -1119,6 +1132,7 @@ def attach(
     # would then be wrong by exactly the directory this run brought into existence.
     absent = _absent_directories(root)
     parents = _absent_memory_parents(root, config)
+    memory_created = _memory_absent(root, config)
     # What git already hides is asked here, above the first write, and decides both ignore
     # files: `.gitignore`'s region only when one of its two paths is still visible, and the
     # `info/exclude` block for the paths `attach` places that the owner's own excludes do not
@@ -1152,7 +1166,7 @@ def attach(
     # the links so that a `PartialLink` half way through still leaves `detach` able to remove
     # it. The real answer is taken again below, after the only function that can change it.
     carried = _recorded_keys(root)
-    _write_ledger(root, binding, diff, rules, carried, previous, absent, parents)
+    _write_ledger(root, binding, diff, rules, carried, previous, absent, parents, memory_created)
     recorded = _record_binding(binding)
     _prepare_store(binding, config)
     links = _link_everywhere(root, binding, config, machine=machine, home=home)
@@ -1164,7 +1178,7 @@ def attach(
         keys = carried
         unavailable = _fallback_wanted(root, config, machine=machine, home=home) is not None
     if keys != carried:
-        _write_ledger(root, binding, diff, rules, keys, previous, absent, parents)
+        _write_ledger(root, binding, diff, rules, keys, previous, absent, parents, memory_created)
         written = True
     if keys:
         notes.append(
@@ -1387,22 +1401,28 @@ def _rmdir_if_empty(base: Path, name: str) -> bool:
 def _withdraw_memory_directories(
     root: Path, checkouts: list[Path], config: Config, recorded: AttachLedger
 ) -> tuple[str, ...]:
-    """The empty `paths.memory` directory in every checkout, then the directories above it
-    that the ledger records the attach as having created, in `root` alone.
+    """The empty `paths.memory` directory, then the directories above it that the ledger records
+    the attach as having created, in `root` alone; and the empty `paths.memory` in every other
+    checkout.
 
-    `paths.memory` goes wherever it is empty, which is every checkout `attach` built a tree in
-    once `detach_main` has withdrawn that tree: `rmdir` cannot take a directory holding a note,
-    a group that never moved or anything else of the project's. The directories above it go only
-    when the ledger says this repository did not have them before — an empty `docs/` the owner
-    made is not the attach's — and only the names that are ancestors of the `paths.memory` this
-    run loaded, so a ledger a clone committed can shorten that list and never extend it. Only
-    `root`'s names are returned, so the count `run_detach` prints is this checkout's.
+    In `root`, `paths.memory` goes only when the ledger says the attach created it — an empty
+    one the owner made before is theirs — and the directories above it only when the ledger says
+    this repository did not have them before, and only the names that are ancestors of the
+    `paths.memory` this run loaded, so a ledger a clone committed can shorten that list and never
+    extend it. In every other checkout no ledger of this run's records what was there, and the
+    tree was built by `attach` or by the worktree-link handler, so `paths.memory` goes wherever it
+    is empty. `rmdir` cannot take a directory holding a note, a group that never moved or
+    anything else of the project's. Only `root`'s names are returned, so the count `run_detach`
+    prints is this checkout's.
     """
     removed: list[str] = []
     own = root.resolve()
     for tree in checkouts:
-        if _rmdir_if_empty(tree, config.paths.memory) and tree.resolve() == own:
-            removed.append(config.paths.memory)
+        if tree.resolve() == own:
+            if recorded.memory_created and _rmdir_if_empty(tree, config.paths.memory):
+                removed.append(config.paths.memory)
+        else:
+            _rmdir_if_empty(tree, config.paths.memory)
     for name in _memory_parents(config):
         if name in recorded.memory_parents and _rmdir_if_empty(root, name):
             removed.append(name)

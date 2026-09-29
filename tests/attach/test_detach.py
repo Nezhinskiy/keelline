@@ -1011,3 +1011,44 @@ def test_the_exclude_file_refusals_print_the_path_through_the_quoting_rule(
         planned_block(root, ["placed"])
     assert "symlink" in str(refused.value)
     assert "\n" not in str(refused.value)
+
+
+# --- the directories above and at `paths.memory` come back as they were ----------------------
+
+
+def test_an_empty_docs_directory_the_owner_had_survives_the_round_trip(tmp_path: Path) -> None:
+    # `attach` records which directories above `paths.memory` it created, and `detach` removes
+    # only those: an empty `docs/` the owner already had is not the attach's. Nothing tested that
+    # half, so dropping the record check left every test green.
+    #
+    # Mutation: `mutations.toml`'s "detach removes a directory above paths.memory it never made".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    parent = root / PurePosixPath(DEFAULT_MEMORY).parts[0]
+    parent.mkdir()
+    _attach(root, store, machine, home, confirmed=True)
+    # Non-vacuous: the attach built its tree below it, so the detach had an empty `docs/` to take.
+    assert (root / DEFAULT_MEMORY).is_dir()
+    _detach(root, machine, home)
+    assert not (root / DEFAULT_MEMORY).exists()
+    assert parent.is_dir()
+
+
+def test_an_empty_memory_directory_the_owner_had_survives_the_round_trip(tmp_path: Path) -> None:
+    # `detach` removed `paths.memory` whenever it was empty, and so took an empty directory the
+    # owner had made before the attach, against a round trip documented as byte for byte. The
+    # ledger now records whether the attach created it.
+    #
+    # Mutation: `mutations.toml`'s "detach removes a paths.memory it never made".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    (root / DEFAULT_MEMORY).mkdir(parents=True)
+    _attach(root, store, machine, home, confirmed=True)
+    # A second attach finds the directory there, and must not forget whose it is.
+    _attach(root, store, machine, home, confirmed=True)
+    assert (root / DEFAULT_MEMORY / "MEMORY.md").is_symlink()
+    _detach(root, machine, home)
+    assert (root / DEFAULT_MEMORY).is_dir()
+    assert list((root / DEFAULT_MEMORY).iterdir()) == []
