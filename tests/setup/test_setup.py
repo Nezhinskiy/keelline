@@ -505,6 +505,35 @@ def test_overlay_create_that_cannot_ask_gh_whose_template_creates_nothing(
     assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
 
 
+def test_rerunning_overlay_create_over_an_existing_overlay_creates_nothing_and_names_no_template(
+    tmp_path: Path,
+) -> None:
+    # Re-running `setup --overlay create:` after the first run is the ordinary case, and `create`
+    # answers a populated destination with no `gh` call and no template. The report used to say
+    # "generated from None". Mutation: drop the `created.template is None` branch in
+    # `_apply_overlay` and the report reads "created the overlay ... generated from None".
+    home = tmp_path / "home"
+    machine = tmp_path / "config.toml"
+    destination = home / "stayfixed-private"
+    _seed_overlay(destination)
+    runner = FakeRunner(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    report = setup(
+        "recommended",
+        home=home,
+        machine=machine,
+        runner=runner,
+        yes=True,
+        overlay="create:octo/stayfixed-private",
+        project_root=tmp_path / "project",
+    )
+    assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
+    assert not any(argv[:3] == ["gh", "repo", "view"] for argv in runner.calls)
+    text = " ".join(str(note) for note in vars(report).values())
+    assert "None" not in text
+    assert "already" in " ".join(report.notes)
+    assert overlay_root(machine) == destination
+
+
 def test_creating_an_overlay_without_yes_is_refused(tmp_path: Path) -> None:
     # Creating a repository on GitHub is the one irreversible, outward-facing act `setup` performs,
     # and `gh repo create` runs only after explicit confirmation. Naming `create:<owner>/<name>` is

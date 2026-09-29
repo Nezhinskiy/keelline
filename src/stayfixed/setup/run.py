@@ -854,6 +854,11 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
         )
     init_instance(created.root, owner, runner=runner)
     _outside_the_project(created.root, project_root=project_root)
+    if created.template is None:
+        # `create` found a populated destination and left it alone (no `gh` call at all), which is
+        # what re-running `setup --overlay create:` does after the first run: nothing was
+        # generated, so there is no template to name.
+        return created.root, f"found the overlay already at {created.root} and left it alone"
     return created.root, f"created the overlay at {created.root}, generated from {created.template}"
 
 
