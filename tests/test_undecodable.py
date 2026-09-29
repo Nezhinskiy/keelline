@@ -132,7 +132,7 @@ RAISING: list[tuple[str, Callable[[Path], Callable[[], object]], type[Exception]
     ),
     (
         "an overlay manifest init renames",
-        lambda t: (_plant(t / "plugin.json"), lambda: create._rename(t, "plugin.json", "-you"))[1],
+        lambda t: (_plant(t / "plugin.json"), lambda: create._read_manifest(t, "plugin.json"))[1],
         Failure,
     ),
     (

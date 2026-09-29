@@ -79,3 +79,6 @@ CAPABILITY_FILES = CAPABILITY_NAMES
 # `OVERLAY_FILES`: `tests/overlay/test_template.py` holds that.
 RETIRED_MEMORY_README = f"{COMMON_MEMORY}/README.md"
 RETIRED_OVERLAY_FILES = (RETIRED_MEMORY_README,)
+# The shipped file that took each retired one's place, which `overlay init` writes when it removes
+# the old name and the new one is not there (`overlay.create._retire` says why).
+SUCCESSORS = {RETIRED_MEMORY_README: f"{COMMON_MEMORY}/_README.md"}

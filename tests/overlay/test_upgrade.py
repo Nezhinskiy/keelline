@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
-from stayfixed.errors import Refusal
+from stayfixed.errors import Failure, Refusal
 from stayfixed.overlay.api import create, init_instance
 from stayfixed.overlay.upgrade import upgrade
 from stayfixed.scaffold import MANIFEST_PATH, Verb, digest
@@ -125,6 +126,16 @@ def test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release(tmp_path:
     verbs = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
     for manifest in (".claude-plugin/plugin.json", ".claude-plugin/marketplace.json"):
         assert verbs[manifest] is not Verb.SKIP_MODIFIED
+    # What the record now vouches for is the file `init` left: the owner's name and account, not
+    # the template's. A re-stamp of anything else would make those bytes read as hand-edited.
+    plugin = root / ".claude-plugin" / "plugin.json"
+    document = json.loads(plugin.read_text(encoding="utf-8"))
+    assert document["name"] == "stayfixed-overlay-octocat"
+    assert document["author"] == {"name": "octocat"}
+    recorded = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))["artifacts"]
+    assert recorded[".claude-plugin/plugin.json"]["sha256"] == digest(
+        plugin.read_text(encoding="utf-8")
+    )
     # And the refresh really is live: a release that moves the template updates the file rather
     # than leaving the owner on a manifest nothing can reach.
     # Still a manifest that names this overlay — a release moving the file is what is being
@@ -136,6 +147,47 @@ def test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release(tmp_path:
     _restamp(root, ".claude-plugin/plugin.json")
     moved = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
     assert moved[".claude-plugin/plugin.json"] is Verb.UPDATE
+
+
+def test_init_does_not_vouch_for_a_manifest_the_owner_edited(tmp_path: Path) -> None:
+    # `init` re-stamped the ledger with whatever it wrote, without asking whether the file it
+    # rewrote was stayfixed's to begin with. An owner who had edited `plugin.json` (a description
+    # of their own) and then ran `init` had their edit recorded as stayfixed's bytes, and the next
+    # `overlay upgrade` refreshed the file: the description, the suffix and the account were gone.
+    # `init` rewrites the name and account either way; the record moves only when the bytes it
+    # replaced were the ones recorded, so `upgrade` goes on naming the file as hand-edited.
+    #
+    # Mutation: `mutations.toml`'s "overlay init vouches for a manifest the owner edited".
+    root = _an_overlay(tmp_path)
+    plugin = root / ".claude-plugin" / "plugin.json"
+    document = json.loads(plugin.read_text(encoding="utf-8"))
+    document["description"] = "My own overlay."
+    plugin.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    before = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
+    assert before[".claude-plugin/plugin.json"] is Verb.SKIP_MODIFIED
+    init_instance(root, "acme", runner=FakeRunner())
+    after = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
+    assert after[".claude-plugin/plugin.json"] is Verb.SKIP_MODIFIED
+    upgrade(root, dry_run=False)
+    kept = json.loads(plugin.read_text(encoding="utf-8"))
+    assert kept["description"] == "My own overlay."
+    assert kept["name"] == "stayfixed-overlay-acme"
+    assert kept["author"] == {"name": "acme"}
+
+
+def test_init_reads_every_manifest_before_it_rewrites_any(tmp_path: Path) -> None:
+    # A manifest that cannot be read stops `init`, and it used to stop it after the ones before it
+    # were rewritten and before their records were re-stamped: those files then read as
+    # hand-edited to every later `upgrade`. Every manifest is read and decided first now, so the
+    # failure leaves the tree as it was.
+    #
+    # Mutation: `mutations.toml`'s "overlay init rewrites a manifest before reading the next".
+    root = _an_overlay(tmp_path)
+    (root / ".codex-plugin" / "plugin.json").write_text("{not json", encoding="utf-8")
+    before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+    with pytest.raises(Failure, match="not valid JSON"):
+        init_instance(root, "acme", runner=FakeRunner())
+    assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
 
 
 # --- a file an earlier release shipped and this one does not --------------------------------
@@ -256,11 +308,72 @@ def test_init_removes_the_memory_readme_a_release_shipped(tmp_path: Path, ledger
         assert not (root / MANIFEST_PATH).exists()
 
 
+@pytest.mark.parametrize("ledger", [True, False], ids=["recorded", "no-ledger"])
+def test_init_leaves_the_memory_directory_its_readme_under_the_new_name(
+    tmp_path: Path, ledger: bool
+) -> None:
+    # An overlay from a 0.1.x template has `common/memory/README.md` and no `_README.md`. Removing
+    # the one left the directory empty, git keeps no empty directory, and a clone of the overlay
+    # elsewhere had no `common/memory/` at all, so the `developer` link attach makes there
+    # dangled. `init` writes the shipped `_README.md` in its place, and records it where the tree
+    # has a ledger.
+    #
+    # Mutation: `mutations.toml`'s "overlay init leaves the memory directory empty".
+    root = _an_overlay(tmp_path)
+    successor = root / "common" / "memory" / "_README.md"
+    shipped = successor.read_text(encoding="utf-8")
+    successor.unlink()
+    manifest = root / MANIFEST_PATH
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    del document["artifacts"]["common/memory/_README.md"]
+    manifest.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    path = _with_the_shipped_memory_readme(root, ledger=ledger, text=SHIPPED_MEMORY_README)
+    done = init_instance(root, "octo", runner=FakeRunner())
+    assert not path.exists()
+    assert successor.read_text(encoding="utf-8") == shipped
+    assert any("common/memory/_README.md" in note for note in done.notes)
+    if ledger:
+        recorded = json.loads(manifest.read_text(encoding="utf-8"))["artifacts"]
+        assert recorded["common/memory/_README.md"]["sha256"] == digest(shipped)
+    else:
+        assert not manifest.exists()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root removes from a directory it cannot write")
+def test_a_memory_readme_init_cannot_remove_keeps_the_manifests_it_renamed_recorded(
+    tmp_path: Path,
+) -> None:
+    # `init` renamed the manifests, then failed to remove the old README, and exited with the new
+    # records only in memory: the renamed manifests then read as hand-edited to every `upgrade`.
+    # The records are written before anything is removed, so the refusal leaves them true.
+    #
+    # Mutation: `mutations.toml`'s "overlay init records its renames only after the removal".
+    root = _an_overlay(tmp_path)
+    path = _with_the_shipped_memory_readme(root, ledger=True, text=SHIPPED_MEMORY_README)
+    memory = root / "common" / "memory"
+    memory.chmod(0o555)
+    try:
+        with pytest.raises(Refusal, match="cannot be removed"):
+            init_instance(root, "acme", runner=FakeRunner())
+    finally:
+        memory.chmod(0o755)
+    assert path.is_file()
+    verbs = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
+    for manifest in (
+        ".claude-plugin/plugin.json",
+        ".claude-plugin/marketplace.json",
+        ".codex-plugin/plugin.json",
+    ):
+        assert verbs[manifest] is not Verb.SKIP_MODIFIED, manifest
+        assert json.loads((root / manifest).read_text(encoding="utf-8"))["name"].endswith("-acme")
+
+
 def test_init_keeps_an_edited_memory_readme_and_says_what_to_do(tmp_path: Path) -> None:
     # Bytes that are not the shipped ones may be the owner's own words, so `init` leaves the file
-    # and its note carries the way out. No mutation of its own: the engine's verdict is the one
-    # `mutations.toml`'s "a retired overlay file with no ledger is removed whatever it holds"
-    # already reddens, through `upgrade`.
+    # and its note carries the way out. Mutation: `mutations.toml`'s "overlay init leaves the
+    # memory README a release shipped", which drops the note with the removal; the engine's
+    # verdict itself is "a retired overlay file with no ledger is removed whatever it holds",
+    # proven through `upgrade`.
     root = _an_overlay(tmp_path)
     edited = SHIPPED_MEMORY_README + "\nMy own line.\n"
     path = _with_the_shipped_memory_readme(root, ledger=False, text=edited)

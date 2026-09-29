@@ -3839,7 +3839,7 @@ reddens = ["tests/overlay/test_create.py::test_init_names_the_codex_manifest_aft
 [[mutation]]
 name = "overlay init writes the manifests behind the scaffold ledger"
 file = "src/stayfixed/overlay/create.py"
-before = "            ledger = ledger.with_record(replace(record, sha256=digest(written)))"
+before = "            ledger = ledger.with_record(replace(record, sha256=digest(body)))"
 after = "            ledger = ledger.with_record(record)"
 reddens = [
   "tests/overlay/test_upgrade.py::test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release",
@@ -13086,12 +13086,88 @@ reddens = [
 [[mutation]]
 name = "overlay init leaves the memory README a release shipped"
 file = "src/stayfixed/overlay/create.py"
-before = "    ledger, retirement, dropped = _retire(root, ledger)"
-after = "    retirement, dropped = [], False"
+before = "    ledger, retirement, retired_paths, changed = _retire(root, ledger, ledgered=ledgered)"
+after = "    retirement, retired_paths, changed = [], [], False"
 reddens = [
   "tests/overlay/test_upgrade.py::test_init_removes_the_memory_readme_a_release_shipped[recorded]",
   "tests/overlay/test_upgrade.py::test_init_removes_the_memory_readme_a_release_shipped[no-ledger]",
+  "tests/overlay/test_upgrade.py::test_init_keeps_an_edited_memory_readme_and_says_what_to_do",
   "tests/test_install_path.py::test_an_overlay_from_a_template_an_earlier_release_published_passes_the_index_check",
+]
+
+# `init` re-stamped every manifest it rewrote, whatever the file held before, so an owner's own
+# edit made before `init` was recorded as stayfixed's bytes and the next `overlay upgrade`
+# refreshed it away: description, suffix and account.
+[[mutation]]
+name = "overlay init vouches for a manifest the owner edited"
+file = "src/stayfixed/overlay/create.py"
+before = "        if record is not None and digest(before) == record.sha256:"
+after = "        if record is not None:"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_init_does_not_vouch_for_a_manifest_the_owner_edited",
+]
+
+# A manifest that cannot be read stopped `init` after the ones before it were rewritten and before
+# their records were re-stamped, so those files read as hand-edited to every later `upgrade`.
+[[mutation]]
+name = "overlay init rewrites a manifest before reading the next"
+file = "src/stayfixed/overlay/create.py"
+before = "            rewrites.append((relative, before, body))"
+after = """            fsops.write_within(root, relative, body)
+            rewrites.append((relative, before, body))"""
+reddens = [
+  "tests/overlay/test_upgrade.py::test_init_reads_every_manifest_before_it_rewrites_any",
+]
+
+# A removal that failed after the manifests were renamed exited with their new records only in
+# memory, so the renamed manifests read as hand-edited to every later `upgrade`.
+[[mutation]]
+name = "overlay init records its renames only after the removal"
+file = "src/stayfixed/overlay/create.py"
+before = """    if restamped:
+        ledger.write(root)
+    ledger, retirement, retired_paths, changed = _retire(root, ledger, ledgered=ledgered)
+    if changed:
+        ledger.write(root)"""
+after = """    ledger, retirement, retired_paths, changed = _retire(root, ledger, ledgered=ledgered)
+    if changed or restamped:
+        ledger.write(root)"""
+reddens = [
+  "tests/overlay/test_upgrade.py::test_a_memory_readme_init_cannot_remove_keeps_the_manifests_it_renamed_recorded",
+]
+
+# Removing the old README from a 0.1.x template's overlay left `common/memory/` empty; git keeps no
+# empty directory, so a clone elsewhere had none and the `developer` link dangled.
+[[mutation]]
+name = "overlay init leaves the memory directory empty"
+file = "src/stayfixed/overlay/create.py"
+before = "    successors = {SUCCESSORS[target] for target in removed if target in SUCCESSORS}"
+after = "    successors: set[str] = set()"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_init_leaves_the_memory_directory_its_readme_under_the_new_name[recorded]",
+  "tests/overlay/test_upgrade.py::test_init_leaves_the_memory_directory_its_readme_under_the_new_name[no-ledger]",
+]
+
+# A tree that arrived without a ledger (one generated from a template) is not given one.
+[[mutation]]
+name = "overlay init gives a ledgerless overlay a ledger for the memory README"
+file = "src/stayfixed/overlay/create.py"
+before = "        if ledgered and action.record is not None:"
+after = "        if action.record is not None:"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_init_leaves_the_memory_directory_its_readme_under_the_new_name[no-ledger]",
+]
+
+# Re-running `setup --overlay create:` runs `overlay init` on the overlay it finds, and `init` may
+# rename its manifests or remove the old memory README; the report said the overlay was left alone
+# all the same.
+[[mutation]]
+name = "setup says it left alone an overlay init changed"
+file = "src/stayfixed/setup/run.py"
+before = "        changed = initialised.changed"
+after = "        changed = ()"
+reddens = [
+  "tests/setup/test_setup.py::test_rerunning_overlay_create_says_what_init_changed_in_the_overlay_it_found",
 ]
 
 # CI's rendered-artifact check accepted any directory named `.git`, so an empty `mkdir .git` stood

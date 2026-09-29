@@ -1941,31 +1941,45 @@ claude plugin marketplace add git@github.com:<owner>/<name>.git
 claude plugin install stayfixed-overlay-<owner>@stayfixed-overlay-marketplace-<owner>
 ```
 
-Each rewrite is re-stamped into `.stayfixed/manifest.json`, so `overlay upgrade` still sees these
-files as stayfixed's own: without that, the file carrying `stayfixed.requires` read as hand-edited
-from the moment you ran `init` and no release could ever refresh it again.
+A rewrite of a manifest that still held what stayfixed wrote there is re-stamped into
+`.stayfixed/manifest.json`, so `overlay upgrade` still sees the file as stayfixed's own: without
+that, the file carrying `stayfixed.requires` read as hand-edited from the moment you ran `init` and
+no release could ever refresh it again. A manifest you edited is renamed all the same, but its
+record is left as it was, so `overlay upgrade` goes on listing it as hand-edited and never
+refreshes your edit away. Every manifest is read before any is rewritten, so one that cannot be
+read stops `init` with none of them changed.
 
 It then runs `pre-commit install` in the overlay, which is one of the two secret scans the
 template ships; the other is the workflow that runs on every push, so `--no-verify` is not the
 last word. `pre-commit` is optional: a missing or failing one is a reported note and never a
 traceback.
 
-Both halves are idempotent. A manifest that already carries the suffix is not rewritten, so a
-second run reports nothing renamed.
+Both halves are idempotent. A manifest that already carries the suffix and names an account is
+not rewritten, so running `init` again reports nothing renamed. An overlay named at 0.1.x carries
+the suffix but no `owner` or `author`, so the first `init` of this release rewrites its manifests
+once more, to add them.
 
-**Writes** each of the three manifests that does not already carry the suffix and, where the
-overlay carries one that records a manifest it rewrote or the file below, `.stayfixed/manifest.json`
-— through the same contained walk every other write in this project goes through; and, through the
-`pre-commit install` it runs in the overlay, the overlay's `pre-commit` git hook. It also
-**removes** `common/memory/README.md`, the file 0.1.0 and 0.1.1 shipped where `_README.md` is now,
-exactly as `overlay upgrade` does below: only when it holds what stayfixed wrote there, the digest
-`.stayfixed/manifest.json` records or, in an overlay generated from a template, which carries no
-manifest, the file those releases shipped. `init` is the step every generated overlay runs, and a
-template published at 0.1.x still ships that file. A copy holding anything else is left, and the
-line says so and names the way out: rename it to `_README.md`. A tree that arrived without a
-manifest is not given one. Exits `0`; `1` on a manifest that exists and cannot be read or is not
-JSON; `2` on an owner that is not one path segment, on a scaffold manifest that cannot be trusted,
-or on a `common/memory/README.md` it has decided to remove and cannot.
+**Writes** each of the three manifests that does not already carry the suffix or has no account
+under its `owner` or `author` and, where the overlay carries one that records a manifest it
+rewrote or a file below, `.stayfixed/manifest.json` — through the same contained walk every other
+write in this project goes through; and, through the `pre-commit install` it runs in the overlay,
+the overlay's `pre-commit` git hook. It also **removes** `common/memory/README.md`, the file 0.1.0
+and 0.1.1 shipped where `_README.md` is now, exactly as `overlay upgrade` does below: only when it
+holds what stayfixed wrote there, the digest `.stayfixed/manifest.json` records or, in an overlay
+generated from a template, which carries no manifest, the file those releases shipped. `init` is
+the step every generated overlay runs, and a template published at 0.1.x still ships that file.
+When it removes that file and `common/memory/_README.md` is not there, it **writes** the shipped
+`_README.md` in its place: a template from 0.1.x carries only the old name, and a directory left
+empty is one git does not keep, so a clone of the overlay elsewhere would have no `common/memory/`
+for the `developer` link to reach. A copy holding anything else is left, and the line says so and
+names the way out: rename it to `_README.md`. A `common/memory/README.md` it cannot read is left
+too, with a `left common/memory/README.md: <reason>` line, and is not a failure. A tree that
+arrived without a manifest is not given one. Exits `0`; `1` on a manifest that exists and cannot be
+read or is not JSON, with nothing written; `2` on an owner that is not one path segment, on a
+scaffold manifest that cannot be trusted, or on a `common/memory/README.md` it has decided to
+remove, or a `_README.md` it has decided to write, and cannot. That last refusal comes after the
+manifests are renamed, and the records of those it re-stamped are already written by then, so a
+later `overlay upgrade` still reads them as stayfixed's.
 
 ---
 
@@ -2485,7 +2499,10 @@ registrations and installed plugins those commands write into each harness's own
 `--overlay <path>` writes nothing in the overlay; it is only recorded.
 `--overlay create:<owner>/<name>` writes what `overlay create --template` writes — a private
 repository on GitHub and its clone — and then what `overlay init` writes in that clone, including
-its removal of the `common/memory/README.md` a template published at 0.1.x ships. Exits `0`
+its removal of the `common/memory/README.md` a template published at 0.1.x ships. Run again over
+the overlay it made, it generates nothing, but `overlay init` still runs there, and the report
+names each file `init` changed (an overlay named by 0.1.x gains its account) or says it changed
+none of the overlay's tracked files (`pre-commit install` may still have written its git hook). Exits `0`
 on success, `2` on a refused `--overlay` (missing, not an overlay, reachable from the project
 root, at a path that is not UTF-8 text and so cannot be recorded in the machine file, or `create:`
 without `--yes`), and `2` when a symlink stands between `<home>` and the settings file: that file

@@ -32,6 +32,7 @@ from stayfixed.overlay.layout import (
     MARKETPLACE_MANIFEST,
     OVERLAY_FILES,
     PLUGIN_MANIFEST,
+    SUCCESSORS,
 )
 from stayfixed.overlay.template import retired, templates
 from stayfixed.printed import clipped
@@ -118,6 +119,9 @@ class Created:
 class Initialised:
     renamed: tuple[str, ...]
     notes: tuple[str, ...]
+    # Every overlay file the run rewrote, removed or wrote, the renamed manifests included, so a
+    # caller that reports on an overlay it found can say whether `init` changed it.
+    changed: tuple[str, ...] = ()
 
 
 def target_root(root: Path, owner: str, name: str) -> tuple[Path, str]:
@@ -401,16 +405,20 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
     happening, one harness over. Each is rewritten through `fsops.write_within`: the overlay
     root *is* a root, so the contained walk applies and there is no carve-out to take.
 
-    **Every rewrite is re-stamped into the scaffold ledger.** `create --local` renders these
-    files through the engine, which records each one's digest; a rewrite behind the ledger's
-    back makes the file read as hand-edited for ever after, so `overlay upgrade` reported
-    `skip_modified .claude-plugin/plugin.json (hand-edited)` and never refreshed it again — for
-    the one file carrying `stayfixed.requires`, the version-compatibility declaration the README
-    advertises, and attributing to the owner an edit stayfixed itself made. Re-stamping is the
-    narrow answer of the two the review offered; rendering the suffix through the `Template`
-    instead would put an owner-dependent value into the shipped tree, which every *other*
-    consumer of that tree (`upgrade`'s hash rule, `overlay publish-template`) would then have to
-    know about. A `--template` clone carries no ledger at all, and gets no record written for it.
+    **A rewrite of a file stayfixed wrote is re-stamped into the scaffold ledger.** `create
+    --local` renders these files through the engine, which records each one's digest; a rewrite
+    behind the ledger's back makes the file read as hand-edited for ever after, so `overlay
+    upgrade` reported `skip_modified .claude-plugin/plugin.json (hand-edited)` and never
+    refreshed it again — for the one file carrying `stayfixed.requires`, the
+    version-compatibility declaration the README advertises, and attributing to the owner an
+    edit stayfixed itself made. Re-stamping is the narrow answer of the two the review offered;
+    rendering the suffix through the `Template` instead would put an owner-dependent value into
+    the shipped tree, which every *other* consumer of that tree (`upgrade`'s hash rule, `overlay
+    publish-template`) would then have to know about. **Only a file whose bytes before the
+    rewrite were the recorded ones**: a manifest the owner edited is still renamed, but
+    re-stamping it recorded their edit as stayfixed's, and the next `upgrade` refreshed it away.
+    Its record stays, and `upgrade` goes on naming it. A `--template` clone carries no ledger at
+    all, and gets no record written for it.
 
     A manifest that is *absent* is a note rather than a failure. An overlay generated before the
     Codex half shipped carries two of the three, and refusing to name the other two over it
@@ -425,25 +433,39 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
     require_overlay(root, because=NOT_AN_OVERLAY)
     suffix = segment("owner", owner.strip().lower())
     ledger = Manifest.read(root)
-    renamed: list[str] = []
+    ledgered = bool(ledger.records)
+    # Every manifest is read and decided before any is written, so one that cannot be read stops
+    # the run with nothing rewritten, rather than after the ones before it were rewritten and
+    # before their records were re-stamped.
+    rewrites: list[tuple[str, str, str]] = []
     absent: list[str] = []
     notes: list[str] = []
-    restamped = False
     for relative in MANIFESTS:
         if not (root / relative).is_file():
             absent.append(relative)
             continue
-        written = _rename(root, relative, suffix)
-        if written is None:
-            continue
-        renamed.append(relative)
+        before = _read_manifest(root, relative)
+        body = _renamed(before, relative, suffix)
+        if body is not None:
+            rewrites.append((relative, before, body))
+    restamped = False
+    for relative, before, body in rewrites:
+        fsops.write_within(root, relative, body)
         record = ledger.get(relative)
-        if record is not None:
-            ledger = ledger.with_record(replace(record, sha256=digest(written)))
+        # Only a file that held what stayfixed wrote there is vouched for again. One the owner
+        # edited is still renamed, and its record is left as it was, so `upgrade` goes on naming
+        # it as hand-edited rather than refreshing their edit away.
+        if record is not None and digest(before) == record.sha256:
+            ledger = ledger.with_record(replace(record, sha256=digest(body)))
             restamped = True
-    ledger, retirement, dropped = _retire(root, ledger)
-    if restamped or dropped:
+    # Written before anything is removed: a removal that fails below must not take the records of
+    # the renames with it.
+    if restamped:
         ledger.write(root)
+    ledger, retirement, retired_paths, changed = _retire(root, ledger, ledgered=ledgered)
+    if changed:
+        ledger.write(root)
+    renamed = [relative for relative, _, _ in rewrites]
     if renamed:
         notes.append(f"named this overlay after {suffix}: {', '.join(renamed)}")
     else:
@@ -455,12 +477,14 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
         )
     notes += retirement
     notes.append(_install_secret_scan(root, runner))
-    return Initialised(tuple(renamed), tuple(notes))
+    return Initialised(tuple(renamed), tuple(notes), (*renamed, *retired_paths))
 
 
-def _retire(root: Path, ledger: Manifest) -> tuple[Manifest, list[str], bool]:
+def _retire(
+    root: Path, ledger: Manifest, *, ledgered: bool
+) -> tuple[Manifest, list[str], list[str], bool]:
     """Remove each file a release no longer ships that still holds what stayfixed wrote there,
-    name each one kept, and say whether the ledger lost a record.
+    name each one kept, and say which paths this changed and whether the ledger did.
 
     `overlay upgrade` removes them too, but nobody is told to run it on an overlay just made:
     `overlay create --template` and `setup --overlay create:` generate one from a template
@@ -473,10 +497,17 @@ def _retire(root: Path, ledger: Manifest) -> tuple[Manifest, list[str], bool]:
     verdict is acted on here rather than through `apply`, which would write a ledger into a tree
     that arrived without one. A file `plan` cannot read is named and left, never a reason to stop
     `init`.
+
+    A removed file whose successor (`layout.SUCCESSORS`) is absent gets the shipped successor in
+    its place: such a template carried the old name only, and a directory left empty is one git
+    does not keep, so a clone of the overlay elsewhere would have no `common/memory/` for the
+    `developer` link to reach.
     """
     planned = plan(root, preset_defaults(root.name), retired())
     notes = [f"left {r.target}: {r.reason}" for r in planned.refusals]
-    dropped = False
+    changed = False
+    removed: list[str] = []
+    written: list[str] = []
     for action in planned.actions:
         if action.verb is Verb.SKIP_MODIFIED:
             notes.append(f"left {action.target} ({action.reason})")
@@ -488,25 +519,45 @@ def _retire(root: Path, ledger: Manifest) -> tuple[Manifest, list[str], bool]:
         except OSError as exc:
             raise Refusal(f"{action.target} cannot be removed: {fsops.said(exc)}") from exc
         notes.append(f"removed {action.target}, which this release no longer ships")
+        removed.append(action.target)
         if ledger.get(action.artifact_id) is not None:
             ledger = ledger.without(frozenset({action.artifact_id}))
-            dropped = True
-    return ledger, notes, dropped
+            changed = True
+    successors = {SUCCESSORS[target] for target in removed if target in SUCCESSORS}
+    shipped = [template for template in templates() if template.id in successors]
+    for action in plan(root, preset_defaults(root.name), shipped).actions:
+        if action.verb is not Verb.CREATE or action.payload is None:
+            continue
+        try:
+            fsops.write_within(root, action.target, action.payload)
+        except OSError as exc:
+            raise Refusal(f"{action.target} cannot be written: {fsops.said(exc)}") from exc
+        notes.append(f"wrote {action.target} in its place")
+        written.append(action.target)
+        if ledgered and action.record is not None:
+            ledger = ledger.with_record(action.record)
+            changed = True
+    return ledger, notes, [*removed, *written], changed
 
 
-def _rename(root: Path, relative: str, suffix: str) -> str | None:
-    """The bytes written, or `None` when this manifest already named the owner.
-
-    The text and not a boolean, because the caller re-stamps the scaffold ledger with exactly
-    what went to disk — reading the file back to hash it would hash whatever is there now.
-    """
-    path = root / relative
+def _read_manifest(root: Path, relative: str) -> str:
     try:
-        document = json.loads(path.read_text(encoding="utf-8"))
+        return (root / relative).read_text(encoding="utf-8")
     except OSError as exc:
         raise Failure(f"{relative} cannot be read: {exc}") from exc
     except UnicodeDecodeError:
         raise Failure(f"{relative} is not UTF-8 text") from None
+
+
+def _renamed(text: str, relative: str, suffix: str) -> str | None:
+    """The manifest named after the owner, or `None` when it already named them.
+
+    The text and not a boolean, because the caller re-stamps the scaffold ledger with exactly
+    what goes to disk — reading the file back to hash it would hash whatever is there then.
+    Nothing is written here: every manifest is decided before any is written.
+    """
+    try:
+        document = json.loads(text)
     except json.JSONDecodeError as exc:
         raise Failure(f"{relative} is not valid JSON: {exc}") from exc
     if not isinstance(document, dict):
@@ -527,9 +578,7 @@ def _rename(root: Path, relative: str, suffix: str) -> str | None:
                 changed = True
     if not changed:
         return None
-    body = json.dumps(document, indent=2) + "\n"
-    fsops.write_within(root, relative, body)
-    return body
+    return json.dumps(document, indent=2) + "\n"
 
 
 def _named_for(document: dict[str, object], key: str, account: str) -> bool:

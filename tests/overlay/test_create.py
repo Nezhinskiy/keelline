@@ -567,7 +567,7 @@ def test_init_names_the_owner_and_the_author_the_harness_asks_for(tmp_path: Path
     # A marketplace with no `owner` fails `claude plugin validate`, and a plugin manifest with no
     # `author` draws a warning on every install. The template ships a neutral placeholder for
     # both and `init` is where the account it belongs to goes in. Mutation: drop the owner/author
-    # branch of `_rename` → the placeholder is still there after init and this reddens.
+    # branch of `_renamed` → the placeholder is still there after init and this reddens.
     created = create(
         "octo", "stayfixed-private", source="local", root=tmp_path, runner=FakeRunner()
     )

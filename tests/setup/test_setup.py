@@ -534,6 +534,40 @@ def test_rerunning_overlay_create_over_an_existing_overlay_creates_nothing_and_n
     assert overlay_root(machine) == destination
 
 
+def test_rerunning_overlay_create_says_what_init_changed_in_the_overlay_it_found(
+    tmp_path: Path,
+) -> None:
+    # The re-run runs `overlay init` on the overlay it found, and `init` may rename its manifests
+    # (an overlay named at 0.1.x has no account in them yet) or remove the old memory README. The
+    # report said "found the overlay ... and left it alone" all the same. It names what `init`
+    # changed now, and says nothing was changed only when nothing was.
+    #
+    # Mutation: `mutations.toml`'s "setup says it left alone an overlay init changed".
+    home = tmp_path / "home"
+    machine = tmp_path / "config.toml"
+    _seed_overlay(home / "stayfixed-private")
+
+    def overlay_note() -> str:
+        runner = FakeRunner(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+        report = setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=runner,
+            yes=True,
+            overlay="create:octo/stayfixed-private",
+            project_root=tmp_path / "project",
+        )
+        return next(note for note in report.notes if "found the overlay" in note)
+
+    first = overlay_note()
+    assert "left it alone" not in first
+    assert PLUGIN_MANIFEST in first and MARKETPLACE_MANIFEST in first
+    second = overlay_note()
+    assert PLUGIN_MANIFEST not in second
+    assert "changed none of the overlay's tracked files" in second
+
+
 def test_creating_an_overlay_without_yes_is_refused(tmp_path: Path) -> None:
     # Creating a repository on GitHub is the one irreversible, outward-facing act `setup` performs,
     # and `gh repo create` runs only after explicit confirmation. Naming `create:<owner>/<name>` is

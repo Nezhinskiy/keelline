@@ -852,13 +852,25 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
         raise Refusal(
             f"{fault}. {owner}/{name} was created and cloned to {created.root}, but {_CREATED}"
         )
-    init_instance(created.root, owner, runner=runner)
+    initialised = init_instance(created.root, owner, runner=runner)
     _outside_the_project(created.root, project_root=project_root)
     if created.template is None:
-        # `create` found a populated destination and left it alone (no `gh` call at all), which is
-        # what re-running `setup --overlay create:` does after the first run: nothing was
-        # generated, so there is no template to name.
-        return created.root, f"found the overlay already at {created.root} and left it alone"
+        # `create` found a populated destination and generated nothing (no `gh` call at all),
+        # which is what re-running `setup --overlay create:` does after the first run, so there is
+        # no template to name. `init` still ran on it, and an overlay named by an earlier release
+        # has its manifests completed or its old memory README removed, so the note says what
+        # `init` changed rather than that the overlay was left alone.
+        changed = initialised.changed
+        return created.root, (
+            f"found the overlay already at {created.root}, so nothing was generated; "
+            + (
+                f"`overlay init` changed {', '.join(changed)}"
+                if changed
+                # Not "nothing": `init` also runs `pre-commit install`, which may write the
+                # overlay's untracked git hook on this run.
+                else "`overlay init` changed none of the overlay's tracked files"
+            )
+        )
     return created.root, f"created the overlay at {created.root}, generated from {created.template}"
 
 
