@@ -132,8 +132,8 @@ def _recorded(overlay: Path, project: str) -> str | None:
     """The remote the overlay bound to this project, or `None` when it has bound none.
 
     A record that exists and cannot be read raises rather than answering `None`.
-    `memory.store._bound` answers False for the same file, which is right for the hook path —
-    it degrades closed and says "run `stayfixed attach`". Here that advice *is* the command, and
+    `memory.store._bound` answers "unreadable" for the same file, which is right for the hook
+    path — it degrades closed and says to repair the file, then run `stayfixed attach`. Here
     "no record" is the state that invites a rebind, so a broken record has to stop the run
     instead of quietly becoming a first attach.
     """

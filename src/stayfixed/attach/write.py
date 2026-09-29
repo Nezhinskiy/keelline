@@ -990,8 +990,9 @@ def attach(
             # The name is not quoted back, for the reason `permissions.check` states at length:
             # `project.name` is repository-authored and looser than the marker-id grammar
             # `doctor` already refuses to print, and a refusal built out of one is still one.
-            "the overlay records a different remote under this project's name, so this is not "
-            "the repository it was bound to; pass --trust-remote only if it should be"
+            "the overlay records a different remote URL under this project's name (the same "
+            "repository under another URL form, https or ssh, counts as different too); pass "
+            "--trust-remote only if this checkout should be bound to it"
         )
     if binding.remote is not None and not fsops.utf_8_name(binding.remote):
         raise Refusal(ORIGIN_NOT_TEXT)

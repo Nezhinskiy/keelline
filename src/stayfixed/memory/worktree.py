@@ -63,7 +63,13 @@ from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory import trust
-from stayfixed.memory.index import INDEX_NAME, index_source
+from stayfixed.memory.index import (
+    INDEX_NAME,
+    index_source,
+    reconcile,
+    render_index,
+    write_index,
+)
 from stayfixed.memory.store import (
     Store,
     in_repository,
@@ -538,12 +544,34 @@ def attach_main(
                 "the link tree was created and the store still does not resolve; "
                 "`stayfixed memory index --check` reports why"
             )
+        _render_missing_index(store, config)
         made, withdrawn = _apply_harness_link(root, store, config, home)
         created += made
         revoked += withdrawn
     except OSError as exc:
         raise PartialLink(created, exc) from exc
     return Links(created, revoked)
+
+
+def _render_missing_index(store: Store, config: Config) -> None:
+    """Put an index behind the link `attach_main` just made, when the store has none yet.
+
+    A first attach linked `<paths.memory>/MEMORY.md` at a file nothing had written, so every
+    session read a dangling link and `memory index --check` failed until someone ran
+    `memory index` by hand. This is that command's own render — `reconcile`, `render_index`,
+    `write_index` — with the notes left as they are (`write=False`: an attach adds no `index:`
+    line to a note), and trust carried across the one file it wrote, as `memory index` carries
+    it. After the link and not before it: the link is what makes the render's destination the
+    overlay's copy (`index._to_machine`), so a render taken before it could differ from the one
+    `--check` compares against. Before the harness link and every worktree's tree, so neither
+    ever sees the index missing.
+    """
+    if index_source(store, config) is not None:
+        return
+    before = trust.snapshot(store, config)
+    rendered = render_index(reconcile(store, config, write=False), config, store)
+    written = write_index(store, config, rendered)
+    trust.refresh_if_trusted(store, config, before, [written])
 
 
 def _detach_source(config: Config, machine: Path | None, name: str) -> Path | None:

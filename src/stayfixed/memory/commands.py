@@ -39,7 +39,7 @@ from stayfixed.memory.index import (
     write_index,
 )
 from stayfixed.memory.inventory import inventory, totals
-from stayfixed.memory.store import Store, in_repository, resolved
+from stayfixed.memory.store import Store, Unresolved, in_repository, resolved
 from stayfixed.printed import printable, quoted
 from stayfixed.result import Result
 
@@ -62,13 +62,21 @@ def _machine(args: argparse.Namespace) -> Path | None:
 # region markers that say the text is data. `trust.wrap` is what `refusal_reason` names as the
 # way to have both, and `UnsafeNote` — a `Refusal`, exit 2 — is the right answer to a value
 # that tries to forge the markers.
+#
+# A reason that has words of stayfixed's own — which cause, and the way out — says them *before*
+# the region: inside it they are data a model is told not to act on, and the way out is the one
+# thing a reader has to act on.
 _NO_STORE = "no memory store; the reason below is repository-authored text, shown as data"
+_SAID = "no memory store: {said}; the detail below is repository-authored text, shown as data"
 
 
-def _no_store(reason: str | None) -> Failure:
+def _no_store(reason: Unresolved | None) -> Failure:
     if reason is None:
         return Failure("no memory store")
-    return Failure(f"{_NO_STORE}\n{trust.wrap(reason, trust.new_nonce())}")
+    if reason.detail is None:
+        return Failure(f"no memory store: {reason.said}")
+    lead = _NO_STORE if reason.said is None else _SAID.format(said=reason.said)
+    return Failure(f"{lead}\n{trust.wrap(reason.detail, trust.new_nonce())}")
 
 
 def _store(args: argparse.Namespace) -> tuple[Store, Config]:

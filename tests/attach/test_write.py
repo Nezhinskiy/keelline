@@ -147,6 +147,51 @@ def test_a_mismatched_remote_refuses_and_writes_nothing(tmp_path: Path) -> None:
     assert_snapshot_unchanged(root, before)
 
 
+def test_the_same_repository_under_another_url_form_is_refused_in_words_true_of_it(
+    tmp_path: Path,
+) -> None:
+    # URLs are compared exactly, so an owner who re-cloned over https a repository the overlay
+    # recorded over ssh is refused as a mismatch -- and was told "this is not the repository it
+    # was bound to", which is false for the same repository. The sentence now says what the check
+    # knows: a different remote URL, which the same repository in another form also is. The way
+    # out is unchanged: `--trust-remote` rebinds it.
+    #
+    # Mutation: none; the refusal's wording is the assertion, and the rebind is the existing
+    # `--trust-remote` path. The old sentence reddens it.
+    root, store, machine = _attachable(
+        tmp_path,
+        recorded="https://example.com/o/p.git",
+        origin="git@example.com:o/p.git",
+    )
+    before = snapshot(root)
+    assert before
+    with pytest.raises(Refusal) as refused:
+        attach(
+            root,
+            store=store,
+            machine=machine,
+            confirmed=True,
+            trust_remote=False,
+            runner=FakeRunner(),
+            home=tmp_path / "home",
+        )
+    said = str(refused.value)
+    assert "not the repository" not in said
+    assert "different remote URL" in said and "another URL form" in said
+    assert "--trust-remote" in said
+    assert_snapshot_unchanged(root, before)
+    attached = attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=True,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
+    )
+    assert attached.binding_recorded
+
+
 def test_an_unconfirmed_attach_that_would_widen_a_permission_refuses(tmp_path: Path) -> None:
     # The write gate, and the defect that produced it. `attach` writes `settings.local.json` only
     # after a printed diff and an explicit confirmation, and an earlier revision implemented that
@@ -1289,3 +1334,18 @@ def test_a_symlinked_exclude_file_is_refused_before_anything_is_written(tmp_path
     assert "symlink" in str(refused.value)
     assert_snapshot_unchanged(root, before)
     assert elsewhere.read_text(encoding="utf-8") == "# not the repository's\n"
+
+
+def test_the_first_attach_leaves_an_index_behind_its_link(tmp_path: Path) -> None:
+    # `attach` linked `<paths.memory>/MEMORY.md` to the overlay's copy before any copy existed,
+    # so every session saw a dangling link and `memory index --check` failed until someone ran
+    # `memory index` by hand. The memory area's own renderer writes it in the same run.
+    from tests.cli import cli
+
+    root, store, machine = _attachable(tmp_path)
+    _attach_confirmed(root, store, machine, tmp_path / "home")
+    index = root / DEFAULT_MEMORY / "MEMORY.md"
+    assert index.is_symlink()
+    assert index.is_file(), "the index link dangles"
+    code, out, err = cli(root, tmp_path, "memory", "index", "--check", machine=machine)
+    assert code == 0, out + err

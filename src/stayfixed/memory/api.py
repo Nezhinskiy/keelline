@@ -14,10 +14,12 @@ forty-five had no importer anywhere in `src/`, `scripts/` or `tests/`. An area t
 something absent from this list grows it deliberately, in a commit that says which area and why
 — it does not import a private module of this area.
 
-Twenty-six names are imported from outside this area today, and the areas that reach for them
+Twenty-seven names are imported from outside this area today, and the areas that reach for them
 are `attach`, `doctor` and `docs`: the resolver and its store (`resolve`, `Store`,
-`overlay_root`, `permitted_roots`, `main_checkout`), the overlay layout `attach` writes and
-`overlay` renders (`PROJECTS`, `PROJECT_RECORD`, `COMMON_GROUP`), the link tree
+`overlay_root`, `permitted_roots`, `main_checkout`, and `resolved`, which `docs check
+--memory-graph` reads so that a store that does not resolve is said rather than skipped), the
+overlay layout `attach` writes and `overlay` renders (`PROJECTS`, `PROJECT_RECORD`,
+`COMMON_GROUP`), the link tree
 (`link`, `attach_main`, `detach_main`, `harness_anchor`, `harness_link_needed`,
 `harness_memory_path`, `Links`, `PartialLink`, and `linked_names`, which `attach` reads to hide
 every name the tree holds from git), the bundles `doctor` reports on (`fit`,
@@ -25,14 +27,14 @@ every name the tree holds from git), the bundles `doctor` reports on (`fit`,
 (`WIKI_LINK`, `walk`), the binding's git answer (`origin_remote`, `GitUnavailable`), and the
 trust region `tests/test_install_path.py` asserts end to end (`DELIMITER`, `markers`).
 
-**Twelve more have no importer and stay, each for a reason written here**, because a name
+**Thirteen more have no importer and stay, each for a reason written here**, because a name
 kept in silence is what made this pass necessary:
 
-- **The types those twenty-five name in their signatures**: `Bundle` and `Fit` (`fit`,
-  `render`), `Walk` (`walk`), and `Note` with the `Provenance` inside it, which `Walk` names in
-  turn. `tests/test_surfaces.py` derives this rather than restating it, and a return type absent
-  from a surface is a value a consumer can hold and cannot declare — the one thing a surface
-  exists to prevent.
+- **The types those twenty-seven name in their signatures**: `Bundle` and `Fit` (`fit`,
+  `render`), `Unresolved` (`resolved`), `Walk` (`walk`), and `Note` with the `Provenance` inside
+  it, which `Walk` names in turn. `tests/test_surfaces.py` derives this rather than restating
+  it, and a return type absent from a surface is a value a consumer can hold and cannot
+  declare — the one thing a surface exists to prevent.
 - **The rest of the trust region's vocabulary**: `wrap`, `new_nonce` and `UnsafeNote`, beside
   the `DELIMITER` and `markers` that already have a caller. Reading such a region needs
   `markers` and `DELIMITER`; producing one needs `wrap` and a nonce from `new_nonce`; a forged
@@ -74,9 +76,10 @@ What went is the claim that another area reads it.
   an area existing is not the same as an area importing.
 - **The inventory group** — `inventory`, `totals`, `Entry` — published for a skills consumer,
   and nothing outside this area imports them.
-- **The store predicates** — `in_repository`, `inside_project`, `resolved`, `refusal_reason`,
-  `overlay_group_target`. `in_repository` was published "because `inside_project` hands the
-  reader to it in as many words", which is this surface citing itself; `refusal_reason` was
+- **The store predicates** — `in_repository`, `inside_project`, `refusal_reason`,
+  `overlay_group_target` (and `resolved`, until `docs` needed it). `in_repository` was published
+  "because `inside_project` hands the reader to it in as many words", which is this surface
+  citing itself; `refusal_reason` was
   published for an overlay hook that does not exist; `overlay_group_target` is read by
   `worktree.py`, one module over, and by nothing else.
 - **The leftovers** — `blocks`, `split`, `harness_link_parts`. Three helpers with no argument
@@ -97,11 +100,13 @@ from stayfixed.memory.store import (
     PROJECTS,
     GitUnavailable,
     Store,
+    Unresolved,
     main_checkout,
     origin_remote,
     overlay_root,
     permitted_roots,
     resolve,
+    resolved,
 )
 from stayfixed.memory.trust import (
     DELIMITER,
@@ -143,6 +148,7 @@ __all__ = [
     "Store",
     "TrustState",
     "UnreadableTrustRecord",
+    "Unresolved",
     "UnsafeNote",
     "Walk",
     "attach_main",
@@ -163,6 +169,7 @@ __all__ = [
     "permitted_roots",
     "render",
     "resolve",
+    "resolved",
     "walk",
     "wrap",
 ]

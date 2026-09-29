@@ -192,9 +192,11 @@ ABSENT: list[tuple[str, Callable[[Path], Callable[[], object]], object]] = [
         "the overlay's project record, asked whether it is bound",
         lambda t: (
             _plant(t / store.PROJECTS / "widget" / store.PROJECT_RECORD),
-            lambda: store._bound(t, "widget", t),
+            # The cause, and not a bare `False`: the binding check says which of its four
+            # answers this is, and an undecodable record is the unreadable one.
+            lambda: getattr(store._bound(t, "widget", t), "said", None),
         )[1],
-        False,
+        store.RECORD_UNREADABLE,
     ),
     (
         "the attach record's first-attach date",

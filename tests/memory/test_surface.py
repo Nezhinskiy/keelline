@@ -23,6 +23,9 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         # the resolver and the store it yields, for attach, doctor and docs
         "resolve",
         "Store",
+        # the store and why there is none, for `docs check --memory-graph`'s notice
+        "resolved",
+        "Unresolved",  # what `resolved` answers when there is no store
         "overlay_root",
         "permitted_roots",
         "main_checkout",

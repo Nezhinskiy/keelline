@@ -11703,8 +11703,8 @@ reddens = [
 [[mutation]]
 name = "a store with no group resolved names every group"
 file = "src/stayfixed/memory/store.py"
-before = "return None, f\"{head}: {listed(reasons)}\""
-after = "return None, f\"{head}: {'; '.join(reasons)}\""
+before = "return None, Unresolved(None, f\"{head}: {listed(reasons)}\")"
+after = "return None, Unresolved(None, f\"{head}: {'; '.join(reasons)}\")"
 reddens = [
   "tests/memory/test_refs.py::test_a_store_with_no_group_resolved_counts_them_and_names_at_most_the_listed_limit",
 ]
@@ -12691,6 +12691,29 @@ reddens = [
   "tests/attach/test_write.py::test_a_checkout_that_already_hides_everything_is_not_touched",
 ]
 
+# `--store <overlay>/projects/<name>/memory` names the far end of the link tree, and resolved as a
+# store of its own it had no `developer` group -- that lives in `common/memory`, beside it -- so the
+# index it rendered dropped the developer notes and `--check` called that index current.
+[[mutation]]
+name = "an override naming this project's share resolves a smaller store"
+file = "src/stayfixed/memory/store.py"
+before = "    if _names_own_share(override, config, overlay):"
+after = "    if False:"
+reddens = [
+  "tests/memory/test_commands.py::test_the_store_named_by_its_overlay_path_is_the_store_the_link_tree_names",
+]
+
+# The binding check answered one `False` for four causes, and one sentence for all of them. Folding
+# the missing record back into the mismatch's answer sends a first attach to `--trust-remote`.
+[[mutation]]
+name = "the binding check answers a missing record with the mismatch's way out"
+file = "src/stayfixed/memory/store.py"
+before = "        return Unresolved(NO_RECORD, about)"
+after = "        return Unresolved(REMOTE_MISMATCH, about)"
+reddens = [
+  "tests/memory/test_commands.py::test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it[no-record]",
+]
+
 # `gh` resolves an unqualified `OWNER/REPO` on `GH_HOST`, which the runner keeps, so on a GitHub
 # Enterprise host the fallback named whoever owns `stayfixed` there and the owner's private overlay
 # was generated from it. Named with its host, it is looked up on github.com.
@@ -12727,4 +12750,16 @@ reddens = [
   "tests/scripts/test_check_artifacts.py::test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main[another-branch]",
   "tests/scripts/test_check_artifacts.py::test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main[detached]",
   "tests/scripts/test_check_artifacts.py::test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main[not-utf8]",
+]
+
+# A machine record naming an overlay root that is no longer there read as "no record of this
+# project; run `stayfixed attach`", and `attach --store <new place>` refuses a store outside the
+# recorded root -- a refusal whose way out was a command that refuses.
+[[mutation]]
+name = "a recorded overlay root that is gone reads as an unrecorded project"
+file = "src/stayfixed/memory/store.py"
+before = "        if not overlay.is_dir():"
+after = "        if False:"
+reddens = [
+  "tests/memory/test_commands.py::test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it[overlay-gone]",
 ]

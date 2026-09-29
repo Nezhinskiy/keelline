@@ -120,6 +120,24 @@ Exits `2` if `MEMORY.md` is a symlink this store may not follow (the target rule
 overlay mode a symlinked index is refused outright; in overlay mode only a link into *this*
 project's own share of the recorded overlay is honoured).
 
+**One store however it is named.** In overlay mode `--store <overlay>/projects/<name>/memory` —
+this project's own share, the far end of the link tree — resolves exactly as the plain run
+does, through the link tree under `paths.memory`, so the two render the same `MEMORY.md` with the
+same groups: `developer` lives in `common/memory`, beside that directory and not under it. Any
+other `--store` is resolved at the path it names, under the same rules as before.
+
+**When there is no store, the refusal says why** (exit `1`). An overlay root the machine
+configuration records that is not a directory on this machine — the overlay moved, or was never
+cloned here — is said first, with the root inside the region and `stayfixed setup --preset NAME
+--overlay PATH` as the way out, since `attach` refuses a store outside the recorded root. A
+binding that does not hold names which of its four causes it is, in stayfixed's own words before
+the region that carries the repository's: no record of this project in the overlay (run
+`stayfixed attach`), a record that cannot be read (the file is named inside the region), no
+remote to compare (this checkout has no `origin`, or the record names none), or a record naming a
+different remote URL — the same repository under another URL form, https or ssh, counts too, as
+URLs are compared exactly — the one case whose way out is `stayfixed attach --trust-remote`, and
+only if this checkout should be bound.
+
 **Trust interacts with this command**, and the interaction is the non-obvious part: `memory
 index` rewrites the very files the trust hash covers, so it would revoke the approval it depends
 on. It does not — it re-records the hash across exactly the files it itself wrote, carrying every
@@ -727,7 +745,8 @@ effective ones — the preset's, lowered by `[budgets]` if the project chose to.
 (`--memory-graph`; exit `0` always): over the resolved memory store, every `[[wiki-link]]`
 names a document in the store, no link is immediately repeated, and no ledger identifier is
 bracketed; reported as `notices` in `--json` and counted on the line, which never vouches for
-the store. Silent where no store resolves.
+the store. Where no store resolves, the line says the graph was not checked and why, and
+`--json` carries one `memory-store-unresolved` notice; the exit code is still `0`.
 
 **Writes** nothing.
 
@@ -2065,9 +2084,10 @@ command line here is usually written by a model that has read this repository, s
 only enforcement is a step in a procedure is no gate at all. An overlay that grants nothing needs
 no flag, because the gate is on the capability and not on the command.
 
-**A mismatch needs `--trust-remote`.** The overlay records the remote it bound under this project
-name; if this repository's `origin` is a different one, it is not the repository that was bound,
-and `attach` refuses (`2`) unless you say otherwise. A clone chooses its own `project.name`; it
+**A mismatch needs `--trust-remote`.** The overlay records the remote URL it bound under this
+project name; if this repository's `origin` is a different URL, `attach` refuses (`2`) unless you
+say otherwise. URLs are compared exactly, so the same repository under another URL form — cloned
+over https where the overlay recorded ssh, say — is a mismatch too, and the refusal says so. A clone chooses its own `project.name`; it
 does not choose what the overlay recorded under that name.
 
 **A group that never moved is refused.** `attach` **links**; it never moves a note. So a
@@ -2097,8 +2117,10 @@ both `.stayfixed/local/` and `.stayfixed/assessment.json`), a block between
 one `git rev-parse --git-path info/exclude` names, which every worktree shares),
 `.claude/settings.local.json`, `.codex/rules/`, the ledger `.stayfixed/local/attach.json`, the
 link tree under `paths.memory` in this checkout and in every existing worktree, the harness memory
-link, and — in the overlay — `projects/<name>/project.toml`, this project's note directories and,
-through the
+link, and — in the overlay — `projects/<name>/project.toml`, this project's note directories,
+`projects/<name>/memory/MEMORY.md` when the store has none yet (rendered as `stayfixed memory
+index` renders it, so the index link never dangles and `memory index --check` passes right after
+a first attach) and, through the
 `pre-commit install` it runs there when the overlay carries a `.pre-commit-config.yaml` and no
 `pre-commit` hook yet, the overlay's `pre-commit` git hook. The ledger is the only record
 of which allow rules are stayfixed's, because an allow rule cannot carry a marker the way a hook

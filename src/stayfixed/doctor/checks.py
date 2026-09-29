@@ -673,8 +673,8 @@ def _attached(context: Context) -> Row:
     if state == MISMATCH:
         return Row(
             RED,
-            "the overlay records a different remote for this project, so this is not the "
-            "repository it was bound to",
+            "the overlay records a different remote URL for this project (the same repository "
+            "under another URL form, https or ssh, counts as different too)",
             "run `stayfixed attach --check`, and `--trust-remote` only if it should be",
         )
     status, shape, remedy = _harness_shape(context, harness)

@@ -21,8 +21,8 @@ root comes from the machine configuration, not from what is typed here.
    links the notes into this checkout and every worktree, and prints what it wrote. An overlay
    that grants nothing attaches without the flag, and that is the command's decision rather
    than a judgement to make here.
-3. If the report says `mismatch`, stop. The overlay recorded a different remote under this
-   project's name, so this may not be the repository it was bound to. Say so, and pass
+3. If the report says `mismatch`, stop. The overlay recorded a different remote URL under this
+   project's name: another repository, or this one under another URL form. Say so, and pass
    `stayfixed attach --store PATH --trust-remote` only after the user confirms that this
    repository is the one that should be bound.
 4. `stayfixed detach` removes the merged rules, the Codex rule files, the note links and the
