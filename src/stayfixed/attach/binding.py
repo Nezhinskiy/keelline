@@ -79,6 +79,34 @@ MEMORY_GROUP_ESCAPES = (
 )
 
 
+OVERLAY_MODE = "overlay"
+# The first refusal `attach` owes, and `--check` with it. `worktree.attach_main` asks the same
+# question as the floor under this one, but it runs after every write `attach` makes: refused
+# there, a `local-only` project had `.gitignore`'s region, `.codex/rules/`, the settings merge,
+# the ledger and, in the overlay, `project.toml` and its group directories, and `doctor` then
+# read the ledger as "attached". `memory.mode` is one of the loader's enumerated values, so it
+# prints.
+NOT_OVERLAY = (
+    "memory.mode is {mode!r}, so this repository keeps its own note store and there is nothing "
+    "in an overlay to bind it to; only a repository whose memory.mode is 'overlay' is attached"
+)
+
+
+def not_overlay(config: Config) -> str | None:
+    """The refusal a repository whose notes do not live in the overlay earns, or `None`: one
+    spelling for `attach`, which raises it, and `attach --check`, which reports it."""
+    if config.memory.mode == OVERLAY_MODE:
+        return None
+    return NOT_OVERLAY.format(mode=config.memory.mode)
+
+
+def refuse_unless_overlay(config: Config) -> None:
+    """Raise `not_overlay`'s refusal, when there is one."""
+    refused = not_overlay(config)
+    if refused is not None:
+        raise Refusal(refused)
+
+
 @dataclass(frozen=True)
 class Binding:
     """What the overlay records about this repository, and what this repository says it is.

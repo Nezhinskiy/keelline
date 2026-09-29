@@ -19,6 +19,8 @@ from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.schema import Config
 from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
 from tests.attach.test_write import LEDGER, RULE, SETTINGS, _overlay_grants
+from tests.cli import cli
+from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -392,3 +394,73 @@ def test_attach_reads_each_of_its_two_documents_once_too(
     monkeypatch.setattr("stayfixed.attach.binding.load", counted)
     assert invoke(["attach", "--yes", *_flags(root, store, machine)]) == 0
     assert loads == []
+
+
+def _tree(where: Path) -> set[str]:
+    """Every path under `where`, directories included: `snapshot` reads files alone, and the
+    overlay's half of the defect below was three empty group directories."""
+    return {str(path.relative_to(where)) for path in where.rglob("*") if ".git" not in path.parts}
+
+
+def test_a_project_not_in_overlay_mode_is_refused_before_a_byte_is_written(tmp_path: Path) -> None:
+    # `memory.mode` was asked by `worktree.attach_main`, which runs after every write `attach`
+    # makes: a `local-only` project got `.gitignore`'s region, `.codex/rules/`, the settings
+    # merge, the ledger and, in the overlay, `project.toml` and its group directories, and
+    # then exited 2 -- with `doctor`, which keys on the ledger, reporting it attached. The
+    # refusal belongs beside the others above the first write, and `--check` owes the same
+    # answer with the same code, since the real run it previews would refuse.
+    #
+    # Mutation: `mutations.toml`'s "attach asks memory.mode only after it has written".
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,), codex="# standing rule\n")
+    text = (root / "stayfixed.toml").read_text(encoding="utf-8")
+    (root / "stayfixed.toml").write_text(
+        text.replace('mode = "overlay"', 'mode = "local-only"'), encoding="utf-8"
+    )
+    overlay = store.parents[2]
+    machine = _machine(tmp_path, overlay=overlay)
+    project_files, overlay_files = snapshot(root), snapshot(overlay)
+    project_tree, overlay_tree = _tree(root), _tree(overlay)
+    # Non-vacuous: both walks found something, so an empty walk cannot satisfy the comparisons.
+    assert project_files and overlay_files and overlay_tree
+
+    code, out, err = cli(root, tmp_path, "attach", "--store", str(store), "--yes", machine=machine)
+    assert code == 2
+    assert "overlay" in out + err
+    assert_snapshot_unchanged(root, project_files)
+    assert_snapshot_unchanged(overlay, overlay_files)
+    assert _tree(root) == project_tree
+    assert _tree(overlay) == overlay_tree
+
+    code, out, err = cli(
+        root, tmp_path, "attach", "--check", "--store", str(store), machine=machine
+    )
+    assert code == 2
+    assert "overlay" in out + err
+
+
+def test_a_harness_link_that_waits_for_approval_is_said_with_the_way_out(tmp_path: Path) -> None:
+    # The link tree sits inside the repository, so the harness link that exposes it waits for
+    # `memory trust --in-repo-memory` (`worktree.harness_link_needed`). `attach` skipped it and
+    # said nothing, so the owner found out from a session with no native memory.
+    from stayfixed.config.loader import load
+    from stayfixed.memory.api import harness_memory_path, resolve
+    from stayfixed.memory.trust import record
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    code, out, _ = cli(root, tmp_path, "attach", "--store", str(store), machine=machine)
+    assert code == 0
+    assert "stayfixed memory trust --in-repo-memory" in out
+    assert "then `stayfixed attach` again" in out
+    # The other direction, so the sentence is about the gate and not about every attach: once
+    # the store is approved the link is made and nothing asks for the approval again.
+    config = load(root, machine=machine)
+    resolved = resolve(root, config, machine=machine)
+    assert resolved is not None
+    record(resolved, config)
+    code, out, _ = cli(root, tmp_path, "attach", "--store", str(store), machine=machine)
+    assert code == 0
+    assert "--in-repo-memory" not in out
+    assert harness_memory_path(root, tmp_path / "home").is_symlink()

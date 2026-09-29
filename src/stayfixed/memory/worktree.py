@@ -53,9 +53,10 @@ is a symlink pointing at this store, never a real directory and never somebody e
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from stayfixed import fsops
 from stayfixed.config.paths import PathEscape, contained
@@ -624,6 +625,11 @@ def detach_main(
     harness = home_root / harness_relative
     if _unlink(home_root, harness_relative, base.resolve()):
         revoked.append(harness)
+    # The `<slug>` directory the link sat in, a name this run computed, when nothing else is in
+    # it: the harness keeps its own transcripts there, and `rmdir` leaves a directory that holds
+    # one. `OSError` covers "not empty", "not there" and a component the walk refuses.
+    with contextlib.suppress(OSError):
+        fsops.rmdir_within(home_root, str(PurePosixPath(harness_relative).parent))
     for name in linked_names(config):
         target = contained(base, name, allow_final_symlink=True)
         if not target.is_symlink():

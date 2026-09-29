@@ -39,6 +39,7 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         "harness_memory_path",
         "Links",  # what `link` returns
         "PartialLink",  # what it raises part-way, carrying `.created`
+        "linked_names",  # every name the tree holds, which attach hides from git
         # the bundles doctor reports on, and the two types they are made of
         "fit",
         "render",

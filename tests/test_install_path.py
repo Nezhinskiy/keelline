@@ -595,10 +595,9 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
     assert_snapshot_changed(root, before)
     step("detach", "--machine", str(machine), tty=True)
     assert_snapshot_unchanged(root, before)
-    # Stated rather than left to the file walk: `detach_main` withdraws the links and not the
-    # directory that held them, because "withdrawing a link is not licence to delete a
-    # directory". What is left is empty, and this is where that is written down.
-    assert list((root / "docs" / "memory").iterdir()) == []
+    # Stated rather than left to the file walk, which sees files alone: the directory the links
+    # sat in is taken back too once it is empty, so a detach leaves no empty `paths.memory`.
+    assert not (root / "docs" / "memory").exists()
 
 
 def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:

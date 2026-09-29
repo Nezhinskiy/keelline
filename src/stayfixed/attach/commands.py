@@ -132,11 +132,12 @@ def run_detach(args: argparse.Namespace) -> Result:
         "ignore_region_removed": removed.ignore_region_removed,
         # A count, for the reason `run_attach` gives above.
         "links_revoked": len(removed.links.revoked),
-        # A count too, though this one could have been the strings: `CREATED_DIRS` is stayfixed's
-        # own closed vocabulary and `_withdraw_directories` intersects the ledger with it, so
-        # nothing repository-authored can reach this field. A count, so that the six numbers in
-        # this object are read the same way.
+        # A count, and it has to be: besides `CREATED_DIRS`, stayfixed's own closed vocabulary,
+        # this list names `paths.memory` and the directories above it, which the repository
+        # configures.
         "directories_removed": len(removed.directories_removed),
+        # A boolean this command computed, so it prints.
+        "exclude_block_removed": removed.exclude_block_removed,
     }
     return Result(
         f"detached: {len(removed.allow_removed)} allow rule(s), "

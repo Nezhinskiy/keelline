@@ -2037,6 +2037,11 @@ including a directory elsewhere under the same overlay: the session-start path h
 group to this project's own share, so attaching to a sibling would produce a store every session
 then refuses.
 
+**Only an overlay-mode repository is attached.** A `stayfixed.toml` whose `memory.mode` is not
+`overlay` keeps its notes in the repository, and `attach` refuses (`2`) before it writes
+anything; `--check` says so first on its line, still reports the rest, and exits `2`, the code
+the real run refuses with.
+
 **`--check` writes nothing.** It reports the binding state — `unbound`, `bound` or `mismatch` —
 the permission diff (which allow rules and which hook entries would be added, and how many of
 the overlay's rules this repository already has), the Codex standing-rule files it would
@@ -2086,14 +2091,27 @@ project's `projects/<name>/claude/` equivalents, the overlay's `common/codex/` a
 and the repository never grants a capability.
 
 **Writes** the `stayfixed:ignore` region in `.gitignore` (which is what keeps
-`.stayfixed/local/` untracked, and is written first), `.claude/settings.local.json`,
-`.codex/rules/`, the ledger `.stayfixed/local/attach.json`, the link tree under `paths.memory` in
-this checkout and in every existing worktree, the harness memory link, and — in the overlay —
-`projects/<name>/project.toml`, this project's note directories and, through the
+`.stayfixed/local/` untracked, and is written first — and only when git does not already ignore
+both `.stayfixed/local/` and `.stayfixed/assessment.json`), a block between
+`# stayfixed:attach:begin` and `# stayfixed:attach:end` in the repository's own exclude file (the
+one `git rev-parse --git-path info/exclude` names, which every worktree shares),
+`.claude/settings.local.json`, `.codex/rules/`, the ledger `.stayfixed/local/attach.json`, the
+link tree under `paths.memory` in this checkout and in every existing worktree, the harness memory
+link, and — in the overlay — `projects/<name>/project.toml`, this project's note directories and,
+through the
 `pre-commit install` it runs there when the overlay carries a `.pre-commit-config.yaml` and no
 `pre-commit` hook yet, the overlay's `pre-commit` git hook. The ledger is the only record
 of which allow rules are stayfixed's, because an allow rule cannot carry a marker the way a hook
 entry can; `detach` reads it and nothing else.
+
+**What it places, it hides from git, unless git hides it already.** The link tree (`MEMORY.md`
+and one link per group), each `.codex/rules/` file and `.claude/settings.local.json` are this
+machine's own, so each one `git check-ignore` does not already report as ignored is listed in the
+exclude-file block, one anchored line per path; a tracked file is not ignored in that sense and is
+listed like any other. A checkout that already hides all of them — in its own exclude file, a
+global excludes file or `.gitignore` — gets no block and no `.gitignore` change, so `git status`
+after an attach shows at most the `stayfixed:ignore` region. `.gitignore` is never written beyond
+that region.
 
 It also **removes** one file, in one case. The `autoMemoryDirectory` fallback is taken only while
 the harness memory link cannot be made, so when the link becomes possible again — or when the
@@ -2115,13 +2133,16 @@ It also runs `pre-commit install` in the overlay when the overlay carries a pre-
 configuration and no hook is installed — the machine that cloned an overlay someone else created
 never ran `overlay init`. A missing `pre-commit` is a reported note, never a traceback.
 
-Exits `0` on success; `1` under `--check` on a mismatch **or** on a non-zero count of memory
-groups that are still real directories, which are the two findings the paragraphs above explain
+Exits `0` on success; `2` under `--check` for a `memory.mode` other than `overlay`; `1` under
+`--check` on a mismatch **or** on a non-zero count of memory groups that are still real
+directories, which are the two findings the paragraphs above explain
 and the same number for both; `2` on a refusal: a store outside the
 recorded overlay, a mismatch without `--trust-remote`, a widening without `--yes`, a checkout
 with no `origin` remote or with one whose URL is not UTF-8 text, which the overlay's record
-cannot hold, an existing `.stayfixed/local/attach.json` naming files or settings keys
-`attach` could not have written, a `memory.groups` entry that leaves this project's share of the
+cannot hold, a `memory.mode` other than `overlay`, an exclude file that is a symlink, a
+`git check-ignore` that cannot answer, an existing `.stayfixed/local/attach.json` naming files or
+settings keys `attach` could not have written, a `memory.groups` entry that leaves this project's
+share of the
 overlay, a `memory.groups` entry that does not name a subdirectory of this project's
 `paths.memory`, or a `paths.memory` that is itself a symlink — a refusal distinct from that one,
 and the reason the count above is a count of
@@ -2159,9 +2180,14 @@ only the *starting* point that has to be the one holding the record.
 `.claude/settings.local.json`, drops the hook entries marked `# stayfixed:…` there (a group that
 mixes one of those with your own entry is split, never replaced), removes the `.codex/rules/`
 files it wrote, withdraws the link tree from this checkout and every worktree together with the
-harness memory link, removes the `stayfixed:ignore` region, and deletes the ledger,
-`.stayfixed/local/attach.json`. A file left holding nothing is removed rather than left empty.
-Last, each directory the ledger records `attach` as having created — of `.stayfixed/local/`,
+harness memory link, removes the `stayfixed:ignore` region and the `stayfixed:attach` block in
+the repository's exclude file, and deletes the ledger, `.stayfixed/local/attach.json`. A file
+left holding nothing is removed rather than left empty. An exclude file that is a symlink is left
+alone, because `attach` never writes through one. Then it removes, each only when empty: the
+`paths.memory` directory in every checkout it withdrew a tree from, the directories above it in
+this checkout that the ledger records `attach` as having created (`docs/`, for the preset's
+place), and the `~/.claude/projects/<slug>/` directory each harness memory link sat in. Last,
+each directory the ledger records `attach` as having created — of `.stayfixed/local/`,
 `.stayfixed/`, `.codex/rules/`, `.codex/` and `.claude/`, in that order — is removed when it is
 empty, and left standing otherwise.
 
@@ -2180,18 +2206,14 @@ would otherwise attach cleanly and then make every later `detach` exit `2` for e
 only way out being to delete a tracked file out of somebody else's repository. `--json` reports
 `ignore_region_removed: false`, and `stayfixed init` or a hand edit clears the block.
 
-**Directories come back too, with one exception.** `attach` records which of `.stayfixed/local/`,
-`.stayfixed/`, `.codex/rules/`, `.codex/` and `.claude/` this repository did not have before it
-ran, and `detach` removes exactly those, last, once everything inside them is gone. The removal
-is `rmdir`: a directory still holding anything — your own `.codex/rules/` file, your
-`.claude/settings.json` — survives, and so does its parent. A directory that was already there
-before the attach is not on the record and is never touched.
-
-The exception is the note link tree, ordinarily `docs/memory/` — **and the directory above it**,
-`docs/`, which the attach creates in order to make it. That path is repository-configured and
-may be one the project keeps for its own reasons, so the links are withdrawn and the directories
-that held them are left, empty where there was nothing else in them. Everything else about the
-round trip is byte-for-byte.
+**Directories come back too.** `attach` records which of `.stayfixed/local/`, `.stayfixed/`,
+`.codex/rules/`, `.codex/`, `.claude/` and the directories above `paths.memory` this repository
+did not have before it ran, and `detach` removes exactly those once everything inside them is
+gone, with the `paths.memory` directory itself. The removal is `rmdir`: a directory still holding
+anything — your own `.codex/rules/` file, your `.claude/settings.json`, a note that never moved
+into the overlay — survives, and so does its parent. A directory above `paths.memory` that was
+already there before the attach is not on the record and is never touched. The round trip is
+byte-for-byte.
 
 **It does not touch `projects/<name>/project.toml`.** That record is your consent to the binding,
 not local state: deleting it would turn every later re-attach into a first attach and re-ask a

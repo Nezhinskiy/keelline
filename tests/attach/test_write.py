@@ -18,7 +18,7 @@ import pytest
 
 from stayfixed import fsops
 from stayfixed.attach.api import ledger
-from stayfixed.attach.write import GROUP_ESCAPES, REAL_DIRECTORIES, attach
+from stayfixed.attach.write import GROUP_ESCAPES, HARNESS_WAITS, REAL_DIRECTORIES, attach
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import PROJECT_RECORD
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
@@ -862,7 +862,9 @@ def test_a_pre_commit_that_is_already_installed_is_not_run_again(tmp_path: Path)
         home=tmp_path / "home",
     )
     assert runner.calls == []
-    assert attached.notes == ()
+    # The one note left is the harness link waiting for approval, which this fixture never
+    # gives; nothing about the secret scan is said.
+    assert attached.notes == (HARNESS_WAITS,)
 
 
 def test_a_hook_outside_dot_git_still_counts_as_installed(tmp_path: Path) -> None:
@@ -887,7 +889,9 @@ def test_a_hook_outside_dot_git_still_counts_as_installed(tmp_path: Path) -> Non
         home=tmp_path / "home",
     )
     assert runner.calls == []
-    assert attached.notes == ()
+    # The one note left is the harness link waiting for approval, which this fixture never
+    # gives; nothing about the secret scan is said.
+    assert attached.notes == (HARNESS_WAITS,)
 
 
 def test_an_overlay_git_cannot_answer_about_is_a_note_and_never_a_traceback(
@@ -1141,3 +1145,147 @@ def test_a_worktree_listing_git_gave_no_answer_for_is_a_failure_about_this_machi
     with pytest.raises(Failure, match="check that `git` runs here") as caught:
         module._worktrees(tmp_path)
     assert "UTF-8" not in str(caught.value)
+
+
+# --- what `attach` leaves for `git status` to show -------------------------------------------
+
+EXCLUDE_REGION = "attach"
+
+
+def _exclude(root: Path) -> Path:
+    return root / ".git" / "info" / "exclude"
+
+
+def _committed(root: Path) -> None:
+    """Commit what the fixture wrote, so `git status` afterwards shows only what `attach` added."""
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "the project as it was")
+
+
+def _status(root: Path) -> list[str]:
+    return _git(root, "status", "--porcelain", "--untracked-files=all").splitlines()
+
+
+def _placed() -> list[str]:
+    """Every path `attach` puts into the project for this fixture, the ledger aside: the link
+    tree (the index and one link per group), the Codex rule it copies and the settings file."""
+    return [
+        f"{DEFAULT_MEMORY}/MEMORY.md",
+        f"{DEFAULT_MEMORY}/developer",
+        f"{DEFAULT_MEMORY}/project-stable",
+        ".codex/rules/common.rules",
+        SETTINGS,
+    ]
+
+
+def _attach_confirmed(root: Path, store: Path, machine: Path, home: Path) -> None:
+    attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=home,
+    )
+
+
+def test_attach_leaves_nothing_for_git_status_but_the_ignore_region(tmp_path: Path) -> None:
+    # The link tree, `.codex/rules/` and `.claude/settings.local.json` were all untracked and
+    # unignored after an attach, so every `git status` in the project listed the owner's personal
+    # links and rules, and a `git add -A` committed them. They are machine-local by construction,
+    # so `attach` hides them in `info/exclude`, which no clone shares, and leaves `.gitignore`
+    # to the one region `init` already owns.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
+    _committed(root)
+    _attach_confirmed(root, store, machine, tmp_path / "home")
+    for placed in _placed():
+        # Non-vacuous: each one is really there, so `check-ignore` answers about a real path.
+        assert (root / placed).is_symlink() or (root / placed).is_file(), placed
+        assert _check_ignore(root, placed), placed
+    assert _status(root) == ["?? .gitignore"]
+    body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
+    assert body is not None and SETTINGS in body
+
+
+def test_a_checkout_that_already_hides_everything_is_not_touched(tmp_path: Path) -> None:
+    # The legitimate user the exclude block must not disturb: someone who keeps the whole
+    # footprint out of git through `info/exclude` already. `attach` asks git which of its paths
+    # are ignored before it writes, so neither file changes and `git status` stays empty.
+    #
+    # Mutation: `mutations.toml`'s "attach treats an ignored path as not ignored".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
+    _committed(root)
+    exclude = _exclude(root)
+    exclude.parent.mkdir(exist_ok=True)
+    held = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
+    lines = [f"/{placed}" for placed in _placed()] + [
+        ".stayfixed/local/",
+        ".stayfixed/assessment.json",
+    ]
+    exclude.write_text(held + "\n".join(lines) + "\n", encoding="utf-8")
+    before = exclude.read_bytes()
+    _attach_confirmed(root, store, machine, tmp_path / "home")
+    # Non-vacuous: the attach did place its files, so there was something to hide.
+    assert (root / SETTINGS).is_file()
+    assert not (root / ".gitignore").exists()
+    assert exclude.read_bytes() == before
+    assert _status(root) == []
+
+
+def test_a_second_attach_changes_neither_ignore_file(tmp_path: Path) -> None:
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
+    _committed(root)
+    home = tmp_path / "home"
+    _attach_confirmed(root, store, machine, home)
+    gitignore, exclude = (root / ".gitignore").read_bytes(), _exclude(root).read_bytes()
+    _attach_confirmed(root, store, machine, home)
+    assert (root / ".gitignore").read_bytes() == gitignore
+    assert _exclude(root).read_bytes() == exclude
+
+
+def test_a_linked_worktree_shares_the_block_and_its_links_stay_hidden(tmp_path: Path) -> None:
+    # `info/exclude` resolves through the common directory every worktree shares, so the one
+    # block the attach wrote covers the links `worktree-link` builds in a worktree made later,
+    # and that handler never writes the block itself.
+    from stayfixed.config.loader import load
+    from stayfixed.memory.api import link, resolve
+
+    root, store, machine = _attachable(tmp_path)
+    _committed(root)
+    home = tmp_path / "home"
+    _attach_confirmed(root, store, machine, home)
+    side = tmp_path / "side"
+    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    shared = _git(side, "rev-parse", "--path-format=absolute", "--git-path", "info/exclude")
+    assert Path(shared.strip()).resolve() == _exclude(root).resolve()
+    before = _exclude(root).read_bytes()
+    config = load(root, machine=machine)
+    resolved = resolve(root, config, machine=machine)
+    assert resolved is not None
+    made = link(side, resolved, config, home=home)
+    # Non-vacuous: the handler's call did build a tree in the worktree.
+    assert made.created
+    assert _exclude(root).read_bytes() == before
+    assert _status(side) == []
+
+
+def test_a_symlinked_exclude_file_is_refused_before_anything_is_written(tmp_path: Path) -> None:
+    # `info/exclude` is resolved by git, and written by `attach` only after it refuses a
+    # symlink there, as `setup --git-hooks` refuses a symlinked hook: a write through the link
+    # would land wherever it points. Refused above the first write, like every other refusal.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    exclude = _exclude(root)
+    elsewhere = tmp_path / "somebody-elses-file"
+    elsewhere.write_text("# not the repository's\n", encoding="utf-8")
+    if exclude.exists():
+        exclude.unlink()
+    exclude.parent.mkdir(exist_ok=True)
+    exclude.symlink_to(elsewhere)
+    before = snapshot(root)
+    assert before
+    with pytest.raises(Refusal) as refused:
+        _attach_confirmed(root, store, machine, tmp_path / "home")
+    assert "symlink" in str(refused.value)
+    assert_snapshot_unchanged(root, before)
+    assert elsewhere.read_text(encoding="utf-8") == "# not the repository's\n"

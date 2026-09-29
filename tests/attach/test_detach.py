@@ -387,19 +387,19 @@ def test_detach_removes_the_directories_the_attach_created(tmp_path: Path) -> No
     # `rglob` that finds nothing would satisfy every equality in this case on its own.
     assert _directories(root) > before
     removed = _detach(root, machine, home)
+    # `paths.memory` and the `docs/` above it are on the list too: the fixture had no `docs/`, so
+    # the attach created both, and the detach takes back what it created once it is empty.
+    memory = PurePosixPath(DEFAULT_MEMORY)
     assert set(removed.directories_removed) == {
         ".stayfixed/local",
         ".stayfixed",
         ".codex/rules",
         ".codex",
         ".claude",
+        str(memory),
+        str(memory.parent),
     }
-    # `paths.memory` is the documented exception and is named here so a change to it has to change
-    # this line: `worktree.detach_main` withdraws the links and not the directory that held them,
-    # because that directory is repository-configured and may be one the project keeps for its own
-    # reasons.
-    memory = PurePosixPath(DEFAULT_MEMORY)
-    assert _directories(root) - before == {str(memory), str(memory.parent)}
+    assert _directories(root) == before
 
 
 def _detach_after_attach(root: Path, store: Path, machine: Path, home: Path) -> Detached:
@@ -660,3 +660,34 @@ def test_a_manifest_a_clone_committed_cannot_block_the_withdrawal(
     # the result says so rather than claiming a withdrawal it did not make.
     assert removed.ignore_region_removed is False
     assert extract((root / GITIGNORE).read_text(encoding="utf-8"), IGNORE_REGION, Style.HASH)
+
+
+def test_detach_takes_back_the_exclude_block_the_empty_directories_and_the_harness_slug(
+    tmp_path: Path,
+) -> None:
+    # Each is a thing `attach` made that a detach left behind: the block in `info/exclude`, the
+    # empty `paths.memory` directory with the `docs/` it had to create above it, and the empty
+    # `~/.claude/projects/<slug>/` the harness link sat in. Each is a name the run computes, and
+    # each goes only when nothing else is in it.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    before = _directories(root)
+    assert not (root / "docs").exists()
+    _attach(root, store, machine, home, confirmed=True)
+    resolved = resolve(root, _config(root, machine), machine=machine)
+    assert resolved is not None
+    record(resolved, _config(root, machine))
+    _attach(root, store, machine, home, confirmed=True)
+    harness = harness_memory_path(root, home)
+    exclude = root / ".git" / "info" / "exclude"
+    # Non-vacuous: each of the three exists before the detach.
+    assert harness.is_symlink()
+    assert extract(exclude.read_text(encoding="utf-8"), "attach", Style.HASH) is not None
+    assert (root / DEFAULT_MEMORY).is_dir()
+    _detach(root, machine, home)
+    assert extract(exclude.read_text(encoding="utf-8"), "attach", Style.HASH) is None
+    assert not (root / DEFAULT_MEMORY).exists()
+    assert not (root / "docs").exists()
+    assert not harness.parent.exists()
+    assert _directories(root) == before

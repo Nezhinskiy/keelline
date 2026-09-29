@@ -30,7 +30,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from stayfixed.attach.binding import MISMATCH, Binding, read_binding, unlinked_groups
+from stayfixed.attach.binding import (
+    MISMATCH,
+    Binding,
+    not_overlay,
+    read_binding,
+    unlinked_groups,
+)
 from stayfixed.config.loader import load
 from stayfixed.errors import Failure
 from stayfixed.memory.api import PROJECTS
@@ -313,6 +319,13 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
         # A count and never a name: `memory.groups` is repository-authored, and this line is
         # what `skills/attach/SKILL.md` has the model relay to the user.
         summary += f"; {real} memory group(s) are real directories and would refuse the attach"
+    # The refusal `attach` makes for a repository that is not in overlay mode, reported with the
+    # code the real run refuses with: a `--check` that answered 0 or 1 for a run that then
+    # refuses previews something else. Reported and not raised, so the rest of the report —
+    # the binding state above all — still reaches the reader.
+    refused = not_overlay(config)
+    if refused is not None:
+        summary = f"{refused}; {summary}"
     if rules:
         summary += "\n" + "\n".join(f"  {target}" for target in rules)
     data = {
@@ -329,4 +342,6 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
         # A count, for the reason `already_present` is one: the entries are repository-authored.
         "real_directories": real,
     }
+    if refused is not None:
+        return Result(summary, data, exit_code=2)
     return Result(summary, data, exit_code=1 if binding.state == MISMATCH or real else 0)

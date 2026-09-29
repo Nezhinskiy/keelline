@@ -14,12 +14,13 @@ forty-five had no importer anywhere in `src/`, `scripts/` or `tests/`. An area t
 something absent from this list grows it deliberately, in a commit that says which area and why
 — it does not import a private module of this area.
 
-Twenty-five names are imported from outside this area today, and the areas that reach for them
+Twenty-six names are imported from outside this area today, and the areas that reach for them
 are `attach`, `doctor` and `docs`: the resolver and its store (`resolve`, `Store`,
 `overlay_root`, `permitted_roots`, `main_checkout`), the overlay layout `attach` writes and
 `overlay` renders (`PROJECTS`, `PROJECT_RECORD`, `COMMON_GROUP`), the link tree
 (`link`, `attach_main`, `detach_main`, `harness_anchor`, `harness_link_needed`,
-`harness_memory_path`, `Links`, `PartialLink`), the bundles `doctor` reports on (`fit`,
+`harness_memory_path`, `Links`, `PartialLink`, and `linked_names`, which `attach` reads to hide
+every name the tree holds from git), the bundles `doctor` reports on (`fit`,
 `render`, `SLOTS`), the wiki-link grammar and the note walk the graph check reads
 (`WIKI_LINK`, `walk`), the binding's git answer (`origin_remote`, `GitUnavailable`), and the
 trust region `tests/test_install_path.py` asserts end to end (`DELIMITER`, `markers`).
@@ -78,8 +79,9 @@ What went is the claim that another area reads it.
   reader to it in as many words", which is this surface citing itself; `refusal_reason` was
   published for an overlay hook that does not exist; `overlay_group_target` is read by
   `worktree.py`, one module over, and by nothing else.
-- **The leftovers** — `blocks`, `split`, `linked_names`, `harness_link_parts`. Four helpers with
-  no argument beside them in the docstring this one replaces, which is how they survived.
+- **The leftovers** — `blocks`, `split`, `harness_link_parts`. Three helpers with no argument
+  beside them in the docstring this one replaces, which is how they survived. (`linked_names`
+  was a fourth, and came back when `attach` began hiding the tree it names.)
 
 `PartialLink` stays: `attach` imports it, which is what the paragraph that argued for it
 predicted. `Links` stays for the same reason and is the one name on this list a
@@ -121,6 +123,7 @@ from stayfixed.memory.worktree import (
     harness_link_needed,
     harness_memory_path,
     link,
+    linked_names,
 )
 
 __all__ = [
@@ -150,6 +153,7 @@ __all__ = [
     "harness_link_needed",
     "harness_memory_path",
     "link",
+    "linked_names",
     "main_checkout",
     "markers",
     "may_inject",

@@ -3031,7 +3031,10 @@ reddens = [
 [[mutation]]
 name = "the ignore region is written after the ledger it untracks"
 file = "src/stayfixed/attach/write.py"
-before = """    _write_ignore_region(root)
+before = """    if ignore_needed:
+        _write_ignore_region(root)
+    if hidden is not None:
+        exclude.write(hidden)
     rules = _codex_rules(root, binding)
     document = local_document(root)
     merged = _merged_settings(document, diff, binding)
@@ -3042,8 +3045,10 @@ before = """    _write_ignore_region(root)
     # the links so that a `PartialLink` half way through still leaves `detach` able to remove
     # it. The real answer is taken again below, after the only function that can change it.
     carried = _recorded_keys(root)
-    _write_ledger(root, binding, diff, rules, carried, previous, absent)"""
-after = """    rules = _codex_rules(root, binding)
+    _write_ledger(root, binding, diff, rules, carried, previous, absent, parents)"""
+after = """    if hidden is not None:
+        exclude.write(hidden)
+    rules = _codex_rules(root, binding)
     document = local_document(root)
     merged = _merged_settings(document, diff, binding)
     written = merged != document
@@ -3053,8 +3058,9 @@ after = """    rules = _codex_rules(root, binding)
     # the links so that a `PartialLink` half way through still leaves `detach` able to remove
     # it. The real answer is taken again below, after the only function that can change it.
     carried = _recorded_keys(root)
-    _write_ledger(root, binding, diff, rules, carried, previous, absent)
-    _write_ignore_region(root)"""
+    _write_ledger(root, binding, diff, rules, carried, previous, absent, parents)
+    if ignore_needed:
+        _write_ignore_region(root)"""
 reddens = [
   "tests/attach/test_write.py::test_the_ignore_region_is_written_before_the_ledger_and_not_merely_written",
   "tests/attach/test_write.py::test_attach_refuses_when_the_ignore_region_cannot_be_written",
@@ -3524,8 +3530,9 @@ before = '''    previous = _existing_ledger(root)
     # Above every write, because the first of them creates `.stayfixed/local/` and the answer
     # would then be wrong by exactly the directory this run brought into existence.
     absent = _absent_directories(root)
-    _write_ignore_region(root)'''
+    parents = _absent_memory_parents(root, config)'''
 after = '''    absent = _absent_directories(root)
+    parents = _absent_memory_parents(root, config)
     _write_ignore_region(root)
     previous = _existing_ledger(root)'''
 reddens = [
@@ -3548,8 +3555,12 @@ before = '''    checkouts = _checkouts(root)
     for tree in checkouts:
         harness_anchor(tree, home)
     ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
+    # The `info/exclude` block is found above the first withdrawal for the same reason: `git`
+    # names the file and a region opened twice refuses, and both are knowable now.
+    hidden = exclude.withdrawn_block(root)
     allow_removed = _withdraw_settings(root, recorded)'''
 after = '''    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
+    hidden = exclude.withdrawn_block(root)
     allow_removed = _withdraw_settings(root, recorded)
     checkouts = _checkouts(root)
     for tree in checkouts:
@@ -12653,6 +12664,31 @@ after = """        if True:
             leads = here[len(prefix) :]"""
 reddens = [
   "tests/assess/test_tracked.py::test_a_symlink_below_the_top_that_no_checkout_has_names_the_link[out-through-a-link-beside-the-project]",
+]
+
+# `memory.mode` was asked by `worktree.attach_main`, after every write `attach` makes, so a
+# `local-only` project got the ignore region, `.codex/rules/`, the settings merge, the ledger and,
+# in the overlay, `project.toml` and its group directories before exit 2. The early refusal is the
+# guard; `attach_main`'s own check is the floor under it and reddens nothing on its own.
+[[mutation]]
+name = "attach asks memory.mode only after it has written"
+file = "src/stayfixed/attach/write.py"
+before = "    refuse_unless_overlay(config)"
+after = "    pass"
+reddens = [
+  "tests/attach/test_commands.py::test_a_project_not_in_overlay_mode_is_refused_before_a_byte_is_written",
+]
+
+# `attach` hides only what git does not hide already, so a checkout that keeps its whole footprint
+# out of git through `info/exclude` sees neither ignore file change. Reading every placed path as
+# visible writes both the `.gitignore` region and the exclude block into that checkout.
+[[mutation]]
+name = "attach treats an ignored path as not ignored"
+file = "src/stayfixed/attach/exclude.py"
+before = '    hidden = {name for name in out.split("\0") if name}'
+after = "    hidden: set[str] = set()"
+reddens = [
+  "tests/attach/test_write.py::test_a_checkout_that_already_hides_everything_is_not_touched",
 ]
 
 # `gh` resolves an unqualified `OWNER/REPO` on `GH_HOST`, which the runner keeps, so on a GitHub

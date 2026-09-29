@@ -16,6 +16,9 @@ and one gate:
   than assume `.git/hooks` (`hooks_dir`, `HOOK_MARKER`) — an overlay with `core.hooksPath` set,
   or one that is a worktree or a submodule, keeps them somewhere else, and both areas had the
   same wrong spelling hardcoded.
+- `attach` and `detach` resolve the repository's `info/exclude` through the same resolver
+  (`git_path`), so the block they keep there is the one file every worktree shares, found the
+  way `setup --git-hooks` finds its hooks directory rather than by a second spelling.
 - `ledger.scan`, `memory.refs` and `assess`'s probes all ask which roots a configuration's paths
   may reach (`contained_roots`), and two spellings of that would be two answers.
 - `assess` runs the `commit` gate (`commit_gate`), `(root, config, base) -> list[Finding]`;
@@ -38,6 +41,7 @@ from stayfixed.guards.githooks import (
     HOOK_NAME,
     Installed,
     Removed,
+    git_path,
     hooks_dir,
     install,
     uninstall,
@@ -51,6 +55,7 @@ __all__ = [
     "Removed",
     "commit_gate",
     "contained_roots",
+    "git_path",
     "hooks_dir",
     "install",
     "uninstall",
