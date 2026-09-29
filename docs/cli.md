@@ -2208,9 +2208,12 @@ them in its own exclude file or a global excludes file gets no block, and one th
 `.gitignore` is never written beyond that region. When the exclude file did not exist, when the
 directory it goes in did not exist either (a repository made without git's templates has no
 `info/`, and the write creates it), or when its last line had no line ending, the block says so in
-a comment line of its own, which is what lets
-`detach`, from whichever checkout runs it last, give the file back byte for byte. The file is read
-as bytes, so bytes in it that are not UTF-8 are kept exactly and refuse nothing.
+a comment line of its own, which is what lets `detach`, from whichever checkout runs it last, give
+the file back byte for byte. The file is read as bytes, so bytes in it that are not UTF-8 are kept
+exactly and refuse nothing. The file is read, changed and replaced without a lock, so two `attach` runs at once in checkouts of one repository,
+the main checkout and a worktree say, can each read it before the other writes, and the later
+write then drops the lines the earlier one added: run one `attach` at a time. Running `attach`
+again in the checkout whose lines went puts them back.
 
 It also **removes** one file, in one case. The `autoMemoryDirectory` fallback is taken only while
 the harness memory link cannot be made, so when the link becomes possible again — or when the
