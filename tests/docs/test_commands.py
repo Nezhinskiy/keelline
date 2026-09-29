@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -108,23 +109,57 @@ def test_docs_check_memory_graph_notes_never_fail_and_the_success_line_does_not_
     assert "does not vouch for the memory store" in data["summary"]
 
 
-def test_docs_check_says_when_the_graph_had_no_store_to_check(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # A store that does not resolve made `--memory-graph` silent, which reads exactly like a
-    # graph with nothing wrong in it. It is a notice now, naming why, and the exit code is the
-    # one an advisory check always has.
-    root, common = project(tmp_path)
+def _no_store_directory(root: Path) -> None:
     (root / "stayfixed.toml").write_text(
         CONFIG.replace('mode = "in-repo"', 'mode = "local-only"'), encoding="utf-8"
     )
+
+
+def _no_group_resolves(root: Path) -> None:
+    (root / "notes" / "developer").rmdir()
+
+
+@pytest.mark.parametrize(
+    ("arrange", "said", "withheld"),
+    [
+        pytest.param(
+            _no_store_directory,
+            "the memory store's directory does not exist",
+            ".stayfixed",
+            id="no-directory",
+        ),
+        pytest.param(
+            _no_group_resolves,
+            "none of the 1 configured group(s) resolved",
+            "developer",
+            id="no-group",
+        ),
+    ],
+)
+def test_docs_check_says_why_the_graph_had_no_store_to_check(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    arrange: Callable[[Path], None],
+    said: str,
+    withheld: str,
+) -> None:
+    # A store that does not resolve made `--memory-graph` silent, which reads exactly like a
+    # graph with nothing wrong in it. It is a notice now, naming why in stayfixed's own words for
+    # each cause — never the resolver's detail, which carries the store's path or a group's
+    # name — and the exit code is the one an advisory check always has.
+    #
+    # Mutation: `mutations.toml`'s "a missing store directory is reported with no reason of its
+    # own" (the no-directory case).
+    root, common = project(tmp_path)
+    arrange(root)
     assert invoke(["docs", "check", "--memory-graph", *common]) == 0
     line = capsys.readouterr().out
-    assert "memory graph was not checked" in line
+    assert f"the memory graph was not checked: {said}" in line
     assert invoke(["docs", "check", "--memory-graph", "--json", *common]) == 0
     notices = json.loads(capsys.readouterr().out)["notices"]
     assert [notice["rule"] for notice in notices] == ["memory-store-unresolved"]
-    assert notices[0]["detail"]
+    assert notices[0]["detail"].startswith(said)
+    assert withheld not in notices[0]["detail"]
 
 
 def test_docs_trail_writes_the_listing_and_check_reports_staleness(

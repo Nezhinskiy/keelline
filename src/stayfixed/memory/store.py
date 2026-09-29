@@ -370,6 +370,12 @@ OVERLAY_GONE = (
 )
 
 
+# Two of the resolver's own sentences, for the causes a store most often fails on. Each is
+# stayfixed's text: the path it is about, and the groups that did not resolve, stay in the detail.
+STORE_MISSING = "the memory store's directory does not exist"
+BUILT_BY_ATTACH = "; run `stayfixed attach` to build it"
+
+
 def _bound(overlay: Path, project: str, root: Path) -> Unresolved | None:
     """`None` when the overlay's record binds this checkout's `origin`, else which cause failed.
 
@@ -500,12 +506,16 @@ def _resolve_at(
             # ships by default, where the whole store is otherwise ungoverned by `contained`.
             base = contained(root, str(LOCAL_STORE))
         except PathEscape as exc:
-            return None, Unresolved(None, f"{exc}; local-only memory must be a real directory")
+            return None, Unresolved(
+                "the local-only store is not a real directory inside the project",
+                f"{exc}; local-only memory must be a real directory",
+            )
     else:
         declared = _declared(root, config)
         if declared is None:
             return None, Unresolved(
-                None, f"paths.memory ({config.paths.memory!r}) does not stay inside the project"
+                "paths.memory does not stay inside the project",
+                f"paths.memory ({config.paths.memory!r}) does not stay inside the project",
             )
         base = declared
         # Check 1, the shape: in every mode but `local-only` and an explicit `override`,
@@ -516,7 +526,8 @@ def _resolve_at(
         # `paths.memory` was pointed at — including another project's share.
         if declared.is_symlink():
             return None, Unresolved(
-                None, f"{config.paths.memory} is a symlink; {mode} memory must be a real directory"
+                f"paths.memory is a symlink, and {mode} memory must be a real directory",
+                f"{config.paths.memory} is a symlink; {mode} memory must be a real directory",
             )
     if mode == "overlay":
         if overlay is None:
@@ -529,7 +540,10 @@ def _resolve_at(
         if unbound is not None:
             return None, unbound
     if not base.is_dir():
-        return None, Unresolved(None, f"{base} does not exist; run `stayfixed attach`")
+        # `attach` builds the directory only in overlay mode, where it is the link tree; elsewhere
+        # it refuses, so it is named as the way out only there.
+        said = STORE_MISSING + (BUILT_BY_ATTACH if mode == "overlay" else "")
+        return None, Unresolved(said, str(base))
     groups, unavailable = _group_targets(base, config, overlay if mode == "overlay" else None)
     if not groups:
         # Counted, and capped at `LISTED_LIMIT` like every list of names: `memory.groups` is
@@ -540,7 +554,7 @@ def _resolve_at(
         if not reasons:
             return None, Unresolved("the store has no groups")
         head = f"none of the {len(reasons)} configured group(s) resolved"
-        return None, Unresolved(None, f"{head}: {listed(reasons)}")
+        return None, Unresolved(head, listed(reasons))
     return Store(base, mode, root, groups, unavailable, machine), None
 
 

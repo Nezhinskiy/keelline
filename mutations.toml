@@ -11703,8 +11703,8 @@ reddens = [
 [[mutation]]
 name = "a store with no group resolved names every group"
 file = "src/stayfixed/memory/store.py"
-before = "return None, Unresolved(None, f\"{head}: {listed(reasons)}\")"
-after = "return None, Unresolved(None, f\"{head}: {'; '.join(reasons)}\")"
+before = "return None, Unresolved(head, listed(reasons))"
+after = "return None, Unresolved(head, '; '.join(reasons))"
 reddens = [
   "tests/memory/test_refs.py::test_a_store_with_no_group_resolved_counts_them_and_names_at_most_the_listed_limit",
 ]
@@ -12734,6 +12734,18 @@ before = "            except ConfigError:"
 after = "            except OSError:"
 reddens = [
   "tests/hooks/test_hook_command.py::test_an_unloadable_config_refuses_a_tool_call_in_its_own_words[refused-value]",
+]
+
+# `docs check --memory-graph` names why it checked nothing from the resolver's own sentence, and a
+# missing store directory -- the commonest cause -- had none, so the notice fell back to a pointer
+# that named no reason at all.
+[[mutation]]
+name = "a missing store directory is reported with no reason of its own"
+file = "src/stayfixed/memory/store.py"
+before = "        return None, Unresolved(said, str(base))"
+after = "        return None, Unresolved(None, str(base))"
+reddens = [
+  "tests/docs/test_commands.py::test_docs_check_says_why_the_graph_had_no_store_to_check[no-directory]",
 ]
 
 # `gh` resolves an unqualified `OWNER/REPO` on `GH_HOST`, which the runner keeps, so on a GitHub

@@ -753,8 +753,10 @@ effective ones — the preset's, lowered by `[budgets]` if the project chose to.
 (`--memory-graph`; exit `0` always): over the resolved memory store, every `[[wiki-link]]`
 names a document in the store, no link is immediately repeated, and no ledger identifier is
 bracketed; reported as `notices` in `--json` and counted on the line, which never vouches for
-the store. Where no store resolves, the line says the graph was not checked and why, and
-`--json` carries one `memory-store-unresolved` notice; the exit code is still `0`.
+the store. Where no store resolves, the line says the graph was not checked and why — in
+stayfixed's own words for the cause (the store's directory does not exist, none of the configured
+groups resolved, the overlay binding does not hold, …), never the store's path or a group's name —
+and `--json` carries one `memory-store-unresolved` notice; the exit code is still `0`.
 
 **Writes** nothing.
 

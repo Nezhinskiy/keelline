@@ -25,9 +25,10 @@ _PLAN_OK = (
 
 
 # Said when `--memory-graph` had no store to walk, which used to be silence: a line with no NOTE
-# read exactly like a graph with nothing wrong in it. The reason is the resolver's own sentence
-# when it has one — stayfixed's text, which prints — and otherwise this pointer, because the rest
-# of its reasons carry `memory.groups` and `paths.memory`, which the repository chose.
+# read exactly like a graph with nothing wrong in it. The reason is the resolver's own sentence,
+# which every cause it refuses on now carries — stayfixed's text, which prints — and never its
+# detail, which carries `memory.groups` and `paths.memory`, both the repository's. The pointer is
+# the floor for a reason with no sentence of its own.
 NO_STORE = "memory-store-unresolved"
 _NOT_SAID = "the memory store did not resolve; `stayfixed memory index --check` says why"
 
