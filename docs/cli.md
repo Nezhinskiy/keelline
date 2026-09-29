@@ -2207,25 +2207,71 @@ It also runs `pre-commit install` in the overlay when the overlay carries a pre-
 configuration and no hook is installed — the machine that cloned an overlay someone else created
 never ran `overlay init`. A missing `pre-commit` is a reported note, never a traceback.
 
-Exits `0` on success; `2` under `--check` for a `memory.mode` other than `overlay`; `1` under
-`--check` on a mismatch **or** on a non-zero count of memory groups that are still real
-directories, which are the two findings the paragraphs above explain
-and the same number for both; `2` on a refusal: a store outside the
-recorded overlay, a mismatch without `--trust-remote`, a widening without `--yes`, a checkout
-with no `origin` remote or with one whose URL is not UTF-8 text, which the overlay's record
-cannot hold, a `memory.mode` other than `overlay`, an exclude file that is a symlink, a
-`git check-ignore` that cannot answer, an existing `.stayfixed/local/attach.json` naming files or
-settings keys `attach` could not have written, a `memory.groups` entry that leaves this project's
-share of the
-overlay, a `memory.groups` entry that does not name a subdirectory of this project's
-`paths.memory`, or a `paths.memory` that is itself a symlink — a refusal distinct from that one,
-and the reason the count above is a count of
-groups that stayed inside — a memory group that is still a real directory rather than a link into
-it, or a `--machine` outside an interactive shell. Every one of those refusals happens
-before the first write, so a refused attach leaves both the repository and the overlay as they
-were. A write that itself fails also exits `2`, and is the one kind that can leave part of a run
-behind: an unwritable `.gitignore`, or a path inside the overlay that is not a directory — or
-became a symlink — between the moment it was checked and the moment it was written.
+Exits `0` on success. Under `--check` it exits `1` on a mismatch **or** on a non-zero count of
+memory groups that are still real directories, which are the two findings the paragraphs above
+explain and the same number for both, and `2` for a `memory.mode` other than `overlay`; the
+loading, binding and diff failures below end `--check` with the same codes as a real run.
+
+A real run exits `1` on a failure, something it reads that cannot be read or a `git` that cannot
+answer, in the order the run meets them:
+
+- `stayfixed.toml` is missing, cannot be read, is not UTF-8 or valid TOML, or holds a key or value
+  the loader refuses; or the machine configuration cannot be read, is not UTF-8 or is not valid
+  TOML.
+- The overlay's record of this project (`projects/<name>/project.toml`) cannot be read, is not
+  UTF-8 or is not valid TOML, or `git` cannot read the `origin` remote.
+- The overlay's `permissions.json` or `hooks.json`, or `.claude/settings.local.json`, cannot be
+  read or is not UTF-8.
+- An existing `.stayfixed/local/attach.json` cannot be read, is not UTF-8, is not valid JSON or is
+  not a JSON object.
+
+Every failure in that list happens before anything is written. Three ways to exit `1` come later,
+and leave behind what was written before them:
+
+- A Codex rule file in the overlay that is not UTF-8, met while the rule files are copied, with
+  `.gitignore`, the exclude block and the rule files before it already written.
+- `git worktree list` failing, once the ledger and the overlay's record are written.
+- A store that still does not resolve once the link tree is built.
+
+It exits `2` on a refusal, in the order the run meets them:
+
+- No `--store`, or a `--machine` outside an interactive shell.
+- A `[paths]` value that leaves the project or passes through a symlink.
+- No overlay root recorded in the machine configuration, or a `--store` that is not this project's
+  own directory inside it.
+- A `memory.mode` other than `overlay`.
+- The overlay's `permissions.json` or `hooks.json`, or `.claude/settings.local.json`, that is not
+  JSON or not a JSON object, or whose `permissions` or `hooks` has a shape the merge cannot read.
+- A widening without `--yes`; a mismatch without `--trust-remote`, which is also the answer for a
+  checkout with no `origin` when the overlay already records the project; an `origin` whose URL is
+  not UTF-8 text, which the overlay's record cannot hold; a checkout with no `origin`.
+- A `memory.groups` entry that leaves this project's share of the overlay; one that does not name a
+  subdirectory of `paths.memory`, or a `paths.memory` that is itself a symlink (a refusal of its
+  own, which is why the `--check` count counts only groups that stay inside); a memory group that
+  is still a real directory rather than a link into it.
+- A home directory that is not there, or a component below it, `~/.claude` included, that is a
+  symlink.
+- A `.stayfixed` that is a symlink, or an existing ledger naming files, settings keys or
+  directories `attach` could not have written.
+- A `git check-ignore` that cannot answer; a `.codex` or `.claude` that is a symlink, on a run
+  that writes into it; a `git rev-parse --git-path info/exclude` that names no exclude file; an
+  exclude file that cannot be read, that holds a `stayfixed:attach` block opened or closed twice,
+  or that is a symlink when the block needs a line.
+- A `.gitignore` that cannot be read, is not UTF-8, holds a `stayfixed:ignore` region opened or
+  closed twice, or cannot be written. It is the first write, so this refusal leaves nothing
+  behind either.
+
+Every refusal in that list happens before anything is written, so a refused attach leaves both the
+repository and the overlay as they were. Three ways to exit `2` come later, and leave behind what
+was written before them:
+
+- A trust record, the machine's `trust.json`, that is not the record it should be. It is read
+  before the first write only when a real directory already sits where the harness memory link
+  goes, and is otherwise refused once the link tree is built.
+- A directory in this project's share of the overlay that became a symlink between the moment it
+  was checked and the moment it was written, which is refused.
+- Any other write that fails, the exclude file, a rule copy, the settings file, the ledger, the
+  overlay's record or a link, which ends as `internal error` with the error the system gave.
 
 ---
 
@@ -2306,9 +2352,42 @@ round trip is byte-for-byte in the checkout you attached from; in another worktr
 not local state: deleting it would turn every later re-attach into a first attach and re-ask a
 question you have already answered.
 
-Exits `0`; `1` when there is no ledger to read; `2` on a ledger naming files or settings keys
-`attach` could not have written, or on a `--machine` outside an interactive shell, for the
-reason `stayfixed attach` gives above.
+Exits `0` on success. It exits `1` on a failure, in the order the run meets them:
+
+- `.stayfixed/local/attach.json` is not there, cannot be read, is not UTF-8, is not valid JSON or
+  is not a JSON object.
+- `stayfixed.toml` is missing, cannot be read, is not UTF-8 or valid TOML, or holds a key or value
+  the loader refuses; or the machine configuration cannot be read, is not UTF-8 or is not valid
+  TOML.
+- `.claude/settings.local.json` cannot be read or is not UTF-8.
+- `git` cannot list this repository's worktrees.
+- `.gitignore` cannot be read or is not UTF-8.
+
+It exits `2` on a refusal, in the order the run meets them:
+
+- A `--machine` outside an interactive shell, for the reason `stayfixed attach` gives above.
+- A ledger naming files, settings keys or directories `attach` could not have written.
+- A `[paths]` value that leaves the project or passes through a symlink.
+- A `.claude/settings.local.json` that is not JSON or not a JSON object, or whose `hooks` has a
+  shape the withdrawal cannot read.
+- A home directory that is not there, or a component below it, `~/.claude` included, that is a
+  symlink, in any checkout of the repository.
+- A `stayfixed:ignore` region in `.gitignore` opened or closed twice, or otherwise with markers
+  that no longer say where it ends.
+- A `git rev-parse --git-path info/exclude` that names no exclude file, an exclude file that cannot
+  be read, or a `stayfixed:attach` block in it opened or closed twice.
+- A `.claude/settings.local.json` whose `permissions` is not an object, or whose
+  `permissions.allow` is not a list of strings.
+
+Every one of those is answered before the first withdrawal, so a refused `detach` has removed
+nothing. Three ways to exit `2` come after the first withdrawal, and leave the ledger in place with
+part of the attach already undone:
+
+- A `.codex` that is a symlink ends as `internal error` when the rule copies are removed, after
+  the settings file.
+- A `memory.groups` entry added since the attach that does not name a subdirectory of
+  `paths.memory` is refused when the link tree is withdrawn, after the rule copies.
+- Any other write or removal that fails ends as `internal error` with the error the system gave.
 
 ---
 
