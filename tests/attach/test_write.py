@@ -19,7 +19,13 @@ import pytest
 
 from stayfixed import fsops
 from stayfixed.attach.api import ledger
-from stayfixed.attach.write import GROUP_ESCAPES, HARNESS_WAITS, REAL_DIRECTORIES, attach
+from stayfixed.attach.write import (
+    GROUP_ESCAPES,
+    HARNESS_WAITS,
+    REAL_DIRECTORIES,
+    Attached,
+    attach,
+)
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import PROJECT_RECORD
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
@@ -1714,3 +1720,122 @@ def test_a_group_with_a_space_or_a_non_ascii_name_is_still_hidden() -> None:
 
     assert pattern("notes/my notes") == "/notes/my\\ notes"
     assert pattern("notes/заметки") == "/notes/заметки"
+
+
+# --- every refusal is made before the first write ---------------------------------------------
+
+
+def _everything(tmp_path: Path) -> dict[str, dict[str, bytes]]:
+    """What an attach could write: the project, the overlay, the home and the machine's trust
+    record beside the machine file."""
+    trust = tmp_path / "trust.json"
+    return {
+        "project": snapshot(tmp_path / "project"),
+        "overlay": snapshot(tmp_path / "overlay"),
+        "home": snapshot(tmp_path / "home"),
+        "trust": {"trust.json": trust.read_bytes()} if trust.is_file() else {},
+    }
+
+
+def _attach_it(root: Path, store: Path, machine: Path, home: Path) -> Attached:
+    return attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=home,
+    )
+
+
+def test_an_overlay_rule_that_is_not_utf8_stops_attach_before_it_writes(tmp_path: Path) -> None:
+    # The overlay's rule sources were read and decoded while they were copied, after `.gitignore`
+    # and the exclude block were written and after the rules before the bad one were copied: a
+    # rule file that was not UTF-8 exited 1 with `.codex/rules/common.rules` on disk, listed in
+    # the exclude block so `git status` no longer showed it, and no ledger for `detach` to
+    # remove it by. Every source is read while the run is planned now.
+    #
+    # Mutation: `mutations.toml`'s "attach reads the overlay's rule sources while it copies them".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    (store.parents[2] / COMMON_CODEX / "z.rules").write_bytes(b"\xff\xfe not text\n")
+    before = _everything(tmp_path)
+    assert before["project"] and before["overlay"]
+    with pytest.raises(Failure, match="not UTF-8"):
+        _attach_it(root, store, machine, tmp_path / "home")
+    assert _everything(tmp_path) == before
+
+
+def test_a_trust_record_that_does_not_parse_stops_attach_before_it_writes(tmp_path: Path) -> None:
+    # The trust record was first read by the index render and the harness link, after the settings,
+    # the rule copies, the ledger, the overlay's binding record and the link tree were written: a
+    # `trust.json` that did not parse exited 2 there, with the index link dangling. It is read
+    # while the run is planned now, so the refusal leaves everything as it was.
+    #
+    # Mutation: `mutations.toml`'s "attach reads the trust record only after it has written".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    (machine.parent / "trust.json").write_text("{not json", encoding="utf-8")
+    before = _everything(tmp_path)
+    with pytest.raises(Refusal, match=r"trust\.json"):
+        _attach_it(root, store, machine, tmp_path / "home")
+    assert _everything(tmp_path) == before
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root writes into a directory it cannot write")
+def test_an_exclude_file_that_cannot_be_written_is_refused_by_name_before_the_first_write(
+    tmp_path: Path,
+) -> None:
+    # A `.git/info` attach could not write into ended as `internal error: PermissionError`, after
+    # `.gitignore` had its region. The directory is asked whether it can be written while the run
+    # is planned, and the refusal names the file.
+    #
+    # Mutation: `mutations.toml`'s "attach finds out the exclude file cannot be written by
+    # writing it".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    info = root / ".git" / "info"
+    info.mkdir(exist_ok=True)
+    before = _everything(tmp_path)
+    info.chmod(0o555)
+    try:
+        with pytest.raises(Refusal) as refused:
+            _attach_it(root, store, machine, tmp_path / "home")
+    finally:
+        info.chmod(0o755)
+    assert "info/exclude" in str(refused.value)
+    assert "internal error" not in str(refused.value)
+    assert _everything(tmp_path) == before
+
+
+def test_a_doubled_exclude_block_is_refused_naming_the_exclude_file(tmp_path: Path) -> None:
+    # "region 'attach' is opened or closed twice" said which region and never which file, and the
+    # file is not one a person opens often: `.git/info/exclude`.
+    #
+    # Mutation: `mutations.toml`'s "a doubled exclude block is refused without its file".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    begin = "# stayfixed:attach:begin\n"
+    _exclude(root).parent.mkdir(exist_ok=True)
+    _exclude(root).write_text(begin + begin + "# stayfixed:attach:end\n", encoding="utf-8")
+    before = _everything(tmp_path)
+    with pytest.raises(Refusal) as refused:
+        _attach_it(root, store, machine, tmp_path / "home")
+    assert "info/exclude" in str(refused.value)
+    assert _everything(tmp_path) == before
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root writes into a directory it cannot write")
+def test_an_exclude_file_whose_write_fails_is_a_refusal_naming_it(tmp_path: Path) -> None:
+    # The check made while planning cannot rule out a write that fails anyway, and that write used
+    # to end as `internal error: PermissionError`. It is a refusal naming the file.
+    #
+    # Mutation: `mutations.toml`'s "a failed exclude write is an internal error".
+    from stayfixed.attach.exclude import ExcludeWrite, write
+
+    shut = tmp_path / "info"
+    shut.mkdir()
+    shut.chmod(0o555)
+    try:
+        with pytest.raises(Refusal) as refused:
+            write(ExcludeWrite(shut / "exclude", "/x\n"))
+    finally:
+        shut.chmod(0o755)
+    assert "info/exclude" in str(refused.value)

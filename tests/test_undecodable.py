@@ -112,7 +112,7 @@ RAISING: list[tuple[str, Callable[[Path], Callable[[], object]], type[Exception]
     ),
     (
         "the .gitignore attach writes its region into",
-        lambda t: (_plant(t / write.GITIGNORE), lambda: write._write_ignore_region(t))[1],
+        lambda t: (_plant(t / write.GITIGNORE), lambda: write._planned_ignore_region(t))[1],
         Refusal,
     ),
     (
@@ -124,8 +124,8 @@ RAISING: list[tuple[str, Callable[[Path], Callable[[], object]], type[Exception]
         "an overlay rule attach copies for Codex",
         lambda t: (
             _plant(t / "overlay" / COMMON_CODEX / "rules.md"),
-            lambda: write._codex_rules(
-                t / "project", Binding("widget", t / "overlay", t / "store", None, None, "")
+            lambda: write._codex_rule_texts(
+                Binding("widget", t / "overlay", t / "store", None, None, "")
             ),
         )[1],
         Failure,

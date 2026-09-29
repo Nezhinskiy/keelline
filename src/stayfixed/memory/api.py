@@ -24,6 +24,8 @@ overlay layout `attach` writes and `overlay` renders (`PROJECTS`, `PROJECT_RECOR
 `harness_memory_path`, `Links`, `PartialLink`, and `linked_names`, which `attach` reads to hide
 every name the tree holds from git), whether the machine records any approval for a store that
 does not exist yet (`approval_recorded`, which `attach` asks before a first link tree is built),
+whether the machine's trust record can be read at all (`require_readable_record`, which `attach`
+asks before its first write, since the index render and the harness link read it after),
 the bundles `doctor` reports on (`fit`, `render`, `SLOTS`), the wiki-link grammar and the note
 walk the graph check reads (`WIKI_LINK`, `walk`), the binding's git answer (`origin_remote`,
 `GitUnavailable`), and the trust region `tests/test_install_path.py` asserts end to end
@@ -120,6 +122,7 @@ from stayfixed.memory.trust import (
     markers,
     may_inject,
     new_nonce,
+    require_readable_record,
     wrap,
 )
 from stayfixed.memory.worktree import (
@@ -172,6 +175,7 @@ __all__ = [
     "overlay_root",
     "permitted_roots",
     "render",
+    "require_readable_record",
     "resolve",
     "resolved",
     "walk",

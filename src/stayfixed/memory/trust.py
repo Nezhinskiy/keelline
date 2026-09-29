@@ -298,6 +298,17 @@ def approval_recorded(path: Path, machine: Path | None) -> bool:
     return _path_key(path) in _recorded(machine)
 
 
+def require_readable_record(machine: Path | None) -> None:
+    """Refuse, as the gate itself would, when this machine's trust record is there and cannot be
+    read; say nothing otherwise.
+
+    For a caller that writes before it reaches the gate: `attach` reads the record in the index
+    render and the harness link, both after its first write, so it asks this first and a broken
+    record costs it nothing on disk.
+    """
+    _recorded(machine)
+
+
 def state(store: Store, config: Config) -> TrustState:
     current = store_digest(store, config)
     recorded = _recorded(store.machine).get(_key(store))

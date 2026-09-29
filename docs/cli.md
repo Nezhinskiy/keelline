@@ -2238,14 +2238,12 @@ answer, in the order the run meets them:
   read or is not UTF-8.
 - An existing `.stayfixed/local/attach.json` cannot be read, is not UTF-8, is not valid JSON or is
   not a JSON object.
+- A Codex rule file in the overlay cannot be read or is not UTF-8.
+- `git worktree list` fails.
 
-Every failure in that list happens before anything is written. Three ways to exit `1` come later,
-and leave behind what was written before them:
-
-- A Codex rule file in the overlay that is not UTF-8, met while the rule files are copied, with
-  `.gitignore`, the exclude block and the rule files before it already written.
-- `git worktree list` failing, once the ledger and the overlay's record are written.
-- A store that still does not resolve once the link tree is built.
+Every failure in that list happens before anything is written. One way to exit `1` comes later,
+and leaves behind what was written before it: a store that still does not resolve once the link
+tree is built.
 
 It exits `2` on a refusal, in the order the run meets them:
 
@@ -2267,25 +2265,26 @@ It exits `2` on a refusal, in the order the run meets them:
   symlink.
 - A `.stayfixed` that is a symlink, or an existing ledger naming files, settings keys or
   directories `attach` could not have written.
-- A `git check-ignore` that cannot answer; a `.codex` or `.claude` that is a symlink, on a run
-  that writes into it; a `git rev-parse --git-path info/exclude` that names no exclude file; an
-  exclude file that cannot be read, that holds a `stayfixed:attach` block opened or closed twice,
-  or that is a symlink when the block needs a line.
-- A `.gitignore` that cannot be read, is not UTF-8, holds a `stayfixed:ignore` region opened or
-  closed twice, or cannot be written. It is the first write, so this refusal leaves nothing
-  behind either.
+- A `git check-ignore` that cannot answer; a `.gitignore`, when it needs the `stayfixed:ignore`
+  region, that cannot be read, is not UTF-8 or holds that region opened or closed twice.
+- A `.codex` or `.claude` that is a symlink, on a run that writes into it; a
+  `git rev-parse --git-path info/exclude` that names no exclude file; an exclude file that cannot
+  be read or holds a `stayfixed:attach` block opened or closed twice (the refusal names the file),
+  or, when the block needs a line, that is a symlink or sits in a directory you cannot write.
+- A trust record, the machine's `trust.json`, that cannot be read or is not the record it should
+  be.
 
 Every refusal in that list happens before anything is written, so a refused attach leaves both the
-repository and the overlay as they were. Three ways to exit `2` come later, and leave behind what
-was written before them:
+repository and the overlay as they were. What is left can only happen once writing has begun:
 
-- A trust record, the machine's `trust.json`, that is not the record it should be. It is read
-  before the first write only when a real directory already sits where the harness memory link
-  goes, and is otherwise refused once the link tree is built.
+- A `.gitignore` that cannot be written. It is the first write, so this refusal leaves nothing
+  behind either.
+- An exclude file that cannot be written after all, which is refused, naming it, with
+  `.gitignore`'s region already written.
 - A directory in this project's share of the overlay that became a symlink between the moment it
   was checked and the moment it was written, which is refused.
-- Any other write that fails, the exclude file, a rule copy, the settings file, the ledger, the
-  overlay's record or a link, which ends as `internal error` with the error the system gave.
+- Any other write that fails, a rule copy, the settings file, the ledger, the overlay's record or a
+  link, which ends as `internal error` with the error the system gave.
 
 ---
 
@@ -2389,19 +2388,23 @@ It exits `2` on a refusal, in the order the run meets them:
 - A `stayfixed:ignore` region in `.gitignore` opened or closed twice, or otherwise with markers
   that no longer say where it ends.
 - A `git rev-parse --git-path info/exclude` that names no exclude file, an exclude file that cannot
-  be read, or a `stayfixed:attach` block in it opened or closed twice.
+  be read, or a `stayfixed:attach` block in it opened or closed twice (the refusal names the
+  file).
+- A recorded `.codex/rules/` copy reached through a symlink: a `.codex` or `.codex/rules` that
+  became one after the attach.
+- A `memory.groups` entry added since the attach that does not name a subdirectory of
+  `paths.memory`, in any checkout of the repository. The refusal counts it and does not print it.
 - A `.claude/settings.local.json` whose `permissions` is not an object, or whose
   `permissions.allow` is not a list of strings.
 
 Every one of those is answered before the first withdrawal, so a refused `detach` has removed
-nothing. Three ways to exit `2` come after the first withdrawal, and leave the ledger in place with
-part of the attach already undone:
+nothing. What is left can only happen once withdrawing has begun, and leaves the ledger in place
+with part of the attach already undone:
 
-- A `.codex` that is a symlink ends as `internal error` when the rule copies are removed, after
-  the settings file.
-- A `memory.groups` entry added since the attach that does not name a subdirectory of
-  `paths.memory` is refused when the link tree is withdrawn, after the rule copies.
-- Any other write or removal that fails ends as `internal error` with the error the system gave.
+- An exclude file that cannot be written, which is refused, naming it, once the settings, the rule
+  copies, the link trees and the `.gitignore` region are withdrawn.
+- Any other write or removal that fails, which ends as `internal error` with the error the system
+  gave.
 
 ---
 

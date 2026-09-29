@@ -1052,3 +1052,74 @@ def test_an_empty_memory_directory_the_owner_had_survives_the_round_trip(tmp_pat
     _detach(root, machine, home)
     assert (root / DEFAULT_MEMORY).is_dir()
     assert list((root / DEFAULT_MEMORY).iterdir()) == []
+
+
+# --- every refusal is made before the first withdrawal ----------------------------------------
+
+
+def _withdrawable(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home, confirmed=True)
+    assert (root / SETTINGS).is_file()
+    return root, store, machine, home
+
+
+def test_a_codex_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn(
+    tmp_path: Path,
+) -> None:
+    # A `.codex` that became a symlink after the attach was found by the removal of the first rule
+    # copy, after `.claude/settings.local.json` was withdrawn: `internal error: UnsafePath`, with
+    # the settings gone, the links and the ledger in place, and every later run failing at the
+    # same line. Each recorded rule copy is held to the project while the run is planned now.
+    #
+    # Mutation: `mutations.toml`'s "detach finds a linked .codex by removing through it".
+    root, _store, machine, home = _withdrawable(tmp_path)
+    elsewhere = tmp_path / "codex-elsewhere"
+    shutil.move(root / ".codex", elsewhere)
+    (root / ".codex").symlink_to(elsewhere)
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _detach(root, machine, home)
+    assert ".codex" in str(refused.value)
+    assert_snapshot_unchanged(root, before)
+
+
+@pytest.mark.parametrize("group", ["a//b", "../../x"])
+def test_a_group_added_since_the_attach_refuses_before_anything_is_withdrawn(
+    tmp_path: Path, group: str
+) -> None:
+    # A `memory.groups` entry added after the attach that is not one plain directory name was
+    # found by the link tree's withdrawal, after the settings, the rule copies and the earlier
+    # links were withdrawn, and the refusal printed the entry through `repr`. It is held to the
+    # link tree while the run is planned now, and the refusal counts it rather than quoting it:
+    # the entry is the repository's.
+    #
+    # Mutation: `mutations.toml`'s "detach finds an escaping group by withdrawing the tree".
+    root, _store, machine, home = _withdrawable(tmp_path)
+    text = (root / "stayfixed.toml").read_text(encoding="utf-8")
+    (root / "stayfixed.toml").write_text(
+        text.replace('groups = ["developer", "project-stable"]', f'groups = ["{group}"]'),
+        encoding="utf-8",
+    )
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _detach(root, machine, home)
+    assert group not in str(refused.value)
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_doubled_exclude_block_refuses_detach_naming_the_exclude_file(tmp_path: Path) -> None:
+    # The same refusal `attach` makes, and the same missing file name.
+    #
+    # Mutation: `mutations.toml`'s "a doubled exclude block is refused without its file".
+    root, _store, machine, home = _withdrawable(tmp_path)
+    path = _exclude_file(root)
+    begin = "# stayfixed:attach:begin\n"
+    path.write_text(path.read_text(encoding="utf-8") + begin, encoding="utf-8")
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _detach(root, machine, home)
+    assert "info/exclude" in str(refused.value)
+    assert_snapshot_unchanged(root, before)

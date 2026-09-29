@@ -38,8 +38,9 @@ work tree, where git reads `info/exclude` and `core.excludesFile` and no `.gitig
 two files the owner holds stand in for a line of the block and a `.gitignore`, which the
 repository authors, never does. **Write target**: `info/exclude` as
 `git rev-parse --git-path` names it — `guards.git_path`, the resolver `setup --git-hooks` uses —
-refused when it is a symlink, as `guards.githooks.install` refuses a symlinked hook, and written
-with `fsops.write_atomically`, whose rename replaces the name rather than writing through it.
+refused when it is a symlink, as `guards.githooks.install` refuses a symlinked hook, and when this
+user cannot write the directory that holds it, both while the run is planned, and written with
+`fsops.write_atomically`, whose rename replaces the name rather than writing through it.
 **Who must not be refused**: a checkout whose own `info/exclude` or global excludes file already
 hides everything, where `attach` changes nothing and so never needs the file at all, whatever a
 `.gitignore` in it says and whichever of those paths the repository tracks.
@@ -47,8 +48,9 @@ hides everything, where `attach` changes nothing and so never needs the file at 
 
 from __future__ import annotations
 
+import os
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -58,7 +60,7 @@ from stayfixed.errors import Refusal
 from stayfixed.gitenv import git_run
 from stayfixed.guards.api import git_path
 from stayfixed.printed import quoted
-from stayfixed.scaffold import Style, drop, extract, upsert
+from stayfixed.scaffold import RegionError, Style, drop, extract, upsert
 
 # What `git rev-parse --git-path` is asked for, and the region's name in it: the block reads
 # `# stayfixed:attach:begin` ... `# stayfixed:attach:end`.
@@ -89,6 +91,15 @@ LINKED = (
     "nothing was written. Replace the link with the file it points at and run it again"
 )
 UNREADABLE = "{path} cannot be read ({reason}), so nothing was written"
+# Asked of the directory the file is replaced in while the run is planned, so the common case (a
+# `.git/info` this user cannot write) refuses before `.gitignore` or anything else is written.
+UNWRITABLE = (
+    "{path} cannot be written, because this user cannot write the directory that holds it, so "
+    "nothing was written"
+)
+# The write itself failing, which no check made while planning can rule out: by then `attach` may
+# have written `.gitignore`'s region, and `detach` may have withdrawn what comes before the block.
+NOT_WRITTEN = "{path} could not be written ({reason})"
 
 
 @dataclass(frozen=True)
@@ -239,7 +250,7 @@ def planned_block(root: Path, relatives: Sequence[str]) -> ExcludeWrite | None:
         raise Refusal(LINKED.format(path=quoted(str(path))))
     read = _read(path)
     current = read or ""
-    earlier = extract(current, EXCLUDE_REGION, Style.HASH)
+    earlier = _named(path, extract, current)
     if earlier is None:
         records = [
             *((EXCLUDE_CREATED,) if read is None else ()),
@@ -251,7 +262,35 @@ def planned_block(root: Path, relatives: Sequence[str]) -> ExcludeWrite | None:
     new = (line for line in lines if line not in kept)
     body = "\n".join([EXCLUDE_NOTE, *records, *kept, *new])
     updated = upsert(current, EXCLUDE_REGION, body, Style.HASH)
-    return None if updated == current else ExcludeWrite(path, updated)
+    if updated == current:
+        return None
+    if not _writable(path):
+        raise Refusal(UNWRITABLE.format(path=quoted(str(path))))
+    return ExcludeWrite(path, updated)
+
+
+def _named(
+    path: Path,
+    region: Callable[[str, str, Style], str | None],
+    text: str,
+) -> str | None:
+    """`extract` or `drop` of the block, with the file named in a refusal: "region 'attach' is
+    opened or closed twice" said which region and never which file, and `.git/info/exclude` is
+    not one a person opens often."""
+    try:
+        return region(text, EXCLUDE_REGION, Style.HASH)
+    except RegionError as exc:
+        raise RegionError(f"{quoted(str(path))}: {exc}") from exc
+
+
+def _writable(path: Path) -> bool:
+    """Whether this user can replace `path`: `write_atomically` renames a new file in beside it,
+    so the directory it lives in (or, while that is not there yet, the nearest one above it that
+    is, where it would be created) must be writable and searchable."""
+    directory = path.parent
+    while not directory.exists() and directory != directory.parent:
+        directory = directory.parent
+    return os.access(directory, os.W_OK | os.X_OK)
 
 
 def withdrawn_block(root: Path) -> ExcludeWrite | None:
@@ -271,7 +310,7 @@ def withdrawn_block(root: Path) -> ExcludeWrite | None:
     if path.is_symlink() or not path.is_file():
         return None
     current = _read(path) or ""
-    body = extract(current, EXCLUDE_REGION, Style.HASH)
+    body = _named(path, extract, current)
     if body is None:
         return None
     records = _lines(body)
@@ -294,8 +333,13 @@ def _ending(text: str) -> str:
 
 def write(planned: ExcludeWrite) -> None:
     """Replace the exclude file in one rename, or remove it; the path is git's answer, not a
-    configured one."""
-    if planned.text is None:
-        fsops.remove_within(planned.path.parent, planned.path.name)
-        return
-    fsops.write_atomically(planned.path, planned.text, errors="surrogateescape")
+    configured one. A write that fails is a refusal naming the file, never a bare `OSError`."""
+    try:
+        if planned.text is None:
+            fsops.remove_within(planned.path.parent, planned.path.name)
+            return
+        fsops.write_atomically(planned.path, planned.text, errors="surrogateescape")
+    except OSError as exc:
+        raise Refusal(
+            NOT_WRITTEN.format(path=quoted(str(planned.path)), reason=fsops.said(exc))
+        ) from exc

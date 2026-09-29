@@ -3021,8 +3021,8 @@ reddens = [
 [[mutation]]
 name = "the ignore region is never written at all"
 file = "src/stayfixed/attach/write.py"
-before = "    _write_ignore_region(root)"
-after = "    pass"
+before = "        _write_ignore_region(root, planned.ignore)"
+after = "        pass"
 reddens = [
   "tests/attach/test_write.py::test_attach_writes_the_ignore_region_that_keeps_the_ledger_untracked",
   "tests/attach/test_write.py::test_attach_refuses_when_the_ignore_region_cannot_be_written",
@@ -3031,30 +3031,30 @@ reddens = [
 [[mutation]]
 name = "the ignore region is written after the ledger it untracks"
 file = "src/stayfixed/attach/write.py"
-before = """    if ignore_needed:
-        _write_ignore_region(root)
-    if hidden is not None:
-        exclude.write(hidden)
-    rules = _codex_rules(root, binding)
-    if written:
-        fsops.write_within(root, LOCAL_SETTINGS, merged)
-    # What an earlier attach left in the settings file, carried into the ledger written before
-    # the links so that a `PartialLink` half way through still leaves `detach` able to remove
-    # it. The real answer is taken again below, after the only function that can change it.
-    carried = _recorded_keys(root)
-    _write_ledger(root, binding, diff, rules, carried, previous, absent, parents, memory_created)"""
-after = """    if hidden is not None:
-        exclude.write(hidden)
-    rules = _codex_rules(root, binding)
-    if written:
-        fsops.write_within(root, LOCAL_SETTINGS, merged)
-    # What an earlier attach left in the settings file, carried into the ledger written before
-    # the links so that a `PartialLink` half way through still leaves `detach` able to remove
-    # it. The real answer is taken again below, after the only function that can change it.
-    carried = _recorded_keys(root)
-    _write_ledger(root, binding, diff, rules, carried, previous, absent, parents, memory_created)
-    if ignore_needed:
-        _write_ignore_region(root)"""
+before = """    if planned.ignore is not None:
+        _write_ignore_region(root, planned.ignore)
+    if planned.hidden is not None:
+        exclude.write(planned.hidden)
+    for target, text in planned.rules:
+        fsops.write_within(root, target, text)
+    rules = tuple(target for target, _ in planned.rules)
+    written = planned.settings is not None
+    if planned.settings is not None:
+        fsops.write_within(root, LOCAL_SETTINGS, planned.settings)
+    carried = planned.carried
+    _write_ledger(root, planned, carried)"""
+after = """    if planned.hidden is not None:
+        exclude.write(planned.hidden)
+    for target, text in planned.rules:
+        fsops.write_within(root, target, text)
+    rules = tuple(target for target, _ in planned.rules)
+    written = planned.settings is not None
+    if planned.settings is not None:
+        fsops.write_within(root, LOCAL_SETTINGS, planned.settings)
+    carried = planned.carried
+    _write_ledger(root, planned, carried)
+    if planned.ignore is not None:
+        _write_ignore_region(root, planned.ignore)"""
 reddens = [
   "tests/attach/test_write.py::test_the_ignore_region_is_written_before_the_ledger_and_not_merely_written",
   "tests/attach/test_write.py::test_attach_refuses_when_the_ignore_region_cannot_be_written",
@@ -3210,7 +3210,7 @@ reddens = [
 [[mutation]]
 name = "the ledger records the fallback from the run rather than from the file"
 file = "src/stayfixed/attach/write.py"
-before = '    return (FALLBACK_KEY,) if FALLBACK_KEY in settings_document(local_document(root)) else ()'
+before = '    return _keys_in(local_document(root))'
 after = '    return ()'
 reddens = [
   "tests/attach/test_links.py::test_a_second_attach_that_changes_nothing_still_records_the_standing_fallback",
@@ -3528,7 +3528,7 @@ before = '''    previous = _existing_ledger(root)
 # The write is put above the read rather than the read moved below the writes: `previous` is also
 # read by the settings-candidate question above the first write, so moving the read would break
 # the name instead of the order.
-after = '''    _write_ignore_region(root)
+after = '''    _write_ignore_region(root, upsert("", IGNORE_REGION, IGNORE_BODY, Style.HASH))
     previous = _existing_ledger(root)
     # Above every write, because the first of them creates `.stayfixed/local/` and the answer
     # would then be wrong by exactly the directory this run brought into existence.
@@ -3561,6 +3561,7 @@ before = '''    checkouts = _checkouts(root)
     # would show that checkout's settings file and rule copies in its `git status`.
     kept = _another_attached(root, checkouts)
     hidden = None if kept else exclude.withdrawn_block(root)
+    _refuse_unwithdrawable(root, recorded, checkouts, config)
     allow_removed = _withdraw_settings(root, recorded)'''
 after = '''    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
     allow_removed = _withdraw_settings(root, recorded)
@@ -3568,7 +3569,8 @@ after = '''    ignore_remainder = None if _footprint_owns_region(root) else _ign
     for tree in checkouts:
         harness_anchor(tree, home)
     kept = _another_attached(root, checkouts)
-    hidden = None if kept else exclude.withdrawn_block(root)'''
+    hidden = None if kept else exclude.withdrawn_block(root)
+    _refuse_unwithdrawable(root, recorded, checkouts, config)'''
 reddens = [
   "tests/attach/test_detach.py::test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn",
 ]
@@ -13017,8 +13019,9 @@ reddens = [
 [[mutation]]
 name = "a second attach forgets that the first created paths.memory"
 file = "src/stayfixed/attach/write.py"
-before = '        "memory_created": memory_created or (previous is not None and previous.memory_created),'
-after = '        "memory_created": memory_created,'
+before = """        "memory_created": planned.memory_created
+        or (previous is not None and previous.memory_created),"""
+after = '        "memory_created": planned.memory_created,'
 reddens = [
   "tests/attach/test_detach.py::test_detach_takes_back_the_exclude_block_the_empty_directories_and_the_harness_slug",
 ]
@@ -13168,6 +13171,94 @@ before = "        changed = initialised.changed"
 after = "        changed = ()"
 reddens = [
   "tests/setup/test_setup.py::test_rerunning_overlay_create_says_what_init_changed_in_the_overlay_it_found",
+]
+
+# The overlay's rule sources were read and decoded while they were copied, after `.gitignore`, the
+# exclude block and the rules before a bad one were written, and the block then hid the partial
+# copies. They are read while `attach` plans; this is the refusal that makes that read count.
+[[mutation]]
+name = "attach copies past an overlay rule that is not UTF-8"
+file = "src/stayfixed/attach/write.py"
+before = '            raise Failure(f"{source} is not UTF-8 text, so nothing was written") from None'
+after = "            continue"
+reddens = [
+  "tests/attach/test_write.py::test_an_overlay_rule_that_is_not_utf8_stops_attach_before_it_writes",
+]
+
+# The trust record was first read by the index render and the harness link, after the settings,
+# the rule copies, the ledger, the binding record and the link tree were written.
+[[mutation]]
+name = "attach reads the trust record only after it has written"
+file = "src/stayfixed/attach/write.py"
+before = "    require_readable_record(machine)"
+after = "    pass"
+reddens = [
+  "tests/attach/test_write.py::test_a_trust_record_that_does_not_parse_stops_attach_before_it_writes",
+]
+
+# A `.git/info` the user cannot write ended as `internal error: PermissionError` after `.gitignore`
+# had its region.
+[[mutation]]
+name = "attach finds out the exclude file cannot be written by writing it"
+file = "src/stayfixed/attach/exclude.py"
+before = "    if not _writable(path):"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_write.py::test_an_exclude_file_that_cannot_be_written_is_refused_by_name_before_the_first_write",
+]
+
+[[mutation]]
+name = "a failed exclude write is an internal error"
+file = "src/stayfixed/attach/exclude.py"
+before = """    except OSError as exc:
+        raise Refusal(
+            NOT_WRITTEN"""
+after = """    except ValueError as exc:
+        raise Refusal(
+            NOT_WRITTEN"""
+reddens = [
+  "tests/attach/test_write.py::test_an_exclude_file_whose_write_fails_is_a_refusal_naming_it",
+]
+
+# "region 'attach' is opened or closed twice" named the region and never the file.
+[[mutation]]
+name = "a doubled exclude block is refused without its file"
+file = "src/stayfixed/attach/exclude.py"
+before = '        raise RegionError(f"{quoted(str(path))}: {exc}") from exc'
+after = "        raise"
+reddens = [
+  "tests/attach/test_write.py::test_a_doubled_exclude_block_is_refused_naming_the_exclude_file",
+  "tests/attach/test_detach.py::test_a_doubled_exclude_block_refuses_detach_naming_the_exclude_file",
+]
+
+# A `.codex` linked in after the attach was found by the first rule removal, after the settings
+# file was withdrawn, as `internal error: UnsafePath`.
+[[mutation]]
+name = "detach finds a linked .codex by removing through it"
+file = "src/stayfixed/attach/write.py"
+before = """    for rule in recorded.rules:
+        try:
+            contained(root, rule)"""
+after = """    for rule in ():
+        try:
+            contained(root, rule)"""
+reddens = [
+  "tests/attach/test_detach.py::test_a_codex_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn",
+]
+
+# A group added since the attach that is no one name inside `paths.memory` was found by the link
+# tree's withdrawal, after the settings, the rule copies and earlier links were withdrawn, and the
+# refusal printed the repository's entry through `repr`.
+[[mutation]]
+name = "detach finds an escaping group by withdrawing the tree"
+file = "src/stayfixed/attach/write.py"
+before = """    for tree in checkouts:
+        base = contained(tree, config.paths.memory, allow_final_symlink=True)"""
+after = """    for tree in []:
+        base = contained(tree, config.paths.memory, allow_final_symlink=True)"""
+reddens = [
+  "tests/attach/test_detach.py::test_a_group_added_since_the_attach_refuses_before_anything_is_withdrawn[a//b]",
+  "tests/attach/test_detach.py::test_a_group_added_since_the_attach_refuses_before_anything_is_withdrawn[../../x]",
 ]
 
 # CI's rendered-artifact check accepted any directory named `.git`, so an empty `mkdir .git` stood

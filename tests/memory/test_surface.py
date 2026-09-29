@@ -73,6 +73,7 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         # and to tell a broken record from an unapproved store.
         "may_inject",
         "approval_recorded",  # the gate answered for a store attach has not built yet
+        "require_readable_record",  # the trust record read before attach writes anything
         "changed",
         "TrustState",
         "UnreadableTrustRecord",
