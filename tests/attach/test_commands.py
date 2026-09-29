@@ -427,7 +427,8 @@ def test_a_project_not_in_overlay_mode_is_refused_before_a_byte_is_written(tmp_p
 
     code, out, err = cli(root, tmp_path, "attach", "--store", str(store), "--yes", machine=machine)
     assert code == 2
-    assert "overlay" in out + err
+    # The refusal's own sentence: the store path the command line carries says "overlay" too.
+    assert "memory.mode is 'local-only'" in out + err
     assert_snapshot_unchanged(root, project_files)
     assert_snapshot_unchanged(overlay, overlay_files)
     assert _tree(root) == project_tree
@@ -437,7 +438,7 @@ def test_a_project_not_in_overlay_mode_is_refused_before_a_byte_is_written(tmp_p
         root, tmp_path, "attach", "--check", "--store", str(store), machine=machine
     )
     assert code == 2
-    assert "overlay" in out + err
+    assert "memory.mode is 'local-only'" in out + err
 
 
 def test_a_harness_link_that_waits_for_approval_is_said_with_the_way_out(tmp_path: Path) -> None:

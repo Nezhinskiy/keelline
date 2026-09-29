@@ -28,7 +28,7 @@ _PLAN_OK = (
 # read exactly like a graph with nothing wrong in it. The reason is the resolver's own sentence,
 # which every cause it refuses on now carries — stayfixed's text, which prints — and never its
 # detail, which carries `memory.groups` and `paths.memory`, both the repository's. The pointer is
-# the floor for a reason with no sentence of its own.
+# the floor for a resolver that gave no reason at all.
 NO_STORE = "memory-store-unresolved"
 _NOT_SAID = "the memory store did not resolve; `stayfixed memory index --check` says why"
 
@@ -40,7 +40,7 @@ def _graph_notices(args: argparse.Namespace, root: Path, config: Config) -> list
     machine = Path(args.machine) if args.machine else None
     store, reason = resolved(root, config, override=args.store, machine=machine)
     if store is None:
-        said = _NOT_SAID if reason is None or reason.said is None else reason.said
+        said = _NOT_SAID if reason is None else reason.said
         return [Finding(NO_STORE, "", None, said)]
     return check_memory_graph(store, config)
 

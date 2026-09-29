@@ -220,7 +220,15 @@ def store_digest(store: Store, config: Config) -> str:
 
 
 def _key(store: Store) -> str:
-    return str(store.path.resolve())
+    return _path_key(store.path)
+
+
+def _path_key(path: Path) -> str:
+    """The one spelling of a trust record's key: the store's directory, resolved.
+
+    `approval_recorded` asks it of a path before any store exists there, and a second spelling
+    would let the two disagree about which record is the store's."""
+    return str(path.resolve())
 
 
 class UnreadableTrustRecord(Refusal):
@@ -287,7 +295,7 @@ def approval_recorded(path: Path, machine: Path | None) -> bool:
     attach, before the link tree `resolve` needs is built. No record at all is a gate that cannot
     open for that store, whatever it will hold; a record, current or not, is one that might.
     """
-    return str(path.resolve()) in _recorded(machine)
+    return _path_key(path) in _recorded(machine)
 
 
 def state(store: Store, config: Config) -> TrustState:

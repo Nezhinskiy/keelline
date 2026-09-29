@@ -590,11 +590,9 @@ def _fallback_possible(
     link is not there to point at the store. `_link` leaves only one thing standing where the link
     goes — a real entry, which is what the harness makes of the path on its own — so a path that
     is absent or already a symlink is a link this run makes, and no fallback. Where a real entry
-    sits, the gate is asked of the store as it resolves now; a store that does not resolve yet —
-    a first attach, before the link tree exists — is answered "possible", because the gate cannot
-    be asked of it and the question decides a refusal. The two agree with `_harness_fallback`
-    by construction, so its write is never one this run did not hold to the project and hide
-    above its first write.
+    sits, the gate is asked of the store as it resolves now, and of a store that does not resolve
+    yet as the next paragraph says. The two agree with `_harness_fallback` by construction, so its
+    write is never one this run did not hold to the project and hide above its first write.
 
     **A first attach is answered too, without the link tree.** `resolve` needs the tree this run
     is about to build, so before it exists the gate is asked the one question it can be: does

@@ -66,7 +66,6 @@ def _machine(args: argparse.Namespace) -> Path | None:
 # A reason that has words of stayfixed's own — which cause, and the way out — says them *before*
 # the region: inside it they are data a model is told not to act on, and the way out is the one
 # thing a reader has to act on.
-_NO_STORE = "no memory store; the reason below is repository-authored text, shown as data"
 _SAID = "no memory store: {said}; the detail below is repository-authored text, shown as data"
 
 
@@ -75,7 +74,7 @@ def _no_store(reason: Unresolved | None) -> Failure:
         return Failure("no memory store")
     if reason.detail is None:
         return Failure(f"no memory store: {reason.said}")
-    lead = _NO_STORE if reason.said is None else _SAID.format(said=reason.said)
+    lead = _SAID.format(said=reason.said)
     return Failure(f"{lead}\n{trust.wrap(reason.detail, trust.new_nonce())}")
 
 

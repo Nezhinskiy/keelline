@@ -32,7 +32,7 @@ walk the graph check reads (`WIKI_LINK`, `walk`), the binding's git answer (`ori
 **Thirteen more have no importer and stay, each for a reason written here**, because a name
 kept in silence is what made this pass necessary:
 
-- **The types those twenty-seven name in their signatures**: `Bundle` and `Fit` (`fit`,
+- **The types those twenty-eight name in their signatures**: `Bundle` and `Fit` (`fit`,
   `render`), `Unresolved` (`resolved`), `Walk` (`walk`), and `Note` with the `Provenance` inside
   it, which `Walk` names in turn. `tests/test_surfaces.py` derives this rather than restating
   it, and a return type absent from a surface is a value a consumer can hold and cannot

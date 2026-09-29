@@ -107,11 +107,12 @@ class Unresolved:
     repository chose, so it prints as it is and a command puts it *before* the region
     `trust.wrap` marks as data — which is where a way out has to be for anyone to act on it.
     `detail` may carry `memory.groups` entries, `paths.memory` or the project's name, and reaches
-    a reader only inside that region (`memory.commands._no_store`). Either may be absent; `str()`
-    joins what there is, for a caller that only reports it wrapped.
+    a reader only inside that region (`memory.commands._no_store`). Every cause has a sentence of
+    its own, so only `detail` may be absent; `str()` joins what there is, for a caller that only
+    reports it wrapped.
     """
 
-    said: str | None
+    said: str
     detail: str | None = None
 
     def __str__(self) -> str:
