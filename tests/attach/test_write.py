@@ -9,6 +9,7 @@ gate enforced by model compliance is not a gate.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -1278,11 +1279,191 @@ def test_a_checkout_that_already_hides_everything_is_not_touched(tmp_path: Path)
     assert _status(root) == []
 
 
+def test_a_checkout_whose_global_excludes_file_hides_everything_is_not_touched(
+    tmp_path: Path,
+) -> None:
+    # The other owner-held source: a global excludes file (`core.excludesFile`) that already
+    # hides the whole footprint. Its lines count as hidden, so neither ignore file changes.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
+    _committed(root)
+    owner = tmp_path / "owner-excludes"
+    lines = [f"/{placed}" for placed in _placed()] + [
+        ".stayfixed/local/",
+        ".stayfixed/assessment.json",
+    ]
+    owner.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _git(root, "config", "core.excludesFile", str(owner))
+    exclude = _exclude(root)
+    before = exclude.read_bytes() if exclude.is_file() else None
+    _attach_confirmed(root, store, machine, tmp_path / "home")
+    # Non-vacuous: the attach did place its files, so there was something to hide.
+    assert (root / SETTINGS).is_file()
+    assert not (root / ".gitignore").exists()
+    assert (exclude.read_bytes() if exclude.is_file() else None) == before
+    assert _status(root) == []
+
+
+def test_a_global_excludes_file_named_by_a_relative_path_still_stands_in_for_the_block(
+    tmp_path: Path,
+) -> None:
+    # git opens a relative `core.excludesFile` from the top of the work tree. The question about
+    # the owner's own excludes is asked over an empty work tree, where that path names no file,
+    # so the owner's lines stood in for nothing and every path they hide got a line of its own.
+    #
+    # Mutation: `mutations.toml`'s "the owner's relative excludes file is read from the empty work
+    # tree".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
+    _committed(root)
+    owner = tmp_path / "owner-excludes"
+    lines = [f"/{placed}" for placed in _placed()] + [
+        ".stayfixed/local/",
+        ".stayfixed/assessment.json",
+    ]
+    owner.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    relative = os.path.relpath(owner, root)
+    _git(root, "config", "core.excludesFile", relative)
+    # Non-vacuous: the path is relative, and git reads it from the checkout's top.
+    assert not Path(relative).is_absolute()
+    assert _check_ignore(root, SETTINGS)
+    exclude = _exclude(root)
+    before = exclude.read_bytes() if exclude.is_file() else None
+    _attach_confirmed(root, store, machine, tmp_path / "home")
+    assert (root / SETTINGS).is_file()
+    assert (exclude.read_bytes() if exclude.is_file() else None) == before
+    assert _status(root) == []
+
+
+def test_a_committed_gitignore_does_not_stand_in_for_the_exclude_block(tmp_path: Path) -> None:
+    # A committed `.gitignore` is the repository's, and a pull can take a line out of it. Counted
+    # as hiding the owner's links, it left them out of the block, and an upstream commit that
+    # dropped the link tree's line from `.gitignore` showed the links and the settings file in every
+    # `git status` until the next attach. Only the owner's own excludes -- `info/exclude` and the
+    # global excludes file -- stand in for the block.
+    #
+    # Mutation: `mutations.toml`'s "the owner's exclude question reads the checkout's .gitignore".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
+    (root / ".gitignore").write_text(f"{DEFAULT_MEMORY}/\n.claude/\n.codex/\n", encoding="utf-8")
+    _committed(root)
+    _attach_confirmed(root, store, machine, tmp_path / "home")
+    body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
+    assert body is not None
+    for placed in _placed():
+        assert f"/{placed}" in body.split("\n"), placed
+    # Upstream drops the lines; the owner's files stay hidden.
+    (root / ".gitignore").write_text(
+        (root / ".gitignore")
+        .read_text(encoding="utf-8")
+        .split("# stayfixed:ignore:begin")[0]
+        .replace(f"{DEFAULT_MEMORY}/\n", "")
+        .replace(".claude/\n", "")
+        .replace(".codex/\n", "")
+        + "# stayfixed:ignore:begin"
+        + (root / ".gitignore").read_text(encoding="utf-8").split("# stayfixed:ignore:begin")[1],
+        encoding="utf-8",
+    )
+    assert _status(root) == [" M .gitignore"]
+
+
+def test_a_path_the_owners_global_excludes_hide_gets_no_line_whatever_the_gitignore_says(
+    tmp_path: Path,
+) -> None:
+    # The common dotfiles layout: the owner's global excludes file (`~/.config/git/ignore`, read
+    # with no `core.excludesFile` set) hides the settings file, and the repository's committed
+    # `.gitignore` names it too. Asked which pattern decides, git names the `.gitignore`, which
+    # outranks the owner's file, and that answer gave the settings file a redundant line of its
+    # own: the owner's line keeps it hidden whatever a pull does to the `.gitignore`.
+    #
+    # Mutation: `mutations.toml`'s "the exclude block ignores what the owner's excludes hide".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
+    (root / ".gitignore").write_text(f"{SETTINGS}\n", encoding="utf-8")
+    _committed(root)
+    ignore = Path.home() / ".config" / "git" / "ignore"
+    ignore.parent.mkdir(parents=True)
+    ignore.write_text(f"{SETTINGS}\n", encoding="utf-8")
+    _attach_confirmed(root, store, machine, tmp_path / "home")
+    body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
+    # Non-vacuous: the run wrote the settings file, and a block for what nobody else hides.
+    assert (root / SETTINGS).is_file()
+    assert body is not None and f"/{DEFAULT_MEMORY}/developer" in body.split("\n")
+    assert f"/{SETTINGS}" not in body.split("\n")
+    assert _status(root) == [" M .gitignore"]
+
+
+def test_a_gitignore_a_sparse_checkout_leaves_out_does_not_stand_in_for_the_block(
+    tmp_path: Path,
+) -> None:
+    # A sparse checkout keeps a `.gitignore` it leaves out of the work tree in the index only,
+    # marked skip-worktree, and git reads such a file from the index when it is not on disk. The
+    # question about the owner's own excludes is asked against an empty work tree, where no
+    # `.gitignore` is on disk: read with the index, it took the repository's line for the
+    # owner's again and left the link tree out of the block.
+    #
+    # Mutation: `mutations.toml`'s "the owner's exclude question reads the index".
+    root, store, machine = _attachable(tmp_path)
+    (root / ".gitignore").write_text(f"{DEFAULT_MEMORY}/\n", encoding="utf-8")
+    _committed(root)
+    _git(root, "update-index", "--skip-worktree", ".gitignore")
+    (root / ".gitignore").unlink()
+    # Non-vacuous: git still reads the left-out file, so the link tree's directory is ignored.
+    assert _check_ignore(root, f"{DEFAULT_MEMORY}/developer")
+    _attach_confirmed(root, store, machine, tmp_path / "home")
+    body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
+    assert body is not None
+    for placed in (f"{DEFAULT_MEMORY}/MEMORY.md", f"{DEFAULT_MEMORY}/developer"):
+        assert f"/{placed}" in body.split("\n"), placed
+
+
+def test_a_path_the_owners_excludes_re_include_is_still_hidden(tmp_path: Path) -> None:
+    # `check-ignore -v` reports a path whose last matching pattern is a negation, and exits 0 for
+    # it. Read as "hidden", a link the owner's excludes file re-includes got no line and showed
+    # in `git status`. No mutation: the question is asked without `-v`, so git applies the
+    # negation itself and no line of stayfixed's reads it; the test holds the behaviour.
+    root, store, machine = _attachable(tmp_path)
+    _committed(root)
+    owner = tmp_path / "owner-excludes"
+    owner.write_text(f"{DEFAULT_MEMORY}/*\n!{DEFAULT_MEMORY}/developer\n", encoding="utf-8")
+    _git(root, "config", "core.excludesFile", str(owner))
+    _attach_confirmed(root, store, machine, tmp_path / "home")
+    body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
+    assert body is not None and f"/{DEFAULT_MEMORY}/developer" in body.split("\n")
+    # The other links the owner's file hides get no line of their own.
+    assert f"/{DEFAULT_MEMORY}/project-stable" not in body.split("\n")
+    assert _status(root) == ["?? .gitignore"]
+
+
+def test_the_block_keeps_what_an_earlier_attach_hid_when_the_grant_changes(
+    tmp_path: Path,
+) -> None:
+    # A path an earlier block hides reads as ignored now. Rebuilt from one run's answer alone, the
+    # block dropped it: attach with an overlay granting nothing, grant a rule, attach again, and
+    # the block held only the settings file while `git status` listed the whole link tree.
+    #
+    # Mutation: `mutations.toml`'s "the exclude block forgets what an earlier attach hid".
+    root, store, machine = _attachable(tmp_path)
+    _committed(root)
+    home = tmp_path / "home"
+    _attach_confirmed(root, store, machine, home)
+    first = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
+    # Non-vacuous: the first block names the link tree and not the settings file.
+    assert first is not None and f"/{DEFAULT_MEMORY}/developer" in first
+    assert SETTINGS not in first
+    _overlay_grants(store, allow=(RULE,))
+    _attach_confirmed(root, store, machine, home)
+    second = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
+    assert second is not None and f"/{SETTINGS}" in second.split("\n")
+    assert _status(root) == ["?? .gitignore"]
+
+
 def test_a_second_attach_changes_neither_ignore_file(tmp_path: Path) -> None:
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
     _committed(root)
     home = tmp_path / "home"
     _attach_confirmed(root, store, machine, home)
+    # Non-vacuous: the first attach did write both, so "unchanged" is about a block and a region
+    # and not about two files that were never there.
+    body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
+    assert body is not None and SETTINGS in body
+    assert extract((root / ".gitignore").read_text(encoding="utf-8"), "ignore", Style.HASH)
     gitignore, exclude = (root / ".gitignore").read_bytes(), _exclude(root).read_bytes()
     _attach_confirmed(root, store, machine, home)
     assert (root / ".gitignore").read_bytes() == gitignore

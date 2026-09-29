@@ -2138,9 +2138,14 @@ entry can; `detach` reads it and nothing else.
 
 **What it places, it hides from git, unless git hides it already.** The link tree (`MEMORY.md`
 and one link per group), each `.codex/rules/` file and — on a run that writes it, or after one
-that did — `.claude/settings.local.json` are this machine's own, so each one `git check-ignore`
-does not already report as ignored is listed in the exclude-file block, one anchored line per
-path; a tracked file is not ignored in that sense and is listed like any other. A link whose
+that did — `.claude/settings.local.json` are this machine's own, so each one is listed in the
+exclude-file block, one anchored line per path, unless your own excludes already hide it: the
+repository's exclude file or your global excludes file (`core.excludesFile`), read on their own.
+A `.gitignore` in the checkout does not stand in for the block, because the repository authors it
+and a pull can change it: a path only a `.gitignore` hides gets a line, and a path your own
+excludes hide gets none, whatever a `.gitignore` also says. A file the repository tracks is
+listed only when your own excludes do not hide it, since no exclude line hides a tracked file. A
+link whose
 name no single exclude line can hold — a group name with a line break, a NUL, U+2028 or another
 character a line reader may split at — gets no line and stays visible, rather than being written
 as a line git, or a later `attach` reading the block back, would take for several. A path this run
@@ -2151,9 +2156,10 @@ would be taken — a real directory already sits where the harness memory link g
 is approved — `attach` skips it and its line says what the harness link is missing and what to
 do. Whether the fallback may be taken is decided before the first write too; on a first attach,
 with no approval recorded for the store yet, it cannot be. A checkout that already hides all of
-them — in its own exclude file, a global excludes file or `.gitignore` — gets no block and no
-`.gitignore` change, so `git status` after an attach shows at most the `stayfixed:ignore`
-region. `.gitignore` is never written beyond that region.
+them in its own exclude file or a global excludes file gets no block, and one that already hides
+`.stayfixed/local/` and `.stayfixed/assessment.json` by any means, `.gitignore` included, gets no
+`.gitignore` change, so `git status` after an attach shows at most the `stayfixed:ignore` region.
+`.gitignore` is never written beyond that region.
 
 It also **removes** one file, in one case. The `autoMemoryDirectory` fallback is taken only while
 the harness memory link cannot be made, so when the link becomes possible again — or when the

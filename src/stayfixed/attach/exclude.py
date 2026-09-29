@@ -1,4 +1,4 @@
-"""The block `attach` keeps in the repository's `info/exclude`, and the one question it is built on.
+"""The block `attach` keeps in the repository's `info/exclude`, and the questions it is built on.
 
 `attach` puts machine-local files into a checkout: the link tree under `paths.memory`, the Codex
 rule copies under `.codex/rules/` and `.claude/settings.local.json`. None of them is anything a
@@ -9,12 +9,19 @@ hide them: it is committed, so the hiding would itself be a change every collabo
 exclude file, which no clone carries, and git resolves it in the common directory, so one block
 covers the main checkout and every worktree.
 
-**Only what git does not hide already.** The question is `git check-ignore --stdin`, and
-deliberately **without** `--no-index`: "ignored" here means what `git status` would hide, and a
-tracked file that matches a pattern is not hidden — the rule `project/ignored.py` states for the
-same command. A checkout that keeps the whole footprint out of git already, through its own
-`info/exclude` or a global excludes file, gets no block at all, and `.gitignore`'s region is asked
-about the same way (`write.attach`), so such a checkout is not touched.
+**Only what the owner's own excludes do not hide already.** A path gets a line unless the two
+files the owner holds, this repository's `info/exclude` and the global excludes file
+(`core.excludesFile`), hide it on their own (`unhidden_by_owner`). A `.gitignore` in the checkout
+is the repository's, and a pull can take the line out of it: counted as hiding the owner's links,
+it left them out of the block and an upstream commit showed them, and the settings file, in
+`git status` until the next attach. So a path both the owner's files and a `.gitignore` hide gets
+no line, and a path only a `.gitignore` hides gets one. A checkout whose own excludes keep the
+whole footprint out of git gets no block. `.gitignore`'s region is asked the plain question
+(`unignored`, from `write.attach`), deliberately **without** `--no-index`: "ignored" there means
+what `git status` would hide, where a tracked file that matches a pattern is not hidden (the rule
+`project/ignored.py` states for the same command), and any source counts, because that region
+only keeps stayfixed's own local state out of git, so a checkout that already hides it by any
+means is not touched.
 
 Security ruling, in the order the template asks for it. **Preconditions**: every candidate path is
 computed by stayfixed — `paths.memory` and each `memory.groups` entry are repository-authored, but
@@ -25,17 +32,22 @@ the pattern would be a shorter path's), and every other character `str.splitline
 reader that splits there would take one line for several). Of the characters left, git's
 pattern syntax gives a meaning to `\\`, `*`, `?`, `[` and a space (a trailing one is dropped), and
 each is escaped, so a group named `*` hides that one link and not the directory. The block is read
-back the way git reads it, at `\\n` alone. **Anchor**: git's own ignore evaluation in this
-checkout, which is the only authority on what `git status` shows. **Write
-target**: `info/exclude` as `git rev-parse --git-path` names it — `guards.git_path`, the resolver
-`setup --git-hooks` uses — refused when it is a symlink, as `guards.githooks.install` refuses a
-symlinked hook, and written with `fsops.write_atomically`, whose rename replaces the name rather
-than writing through it. **Who must not be refused**: a checkout that already hides everything,
-where `attach` changes nothing and so never needs the file at all.
+back the way git reads it, at `\\n` alone. **Anchor**: git's own ignore evaluation, the only
+authority on what an exclude line hides, asked of this repository's git directory over an empty
+work tree, where git reads `info/exclude` and `core.excludesFile` and no `.gitignore`, so only the
+two files the owner holds stand in for a line of the block and a `.gitignore`, which the
+repository authors, never does. **Write target**: `info/exclude` as
+`git rev-parse --git-path` names it — `guards.git_path`, the resolver `setup --git-hooks` uses —
+refused when it is a symlink, as `guards.githooks.install` refuses a symlinked hook, and written
+with `fsops.write_atomically`, whose rename replaces the name rather than writing through it.
+**Who must not be refused**: a checkout whose own `info/exclude` or global excludes file already
+hides everything, where `attach` changes nothing and so never needs the file at all, whatever a
+`.gitignore` in it says and whichever of those paths the repository tracks.
 """
 
 from __future__ import annotations
 
+import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -85,15 +97,69 @@ def unignored(root: Path, relatives: Sequence[str]) -> tuple[str, ...]:
     matched", an answer; anything but 0 and 1 is no answer, and a refusal, because treating it
     as "nothing is ignored" would write, and treating it as "everything is" would hide nothing.
     """
+    return _unmatched(root, relatives, "check-ignore", "--stdin", "-z")
+
+
+def _unmatched(root: Path, relatives: Sequence[str], *asked: str) -> tuple[str, ...]:
+    """The members of `relatives` the `check-ignore --stdin -z` in `asked` does not answer."""
     if not relatives:
         return ()
-    code, out = git_run(root, "check-ignore", "--stdin", "-z", stdin="\0".join(relatives))
+    code, out = git_run(root, *asked, stdin="\0".join(relatives))
     if code == 1:
         return tuple(relatives)
     if code != 0:
         raise Refusal(UNANSWERED)
     hidden = {name for name in out.split("\0") if name}
     return tuple(relative for relative in relatives if relative not in hidden)
+
+
+def unhidden_by_owner(root: Path, relatives: Sequence[str]) -> tuple[str, ...]:
+    """The members of `relatives` the owner's own two files, read alone, do not hide, in their
+    given order: the ones the block must hold.
+
+    The question is `check-ignore` asked of this repository's git directory with an empty
+    temporary directory as the work tree, so git finds no `.gitignore` to read and answers from
+    `info/exclude` and the global excludes file only, applying their negations itself. Each part
+    of it is what keeps a `.gitignore` out: `--work-tree`, because with `--git-dir` alone the
+    current directory, the checkout, is the work tree again; `--no-index`, because git reads a
+    skip-worktree `.gitignore`, which a sparse checkout leaves out of the work tree, from the
+    index when the file is not on disk; and both as options, since `git_run` drops `GIT_DIR` and
+    `GIT_WORK_TREE` from the environment. A path that only a `.gitignore` hides gets a line, since
+    a pull can take that line out, and a path the owner's files hide gets none, whatever the
+    `.gitignore` says. What git shows in spite of the owner's files, a tracked file or one a
+    `.gitignore` re-includes, is not asked about: no exclude line hides either, and a line for
+    one would need the exclude file written, which is refused when it is a symlink.
+    """
+    if not relatives:
+        return ()
+    code, answer = git_run(root, "rev-parse", "--absolute-git-dir")
+    if code != 0:
+        raise Refusal(UNANSWERED)
+    git_dir = answer.removesuffix("\n")
+    around = (*_excludes_file(root), f"--git-dir={git_dir}")
+    with tempfile.TemporaryDirectory() as empty:
+        asked = (*around, f"--work-tree={empty}", "check-ignore", "--no-index", "--stdin", "-z")
+        unheld = set(_unmatched(root, relatives, *asked))
+    return tuple(relative for relative in relatives if relative in unheld)
+
+
+def _excludes_file(root: Path) -> tuple[str, ...]:
+    """`-c core.excludesFile=<path>` when the owner's setting is a relative path, else nothing.
+
+    git opens a relative `core.excludesFile` from the top of the work tree, which for the owner's
+    question is the empty directory, so there it would name no file and every path it hides would
+    get a line. Made absolute against the checkout's top, it names the file git reads for the
+    checkout. Exit 1 is "not set", where git reads `~/.config/git/ignore`, an absolute path.
+    """
+    code, answer = git_run(root, "config", "--type=path", "--get", "core.excludesFile")
+    if code == 1:
+        return ()
+    if code != 0:
+        raise Refusal(UNANSWERED)
+    setting = answer.removesuffix("\n")
+    if not setting or Path(setting).is_absolute():
+        return ()
+    return ("-c", f"core.excludesFile={root / setting}")
 
 
 def pattern(relative: str) -> str | None:
@@ -143,7 +209,7 @@ def planned_block(root: Path, relatives: Sequence[str]) -> ExcludeWrite | None:
     for relative in relatives:
         # `allow_final_symlink`: the link tree's entries are symlinks by design.
         contained(root, relative, allow_final_symlink=True)
-    lines = [line for line in map(pattern, unignored(root, relatives)) if line is not None]
+    lines = [line for line in map(pattern, unhidden_by_owner(root, relatives)) if line is not None]
     if not lines:
         return None
     path = git_path(root, EXCLUDE, "exclude file")

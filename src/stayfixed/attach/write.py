@@ -1121,9 +1121,10 @@ def attach(
     parents = _absent_memory_parents(root, config)
     # What git already hides is asked here, above the first write, and decides both ignore
     # files: `.gitignore`'s region only when one of its two paths is still visible, and the
-    # `info/exclude` block only for the paths `attach` places that are. Each can refuse — git
-    # cannot answer, a path leaves the project, the exclude file is a symlink — and each
-    # refusal is made while nothing has been written.
+    # `info/exclude` block for the paths `attach` places that the owner's own excludes do not
+    # hide (`exclude.unhidden_by_owner`). Each can refuse — git cannot answer, a path leaves the
+    # project, the exclude file is a symlink — and each refusal is made while nothing has been
+    # written.
     # The settings merge is computed here, before any write, because whether it writes decides
     # whether the settings file is a candidate at all (`_placed`).
     document = local_document(root)

@@ -12831,6 +12831,81 @@ reddens = [
   "tests/attach/test_write.py::test_an_earlier_blocks_line_is_kept_whole_whatever_it_holds",
 ]
 
+# A committed `.gitignore` is the repository's, and a pull can take a line out of it. Counted as
+# hiding the owner's links, it kept them out of the block, and an upstream commit that dropped the
+# line showed them, and the settings file, in `git status` until the next attach. The owner's
+# question is asked over an empty work tree so that git reads no `.gitignore`; with `--git-dir`
+# alone, the checkout is the work tree again.
+[[mutation]]
+name = "the owner's exclude question reads the checkout's .gitignore"
+file = "src/stayfixed/attach/exclude.py"
+before = '        asked = (*around, f"--work-tree={empty}", "check-ignore", "--no-index", "--stdin", "-z")'
+after = '        asked = (*around, "check-ignore", "--no-index", "--stdin", "-z")'
+reddens = [
+  "tests/attach/test_write.py::test_a_committed_gitignore_does_not_stand_in_for_the_exclude_block",
+]
+
+# The owner's own excludes are what stand in for the block. Reading none of their matches as
+# hiding writes a block into a checkout that hides everything already, and refuses one whose
+# exclude file is a symlink.
+[[mutation]]
+name = "the exclude block ignores what the owner's excludes hide"
+file = "src/stayfixed/attach/exclude.py"
+before = "        unheld = set(_unmatched(root, relatives, *asked))"
+after = "        unheld = set(relatives)"
+reddens = [
+  "tests/attach/test_write.py::test_a_checkout_that_already_hides_everything_is_not_touched",
+  "tests/attach/test_write.py::test_a_checkout_whose_global_excludes_file_hides_everything_is_not_touched",
+  "tests/attach/test_write.py::test_a_path_the_owners_global_excludes_hide_gets_no_line_whatever_the_gitignore_says",
+  "tests/attach/test_detach.py::test_a_first_attach_with_a_symlinked_exclude_that_hides_everything_attaches",
+]
+
+# git shows a tracked file whatever an exclude line says, so a line for one hides nothing, and it
+# needs the exclude file written: with the owner's symlinked exclude file hiding everything and
+# the settings file tracked, an attach nothing had to write into that file was refused.
+[[mutation]]
+name = "the exclude block also lists what git shows in spite of the owner's excludes"
+file = "src/stayfixed/attach/exclude.py"
+before = "    return tuple(relative for relative in relatives if relative in unheld)"
+after = "    return tuple(r for r in relatives if r in unheld | set(unignored(root, relatives)))"
+reddens = [
+  "tests/attach/test_detach.py::test_a_tracked_settings_file_the_owners_symlinked_exclude_hides_does_not_refuse",
+]
+
+# git reads a skip-worktree `.gitignore`, which a sparse checkout leaves out of the work tree, from
+# the index when the file is not on disk, and the owner's question has no `.gitignore` on disk.
+# Asked with the index, it took the repository's line for the owner's again.
+[[mutation]]
+name = "the owner's exclude question reads the index"
+file = "src/stayfixed/attach/exclude.py"
+before = '        asked = (*around, f"--work-tree={empty}", "check-ignore", "--no-index", "--stdin", "-z")'
+after = '        asked = (*around, f"--work-tree={empty}", "check-ignore", "--stdin", "-z")'
+reddens = [
+  "tests/attach/test_write.py::test_a_gitignore_a_sparse_checkout_leaves_out_does_not_stand_in_for_the_block",
+]
+
+# git opens a relative `core.excludesFile` from the top of the work tree, which for the owner's
+# question is the empty directory: the owner's lines stood in for nothing there.
+[[mutation]]
+name = "the owner's relative excludes file is read from the empty work tree"
+file = "src/stayfixed/attach/exclude.py"
+before = '    return ("-c", f"core.excludesFile={root / setting}")'
+after = "    return ()"
+reddens = [
+  "tests/attach/test_write.py::test_a_global_excludes_file_named_by_a_relative_path_still_stands_in_for_the_block",
+]
+
+# A path an earlier block hides reads as ignored now, so a block rebuilt from one run's answer
+# alone dropped it: grant a rule between two attaches and the link tree showed in `git status`.
+[[mutation]]
+name = "the exclude block forgets what an earlier attach hid"
+file = "src/stayfixed/attach/exclude.py"
+before = "    kept = _patterns(extract(current, EXCLUDE_REGION, Style.HASH))"
+after = "    kept: list[str] = []"
+reddens = [
+  "tests/attach/test_write.py::test_the_block_keeps_what_an_earlier_attach_hid_when_the_grant_changes",
+]
+
 # `gh` resolves an unqualified `OWNER/REPO` on `GH_HOST`, which the runner keeps, so on a GitHub
 # Enterprise host the fallback named whoever owns `stayfixed` there and the owner's private overlay
 # was generated from it. Named with its host, it is looked up on github.com.

@@ -807,8 +807,14 @@ def test_a_first_attach_with_a_symlinked_exclude_that_hides_everything_attaches(
     elsewhere = tmp_path / "exclude-elsewhere"
     held = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
     # Everything the run places, and not the settings file: the run does not write it, so it is
-    # not a candidate, and nothing is left for the exclude file to take.
-    elsewhere.write_text(held + "/.codex/rules/\n.stayfixed/\n", encoding="utf-8")
+    # not a candidate, and nothing is left for the exclude file to take. The link tree is listed
+    # here too, beside the fixture's committed `.gitignore` line for it: the owner's own line
+    # hides it whatever that line says, so a path both hide needs no line of the block. (Asked
+    # which pattern decides, git names the `.gitignore`, which outranks the owner's file; read
+    # that way, the link tree needed a line and the symlinked file was refused.)
+    elsewhere.write_text(
+        held + f"/{DEFAULT_MEMORY}/\n/.codex/rules/\n.stayfixed/\n", encoding="utf-8"
+    )
     exclude.unlink(missing_ok=True)
     exclude.symlink_to(elsewhere)
     outside = elsewhere.read_bytes()
@@ -817,3 +823,37 @@ def test_a_first_attach_with_a_symlinked_exclude_that_hides_everything_attaches(
     assert attached.links.created
     assert elsewhere.read_bytes() == outside
     assert not (root / SETTINGS).exists()
+
+
+def test_a_tracked_settings_file_the_owners_symlinked_exclude_hides_does_not_refuse(
+    tmp_path: Path,
+) -> None:
+    # The owner's symlinked exclude file hides the whole footprint, and the repository tracks its
+    # own `.claude/settings.local.json`. git shows a tracked file whatever an exclude line says, so
+    # asking "does git show it?" gave it a line that hides nothing, and that line needed the
+    # symlinked file written, which is refused: an attach nothing had to write into the exclude
+    # file exited 2. Only what the owner's own two files leave visible gets a line.
+    #
+    # Mutation: `mutations.toml`'s "the exclude block also lists what git shows in spite of the
+    # owner's excludes".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    (root / ".claude").mkdir()
+    (root / SETTINGS).write_text("{}\n", encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "the repository tracks its settings file")
+    exclude = root / ".git" / "info" / "exclude"
+    elsewhere = tmp_path / "exclude-elsewhere"
+    held = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
+    elsewhere.write_text(
+        held + f"/{DEFAULT_MEMORY}/\n/.codex/rules/\n/{SETTINGS}\n.stayfixed/\n", encoding="utf-8"
+    )
+    exclude.unlink(missing_ok=True)
+    exclude.symlink_to(elsewhere)
+    outside = elsewhere.read_bytes()
+    attached = _attach(root, store, machine, home, confirmed=True)
+    # Non-vacuous: the run wrote the tracked settings file, so it was a candidate for the block.
+    assert attached.settings_written
+    assert RULE in (root / SETTINGS).read_text(encoding="utf-8")
+    assert elsewhere.read_bytes() == outside
