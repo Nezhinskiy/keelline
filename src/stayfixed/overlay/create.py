@@ -33,10 +33,10 @@ from stayfixed.overlay.layout import (
     OVERLAY_FILES,
     PLUGIN_MANIFEST,
 )
-from stayfixed.overlay.template import templates
+from stayfixed.overlay.template import retired, templates
 from stayfixed.printed import clipped
 from stayfixed.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
-from stayfixed.scaffold import Manifest, apply, digest, plan
+from stayfixed.scaffold import Manifest, Verb, apply, digest, plan, unlinks
 
 Source = Literal["template", "local"]
 TEMPLATE_REPOSITORY = "stayfixed-overlay-template"
@@ -441,7 +441,8 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
         if record is not None:
             ledger = ledger.with_record(replace(record, sha256=digest(written)))
             restamped = True
-    if restamped:
+    ledger, retirement, dropped = _retire(root, ledger)
+    if restamped or dropped:
         ledger.write(root)
     if renamed:
         notes.append(f"named this overlay after {suffix}: {', '.join(renamed)}")
@@ -452,8 +453,45 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
             f"this overlay carries no {', '.join(absent)}, so there was nothing to name there; "
             f"`stayfixed overlay upgrade` adds what a newer template ships"
         )
+    notes += retirement
     notes.append(_install_secret_scan(root, runner))
     return Initialised(tuple(renamed), tuple(notes))
+
+
+def _retire(root: Path, ledger: Manifest) -> tuple[Manifest, list[str], bool]:
+    """Remove each file a release no longer ships that still holds what stayfixed wrote there,
+    name each one kept, and say whether the ledger lost a record.
+
+    `overlay upgrade` removes them too, but nobody is told to run it on an overlay just made:
+    `overlay create --template` and `setup --overlay create:` generate one from a template
+    repository, and a template published at an earlier release ships
+    `common/memory/README.md`, which the note reader reads as a note, so `memory index --check`
+    failed right after the first attach. `init` is the step every such overlay runs.
+
+    The engine's `plan` decides, by the digest the ledger records or, in a tree generated from a
+    template, which carries none, by the digest a release shipped (`template.retired`). Its
+    verdict is acted on here rather than through `apply`, which would write a ledger into a tree
+    that arrived without one. A file `plan` cannot read is named and left, never a reason to stop
+    `init`.
+    """
+    planned = plan(root, preset_defaults(root.name), retired())
+    notes = [f"left {r.target}: {r.reason}" for r in planned.refusals]
+    dropped = False
+    for action in planned.actions:
+        if action.verb is Verb.SKIP_MODIFIED:
+            notes.append(f"left {action.target} ({action.reason})")
+            continue
+        if not unlinks(action):
+            continue
+        try:
+            fsops.remove_within(root, action.target)
+        except OSError as exc:
+            raise Refusal(f"{action.target} cannot be removed: {fsops.said(exc)}") from exc
+        notes.append(f"removed {action.target}, which this release no longer ships")
+        if ledger.get(action.artifact_id) is not None:
+            ledger = ledger.without(frozenset({action.artifact_id}))
+            dropped = True
+    return ledger, notes, dropped
 
 
 def _rename(root: Path, relative: str, suffix: str) -> str | None:

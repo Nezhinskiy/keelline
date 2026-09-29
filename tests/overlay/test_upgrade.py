@@ -234,3 +234,36 @@ def test_the_digest_held_for_the_retired_readme_is_the_shipped_files() -> None:
     from stayfixed.overlay.template import SHIPPED_MEMORY_README as held
 
     assert digest(SHIPPED_MEMORY_README) == held
+
+
+@pytest.mark.parametrize("ledger", [True, False], ids=["recorded", "no-ledger"])
+def test_init_removes_the_memory_readme_a_release_shipped(tmp_path: Path, ledger: bool) -> None:
+    # An overlay generated from a template published at an earlier release arrives with the old
+    # README and no ledger, and nobody is told to run `overlay upgrade` on an overlay just made.
+    # `init`, which every such overlay runs, removes it, and drops a record the ledger holds.
+    #
+    # Mutation: `mutations.toml`'s "overlay init leaves the memory README a release shipped".
+    root = _an_overlay(tmp_path)
+    path = _with_the_shipped_memory_readme(root, ledger=ledger, text=SHIPPED_MEMORY_README)
+    done = init_instance(root, "octo", runner=FakeRunner())
+    assert not path.exists()
+    assert any(MEMORY_README in note for note in done.notes)
+    if ledger:
+        recorded = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))["artifacts"]
+        assert MEMORY_README not in recorded
+    else:
+        # A tree that arrived without a ledger is not given one.
+        assert not (root / MANIFEST_PATH).exists()
+
+
+def test_init_keeps_an_edited_memory_readme_and_says_what_to_do(tmp_path: Path) -> None:
+    # Bytes that are not the shipped ones may be the owner's own words, so `init` leaves the file
+    # and its note carries the way out. No mutation of its own: the engine's verdict is the one
+    # `mutations.toml`'s "a retired overlay file with no ledger is removed whatever it holds"
+    # already reddens, through `upgrade`.
+    root = _an_overlay(tmp_path)
+    edited = SHIPPED_MEMORY_README + "\nMy own line.\n"
+    path = _with_the_shipped_memory_readme(root, ledger=False, text=edited)
+    done = init_instance(root, "octo", runner=FakeRunner())
+    assert path.read_text(encoding="utf-8") == edited
+    assert any(MEMORY_README in note and "_README.md" in note for note in done.notes)

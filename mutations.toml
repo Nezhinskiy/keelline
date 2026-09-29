@@ -13080,6 +13080,20 @@ reddens = [
   "tests/overlay/test_upgrade.py::test_an_edited_memory_readme_is_kept_and_the_report_says_what_to_do[no-ledger]",
 ]
 
+# An overlay generated from a template published at an earlier release arrives with the old
+# `common/memory/README.md` and no ledger, and nobody is told to run `overlay upgrade` on an
+# overlay just made, so `memory index --check` failed right after the first attach.
+[[mutation]]
+name = "overlay init leaves the memory README a release shipped"
+file = "src/stayfixed/overlay/create.py"
+before = "    ledger, retirement, dropped = _retire(root, ledger)"
+after = "    retirement, dropped = [], False"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_init_removes_the_memory_readme_a_release_shipped[recorded]",
+  "tests/overlay/test_upgrade.py::test_init_removes_the_memory_readme_a_release_shipped[no-ledger]",
+  "tests/test_install_path.py::test_an_overlay_from_a_template_an_earlier_release_published_passes_the_index_check",
+]
+
 # CI's rendered-artifact check accepted any directory named `.git`, so an empty `mkdir .git` stood
 # in for the repository `overlay create --local` makes on `main`.
 [[mutation]]

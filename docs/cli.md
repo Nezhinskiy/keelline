@@ -1909,7 +1909,9 @@ when there is none yet. On
 `github.com/stayfixed/stayfixed-overlay-template` as above, a new private repository on GitHub under
 `<owner>` and its clone at `<root>/<name>` — or, when that clone brings nothing down, a clone
 from the retried `git clone`; a directory that already carries `.claude-plugin/` gets nothing.
-Exits `0` on success, `1` when no tree arrived, `2` on a refused name or a missing `--root`.
+A template published at 0.1.x also brings the `common/memory/README.md` those releases shipped,
+which `overlay init` removes (below). Exits `0` on success, `1` when no tree arrived, `2` on a
+refused name or a missing `--root`.
 
 ---
 
@@ -1952,11 +1954,18 @@ Both halves are idempotent. A manifest that already carries the suffix is not re
 second run reports nothing renamed.
 
 **Writes** each of the three manifests that does not already carry the suffix and, where the
-overlay carries one that records a manifest it rewrote, `.stayfixed/manifest.json` — through the
-same contained walk every other write in this project goes through; and, through the
-`pre-commit install` it runs in the overlay, the overlay's `pre-commit` git hook. Exits `0`; `1` on
-a manifest that exists and cannot be read or is not JSON; `2` on an owner that is not one path
-segment, or on a scaffold manifest that cannot be trusted.
+overlay carries one that records a manifest it rewrote or the file below, `.stayfixed/manifest.json`
+— through the same contained walk every other write in this project goes through; and, through the
+`pre-commit install` it runs in the overlay, the overlay's `pre-commit` git hook. It also
+**removes** `common/memory/README.md`, the file 0.1.0 and 0.1.1 shipped where `_README.md` is now,
+exactly as `overlay upgrade` does below: only when it holds what stayfixed wrote there, the digest
+`.stayfixed/manifest.json` records or, in an overlay generated from a template, which carries no
+manifest, the file those releases shipped. `init` is the step every generated overlay runs, and a
+template published at 0.1.x still ships that file. A copy holding anything else is left, and the
+line says so and names the way out: rename it to `_README.md`. A tree that arrived without a
+manifest is not given one. Exits `0`; `1` on a manifest that exists and cannot be read or is not
+JSON; `2` on an owner that is not one path segment, on a scaffold manifest that cannot be trusted,
+or on a `common/memory/README.md` it has decided to remove and cannot.
 
 ---
 
@@ -2136,8 +2145,10 @@ link tree under `paths.memory` in this checkout and in every existing worktree, 
 link, and — in the overlay — `projects/<name>/project.toml`, this project's note directories,
 `projects/<name>/memory/MEMORY.md` when the store has none yet (rendered as `stayfixed memory
 index` renders it, so the index link never dangles and `memory index --check` passes right after
-a first attach, in an overlay created by this release or brought up to it by `overlay upgrade`,
-which removes the `common/memory/README.md` 0.1.x shipped) and, through the
+a first attach in an overlay this release rendered; one generated from a template published at
+0.1.x passes once `overlay init` has run on it, and an older overlay once `overlay upgrade` has,
+because both remove the `common/memory/README.md` 0.1.x shipped unless it was edited) and, through
+the
 `pre-commit install` it runs there when the overlay carries a `.pre-commit-config.yaml` and no
 `pre-commit` hook yet, the overlay's `pre-commit` git hook. The ledger is the only record
 of which allow rules are stayfixed's, because an allow rule cannot carry a marker the way a hook
@@ -2394,7 +2405,8 @@ commands it runs for each harness with a declared marketplace (`claude plugin ma
 registrations and installed plugins those commands write into each harness's own configuration.
 `--overlay <path>` writes nothing in the overlay; it is only recorded.
 `--overlay create:<owner>/<name>` writes what `overlay create --template` writes — a private
-repository on GitHub and its clone — and then what `overlay init` writes in that clone. Exits `0`
+repository on GitHub and its clone — and then what `overlay init` writes in that clone, including
+its removal of the `common/memory/README.md` a template published at 0.1.x ships. Exits `0`
 on success, `2` on a refused `--overlay` (missing, not an overlay, reachable from the project
 root, at a path that is not UTF-8 text and so cannot be recorded in the machine file, or `create:`
 without `--yes`), and `2` when a symlink stands between `<home>` and the settings file: that file
