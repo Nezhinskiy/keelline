@@ -31,7 +31,6 @@ from pathlib import Path
 from typing import Any
 
 from stayfixed.attach.binding import (
-    MISMATCH,
     Binding,
     not_overlay,
     read_binding,
@@ -39,7 +38,7 @@ from stayfixed.attach.binding import (
 )
 from stayfixed.config.loader import load
 from stayfixed.errors import Failure
-from stayfixed.memory.api import PROJECTS
+from stayfixed.memory.api import MISMATCH, NO_ORIGIN, NO_REMOTE, PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
 from stayfixed.result import Result
 from stayfixed.scaffold import EntriesError, mark
@@ -326,6 +325,10 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
     refused = not_overlay(config)
     if refused is not None:
         summary = f"{refused}; {summary}"
+    elif binding.state == NO_ORIGIN:
+        # The cause and the way out every other surface says, ahead of the counts: the state
+        # label alone does not say what to do, and the real run refuses for it.
+        summary = f"{NO_REMOTE}; {summary}"
     if rules:
         summary += "\n" + "\n".join(f"  {target}" for target in rules)
     data = {
@@ -344,4 +347,5 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
     }
     if refused is not None:
         return Result(summary, data, exit_code=2)
-    return Result(summary, data, exit_code=1 if binding.state == MISMATCH or real else 0)
+    finding = binding.state in (MISMATCH, NO_ORIGIN) or real
+    return Result(summary, data, exit_code=1 if finding else 0)

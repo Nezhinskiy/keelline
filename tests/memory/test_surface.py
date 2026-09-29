@@ -74,6 +74,19 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         "may_inject",
         "approval_recorded",  # the gate answered for a store attach has not built yet
         "require_readable_record",  # the trust record read before attach writes anything
+        # the binding's one classifier and its whole vocabulary: `attach`, `attach --check`,
+        # `doctor` and the session-start line answer the binding question with it, where a second
+        # classifier in `attach` had drifted from this one
+        "binding_state",
+        "BINDING_STATES",
+        "BOUND",
+        "UNBOUND",
+        "MISMATCH",
+        "NO_ORIGIN",
+        "NO_REMOTE",
+        "NO_ORIGIN_CAUSE",
+        "NO_ORIGIN_WAY_OUT",
+        "DIFFERENT_REMOTE",
         "changed",
         "TrustState",
         "UnreadableTrustRecord",

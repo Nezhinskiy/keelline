@@ -12,11 +12,10 @@ imports from here:
 - the ledger (`ledger`, `LEDGER`) and `AttachLedger`, because `ledger` returns it: a return
   type absent from this list is a value `doctor` can hold and cannot declare, and
   `tests/test_surfaces.py` derives that rule rather than restating it;
-- the binding (`read_binding`, `Binding`, `MISMATCH`), and `BOUND`, `UNBOUND` and `STATES` with
-  them. `Binding.state` is one of `STATES` and `doctor` already branches on `MISMATCH`;
-  publishing one member of a closed vocabulary and hiding the other two leaves a consumer able
-  to recognise the bad state and unable to name the good ones. The set is the export, not the
-  member that happened to have a caller first;
+- the binding (`read_binding`, `Binding`). `Binding.state` is one of `memory.api`'s
+  `BINDING_STATES`, and `doctor` compares it against those members: the vocabulary and the one
+  classifier that decides between its members are the memory area's, so this area publishes
+  neither a copy of the set nor its own members;
 - the overlay's granted hook entries (`overlay_entries`, `LOCAL_SETTINGS`, the file they live
   in). `overlay_entries` names `Binding` in its signature too.
 
@@ -47,19 +46,15 @@ the same region as a scaffold artifact; one spelling, or `init` and `attach` wou
 the other's region as hand-edited.
 """
 
-from stayfixed.attach.binding import BOUND, MISMATCH, STATES, UNBOUND, Binding, read_binding
+from stayfixed.attach.binding import Binding, read_binding
 from stayfixed.attach.permissions import LOCAL_SETTINGS, overlay_entries
 from stayfixed.attach.write import IGNORE_BODY, IGNORE_REGION, LEDGER, AttachLedger, ledger
 
 __all__ = [
-    "BOUND",
     "IGNORE_BODY",
     "IGNORE_REGION",
     "LEDGER",
     "LOCAL_SETTINGS",
-    "MISMATCH",
-    "STATES",
-    "UNBOUND",
     "AttachLedger",
     "Binding",
     "ledger",

@@ -19,8 +19,8 @@ variables "is not a partial defence, it is a redirect with a longer name". So:
 The third rule is a write and lives in `write.py`.
 
 **The two remotes on a `Binding` are repository-authored bytes** (principle 5), and nothing
-here puts either into a summary, a `Result.data` or a refusal message. What this module
-computes *about* them — one of three state labels — is stayfixed's own and may be printed.
+here puts either into a summary, a `Result.data` or a refusal message. What is computed *about*
+them — one of `memory.store.binding_state`'s four labels — is stayfixed's own and may be printed.
 """
 
 from __future__ import annotations
@@ -36,15 +36,15 @@ from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import (
     PROJECT_RECORD,
     PROJECTS,
+    binding_state,
     origin_remote,
     overlay_root,
     permitted_roots,
 )
 
-UNBOUND = "unbound"
-BOUND = "bound"
-MISMATCH = "mismatch"
-STATES = (UNBOUND, BOUND, MISMATCH)
+# The binding's states are `memory.store`'s (`BINDING_STATES`), and so is the one classifier that
+# decides between them (`binding_state`): this module answered the same question with a copy of
+# its own that called a checkout with no `origin` a mismatch.
 # The one directory under `projects/<name>/` that holds notes. `permitted_roots` is what names
 # it; this spelling exists so the `--store` refusal below can state the shape of the path it
 # wants without printing the project name it would otherwise embed.
@@ -166,20 +166,6 @@ def _recorded(overlay: Path, project: str) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _state(recorded: str | None, origin: str | None) -> str:
-    """`unbound`, `bound` or `mismatch` — and never `bound` because nobody looked.
-
-    A hostile clone is caught by this comparison: `attach` compares the remote to the overlay's
-    record and refuses a mismatch unless the owner passes `--trust-remote`. The clone chooses
-    `project.name`; it does not choose which remote the overlay recorded under that name.
-    """
-    if recorded is None:
-        return UNBOUND
-    if recorded != origin:
-        return MISMATCH
-    return BOUND
-
-
 def binding_for(root: Path, config: Config, *, machine: Path | None) -> Binding:
     """The binding this repository stands in, for a `Config` the caller already holds.
 
@@ -193,7 +179,7 @@ def binding_for(root: Path, config: Config, *, machine: Path | None) -> Binding:
     store = permitted_roots(overlay, project)[1]
     recorded = _recorded(overlay, project)
     origin = origin_remote(root)
-    return Binding(project, overlay, store, origin, recorded, _state(recorded, origin))
+    return Binding(project, overlay, store, origin, recorded, binding_state(recorded, origin))
 
 
 def read_binding(

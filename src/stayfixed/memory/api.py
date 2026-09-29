@@ -25,7 +25,11 @@ overlay layout `attach` writes and `overlay` renders (`PROJECTS`, `PROJECT_RECOR
 every name the tree holds from git), whether the machine records any approval for a store that
 does not exist yet (`approval_recorded`, which `attach` asks before a first link tree is built),
 whether the machine's trust record can be read at all (`require_readable_record`, which `attach`
-asks before its first write, since the index render and the harness link read it after),
+asks before its first write, since the index render and the harness link read it after), the
+binding's one classifier and its vocabulary (`binding_state`, `BINDING_STATES` and its four
+members, and the causes `NO_REMOTE`, `NO_ORIGIN_CAUSE`, `NO_ORIGIN_WAY_OUT` and
+`DIFFERENT_REMOTE`), which `attach` and `doctor` answer the binding question with instead of a
+second classifier of their own,
 the bundles `doctor` reports on (`fit`, `render`, `SLOTS`), the wiki-link grammar and the note
 walk the graph check reads (`WIKI_LINK`, `walk`), the binding's git answer (`origin_remote`,
 `GitUnavailable`), and the trust region `tests/test_install_path.py` asserts end to end
@@ -99,12 +103,22 @@ from stayfixed.memory.bundles import SLOTS, Bundle, Fit, fit, render
 from stayfixed.memory.notes import Note, Provenance, Walk, walk
 from stayfixed.memory.refs import WIKI_LINK
 from stayfixed.memory.store import (
+    BINDING_STATES,
+    BOUND,
     COMMON_GROUP,
+    DIFFERENT_REMOTE,
+    MISMATCH,
+    NO_ORIGIN,
+    NO_ORIGIN_CAUSE,
+    NO_ORIGIN_WAY_OUT,
+    NO_REMOTE,
     PROJECT_RECORD,
     PROJECTS,
+    UNBOUND,
     GitUnavailable,
     Store,
     Unresolved,
+    binding_state,
     main_checkout,
     origin_remote,
     overlay_root,
@@ -138,11 +152,20 @@ from stayfixed.memory.worktree import (
 )
 
 __all__ = [
+    "BINDING_STATES",
+    "BOUND",
     "COMMON_GROUP",
     "DELIMITER",
+    "DIFFERENT_REMOTE",
+    "MISMATCH",
+    "NO_ORIGIN",
+    "NO_ORIGIN_CAUSE",
+    "NO_ORIGIN_WAY_OUT",
+    "NO_REMOTE",
     "PROJECTS",
     "PROJECT_RECORD",
     "SLOTS",
+    "UNBOUND",
     "WIKI_LINK",
     "Bundle",
     "Fit",
@@ -159,6 +182,7 @@ __all__ = [
     "Walk",
     "approval_recorded",
     "attach_main",
+    "binding_state",
     "changed",
     "detach_main",
     "fit",

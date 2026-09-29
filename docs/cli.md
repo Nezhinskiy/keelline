@@ -131,12 +131,13 @@ configuration records that is not a directory on this machine — the overlay mo
 cloned here — is said first, with the root inside the region and `stayfixed setup --preset NAME
 --overlay PATH` as the way out, since `attach` refuses a store outside the recorded root. A
 binding that does not hold names which of its four causes it is, in stayfixed's own words before
-the region that carries the repository's: no record of this project in the overlay (run
-`stayfixed attach`), a record that cannot be read (the file is named inside the region), no
-remote to compare (this checkout has no `origin`, or the record names none), or a record naming a
-different remote URL — the same repository under another URL form, https or ssh, counts too, as
-URLs are compared exactly — the one case whose way out is `stayfixed attach --trust-remote`, and
-only if this checkout should be bound.
+the region that carries the repository's: this checkout has no `origin` remote (add it, then run
+`stayfixed attach`), which is asked first and is said the same way by `attach`, `attach --check`,
+`doctor` and the session-start line; the overlay records no remote for this project (run
+`stayfixed attach`); a record that cannot be read (the file is named inside the region); or a
+record naming a different remote URL — the same repository under another URL form, https or ssh,
+counts too, as URLs are compared exactly — the one case whose way out is
+`stayfixed attach --trust-remote`, and only if this checkout should be bound.
 
 **Trust interacts with this command**, and the interaction is the non-obvious part: `memory
 index` rewrites the very files the trust hash covers, so it would revoke the approval it depends
@@ -432,8 +433,9 @@ hears a line hears it once, and a repository with nothing to report is asked aga
 nothing at all unless `[memory] mode` is `overlay`. Ten fixed lines, each carrying at most a
 count, joined by newlines in this order: **no overlay recorded** on this machine, or one that
 **could not be asked** about, which is a machine configuration file that will not parse; this
-repository **not attached** to that overlay, or the overlay recording **a different remote**
-under this project's name; **a memory path refused**, so the notes were not examined at all; how
+repository **not attached** to that overlay, the overlay recording **a different remote**
+under this project's name, or this checkout having **no `origin`** to check the record against;
+**a memory path refused**, so the notes were not examined at all; how
 many note groups are **real directories** rather than links into the overlay; the overlay's
 `stayfixed.requires` in **a form this stayfixed cannot read**, or naming **a floor this stayfixed
 does not meet**; and — only when none of those fired — the overlay's branch having **no
@@ -2100,15 +2102,16 @@ then refuses.
 anything; `--check` says so first on its line, still reports the rest, and exits `2`, the code
 the real run refuses with.
 
-**`--check` writes nothing.** It reports the binding state — `unbound`, `bound` or `mismatch` —
+**`--check` writes nothing.** It reports the binding state — `unbound`, `bound`, `mismatch` or
+`no-origin`, the last with the cause and the way out ahead of the counts —
 the permission diff (which allow rules and which hook entries would be added, and how many of
 the overlay's rules this repository already has), the Codex standing-rule files it would
 place under `.codex/rules/`, and `real_directories`: how many of this project's memory groups
 are still real directories rather than links into the overlay. Read it before the real run:
 everything under **Writes** below that carries content from the overlay is named here first.
 
-It exits `1` when that count is non-zero, the same way it does on a mismatch and for the same
-reason — both are findings you act on before the real run, and `attach` itself is what
+It exits `1` when that count is non-zero, the same way it does on a mismatch or a checkout with no
+`origin` and for the same reason — both are findings you act on before the real run, and `attach` itself is what
 refuses. The count is a count: a group's name comes out of `stayfixed.toml`, so it is never
 printed.
 
@@ -2126,8 +2129,12 @@ no flag, because the gate is on the capability and not on the command.
 **A mismatch needs `--trust-remote`.** The overlay records the remote URL it bound under this
 project name; if this repository's `origin` is a different URL, `attach` refuses (`2`) unless you
 say otherwise. URLs are compared exactly, so the same repository under another URL form — cloned
-over https where the overlay recorded ssh, say — is a mismatch too, and the refusal says so. A clone chooses its own `project.name`; it
-does not choose what the overlay recorded under that name.
+over https where the overlay recorded ssh, say — is a mismatch too, and the refusal says so. A
+clone chooses its own `project.name`; it does not choose what the overlay recorded under that
+name. A checkout with no `origin` is not a mismatch, whatever the overlay records: there is
+nothing to compare, so `--trust-remote` does not apply, and `attach` refuses it, as `--check`,
+`doctor` and the memory commands report it, with one sentence: add the `origin`, then run
+`stayfixed attach`.
 
 **A group that never moved is refused.** `attach` **links**; it never moves a note. So a
 `memory.groups` entry that is still a real directory under `paths.memory` would be linked over,
@@ -2221,9 +2228,9 @@ It also runs `pre-commit install` in the overlay when the overlay carries a pre-
 configuration and no hook is installed — the machine that cloned an overlay someone else created
 never ran `overlay init`. A missing `pre-commit` is a reported note, never a traceback.
 
-Exits `0` on success. Under `--check` it exits `1` on a mismatch **or** on a non-zero count of
-memory groups that are still real directories, which are the two findings the paragraphs above
-explain and the same number for both, and `2` for a `memory.mode` other than `overlay`; the
+Exits `0` on success. Under `--check` it exits `1` on a mismatch, on a checkout with no `origin`,
+**or** on a non-zero count of memory groups that are still real directories, which are the
+findings the paragraphs above explain and the same number for all three, and `2` for a `memory.mode` other than `overlay`; the
 loading, binding and diff failures below end `--check` with the same codes as a real run.
 
 A real run exits `1` on a failure, something it reads that cannot be read or a `git` that cannot
@@ -2254,9 +2261,9 @@ It exits `2` on a refusal, in the order the run meets them:
 - A `memory.mode` other than `overlay`.
 - The overlay's `permissions.json` or `hooks.json`, or `.claude/settings.local.json`, that is not
   JSON or not a JSON object, or whose `permissions` or `hooks` has a shape the merge cannot read.
-- A widening without `--yes`; a mismatch without `--trust-remote`, which is also the answer for a
-  checkout with no `origin` when the overlay already records the project; an `origin` whose URL is
-  not UTF-8 text, which the overlay's record cannot hold; a checkout with no `origin`.
+- A widening without `--yes`; a checkout with no `origin`, whether or not the overlay records the
+  project; a mismatch without `--trust-remote`; an `origin` whose URL is not UTF-8 text, which the
+  overlay's record cannot hold.
 - A `memory.groups` entry that leaves this project's share of the overlay; one that does not name a
   subdirectory of `paths.memory`, or a `paths.memory` that is itself a symlink (a refusal of its
   own, which is why the `--check` count counts only groups that stay inside); a memory group that
@@ -2959,7 +2966,7 @@ beside the six above:
 | `stayfixed attach --check` | report the binding, the diff and the groups that never moved, and write nothing |
 
 `attach --check` reports the way the other four do and exits differently on purpose: its `1` is
-a binding **mismatch**, not a non-empty diff. A diff carrying allow rules is the ordinary state
+a binding **mismatch** or a checkout with no `origin`, not a non-empty diff. A diff carrying allow rules is the ordinary state
 of a first attach and is exactly what the `--yes` gate exists for — the refusal `attach` raises
 names this flag as the way to read that diff first. A `--check` that failed whenever the run
 would widen would make the documented remedy itself a failure.

@@ -1076,9 +1076,9 @@ def _binding_project(tmp_path: Path, cause: str) -> tuple[Path, Path]:
 
 # Each cause's own words, which only its own refusal may carry.
 BINDING_CAUSES = {
-    "no-record": "has no record of this project",
+    "no-record": "records no remote for this project",
     "unreadable": "cannot be read",
-    "no-remote": "no remote to check the binding against",
+    "no-remote": "has no `origin` remote",
     "mismatch": "records a different remote",
     "overlay-gone": "is not a directory on this machine",
 }

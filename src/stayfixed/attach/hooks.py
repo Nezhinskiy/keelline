@@ -164,10 +164,17 @@ def _overlay_status(event: HookEvent, config: Config | None) -> HookResult:
         return HookResult()
     try:
         import stayfixed
-        from stayfixed.attach.binding import MISMATCH, UNBOUND, binding_for, unlinked_groups
+        from stayfixed.attach.binding import binding_for, unlinked_groups
         from stayfixed.config.paths import PathEscape
         from stayfixed.errors import Failure, Refusal
-        from stayfixed.memory.api import overlay_root
+        from stayfixed.memory.api import (
+            MISMATCH,
+            NO_ORIGIN,
+            NO_ORIGIN_CAUSE,
+            NO_ORIGIN_WAY_OUT,
+            UNBOUND,
+            overlay_root,
+        )
         from stayfixed.overlay.api import overlay_sync, requires_of, satisfies
 
         root = event.project_root
@@ -186,6 +193,11 @@ def _overlay_status(event: HookEvent, config: Config | None) -> HookResult:
             lines.append(NOT_ATTACHED)
         elif binding.state == MISMATCH:
             lines.append(REMOTE_MISMATCH)
+        elif binding.state == NO_ORIGIN:
+            # `memory.store`'s own sentence, which every other surface says for this state: it
+            # used to be read as a mismatch here too, and the line sent the reader to `--check`
+            # about a different remote that was not there.
+            lines.append(f"stayfixed: {NO_ORIGIN_CAUSE}; {NO_ORIGIN_WAY_OUT}")
         try:
             real = unlinked_groups(root, config)
         except PathEscape:

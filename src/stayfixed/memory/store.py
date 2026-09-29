@@ -338,28 +338,48 @@ def origin_remote(root: Path) -> str | None:
     return origin.value
 
 
-# The four ways the binding check fails, each with the way out that fits it. They used to be one
-# `False` and one sentence, "run `stayfixed attach`", which for a changed remote is the command
-# that refuses. Fixed text: the project's name and the record's path, which the repository
-# chooses, go in `Unresolved.detail` and never in these.
+# The one answer to "does the overlay's record bind this checkout's `origin`", which `memory`
+# commands, `attach`, `attach --check`, `doctor` and the session-start line all read
+# (`binding_state`). A checkout with no `origin` is its own state and is asked first: it used to be
+# answered twice, here and in `attach.binding`, and the second answer called it a different remote
+# URL and pointed at `--trust-remote`, which then refused for the missing `origin`.
+UNBOUND = "unbound"
+BOUND = "bound"
+MISMATCH = "mismatch"
+NO_ORIGIN = "no-origin"
+BINDING_STATES = (UNBOUND, BOUND, MISMATCH, NO_ORIGIN)
+
+# Each cause, and the way out that fits it. They used to be one `False` and one sentence, "run
+# `stayfixed attach`", which for a changed remote is the command that refuses. Fixed text: the
+# project's name and the record's path, which the repository chooses, go in `Unresolved.detail`
+# and never in these. The two a surface says with a way out of its own are kept apart from their
+# way out, so every surface says the same cause.
 NO_RECORD = (
-    "the overlay has no record of this project, so nothing binds it to this repository; "
+    "the overlay records no remote for this project, so nothing binds it to this repository; "
     "run `stayfixed attach` to bind it"
 )
 RECORD_UNREADABLE = (
     "the overlay's record of this project cannot be read, so the binding cannot be checked; "
     "repair or remove the file named below, then run `stayfixed attach`"
 )
-NO_REMOTE = (
-    "there is no remote to check the binding against: this checkout has no `origin`, or the "
-    "overlay's record names none; add the `origin` this project was bound with, then run "
-    "`stayfixed attach`"
+NO_ORIGIN_CAUSE = (
+    "this checkout has no `origin` remote, so there is nothing to bind to the overlay or to check "
+    "its record against"
+)
+NO_ORIGIN_WAY_OUT = (
+    "add the `origin` remote (the one this project was bound with, when the overlay records one), "
+    "then run `stayfixed attach`"
+)
+NO_REMOTE = f"{NO_ORIGIN_CAUSE}; {NO_ORIGIN_WAY_OUT}"
+DIFFERENT_REMOTE = (
+    "the overlay records a different remote URL under this project's name (the same repository "
+    "under another URL form, https or ssh, counts as different too)"
 )
 REMOTE_MISMATCH = (
-    "the overlay records a different remote URL under this project's name (the same repository "
-    "under another URL form, https or ssh, counts as different too); run `stayfixed attach "
-    "--trust-remote` only if this checkout should be bound to it"
+    f"{DIFFERENT_REMOTE}; run `stayfixed attach --trust-remote` only if this checkout should be "
+    f"bound to it"
 )
+_UNBOUND_CAUSES = {UNBOUND: NO_RECORD, NO_ORIGIN: NO_REMOTE, MISMATCH: REMOTE_MISMATCH}
 # Asked before any of the four: a machine record naming an overlay root that is not there (the
 # overlay moved, or this machine never cloned it) read as "no record of this project", whose way
 # out, `stayfixed attach`, refuses a `--store` outside the root the machine records. The root is
@@ -377,28 +397,42 @@ STORE_MISSING = "the memory store's directory does not exist"
 BUILT_BY_ATTACH = "; run `stayfixed attach` to build it"
 
 
+def binding_state(recorded: str | None, origin: str | None) -> str:
+    """`no-origin`, `unbound`, `mismatch` or `bound`, for the remote the overlay records for this
+    project and this checkout's `origin` — and never `bound` because nobody looked.
+
+    A missing `origin` is answered first, whatever the record says: with nothing to compare, a
+    record is neither a mismatch nor a binding, and the way out is the same with a record or
+    without one. URLs are compared exactly: normalising `git@…` against `https://…` is a binding
+    rule, and a hostile clone is caught by this comparison, since it chooses `project.name` and not
+    which remote the overlay recorded under it.
+    """
+    if origin is None:
+        return NO_ORIGIN
+    if recorded is None:
+        return UNBOUND
+    return BOUND if recorded == origin else MISMATCH
+
+
 def _bound(overlay: Path, project: str, root: Path) -> Unresolved | None:
     """`None` when the overlay's record binds this checkout's `origin`, else which cause failed.
 
-    The four answers are the four refusals above, each with the project's name, or the record's
-    path, as the detail they are about. URLs are compared exactly, as they always were:
-    normalising `git@…` against `https://…` is a binding rule, and not this message's to change.
+    The answers are the causes above, each with the project's name, or the record's path, as the
+    detail they are about; the state is `binding_state`'s.
     """
     record = overlay / PROJECTS / project / PROJECT_RECORD
-    about = f"project {quoted(project)}"
-    if not record.is_file():
-        return Unresolved(NO_RECORD, about)
-    try:
-        raw = tomllib.loads(record.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, *UNPARSEABLE):
-        # The path and never the exception: a TOML error's message quotes the file's own text,
-        # and this file holds a remote URL.
-        return Unresolved(RECORD_UNREADABLE, quoted(str(record)))
-    recorded = raw.get("remote")
-    origin = origin_remote(root)
-    if not isinstance(recorded, str) or not recorded or origin is None:
-        return Unresolved(NO_REMOTE, about)
-    return None if origin == recorded else Unresolved(REMOTE_MISMATCH, about)
+    recorded = None
+    if record.is_file():
+        try:
+            raw = tomllib.loads(record.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, *UNPARSEABLE):
+            # The path and never the exception: a TOML error's message quotes the file's own
+            # text, and this file holds a remote URL.
+            return Unresolved(RECORD_UNREADABLE, quoted(str(record)))
+        value = raw.get("remote")
+        recorded = value if isinstance(value, str) and value else None
+    cause = _UNBOUND_CAUSES.get(binding_state(recorded, origin_remote(root)))
+    return None if cause is None else Unresolved(cause, f"project {quoted(project)}")
 
 
 def _inside(candidate: Path, parent: Path) -> bool:

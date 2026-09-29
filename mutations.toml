@@ -2623,9 +2623,9 @@ reddens = [
 # bound.
 [[mutation]]
 name = "attach stops comparing the recorded remote"
-file = "src/stayfixed/attach/binding.py"
-before = '    if recorded != origin:'
-after = '    if False:'
+file = "src/stayfixed/memory/store.py"
+before = "    return BOUND if recorded == origin else MISMATCH"
+after = "    return BOUND"
 reddens = ["tests/attach/test_binding.py::test_a_different_remote_is_a_mismatch_and_never_a_bind"]
 
 # The trust rule in one line: committed settings that widen permissions are never merged. The
@@ -3149,10 +3149,10 @@ reddens = [
 [[mutation]]
 name = "the no-origin refusal moves back below attach's first write"
 file = "src/stayfixed/attach/write.py"
-before = '''    if binding.remote is None:
-        raise Refusal(NO_ORIGIN)
-    # The seventh refusal'''
-after = '''    # The seventh refusal'''
+before = '''    if binding.state == NO_ORIGIN:
+        raise Refusal(NO_REMOTE)
+    if binding.state == MISMATCH and not trust_remote:'''
+after = '''    if binding.state == MISMATCH and not trust_remote:'''
 reddens = [
   "tests/attach/test_write.py::test_a_repository_with_no_origin_remote_has_nothing_to_record",
 ]
@@ -6438,8 +6438,8 @@ reddens = [
 [[mutation]]
 name = "check reports the groups that never moved and still exits zero"
 file = "src/stayfixed/attach/permissions.py"
-before = "    return Result(summary, data, exit_code=1 if binding.state == MISMATCH or real else 0)"
-after = "    return Result(summary, data, exit_code=1 if binding.state == MISMATCH else 0)"
+before = "    finding = binding.state in (MISMATCH, NO_ORIGIN) or real"
+after = "    finding = binding.state in (MISMATCH, NO_ORIGIN)"
 reddens = [
   "tests/attach/test_commands.py::test_check_counts_the_groups_that_never_moved_and_exits_one",
 ]
@@ -12714,8 +12714,8 @@ reddens = [
 [[mutation]]
 name = "the binding check answers a missing record with the mismatch's way out"
 file = "src/stayfixed/memory/store.py"
-before = "        return Unresolved(NO_RECORD, about)"
-after = "        return Unresolved(REMOTE_MISMATCH, about)"
+before = "_UNBOUND_CAUSES = {UNBOUND: NO_RECORD, NO_ORIGIN: NO_REMOTE, MISMATCH: REMOTE_MISMATCH}"
+after = "_UNBOUND_CAUSES = {UNBOUND: REMOTE_MISMATCH, NO_ORIGIN: NO_REMOTE, MISMATCH: REMOTE_MISMATCH}"
 reddens = [
   "tests/memory/test_commands.py::test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it[no-record]",
 ]
@@ -13259,6 +13259,45 @@ after = """    for tree in []:
 reddens = [
   "tests/attach/test_detach.py::test_a_group_added_since_the_attach_refuses_before_anything_is_withdrawn[a//b]",
   "tests/attach/test_detach.py::test_a_group_added_since_the_attach_refuses_before_anything_is_withdrawn[../../x]",
+]
+
+# A checkout with no `origin` was classified twice, and `attach.binding`'s copy called it a
+# mismatch: `attach`, `--check` and `doctor` pointed at `--trust-remote`, which then refused for
+# the missing `origin`, while the memory commands said to add it.
+[[mutation]]
+name = "the binding classifier reads a missing origin as a different remote"
+file = "src/stayfixed/memory/store.py"
+before = """    if origin is None:
+        return NO_ORIGIN
+    if recorded is None:
+        return UNBOUND"""
+after = """    if recorded is None:
+        return UNBOUND
+    if origin is None:
+        return MISMATCH"""
+reddens = [
+  "tests/test_binding_answers.py::test_a_checkout_with_no_origin_hears_one_cause_and_one_way_out_everywhere",
+  "tests/attach/test_binding.py::test_a_repository_with_no_origin_remote_is_its_own_state_and_not_a_machine_fault",
+]
+
+[[mutation]]
+name = "the session-start line says nothing about a missing origin"
+file = "src/stayfixed/attach/hooks.py"
+before = '            lines.append(f"stayfixed: {NO_ORIGIN_CAUSE}; {NO_ORIGIN_WAY_OUT}")'
+after = "            pass"
+reddens = [
+  "tests/attach/test_hooks.py::test_a_checkout_with_no_origin_hears_the_cause_every_other_surface_says",
+]
+
+# `attach --check` for a checkout with no `origin` printed the state label alone and exited 0 or 1
+# by the mismatch rule, while the real run refuses it.
+[[mutation]]
+name = "attach --check reports a missing origin without its cause"
+file = "src/stayfixed/attach/permissions.py"
+before = '        summary = f"{NO_REMOTE}; {summary}"'
+after = "        pass"
+reddens = [
+  "tests/test_binding_answers.py::test_a_checkout_with_no_origin_hears_one_cause_and_one_way_out_everywhere",
 ]
 
 # CI's rendered-artifact check accepted any directory named `.git`, so an empty `mkdir .git` stood

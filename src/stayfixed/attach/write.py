@@ -51,7 +51,6 @@ from typing import Any
 from stayfixed import fsops, tomlout
 from stayfixed.attach import exclude
 from stayfixed.attach.binding import (
-    MISMATCH,
     Binding,
     read_binding,
     refuse_unless_overlay,
@@ -76,6 +75,10 @@ from stayfixed.gitenv import answer_lines, git_run
 from stayfixed.guards.api import hooks_dir
 from stayfixed.memory.api import (
     COMMON_GROUP,
+    DIFFERENT_REMOTE,
+    MISMATCH,
+    NO_ORIGIN,
+    NO_REMOTE,
     PROJECT_RECORD,
     PROJECTS,
     Links,
@@ -129,20 +132,12 @@ PRE_COMMIT_HOOK = "pre-commit"
 # is subject to workspace trust and a link is not, so the symlink is preferred and this is taken
 # only when it cannot be made.
 FALLBACK_KEY = "autoMemoryDirectory"
-# The fifth refusal `attach` owes before it writes anything, kept beside the four above it rather
-# than inside `_record_binding`. That runs after the ignore region, the Codex rules, the settings
-# merge and the ledger, so refused there, a checkout with no `origin` would exit 2 having left
-# four artifacts behind — and `doctor._attached`, which keys on the ledger's existence, would
-# report the repository attached.
-NO_ORIGIN = (
-    "this repository has no `origin` remote, so there is nothing for the overlay to record; "
-    "add one, or bind the clone that has it"
-)
-# The fourth, asked just before it, and above every write for the same reason. The binding
-# record is UTF-8 TOML, and an `origin` URL git prints in other bytes cannot be written into it:
-# `_record_binding`, the last write, would raise `UnicodeEncodeError` after the ignore region,
-# the Codex rules, the settings merge and the ledger. `fsops.utf_8_name` asks it. The URL is not
-# quoted: a remote URL is repository-authored.
+# The fourth, asked just after the fifth (a checkout with no `origin`, `memory.api.NO_REMOTE`),
+# and above every write for the same reason. The binding record is UTF-8 TOML, and an `origin`
+# URL git prints in other bytes cannot be written into it: `_record_binding`, the last write,
+# would raise `UnicodeEncodeError` after the ignore region, the Codex rules, the settings merge
+# and the ledger. `fsops.utf_8_name` asks it. The URL is not quoted: a remote URL is
+# repository-authored.
 ORIGIN_NOT_TEXT = (
     "this repository's `origin` URL is not UTF-8 text, so the overlay cannot record it; set it "
     "again with `git remote set-url origin URL`"
@@ -482,7 +477,7 @@ def _record_binding(binding: Binding) -> bool:
         # `Refusal` reaching here means the hoist above drifted — and by then the ignore region,
         # `.codex/rules/`, the settings merge and the ledger have all been written, which is
         # exactly the state the hoist exists to prevent.
-        raise Refusal(NO_ORIGIN)
+        raise Refusal(NO_REMOTE)
     relative = f"{PROJECTS}/{binding.project}/{PROJECT_RECORD}"
     first = _first_attach(binding.overlay / relative) or datetime.date.today().isoformat()
     # `tomlout` and not an f-string: the value is a git remote URL, which is repository-authored
@@ -1042,8 +1037,8 @@ def attach(
     refuses a store outside the machine-recorded overlay; refuse a repository whose
     `memory.mode` is not `overlay`, which is numbered with none of the nine because it is about
     the configuration and not about this binding; compute the diff; refuse a widening
-    without `confirmed`; refuse a mismatch without `trust_remote`; refuse an `origin` URL that
-    is not UTF-8 text; refuse a checkout with no `origin`; read the existing ledger, which
+    without `confirmed`; refuse a checkout with no `origin`; refuse a mismatch without
+    `trust_remote`; refuse an `origin` URL that is not UTF-8 text; read the existing ledger, which
     refuses one no attach could have written; refuse a `memory.groups` entry that leaves this
     project's share of the overlay; refuse a harness anchor this machine cannot vouch for;
     refuse a group that never moved into the overlay; ask git what it already hides, which
@@ -1140,19 +1135,23 @@ def _plan(
             f"capability. Read the diff with `stayfixed attach --check` and pass --yes to "
             f"confirm it"
         )
+    # The fifth refusal, a checkout with no `origin`, is its own state (`memory.store.binding_state`
+    # asks it first) and is refused with the sentence every other surface says. It used to be
+    # read as a mismatch here, so the answer was `--trust-remote`, which then refused for the
+    # missing `origin`. Kept above every write rather than in `_record_binding`, which runs after
+    # the ignore region, the Codex rules, the settings merge and the ledger: refused there, it
+    # left four artifacts behind and `doctor._attached` reported the repository attached.
+    if binding.state == NO_ORIGIN:
+        raise Refusal(NO_REMOTE)
     if binding.state == MISMATCH and not trust_remote:
+        # The name is not quoted back, for the reason `permissions.check` states at length:
+        # `project.name` is repository-authored and looser than the marker-id grammar `doctor`
+        # already refuses to print, and a refusal built out of one is still one.
         raise Refusal(
-            # The name is not quoted back, for the reason `permissions.check` states at length:
-            # `project.name` is repository-authored and looser than the marker-id grammar
-            # `doctor` already refuses to print, and a refusal built out of one is still one.
-            "the overlay records a different remote URL under this project's name (the same "
-            "repository under another URL form, https or ssh, counts as different too); pass "
-            "--trust-remote only if this checkout should be bound to it"
+            f"{DIFFERENT_REMOTE}; pass --trust-remote only if this checkout should be bound to it"
         )
     if binding.remote is not None and not fsops.utf_8_name(binding.remote):
         raise Refusal(ORIGIN_NOT_TEXT)
-    if binding.remote is None:
-        raise Refusal(NO_ORIGIN)
     # The seventh refusal, and it belongs here for the reason the six above it do; the sixth,
     # the ledger's, is read a few lines below and is above every write too. `ledger()` refuses
     # a ledger naming files or settings keys `attach` could not have written, and

@@ -64,8 +64,6 @@ import stayfixed
 from stayfixed import REPOSITORY_URL
 from stayfixed.attach.api import (
     LEDGER,
-    MISMATCH,
-    UNBOUND,
     Binding,
     ledger,
     overlay_entries,
@@ -79,8 +77,14 @@ from stayfixed.findings import listed
 from stayfixed.guards.api import hooks_dir
 from stayfixed.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from stayfixed.memory.api import (
+    DIFFERENT_REMOTE,
+    MISMATCH,
+    NO_ORIGIN,
+    NO_ORIGIN_CAUSE,
+    NO_ORIGIN_WAY_OUT,
     PROJECTS,
     SLOTS,
+    UNBOUND,
     GitUnavailable,
     Store,
     fit,
@@ -670,11 +674,12 @@ def _attached(context: Context) -> Row:
             "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`; if this "
             "checkout was never attached on this machine, remove the ledger",
         )
+    if state == NO_ORIGIN:
+        return Row(RED, NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT)
     if state == MISMATCH:
         return Row(
             RED,
-            "the overlay records a different remote URL for this project (the same repository "
-            "under another URL form, https or ssh, counts as different too)",
+            DIFFERENT_REMOTE,
             "run `stayfixed attach --check`, and `--trust-remote` only if it should be",
         )
     status, shape, remedy = _harness_shape(context, harness)
