@@ -854,7 +854,7 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
         )
     init_instance(created.root, owner, runner=runner)
     _outside_the_project(created.root, project_root=project_root)
-    return created.root, f"created the overlay at {created.root}"
+    return created.root, f"created the overlay at {created.root}, generated from {created.template}"
 
 
 def setup(

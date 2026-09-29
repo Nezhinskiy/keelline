@@ -82,6 +82,20 @@ class FakeRunner:
         return Completed(0, "", "")
 
 
+# What `gh repo view <slug> --json isTemplate` answers (measured against gh 2.101.0): a template
+# exits 0 with `{"isTemplate":true}`, and a repository that does not exist exits 1 with GraphQL's
+# "Could not resolve to a Repository". `overlay create` asks it once to choose whose template to
+# generate from, so a `create:` run has to have the probe answered.
+_OCTOS_PROBE = "gh repo view octo/stayfixed-overlay-template"
+_A_TEMPLATE = Completed(0, '{"isTemplate":true}\n', "")
+_NO_SUCH_REPOSITORY = Completed(
+    1,
+    "",
+    "GraphQL: Could not resolve to a Repository with the name 'octo/stayfixed-overlay-template'."
+    " (repository)\n",
+)
+
+
 def _populate_overlay(argv: list[str], cwd: Path) -> None:
     """Stand in for a successful template generation, the same probe `overlay.create` reads."""
     if argv[:3] != ["gh", "repo", "create"]:
@@ -420,7 +434,7 @@ def test_overlay_create_asks_github_and_records_the_new_root(
     monkeypatch.chdir(tmp_path)
     home = tmp_path / "home"
     machine = tmp_path / "config.toml"
-    runner = FakeRunner(on_call=_populate_overlay)
+    runner = FakeRunner(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
     report = setup(
         "recommended",
         home=home,
@@ -433,6 +447,62 @@ def test_overlay_create_asks_github_and_records_the_new_root(
     assert any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
     assert report.overlay == home / "stayfixed-private"
     assert overlay_root(machine) == report.overlay
+
+
+@pytest.mark.parametrize(
+    ("probe", "template"),
+    [
+        pytest.param(_A_TEMPLATE, "octo/stayfixed-overlay-template", id="the-owners-own"),
+        pytest.param(
+            _NO_SUCH_REPOSITORY,
+            "github.com/stayfixed/stayfixed-overlay-template",
+            id="the-publishers",
+        ),
+    ],
+)
+def test_overlay_create_generates_from_the_template_overlay_create_would_choose(
+    tmp_path: Path, probe: Completed, template: str
+) -> None:
+    # `--overlay create:` calls `overlay.create`, so a user with no template of their own reaches
+    # the publisher's the same way `overlay create --template` does. One resolution, two commands:
+    # a second copy of it here would be the place they drift. Mutation: the `setup` call passes a
+    # template of its own → one of the two cases reddens.
+    home = tmp_path / "home"
+    runner = FakeRunner(answers={_OCTOS_PROBE: probe}, on_call=_populate_overlay)
+    setup(
+        "recommended",
+        home=home,
+        machine=tmp_path / "config.toml",
+        runner=runner,
+        yes=True,
+        overlay="create:octo/stayfixed-private",
+        project_root=tmp_path / "project",
+    )
+    creating = next(argv for argv in runner.calls if argv[:3] == ["gh", "repo", "create"])
+    assert creating[creating.index("--template") + 1] == template
+
+
+def test_overlay_create_that_cannot_ask_gh_whose_template_creates_nothing(
+    tmp_path: Path,
+) -> None:
+    # A probe that failed for a reason other than "not found" never becomes a repository on the
+    # publisher's template: `gh repo create` is the one irreversible act `setup` performs.
+    home = tmp_path / "home"
+    runner = FakeRunner(
+        answers={_OCTOS_PROBE: Completed(1, "", "HTTP 401: Bad credentials")},
+        on_call=_populate_overlay,
+    )
+    with pytest.raises(Failure, match="Bad credentials"):
+        setup(
+            "recommended",
+            home=home,
+            machine=tmp_path / "config.toml",
+            runner=runner,
+            yes=True,
+            overlay="create:octo/stayfixed-private",
+            project_root=tmp_path / "project",
+        )
+    assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
 
 
 def test_creating_an_overlay_without_yes_is_refused(tmp_path: Path) -> None:
@@ -1520,7 +1590,7 @@ def test_a_created_tree_that_is_not_an_overlay_says_the_repository_now_exists(
             "recommended",
             home=home,
             machine=tmp_path / "config.toml",
-            runner=FakeRunner(on_call=_wrong_tree),
+            runner=FakeRunner(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_wrong_tree),
             yes=True,
             overlay="create:octo/stayfixed-private",
             project_root=tmp_path / "project",

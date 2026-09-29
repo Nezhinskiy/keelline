@@ -28,8 +28,8 @@ description: Configure the machine for stayfixed — the preset, the personal pa
    recording it, or one somebody else created that needs renaming:
    `stayfixed overlay create --owner NAME --local` renders one on this machine with no network
    call, `stayfixed overlay create --owner NAME --name stayfixed-private --template` creates it on
-   GitHub once the template repository is published to their account, and `stayfixed overlay
-   init --owner NAME --root PATH` makes it theirs. Relay what
+   GitHub from their own published template, or from the publisher's public one when they have
+   none, and `stayfixed overlay init --owner NAME --root PATH` makes it theirs. Relay what
    `init` renamed and whether the secret scan installed.
 5. After a stayfixed release, `stayfixed overlay upgrade --root PATH --dry-run` says what would
    change. Relay the report, and relay the `ASK FIRST` list separately: those two files can

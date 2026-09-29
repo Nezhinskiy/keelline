@@ -1,10 +1,11 @@
 """Create the owner's private overlay, and make an instance theirs.
 
-Two sources, one result. `--template` asks GitHub to generate a private repository from the
-public template and clone it; `--local` renders `templates/overlay/` here through the scaffold
-engine and touches no network. A template and not a fork: a fork's visibility is bound to the
-upstream network and cannot be made private, and an overlay that is not private is the one
-outcome this whole area exists to prevent.
+Two sources, one result. `--template` asks GitHub to generate a private repository from a public
+template and clone it — the owner's own `<owner>/stayfixed-overlay-template` when they have
+published one, and the publisher's otherwise; `--local` renders `templates/overlay/` here through
+the scaffold engine, and touches no network. A template and not a
+fork: a fork's visibility is bound to the upstream network and cannot be made private, and an
+overlay that is not private is the one outcome this whole area exists to prevent.
 
 `init_instance` is what makes a generated repository *this owner's*: the plugin and marketplace
 names carry their account, so two overlays installed into one harness never collide, and the
@@ -33,11 +34,25 @@ from stayfixed.overlay.layout import (
     PLUGIN_MANIFEST,
 )
 from stayfixed.overlay.template import templates
+from stayfixed.printed import clipped
 from stayfixed.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
 from stayfixed.scaffold import Manifest, apply, digest, plan
 
 Source = Literal["template", "local"]
 TEMPLATE_REPOSITORY = "stayfixed-overlay-template"
+# Whose public copy of that repository `--template` falls back to when the owner has published none
+# of their own. The publisher's account is a fact about where this project's template lives, and
+# `publish-template` keeps reading `TEMPLATE_REPOSITORY` alone for its `--name` default: what an
+# owner *publishes* is theirs to name, what they *generate from* has this one fallback.
+TEMPLATE_PUBLISHER = "stayfixed"
+# The fallback named with its host, and never host-relative: `gh` resolves an unqualified
+# `OWNER/REPO` on `GH_HOST`, which the runner keeps, so on a GitHub Enterprise host the fallback
+# would be whoever owns `stayfixed` there, and the owner's private overlay, whose hooks run in
+# every session, would be generated from it. `gh repo create --template` and `gh repo view` look a
+# `HOST/OWNER/REPO` name up on that host whatever `GH_HOST` says (measured against gh 2.101.0).
+# The owner's own `<owner>/…` probe stays host-relative: that repository is on the owner's host.
+TEMPLATE_PUBLISHER_HOST = "github.com"
+PUBLISHED_TEMPLATE = f"{TEMPLATE_PUBLISHER_HOST}/{TEMPLATE_PUBLISHER}/{TEMPLATE_REPOSITORY}"
 # The directory whose presence says a generated repository actually arrived — the exact probe the
 # spike record (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) used in its *template creation
 # race and renaming* trial, and the one thing a repository created from this template always
@@ -51,15 +66,24 @@ PROBE = ".claude-plugin"
 # measurement: generation is asynchronous on GitHub's side and one clean run cannot rule out a slow
 # one.
 RETRY_WAIT_SECONDS = 10
-# The precondition `docs/cli.md` names and the command itself never did. `--template` generates
-# from a repository on the owner's own account, and that repository has to have been published
-# there first. A failure here that does not say so sends the owner to `gh auth status` for a
-# repository that was never there.
+# What `docs/cli.md` says about the template, and what a failure has to say too. `--template`
+# generates from the owner's own copy when they have published one with `stayfixed overlay
+# publish-template`, and from the publisher's public copy otherwise, so an account that never
+# published one still has somewhere to generate from. A failure that does not say so sends the
+# owner to `gh auth status` for a repository that was never there.
 TEMPLATE_PRECONDITION = (
-    f"`--template` generates from <owner>/{TEMPLATE_REPOSITORY}, which `stayfixed overlay "
-    f"publish-template` publishes at each release; an owner who has not published one "
-    f"renders the same tree here with `stayfixed overlay create --local`, with no network call"
+    f"`--template` generates from <owner>/{TEMPLATE_REPOSITORY} when the owner has published one "
+    f"with `stayfixed overlay publish-template`, and from {PUBLISHED_TEMPLATE} otherwise; "
+    f"`stayfixed overlay create --local` renders the same tree here with no network call"
 )
+# What `gh repo view` prints on stderr, whatever the name, when the repository does not exist or
+# this token cannot see it (measured against gh 2.101.0, `stayfixed/definitely-missing-xyz`):
+# `GraphQL: Could not resolve to a Repository with the name '<slug>'. (repository)`, exit 1. It is
+# the only thing that tells "not found" from an expired token (`HTTP 401: Bad credentials`, also
+# exit 1) and from a network failure, so it is matched as the whole phrase and never as the
+# shorter "Could not resolve", which `Could not resolve host` shares. A named string, not a cap:
+# it bounds nothing and no shipped file changes with it.
+NOT_FOUND_ANSWER = "Could not resolve to a Repository"
 # The three manifests `init_instance` names after the owner. The Codex one was left out of the
 # first draft, so the collision the suffix exists to prevent still happened on Codex: two
 # owners' overlays under one Codex configuration were one plugin fighting itself, which is the
@@ -72,6 +96,10 @@ class Created:
     root: Path
     source: Source
     notes: tuple[str, ...]
+    # The template repository a `--template` run generated from (`<account>/<name>`), so a caller
+    # that reports the run can name it without parsing a note. `None` for `--local` and for a
+    # directory that was already there and was left alone.
+    template: str | None = None
 
 
 @dataclass(frozen=True)
@@ -167,6 +195,60 @@ def _detail(done: Completed) -> str:
     return done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"
 
 
+def _template_for(owner: str, *, root: Path, runner: Runner) -> str:
+    """The template repository to generate from: the owner's own when it is published, else the
+    publisher's.
+
+    One question, asked once: `gh repo view <owner>/<TEMPLATE_REPOSITORY> --json isTemplate`. A
+    template there is used. A repository that is not one, and `gh`'s explicit not-found answer,
+    both mean the owner has published nothing, and the publisher's public copy is used.
+
+    **Anything else refuses, and never falls back.** `gh` exits 1 for a missing repository and
+    for an expired token alike, so the exit code cannot be read as "not found"; only the phrase
+    `NOT_FOUND_ANSWER` on stderr can. A launch failure, a timeout, an authentication or network
+    failure and an answer that is not the JSON asked for are each a state in which this run does
+    not know whether the owner has a template, and guessing "no" would silently generate the
+    overlay of somebody who has one from somebody else's. What `gh` said is quoted, through
+    `printed.clipped`: it reaches a terminal and a CI log, and it is not a string this project
+    wrote.
+    """
+    mine = f"{owner}/{TEMPLATE_REPOSITORY}"
+    theirs = PUBLISHED_TEMPLATE
+    probe = runner.run(["gh", "repo", "view", mine, "--json", "isTemplate"], root)
+    if probe.code == 0:
+        answer = _is_template(probe.stdout)
+        if answer is not None:
+            return mine if answer else theirs
+    elif probe.code not in (NOT_FOUND, TIMED_OUT) and NOT_FOUND_ANSWER in probe.stderr:
+        return theirs
+    # `gh` could not be launched, hung, was declined, or answered something this cannot read.
+    # `gh repo create` is the irreversible act, and it has not run.
+    launched = probe.code not in (NOT_FOUND, TIMED_OUT)
+    if not launched:
+        what = "could not be run"
+    elif probe.code == 0:
+        what = "answered something other than the `isTemplate` object it was asked for"
+    else:
+        what = f"exited {probe.code}"
+    raise Failure(
+        f"`gh repo view {mine} …` {what} ({clipped(_detail(probe))}), so it is not known whether "
+        f"you have published a template, and nothing was created."
+        + ("" if launched else " Install `gh` and authenticate it, or render the overlay locally.")
+        + f" {TEMPLATE_PRECONDITION}"
+    )
+
+
+def _is_template(printed_json: str) -> bool | None:
+    """`isTemplate` from what `gh repo view --json isTemplate` printed, or `None` for anything
+    that is not exactly an object carrying a boolean there."""
+    try:
+        document = json.loads(printed_json)
+    except json.JSONDecodeError:
+        return None
+    value = document.get("isTemplate") if isinstance(document, dict) else None
+    return value if isinstance(value, bool) else None
+
+
 def _from_template(
     owner: str, name: str, *, root: Path, runner: Runner, wait: Callable[[float], None]
 ) -> Created:
@@ -175,6 +257,7 @@ def _from_template(
         # Creating the overlay is idempotent by rule: `gh` may give up on the clone with the
         # repository already created, so the second run finds a tree and must not re-create.
         return Created(target, "template", (f"{target} already exists and was left alone",))
+    template = _template_for(owner, root=root, runner=runner)
     slug = f"{owner}/{name}"
     created = runner.run(
         [
@@ -184,13 +267,13 @@ def _from_template(
             slug,
             "--private",
             "--template",
-            f"{owner}/{TEMPLATE_REPOSITORY}",
+            template,
             "--clone",
         ],
         root,
     )
     if _populated(target):
-        return Created(target, "template", (f"created {slug} from {TEMPLATE_REPOSITORY}",))
+        return Created(target, "template", (f"created {slug} from {template}",), template)
     if created.code in (NOT_FOUND, TIMED_OUT):
         # `gh` could not be launched at all, or hung until the seam gave up. Neither is a state two
         # further subprocesses and a ten-second wait can learn anything about: `gh repo view` would
@@ -225,7 +308,12 @@ def _from_template(
     # failure is cheaper than refusing to try.
     cloned = runner.run(["git", "clone", "--", f"git@github.com:{slug}.git", name], root)
     if _populated(target):
-        return Created(target, "template", (f"cloned {slug} on the second attempt",))
+        return Created(
+            target,
+            "template",
+            (f"cloned {slug}, generated from {template}, on the second attempt",),
+            template,
+        )
     raise Failure(
         f"{slug} produced no tree at {target}: `gh repo create --clone` reported success and "
         f"left nothing, and the "

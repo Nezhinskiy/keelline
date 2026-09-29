@@ -3681,7 +3681,55 @@ file = "src/stayfixed/overlay/create.py"
 before = "    if created.code in (NOT_FOUND, TIMED_OUT):"
 after = "    if False:"
 reddens = [
-  "tests/overlay/test_create.py::test_a_gh_that_is_not_installed_is_named_as_the_cause_and_costs_one_subprocess",
+  "tests/overlay/test_create.py::test_a_gh_that_cannot_be_run_at_creation_is_named_as_the_cause_and_costs_no_more_calls",
+]
+
+# Whose template `overlay create --template` generates from, and `setup --overlay create:` with it.
+# A person who has published their own gets their own; one who has not gets the publisher's, so a
+# personal account is never left with nowhere to generate from. Three ways to lose that: never
+# asking (always the publisher's), never falling back (always the owner's), and reading every
+# non-zero exit of the probe as "not found", which turns an expired token or a dropped connection
+# into a silent switch of the template of a person who has one.
+[[mutation]]
+name = "overlay create never asks whose template to use"
+file = "src/stayfixed/overlay/create.py"
+before = "            return mine if answer else theirs"
+after = "            return theirs"
+reddens = [
+  "tests/overlay/test_create.py::test_the_owners_own_template_is_used_when_they_have_published_one",
+  "tests/setup/test_setup.py::test_overlay_create_generates_from_the_template_overlay_create_would_choose[the-owners-own]",
+]
+
+[[mutation]]
+name = "overlay create treats a repository that is not a template as one"
+file = "src/stayfixed/overlay/create.py"
+before = "            return mine if answer else theirs"
+after = "            return mine"
+reddens = [
+  "tests/overlay/test_create.py::test_a_repository_that_is_not_a_template_is_not_generated_from",
+]
+
+[[mutation]]
+name = "overlay create has no template to fall back on"
+file = "src/stayfixed/overlay/create.py"
+before = """    elif probe.code not in (NOT_FOUND, TIMED_OUT) and NOT_FOUND_ANSWER in probe.stderr:
+        return theirs"""
+after = """    elif probe.code not in (NOT_FOUND, TIMED_OUT) and NOT_FOUND_ANSWER in probe.stderr:
+        return mine"""
+reddens = [
+  "tests/overlay/test_create.py::test_the_publishers_template_is_used_when_the_owner_has_none",
+  "tests/setup/test_setup.py::test_overlay_create_generates_from_the_template_overlay_create_would_choose[the-publishers]",
+]
+
+[[mutation]]
+name = "overlay create reads any failed probe as no template of the owner's"
+file = "src/stayfixed/overlay/create.py"
+before = "    elif probe.code not in (NOT_FOUND, TIMED_OUT) and NOT_FOUND_ANSWER in probe.stderr:"
+after = "    elif probe.code not in (NOT_FOUND, TIMED_OUT):"
+reddens = [
+  "tests/overlay/test_create.py::test_a_probe_that_failed_for_another_reason_never_switches_the_template[authentication]",
+  "tests/overlay/test_create.py::test_a_probe_that_failed_for_another_reason_never_switches_the_template[network-that-also-says-could-not-resolve]",
+  "tests/setup/test_setup.py::test_overlay_create_that_cannot_ask_gh_whose_template_creates_nothing",
 ]
 
 # `init_instance`'s own rationale — a harness installs a plugin by the name in its manifest, so
@@ -12510,4 +12558,16 @@ after = """        if True:
             leads = here[len(prefix) :]"""
 reddens = [
   "tests/assess/test_tracked.py::test_a_symlink_below_the_top_that_no_checkout_has_names_the_link[out-through-a-link-beside-the-project]",
+]
+
+# `gh` resolves an unqualified `OWNER/REPO` on `GH_HOST`, which the runner keeps, so on a GitHub
+# Enterprise host the fallback named whoever owns `stayfixed` there and the owner's private overlay
+# was generated from it. Named with its host, it is looked up on github.com.
+[[mutation]]
+name = "the publisher's template is named on whatever host gh defaults to"
+file = "src/stayfixed/overlay/create.py"
+before = 'PUBLISHED_TEMPLATE = f"{TEMPLATE_PUBLISHER_HOST}/{TEMPLATE_PUBLISHER}/{TEMPLATE_REPOSITORY}"'
+after = 'PUBLISHED_TEMPLATE = f"{TEMPLATE_PUBLISHER}/{TEMPLATE_REPOSITORY}"'
+reddens = [
+  "tests/overlay/test_create.py::test_the_publishers_template_is_used_when_the_owner_has_none",
 ]

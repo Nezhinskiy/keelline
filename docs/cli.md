@@ -1826,38 +1826,48 @@ shaped like an option is refused rather than quoted. `--root` is the directory t
 created *in*, not a project root, and defaults to the current directory.
 
 **Neither source is a default.** `--template` asks GitHub to generate a private repository from
-your template repository and clone it; `--local` renders the shipped template here and makes no
-network call. An invocation with neither is refused (`2`) naming both, so that creating a
-repository on an account is never something an omitted flag does.
+a template repository and clone it; `--local` renders the shipped template here and makes no
+network call. An invocation with neither is refused (`2`) naming
+both, so that creating a repository on an account is never something an omitted flag does.
 
-**`--template` needs a template repository of your own.** It names
-`<owner>/stayfixed-overlay-template`, which
+**`--template` uses your template when you have published one, and the publisher's otherwise.**
+It asks `gh repo view <owner>/stayfixed-overlay-template --json isTemplate` once. A template
+there is generated from, and it is the one
 [`stayfixed overlay publish-template`](#stayfixed-overlay-publish-template---owner-owner---name-name---yes)
-publishes to your account at each release. Until you have run that once, `--template` fails
-cleanly with `gh`'s own answer, and `--local` renders exactly the same tree here with no
-network call — an owner setting up a first overlay can use either.
+publishes to your account. A repository of that name that is not a template, and `gh`'s explicit
+answer that there is no such repository, both mean you have published none, and the template is
+`github.com/stayfixed/stayfixed-overlay-template`, the publisher's public copy, named with its
+host: `gh` looks an unqualified name up on `GH_HOST`, so on a GitHub Enterprise host
+`stayfixed/…` would be whoever owns that name there, while your own template's question stays on
+your host. The result names the template it used. Any other failure of that question — an expired token, a network error, a
+`gh` that is not installed or hung, an answer that is not the JSON asked for — stops the command
+with `gh`'s own message and creates nothing (`1`): it is not known whether you have a template of
+your own, and guessing "no" would generate your overlay from somebody else's. `--local` renders
+exactly the same tree here with no network call, so an owner setting up a first overlay can use
+either. `stayfixed setup --overlay create:<owner>/<name>` makes the same choice.
 
 A template and not a fork: a fork's visibility is bound to the upstream network and cannot be
 made private, which is the one outcome this command exists to prevent.
 
 The `--template` path is idempotent, because `gh` can give up on the clone with the repository
-already created: a directory that already carries `.claude-plugin/` is left alone and reported.
-When `gh repo create` itself fails, the command stops there and reports **its** exit code and
-**its** stderr: a `gh` that is not installed, or one that hung, costs one launch rather than
-three, and the failure names the binary rather than sending you to `gh auth status` for a
-repository that was never there. It also names the precondition above — the template repository
-`overlay publish-template` publishes — because that is the usual reason this source cannot
-work. When `gh` reports success and the clone brings nothing down, `gh repo view` is asked
-whether the repository exists at all — the answer tells "not created" from "created, and the
-clone raced its generation" — and the clone is retried once, after a ten-second wait when it
-was the second. **That retry is carried on reasoning rather than on a measurement:** the one
-trial run against it did not reproduce the race, and one clean run cannot rule out an
-asynchronous generation step that sometimes outlasts a clone. If the second attempt is still
-empty, the command fails (`1`) naming both attempts and what GitHub said in between.
+already created: a directory that already carries `.claude-plugin/` is left alone and reported,
+before `gh` is asked anything. When the template question or `gh repo create` itself fails, the
+command stops there and reports **its** exit code and **its** stderr: a `gh` that is not installed,
+or one that hung, costs one launch rather than three, and the failure names the binary rather than
+sending you to `gh auth status` for a repository that was never there. It also names which
+template repository each source uses, because a template that does not exist yet is the usual
+reason this source cannot work. When `gh` reports success and the clone brings nothing down,
+`gh repo view` is asked whether the repository exists at all — the answer tells "not created"
+from "created, and the clone raced its generation" — and the clone is retried once, after a
+ten-second wait when it was the second. **That retry is carried on reasoning rather than on a
+measurement:** the one trial run against it did not reproduce the race, and one clean run cannot
+rule out an asynchronous generation step that sometimes outlasts a clone. If the second attempt
+is still empty, the command fails (`1`) naming both attempts and what GitHub said in between.
 
 **Writes**, on `--local`, the instance directory `<root>/<name>` with every file of the template
-plus `.stayfixed/manifest.json`. On `--template`, through `gh repo create <owner>/<name> --private
---template <owner>/stayfixed-overlay-template --clone`, a new private repository on GitHub under
+plus `.stayfixed/manifest.json`. On `--template`, through `gh repo create <owner>/<name> --private --template <template> --clone`, where
+`<template>` is `<owner>/stayfixed-overlay-template` or
+`github.com/stayfixed/stayfixed-overlay-template` as above, a new private repository on GitHub under
 `<owner>` and its clone at `<root>/<name>` — or, when that clone brings nothing down, a clone
 from the retried `git clone`; a directory that already carries `.claude-plugin/` gets nothing.
 Exits `0` on success, `1` when no tree arrived, `2` on a refused name or a missing `--root`.
@@ -1874,6 +1884,7 @@ directory would otherwise be one plugin fighting itself; the Codex half is inclu
 reason as the other two. The marketplace's own plugin entries are suffixed with it, so the
 listing still names a manifest that answers. A manifest this overlay does not carry is reported
 and skipped, not a failure.
+
 
 Each rewrite is re-stamped into `.stayfixed/manifest.json`, so `overlay upgrade` still sees these
 files as stayfixed's own: without that, the file carrying `stayfixed.requires` read as hand-edited
@@ -2234,8 +2245,9 @@ failed call is a reported note, never a failure.
 **The overlay is touched only when `--overlay` names an answer**, and `--yes` does not imply
 one. `--overlay <path>` records an existing overlay's root; `--overlay create:<owner>/<name>`
 asks GitHub for a private repository from the template and initialises it, the same as
-`stayfixed overlay create --template` followed by `overlay init` — and inherits that flag's
-unshipped precondition, the template repository nothing publishes yet. Creating one needs `--yes` —
+`stayfixed overlay create --template` followed by `overlay init` — and makes the same choice of
+template that flag makes: yours when you have published one,
+`github.com/stayfixed/stayfixed-overlay-template` otherwise. Creating one needs `--yes` —
 explicit confirmation for the one irreversible, outward-facing act this command performs — and
 refuses (`2`) without it. Recording an *existing* path needs no `--yes`
 (a model-written command line reaches `--overlay X --yes` exactly as easily as `--overlay X`,
