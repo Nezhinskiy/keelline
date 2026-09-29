@@ -1439,3 +1439,97 @@ def test_a_first_attach_beside_the_harnesss_own_memory_and_a_linked_claude_attac
     assert not attached.settings_written
     assert list((tmp_path / "dotfiles-claude").iterdir()) == []
     assert _status(root) == ["?? .gitignore"]
+
+
+# --- a `memory.groups` entry git would read as more than one exclude line -------------------
+
+# Every character `str.splitlines` breaks a line at besides `\n` and `\r`, and the NUL git's C
+# reader stops a line at: git reads an exclude file by `\n` alone, so a name holding one of these
+# is one line to git and several to anything that re-reads the block with `splitlines`.
+_LINE_BREAKERS = ("\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029", "\x00")
+# A group name the repository authors, spelled as TOML escapes so the file stays text.
+_INJECTED = r"g\u2028!.env\u2028b"
+
+
+def _owner_hides_dotenv(root: Path, tmp_path: Path) -> None:
+    """The owner's own excludes file hides `.env`; the project's `.env` and a file `b` sit
+    untracked beside it, so `git status` shows `b` and never `.env`."""
+    owner = tmp_path / "owner-excludes"
+    owner.write_text(".env\n", encoding="utf-8")
+    _git(root, "config", "core.excludesFile", str(owner))
+    (root / ".env").write_text("SECRET=1\n", encoding="utf-8")
+    (root / "b").write_text("b\n", encoding="utf-8")
+
+
+def test_a_group_name_with_a_line_separator_unhides_nothing_on_a_later_attach(
+    tmp_path: Path,
+) -> None:
+    # A repository-authored group name holding U+2028 was written as one exclude line, which git
+    # reads as one line. The next attach re-read the block with `str.splitlines`, which breaks at
+    # U+2028, and wrote the pieces back as three lines: the link's path up to `g`, `!.env` and
+    # `b` -- so the owner's `.env` showed in `git status` and every file named `b` stopped
+    # showing. The repository adding a group is the ordinary reason for a second attach.
+    #
+    # Mutation: `mutations.toml`'s "the exclude line refuses only a newline".
+    root, store, machine = _attachable(tmp_path)
+    _with_groups(root, f'["developer", "project-stable", "{_INJECTED}"]')
+    _committed(root)
+    _owner_hides_dotenv(root, tmp_path)
+    home = tmp_path / "home"
+    _attach_confirmed(root, store, machine, home)
+    config = root / "stayfixed.toml"
+    text = config.read_text(encoding="utf-8")
+    config.write_text(text.replace(f'"{_INJECTED}"]', f'"{_INJECTED}", "later"]'), encoding="utf-8")
+    _git(root, "commit", "-qam", "a group is added")
+    _attach_confirmed(root, store, machine, home)
+    body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
+    # Non-vacuous: the second attach did rewrite the block, with the group it added.
+    assert body is not None and f"/{DEFAULT_MEMORY}/later" in body
+    assert "!.env" not in body.split("\n")
+    status = _status(root)
+    assert "?? .env" not in status
+    assert "?? b" in status
+
+
+def test_an_earlier_blocks_line_is_kept_whole_whatever_it_holds(tmp_path: Path) -> None:
+    # The union reads back the lines an earlier attach wrote. Read by `str.splitlines`, one line
+    # holding U+2028 came back as three, and a `!.env` among them un-hid the owner's `.env`. git
+    # ends a line at `\n` alone, so the block is read the same way.
+    #
+    # Mutation: `mutations.toml`'s "the exclude block is re-read at every line separator".
+    root, store, machine = _attachable(tmp_path)
+    _committed(root)
+    _owner_hides_dotenv(root, tmp_path)
+    exclude = _exclude(root)
+    exclude.parent.mkdir(exist_ok=True)
+    earlier = f"/{DEFAULT_MEMORY}/g\u2028!.env\u2028b"
+    exclude.write_text(
+        f"# stayfixed:attach:begin\n{earlier}\n# stayfixed:attach:end\n", encoding="utf-8"
+    )
+    _attach_confirmed(root, store, machine, tmp_path / "home")
+    body = extract(exclude.read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
+    # Non-vacuous: this attach did rewrite the block, adding the links it placed.
+    assert body is not None and f"/{DEFAULT_MEMORY}/developer" in body
+    assert earlier in body.split("\n")
+    status = _status(root)
+    assert "?? .env" not in status
+    assert "?? b" in status
+
+
+@pytest.mark.parametrize("breaker", _LINE_BREAKERS, ids=lambda c: f"U+{ord(c):04X}")
+def test_a_name_git_would_read_differently_gets_no_exclude_line(breaker: str) -> None:
+    # A name holding one of these is left visible, as a name holding a line break already was:
+    # no exclude line spells it, and one that tried would be read back as other lines, or, for a
+    # NUL, cut short by git into a pattern for a different path.
+    from stayfixed.attach.exclude import pattern
+
+    assert pattern(f"notes/z{breaker}*") is None
+
+
+def test_a_group_with_a_space_or_a_non_ascii_name_is_still_hidden() -> None:
+    # The legitimate user the rule above must not refuse: an ordinary name that happens to hold a
+    # space or a letter outside ASCII still gets its one anchored, escaped line.
+    from stayfixed.attach.exclude import pattern
+
+    assert pattern("notes/my notes") == "/notes/my\\ notes"
+    assert pattern("notes/заметки") == "/notes/заметки"

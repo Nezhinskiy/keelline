@@ -19,10 +19,14 @@ about the same way (`write.attach`), so such a checkout is not touched.
 Security ruling, in the order the template asks for it. **Preconditions**: every candidate path is
 computed by stayfixed — `paths.memory` and each `memory.groups` entry are repository-authored, but
 each candidate is held inside the project by `config.paths.contained` before it is asked about,
-and a name git's pattern syntax cannot spell (a line break) is left out, so it stays visible
-rather than being hidden by a line the repository wrote; every other special character is escaped,
-so a group named `*` hides that one link and not the directory. **Anchor**: git's own ignore
-evaluation in this checkout, which is the only authority on what `git status` shows. **Write
+and a name no exclude line can hold as one line is left out, so it stays visible rather than being
+hidden by a line the repository wrote: a line break, a NUL (git's reader ends the line there, so
+the pattern would be a shorter path's), and every other character `str.splitlines` breaks at (a
+reader that splits there would take one line for several). Of the characters left, git's
+pattern syntax gives a meaning to `\\`, `*`, `?`, `[` and a space (a trailing one is dropped), and
+each is escaped, so a group named `*` hides that one link and not the directory. The block is read
+back the way git reads it, at `\\n` alone. **Anchor**: git's own ignore evaluation in this
+checkout, which is the only authority on what `git status` shows. **Write
 target**: `info/exclude` as `git rev-parse --git-path` names it — `guards.git_path`, the resolver
 `setup --git-hooks` uses — refused when it is a symlink, as `guards.githooks.install` refuses a
 symlinked hook, and written with `fsops.write_atomically`, whose rename replaces the name rather
@@ -96,9 +100,11 @@ def pattern(relative: str) -> str | None:
     """The one exclude line matching exactly `relative` from the checkout's top, or `None`.
 
     Anchored with a leading `/`, which also means no line starts with `!` or `#`. `None` for a
-    path holding a line break, which no pattern can spell: that path is left visible.
+    path no single line can hold: a line break, a NUL, at which git's reader ends the line, or
+    any other character `str.splitlines` breaks at, which a reader splitting there would take
+    for the end of a line and the start of another. That path is left visible.
     """
-    if "\n" in relative or "\r" in relative:
+    if relative.splitlines() != [relative] or "\0" in relative:
         return None
     return "/" + "".join(f"\\{char}" if char in _SPECIAL else char for char in relative)
 
@@ -113,7 +119,16 @@ def _read(path: Path) -> str:
 
 
 def _patterns(body: str | None) -> list[str]:
-    return [line for line in (body or "").splitlines() if line and not line.startswith("#")]
+    """The pattern lines of an earlier block, split where git splits them: at `\\n` alone, with
+    the one `\\r` before it dropped, as git drops it.
+
+    Never `str.splitlines`, which also breaks at U+2028, `\\x85`, a form feed and five more: a
+    line an earlier stayfixed wrote with one of those in it came back as several, and a `!.env`
+    among them un-hid a file the owner's own excludes hide (`gitenv.answer_lines` gives the same
+    rule for git's answers).
+    """
+    lines = (line.removesuffix("\r") for line in (body or "").split("\n"))
+    return [line for line in lines if line and not line.startswith("#")]
 
 
 def planned_block(root: Path, relatives: Sequence[str]) -> ExcludeWrite | None:

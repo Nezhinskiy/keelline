@@ -2140,7 +2140,10 @@ entry can; `detach` reads it and nothing else.
 and one link per group), each `.codex/rules/` file and — on a run that writes it, or after one
 that did — `.claude/settings.local.json` are this machine's own, so each one `git check-ignore`
 does not already report as ignored is listed in the exclude-file block, one anchored line per
-path; a tracked file is not ignored in that sense and is listed like any other. A path this run
+path; a tracked file is not ignored in that sense and is listed like any other. A link whose
+name no single exclude line can hold — a group name with a line break, a NUL, U+2028 or another
+character a line reader may split at — gets no line and stays visible, rather than being written
+as a line git, or a later `attach` reading the block back, would take for several. A path this run
 does not write is not listed and is not held to the project either, so a `.claude` linked in
 from elsewhere is refused, before the first write, only when the overlay grants something to
 merge into it. The `autoMemoryDirectory` fallback is never written through such a link: where it
