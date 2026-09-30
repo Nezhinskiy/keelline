@@ -109,6 +109,14 @@ REMOTE_MISMATCH = (
     "stayfixed: the overlay records a different remote under this project's name; "
     "run `stayfixed attach --check` before trusting it"
 )
+# `memory.api.NO_ORIGIN_CAUSE` and `NO_ORIGIN_WAY_OUT`, the sentence every other surface says for
+# a checkout with no `origin`. Spelled out rather than imported, because discovery imports this
+# module and must not import the memory area; `tests/attach/test_hooks.py` holds the two equal.
+NO_ORIGIN = (
+    "stayfixed: this checkout has no `origin` remote, so there is nothing to bind to the overlay "
+    "or to check its record against; add the `origin` remote (the one this project was bound "
+    "with, when the overlay records one), then run `stayfixed attach`"
+)
 MEMORY_PATH_REFUSED = (
     "stayfixed: a memory path was refused for this repository, so its notes were not checked; "
     "`stayfixed doctor` says which"
@@ -167,14 +175,8 @@ def _overlay_status(event: HookEvent, config: Config | None) -> HookResult:
         from stayfixed.attach.binding import binding_for, unlinked_groups
         from stayfixed.config.paths import PathEscape
         from stayfixed.errors import Failure, Refusal
-        from stayfixed.memory.api import (
-            MISMATCH,
-            NO_ORIGIN,
-            NO_ORIGIN_CAUSE,
-            NO_ORIGIN_WAY_OUT,
-            UNBOUND,
-            overlay_root,
-        )
+        from stayfixed.memory.api import MISMATCH, UNBOUND, overlay_root
+        from stayfixed.memory.api import NO_ORIGIN as NO_ORIGIN_STATE
         from stayfixed.overlay.api import overlay_sync, requires_of, satisfies
 
         root = event.project_root
@@ -193,11 +195,11 @@ def _overlay_status(event: HookEvent, config: Config | None) -> HookResult:
             lines.append(NOT_ATTACHED)
         elif binding.state == MISMATCH:
             lines.append(REMOTE_MISMATCH)
-        elif binding.state == NO_ORIGIN:
-            # `memory.store`'s own sentence, which every other surface says for this state: it
-            # used to be read as a mismatch here too, and the line sent the reader to `--check`
-            # about a different remote that was not there.
-            lines.append(f"stayfixed: {NO_ORIGIN_CAUSE}; {NO_ORIGIN_WAY_OUT}")
+        elif binding.state == NO_ORIGIN_STATE:
+            # The sentence every other surface says for this state: it used to be read as a
+            # mismatch here too, and the line sent the reader to `--check` about a different
+            # remote that was not there.
+            lines.append(NO_ORIGIN)
         try:
             real = unlinked_groups(root, config)
         except PathEscape:

@@ -13283,7 +13283,7 @@ reddens = [
 [[mutation]]
 name = "the session-start line says nothing about a missing origin"
 file = "src/stayfixed/attach/hooks.py"
-before = '            lines.append(f"stayfixed: {NO_ORIGIN_CAUSE}; {NO_ORIGIN_WAY_OUT}")'
+before = "            lines.append(NO_ORIGIN)"
 after = "            pass"
 reddens = [
   "tests/attach/test_hooks.py::test_a_checkout_with_no_origin_hears_the_cause_every_other_surface_says",

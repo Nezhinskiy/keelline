@@ -431,7 +431,7 @@ registers one `SessionStart` handler — `open`, with a `once_key`, so it speaks
 per session: the marker is banked only when the handler had something to say, so a session that
 hears a line hears it once, and a repository with nothing to report is asked again on every
 `startup`, `resume`, `clear`, `compact` and `fork` the matcher above covers — and it says
-nothing at all unless `[memory] mode` is `overlay`. Ten fixed lines, each carrying at most a
+nothing at all unless `[memory] mode` is `overlay`. Eleven fixed lines, each carrying at most a
 count, joined by newlines in this order: **no overlay recorded** on this machine, or one that
 **could not be asked** about, which is a machine configuration file that will not parse; this
 repository **not attached** to that overlay, the overlay recording **a different remote**
@@ -2110,17 +2110,20 @@ anything; `--check` says so first on its line, still reports the rest, and exits
 the real run refuses with.
 
 **`--check` writes nothing.** It reports the binding state — `unbound`, `bound`, `mismatch` or
-`no-origin`, the last with the cause and the way out ahead of the counts —
-the permission diff (which allow rules and which hook entries would be added, and how many of
-the overlay's rules this repository already has), the Codex standing-rule files it would
-place under `.codex/rules/`, and `real_directories`: how many of this project's memory groups
-are still real directories rather than links into the overlay. Read it before the real run:
-everything under **Writes** below that carries content from the overlay is named here first.
+`no-origin`, the last with the cause and the way out ahead of the counts — the permission diff
+(which allow rules and which hook entries would be added, and how many of the overlay's rules this
+repository already has), the Codex standing-rule files it would place under `.codex/rules/`, and
+`real_directories`: how many of this project's memory groups are still real directories rather than
+links into the overlay. Read it before the real run: everything under **Writes** below that carries
+content from the overlay is named here first. It does not make the refusals that come after the
+diff: an overlay rule file that is not UTF-8, a `trust.json` that does not parse, a doubled
+`stayfixed:ignore` region or `stayfixed:attach` block, a `.git/info` you cannot write. The real run
+makes them, before it writes anything.
 
 It exits `1` when that count is non-zero, the same way it does on a mismatch or a checkout with no
-`origin` and for the same reason — both are findings you act on before the real run, and `attach` itself is what
-refuses. The count is a count: a group's name comes out of `stayfixed.toml`, so it is never
-printed.
+`origin` and for the same reason — all three are findings you act on before the real run, and
+`attach` itself is what refuses. The count is a count: a group's name comes out of `stayfixed.toml`,
+so it is never printed.
 
 Those standing-rule files are reported but **not** gated by `--yes`. The gate is about widening
 a *permission*; a standing rule is not one, and adding standing rules is the machine owner's own
@@ -2182,38 +2185,38 @@ the
 of which allow rules are stayfixed's, because an allow rule cannot carry a marker the way a hook
 entry can; `detach` reads it and nothing else.
 
-**What it places, it hides from git, unless git hides it already.** The link tree (`MEMORY.md`
-and one link per group), each `.codex/rules/` file and — on a run that writes it, or after one
-that did — `.claude/settings.local.json` are this machine's own, so each one is listed in the
-exclude-file block, one anchored line per path, unless your own excludes already hide it: the
-repository's exclude file or your global excludes file (`core.excludesFile`), read on their own.
-A `.gitignore` in the checkout does not stand in for the block, because the repository authors it
-and a pull can change it: a path only a `.gitignore` hides gets a line, and a path your own
-excludes hide gets none, whatever a `.gitignore` also says. A file the repository tracks is
-listed only when your own excludes do not hide it, since no exclude line hides a tracked file. A
-link whose
-name no single exclude line can hold — a group name with a line break, a NUL, U+2028 or another
-character a line reader may split at — gets no line and stays visible, rather than being written
-as a line git, or a later `attach` reading the block back, would take for several. A path this run
-does not write is not listed and is not held to the project either, so a `.claude` linked in
-from elsewhere is refused, before the first write, only when the overlay grants something to
-merge into it. The `autoMemoryDirectory` fallback is never written through such a link: where it
-would be taken — a real directory already sits where the harness memory link goes, and the store
-is approved — `attach` skips it and its line says what the harness link is missing and what to
-do. Whether the fallback may be taken is decided before the first write too; on a first attach,
-with no approval recorded for the store yet, it cannot be. A checkout that already hides all of
-them in its own exclude file or a global excludes file gets no block, and one that already hides
-`.stayfixed/local/` and `.stayfixed/assessment.json` by any means, `.gitignore` included, gets no
-`.gitignore` change, so `git status` after an attach shows at most the `stayfixed:ignore` region.
-`.gitignore` is never written beyond that region. When the exclude file did not exist, when the
-directory it goes in did not exist either (a repository made without git's templates has no
-`info/`, and the write creates it), or when its last line had no line ending, the block says so in
-a comment line of its own, which is what lets `detach`, from whichever checkout runs it last, give
-the file back byte for byte. The file is read as bytes, so bytes in it that are not UTF-8 are kept
-exactly and refuse nothing. The file is read, changed and replaced without a lock, so two `attach` runs at once in checkouts of one repository,
-the main checkout and a worktree say, can each read it before the other writes, and the later
-write then drops the lines the earlier one added: run one `attach` at a time. Running `attach`
-again in the checkout whose lines went puts them back.
+**What it places, it hides from git, unless git hides it already.** The link tree (`MEMORY.md` and
+one link per group), each `.codex/rules/` file and — on a run that writes it, or after one that did
+— `.claude/settings.local.json` are this machine's own, so each one is listed in the exclude-file
+block, one anchored line per path, unless your own excludes already hide it: the repository's
+exclude file or your global excludes file (`core.excludesFile`), read on their own. A `.gitignore`
+in the checkout does not stand in for the block, because the repository authors it and a pull can
+change it: a path only a `.gitignore` hides gets a line, and a path your own excludes hide gets
+none, whatever a `.gitignore` also says. A file the repository tracks is listed only when your own
+excludes do not hide it, since no exclude line hides a tracked file. A link whose name no single
+exclude line can hold — a group name with a line break, a NUL, U+2028 or another character a line
+reader may split at — gets no line and stays visible, rather than being written as a line git, or a
+later `attach` reading the block back, would take for several. A path this run does not write is not
+listed and is not held to the project either, so a `.claude` linked in from elsewhere is refused,
+before the first write, only when the overlay grants something to merge into it. The
+`autoMemoryDirectory` fallback is never written through such a link: where it would be taken — a
+real directory already sits where the harness memory link goes, and the store is approved — `attach`
+skips it and its line says what the harness link is missing and what to do. Whether the fallback may
+be taken is decided before the first write too; on a first attach, with no approval recorded for the
+store yet, it cannot be. A checkout that already hides all of them in its own exclude file or a
+global excludes file gets no block, and one that already hides `.stayfixed/local/` and
+`.stayfixed/assessment.json` by any means, `.gitignore` included, gets no `.gitignore` change, so
+`git status` after an attach shows at most the `stayfixed:ignore` region. `.gitignore` is never
+written beyond that region. When the exclude file did not exist, when the directory it goes in did
+not exist either (a repository made without git's templates has no `info/`, and the write creates
+it), or when its last line had no line ending, the block says so in a comment line of its own, which
+is what lets `detach`, from whichever checkout runs it last, give the file back byte for byte. The
+file is read as bytes, so bytes in it that are not UTF-8 are kept exactly and refuse nothing. The
+file is read, changed and replaced without a lock, so two runs at once in checkouts of one
+repository — two `attach` runs, or an `attach` and a `detach`, in the main checkout and a worktree
+say — can each read it before the other writes, and the later write then undoes what the earlier one
+did to it. Run one `attach` or `detach` at a time. Running `attach` again in the checkout whose
+lines went puts them back.
 
 It also **removes** one file, in one case. The `autoMemoryDirectory` fallback is taken only while
 the harness memory link cannot be made, so when the link becomes possible again — or when the
@@ -2241,9 +2244,10 @@ configuration and no hook is installed — the machine that cloned an overlay so
 never ran `overlay init`. A missing `pre-commit` is a reported note, never a traceback.
 
 Exits `0` on success. Under `--check` it exits `1` on a mismatch, on a checkout with no `origin`,
-**or** on a non-zero count of memory groups that are still real directories, which are the
-findings the paragraphs above explain and the same number for all three, and `2` for a `memory.mode` other than `overlay`; the
-loading, binding and diff failures below end `--check` with the same codes as a real run.
+**or** on a non-zero count of memory groups that are still real directories, which are the findings
+the paragraphs above explain and the same number for all three, and `2` for a `memory.mode` other
+than `overlay`; the loading, binding and diff failures below end `--check` with the same codes as a
+real run.
 
 A real run exits `1` on a failure, something it reads that cannot be read or a `git` that cannot
 answer, in the order the run meets them:
@@ -2331,25 +2335,24 @@ only the *starting* point that has to be the one holding the record.
 
 **Writes**: it takes the recorded allow rules and the fallback key back out of
 `.claude/settings.local.json`, drops the hook entries marked `# stayfixed:…` there (a group that
-mixes one of those with your own entry is split, never replaced), and leaves the file unwritten
-when none of those is in it, removes the `.codex/rules/`
-files it wrote, withdraws the link tree from this checkout and every worktree together with the
-harness memory link, removes the `stayfixed:ignore` region and the `stayfixed:attach` block in
-the repository's exclude file, and deletes the ledger, `.stayfixed/local/attach.json`. A file
-left holding nothing is removed rather than left empty — for the exclude file, only when `attach`
-created it, which the block records, so an exclude file you had, empty or not, stays, and the
-`info/` directory it sat in goes with it only when `attach` created that too and it is empty; the
-line ending `attach` added to your exclude file's last line before its block is taken back too,
-when nothing follows the block. The exclude file is read and written as bytes, so bytes in it that are
-not UTF-8 are kept as they are. An exclude file that is a symlink is left alone, because `attach`
-never writes through one. **The exclude block stays while another checkout is attached.** The
-exclude file is shared by every worktree of the repository, while the ledger, the settings file
-and the `.codex/rules/` copies are each checkout's own; so when another checkout still holds a
-ledger, the block is kept for its files, the line ends by saying so, and `--json` reports
-`exclude_block_kept: true`. The detach of the last attached checkout takes it. Only a ledger an
-attach wrote counts: one git does not track (a clone that committed the file has it in every
-worktree) and that reads as a ledger. A `git` that cannot say whether the file is tracked counts
-it, and the block stays.
+mixes one of those with your own entry is split, never replaced), and leaves the file unwritten when
+none of those is in it, removes the `.codex/rules/` files it wrote, withdraws the link tree from
+this checkout and every worktree together with the harness memory link, removes the
+`stayfixed:ignore` region and the `stayfixed:attach` block in the repository's exclude file, and
+deletes the ledger, `.stayfixed/local/attach.json`. A file left holding nothing is removed rather
+than left empty — for the exclude file, only when `attach` created it, which the block records, so
+an exclude file you had, empty or not, stays, and the `info/` directory it sat in goes with it only
+when `attach` created that too and it is empty; the line ending `attach` added to your exclude
+file's last line before its block is taken back too, when nothing follows the block. The exclude
+file is read and written as bytes, so bytes in it that are not UTF-8 are kept as they are. An
+exclude file that is a symlink is left alone, because `attach` never writes through one. **The
+exclude block stays while another checkout is attached.** The exclude file is shared by every
+worktree of the repository, while the ledger, the settings file and the `.codex/rules/` copies are
+each checkout's own; so when another checkout still holds a ledger, the block is kept for its files,
+the line ends by saying so, and `--json` reports `exclude_block_kept: true`. The detach of the last
+attached checkout takes it. Only a ledger an attach wrote counts: one git does not track (a clone
+that committed the file has it in every worktree) and that reads as a ledger. A `git` that cannot
+say whether the file is tracked counts it, and the block stays.
 
 Then it removes, each only when empty: the `paths.memory` directory in this checkout when the
 ledger records `attach` as having created it, and in every other checkout it withdrew a tree from
@@ -2986,11 +2989,11 @@ beside the six above:
 | `stayfixed setup --machine` | the machine configuration file to write (default: ~/.config/stayfixed/config.toml, the file every reader reads) |
 | `stayfixed attach --check` | report the binding, the diff and the groups that never moved, and write nothing |
 
-`attach --check` reports the way the other four do and exits differently on purpose: its `1` is
-a binding **mismatch** or a checkout with no `origin`, not a non-empty diff. A diff carrying allow rules is the ordinary state
-of a first attach and is exactly what the `--yes` gate exists for — the refusal `attach` raises
-names this flag as the way to read that diff first. A `--check` that failed whenever the run
-would widen would make the documented remedy itself a failure.
+`attach --check` reports the way the other four do and exits differently on purpose: its `1` is a
+binding **mismatch** or a checkout with no `origin`, not a non-empty diff. A diff carrying allow
+rules is the ordinary state of a first attach and is exactly what the `--yes` gate exists for — the
+refusal `attach` raises names this flag as the way to read that diff first. A `--check` that failed
+whenever the run would widen would make the documented remedy itself a failure.
 
 ---
 

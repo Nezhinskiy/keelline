@@ -134,15 +134,17 @@ def test_a_checkout_with_no_origin_hears_the_cause_every_other_surface_says(
     # out the memory commands, `attach`, `--check` and `doctor` say.
     #
     # Mutation: `mutations.toml`'s "the session-start line says nothing about a missing origin".
+    from stayfixed.attach.hooks import NO_ORIGIN
     from stayfixed.memory.api import NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT
 
+    # The line is spelled out in the hook module, which discovery imports and which must not
+    # import the memory area, so its words are held to the memory area's here. No mutation: a
+    # changed spelling on either side reddens this line.
+    assert f"stayfixed: {NO_ORIGIN_CAUSE}; {NO_ORIGIN_WAY_OUT}" == NO_ORIGIN
     root, overlay, machine = _recorded(tmp_path, monkeypatch)
     _bind(overlay)
     git(root, "remote", "remove", "origin")
-    said = _run(root, machine, None)
-    assert said is not None
-    assert NO_ORIGIN_CAUSE in said and NO_ORIGIN_WAY_OUT in said
-    assert REMOTE_MISMATCH not in said
+    assert _run(root, machine, None) == NO_ORIGIN
 
 
 @needs_git
