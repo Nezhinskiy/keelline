@@ -139,3 +139,24 @@ def test_an_end_marker_for_another_name_is_not_an_orphan() -> None:
     # carrying somebody else's closed region still reads as "absent" for this name.
     text = BEFORE + "<!-- stayfixed:other:end -->\n"
     assert extract(text, "harness", Style.MARKDOWN) is None
+
+
+def test_a_hash_region_reads_lines_where_git_does() -> None:
+    # A hash-style region lives in a file git reads (`.gitignore`, `info/exclude`), and git ends a
+    # line at `\n` alone: a last line ending in a lone `\r` is one git still has to see ended, or
+    # the block's first marker is glued onto it and that pattern is lost. A Markdown region keeps
+    # reading a lone `\r` as a line end, which is what a Markdown reader does.
+    #
+    # Mutations: `mutations.toml`'s "a hash region reads a lone carriage return as a line end"
+    # and "a hash region finds a marker across a lone carriage return".
+    begin, _ = markers("x", Style.HASH)
+    assert upsert("/a\n/b\r", "x", "/c", Style.HASH).startswith(f"/a\n/b\r\n{begin}\n")
+    # In a file that ends its lines with `\r\n`, that last line is still ended by `\n` alone:
+    # git drops one `\r` before a `\n`, so `/b\r\r\n` would read as the pattern `/b\r`.
+    assert upsert("/a\r\n/b\r", "x", "/c", Style.HASH).startswith(f"/a\r\n/b\r\n{begin}\r\n")
+    md_begin, _ = markers("x", Style.MARKDOWN)
+    assert upsert("a\nb\r", "x", "c", Style.MARKDOWN).startswith(f"a\nb\r{md_begin}\n")
+    # And a marker is a marker only on a line of its own, as git splits it: glued onto the line
+    # before it by a lone `\r`, it is not one, and the end marker then has no beginning.
+    with pytest.raises(RegionError, match="no beginning"):
+        extract(f"/a\r{begin}\n/c\n# stayfixed:x:end\n", "x", Style.HASH)

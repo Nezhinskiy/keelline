@@ -1,10 +1,11 @@
 """Create the owner's private overlay, and make an instance theirs.
 
-Two sources, one result. `--template` asks GitHub to generate a private repository from the
-public template and clone it; `--local` renders `templates/overlay/` here through the scaffold
-engine and touches no network. A template and not a fork: a fork's visibility is bound to the
-upstream network and cannot be made private, and an overlay that is not private is the one
-outcome this whole area exists to prevent.
+Two sources, one result. `--template` asks GitHub to generate a private repository from a public
+template and clone it — the owner's own `<owner>/stayfixed-overlay-template` when they have
+published one, and the publisher's otherwise; `--local` renders `templates/overlay/` here through
+the scaffold engine, makes a git repository of it, and touches no network. A template and not a
+fork: a fork's visibility is bound to the upstream network and cannot be made private, and an
+overlay that is not private is the one outcome this whole area exists to prevent.
 
 `init_instance` is what makes a generated repository *this owner's*: the plugin and marketplace
 names carry their account, so two overlays installed into one harness never collide, and the
@@ -31,13 +32,28 @@ from stayfixed.overlay.layout import (
     MARKETPLACE_MANIFEST,
     OVERLAY_FILES,
     PLUGIN_MANIFEST,
+    SUCCESSORS,
 )
-from stayfixed.overlay.template import templates
+from stayfixed.overlay.template import retired, templates
+from stayfixed.printed import answered
 from stayfixed.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
-from stayfixed.scaffold import Manifest, apply, digest, plan
+from stayfixed.scaffold import Manifest, Verb, apply, digest, plan, unlinks
 
 Source = Literal["template", "local"]
 TEMPLATE_REPOSITORY = "stayfixed-overlay-template"
+# Whose public copy of that repository `--template` falls back to when the owner has published none
+# of their own. The publisher's account is a fact about where this project's template lives, and
+# `publish-template` keeps reading `TEMPLATE_REPOSITORY` alone for its `--name` default: what an
+# owner *publishes* is theirs to name, what they *generate from* has this one fallback.
+TEMPLATE_PUBLISHER = "stayfixed"
+# The fallback named with its host, and never host-relative: `gh` resolves an unqualified
+# `OWNER/REPO` on `GH_HOST`, which the runner keeps, so on a GitHub Enterprise host the fallback
+# would be whoever owns `stayfixed` there, and the owner's private overlay, whose hooks run in
+# every session, would be generated from it. `gh repo create --template` and `gh repo view` look a
+# `HOST/OWNER/REPO` name up on that host whatever `GH_HOST` says (measured against gh 2.101.0).
+# The owner's own `<owner>/…` probe stays host-relative: that repository is on the owner's host.
+TEMPLATE_PUBLISHER_HOST = "github.com"
+PUBLISHED_TEMPLATE = f"{TEMPLATE_PUBLISHER_HOST}/{TEMPLATE_PUBLISHER}/{TEMPLATE_REPOSITORY}"
 # The directory whose presence says a generated repository actually arrived — the exact probe the
 # spike record (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) used in its *template creation
 # race and renaming* trial, and the one thing a repository created from this template always
@@ -51,20 +67,43 @@ PROBE = ".claude-plugin"
 # measurement: generation is asynchronous on GitHub's side and one clean run cannot rule out a slow
 # one.
 RETRY_WAIT_SECONDS = 10
-# The precondition `docs/cli.md` names and the command itself never did. `--template` generates
-# from a repository on the owner's own account, and that repository has to have been published
-# there first. A failure here that does not say so sends the owner to `gh auth status` for a
-# repository that was never there.
+# What `docs/cli.md` says about the template, and what a failure has to say too. `--template`
+# generates from the owner's own copy when they have published one with `stayfixed overlay
+# publish-template`, and from the publisher's public copy otherwise, so an account that never
+# published one still has somewhere to generate from. A failure that does not say so sends the
+# owner to `gh auth status` for a repository that was never there.
 TEMPLATE_PRECONDITION = (
-    f"`--template` generates from <owner>/{TEMPLATE_REPOSITORY}, which `stayfixed overlay "
-    f"publish-template` publishes at each release; an owner who has not published one "
-    f"renders the same tree here with `stayfixed overlay create --local`, with no network call"
+    f"`--template` generates from <owner>/{TEMPLATE_REPOSITORY} when the owner has published one "
+    f"with `stayfixed overlay publish-template`, and from {PUBLISHED_TEMPLATE} otherwise; "
+    f"`stayfixed overlay create --local` renders the same tree here with no network call"
 )
+# What `gh repo view` prints on stderr, whatever the name, when the repository does not exist or
+# this token cannot see it (measured against gh 2.101.0, `stayfixed/definitely-missing-xyz`):
+# `GraphQL: Could not resolve to a Repository with the name '<slug>'. (repository)`, exit 1. It is
+# the only thing that tells "not found" from an expired token (`HTTP 401: Bad credentials`, also
+# exit 1) and from a network failure, so it is matched as the whole phrase and never as the
+# shorter "Could not resolve", which `Could not resolve host` shares. A named string, not a cap:
+# it bounds nothing and no shipped file changes with it.
+NOT_FOUND_ANSWER = "Could not resolve to a Repository"
 # The three manifests `init_instance` names after the owner. The Codex one was left out of the
 # first draft, so the collision the suffix exists to prevent still happened on Codex: two
 # owners' overlays under one Codex configuration were one plugin fighting itself, which is the
 # exact wording `init_instance`'s own docstring gives as the rationale.
 MANIFESTS = (PLUGIN_MANIFEST, MARKETPLACE_MANIFEST, CODEX_PLUGIN_MANIFEST)
+# What the template carries where an account goes, and what `init_instance` replaces with the
+# owner's. A marketplace has to name an `owner` for `claude plugin validate` to accept it, and a
+# plugin manifest an `author` for it to stop warning; neither can be the owner's before there is
+# an owner, so the shipped file holds this neutral stand-in. `templates/overlay/` carries the same
+# string, and `tests/overlay/test_create.py`'s
+# `test_init_names_the_owner_and_the_author_the_harness_asks_for` renders the template and fails
+# when the two drift apart.
+PLACEHOLDER_ACCOUNT = "your-account"
+# Which key of each manifest names the account: the marketplace's owner, the plugins' author.
+ACCOUNT_KEYS = {
+    PLUGIN_MANIFEST: "author",
+    MARKETPLACE_MANIFEST: "owner",
+    CODEX_PLUGIN_MANIFEST: "author",
+}
 
 
 @dataclass(frozen=True)
@@ -72,12 +111,19 @@ class Created:
     root: Path
     source: Source
     notes: tuple[str, ...]
+    # The template repository a `--template` run generated from (`<account>/<name>`), so a caller
+    # that reports the run can name it without parsing a note. `None` for `--local` and for a
+    # directory that was already there and was left alone.
+    template: str | None = None
 
 
 @dataclass(frozen=True)
 class Initialised:
     renamed: tuple[str, ...]
     notes: tuple[str, ...]
+    # Every overlay file the run rewrote, removed or wrote, the renamed manifests included, so a
+    # caller that reports on an overlay it found can say whether `init` changed it.
+    changed: tuple[str, ...] = ()
 
 
 def target_root(root: Path, owner: str, name: str) -> tuple[Path, str]:
@@ -147,12 +193,66 @@ def create(
         # `--root`, which is a refusal a person can act on rather than an internal error.
         raise Refusal(f"{root} is not a directory; name one that exists with --root")
     if source == "local":
-        return Created(
-            _render_locally(root, name),
-            source,
-            ("rendered from the shipped template; no network call was made",),
-        )
+        target = _render_locally(root, name)
+        # Here and not in `_render_locally`, which `publish-template` also renders through: its
+        # scratch tree is cloned over and replaced, and a repository of its own there would be
+        # pushed as a nested one. A repository is what this owner does next with the tree (commit
+        # it, give it a private remote), so it is made now, on `main`, with no remote: the remote
+        # is a repository that has to exist on GitHub first, and that is the owner's to create.
+        return Created(target, source, _initialise_repository(target, account, name, runner))
     return _from_template(account, name, root=root, runner=runner, wait=wait)
+
+
+def _initialise_repository(
+    target: Path, account: str, name: str, runner: Runner
+) -> tuple[str, str]:
+    """The notes a `--local` run ends with: the repository it made, and how to give it a remote.
+
+    A `git` that cannot run is a note and not a failure: the tree is on disk by now, so refusing
+    would hide a directory that exists, and the note says the one command that finishes the job.
+
+    A directory that is already a repository is left as it is: `git init` over one changes
+    neither its branch nor its remotes, so a note saying it was made one on `main` with no remote
+    would be false about a repository on another branch with an `origin`.
+    """
+    rendered = "rendered from the shipped template; no network call was made"
+    git_dir = target / ".git"
+    if git_dir.exists() or git_dir.is_symlink():
+        return (
+            rendered,
+            "it was already a git repository, and its branch and remotes were left as they were",
+        )
+    # `git init` and then the branch, and not `git init -b main`: `-b` arrived in git 2.28, and an
+    # older `git` refuses the option, so the one command that makes the repository failed there.
+    # `symbolic-ref` names the unborn branch on every version.
+    remote = (
+        f"`git remote add origin git@github.com:{account}/{name}.git` and "
+        f"`git push -u origin main` once you have created the private repository "
+        f"{account}/{name} on GitHub"
+    )
+    step = "git init"
+    done = runner.run(["git", "init"], target)
+    if done.code == 0:
+        step = "git symbolic-ref HEAD refs/heads/main"
+        done = runner.run(["git", "symbolic-ref", "HEAD", "refs/heads/main"], target)
+    if done.code != 0:
+        return (
+            rendered,
+            f"`{step}` {_ended(done)} ({_detail(done)}), so this is not a git repository on main "
+            f"yet: run `git init` and `git symbolic-ref HEAD refs/heads/main` in it, then {remote}",
+        )
+    return (rendered, f"made it a git repository on main with no remote; give it one with {remote}")
+
+
+def _ended(done: Completed) -> str:
+    """How a subprocess that did not succeed ended, in words true of each way: one that could
+    not be launched did not run, one that hung did not finish, and one that ran has an exit
+    code."""
+    if done.code == NOT_FOUND:
+        return "could not be run"
+    if done.code == TIMED_OUT:
+        return "did not finish"
+    return f"exited {done.code}"
 
 
 def _detail(done: Completed) -> str:
@@ -163,8 +263,66 @@ def _detail(done: Completed) -> str:
     not be run: …")` and the failure below still said "GitHub did not confirm the repository
     exists; check `gh auth status`" — a cause that was not the cause, about a binary that was
     not there. The same idiom `setup.run` uses for its notes.
+
+    **Clipped, in `printed.answered`**, which every command quoting a subprocess goes through.
+    What `gh`, `git` and `pre-commit` print is not text this project wrote: a proxy or a wrapper
+    can put a line break and `::error::` in it, which a CI runner reads as a workflow command, or
+    an escape sequence, which drives a terminal.
     """
-    return done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"
+    return answered(done)
+
+
+def _template_for(owner: str, *, root: Path, runner: Runner) -> str:
+    """The template repository to generate from: the owner's own when it is published, else the
+    publisher's.
+
+    One question, asked once: `gh repo view <owner>/<TEMPLATE_REPOSITORY> --json isTemplate`. A
+    template there is used. A repository that is not one, and `gh`'s explicit not-found answer,
+    both mean the owner has published nothing, and the publisher's public copy is used.
+
+    **Anything else refuses, and never falls back.** `gh` exits 1 for a missing repository and
+    for an expired token alike, so the exit code cannot be read as "not found"; only the phrase
+    `NOT_FOUND_ANSWER` on stderr can. A launch failure, a timeout, an authentication or network
+    failure and an answer that is not the JSON asked for are each a state in which this run does
+    not know whether the owner has a template, and guessing "no" would silently generate the
+    overlay of somebody who has one from somebody else's. What `gh` said is quoted through
+    `_detail`, which clips it.
+    """
+    mine = f"{owner}/{TEMPLATE_REPOSITORY}"
+    theirs = PUBLISHED_TEMPLATE
+    probe = runner.run(["gh", "repo", "view", mine, "--json", "isTemplate"], root)
+    if probe.code == 0:
+        answer = _is_template(probe.stdout)
+        if answer is not None:
+            return mine if answer else theirs
+    elif probe.code not in (NOT_FOUND, TIMED_OUT) and NOT_FOUND_ANSWER in probe.stderr:
+        return theirs
+    # `gh` could not be launched, hung, was declined, or answered something this cannot read.
+    # `gh repo create` is the irreversible act, and it has not run.
+    launched = probe.code not in (NOT_FOUND, TIMED_OUT)
+    if not launched:
+        what = "could not be run"
+    elif probe.code == 0:
+        what = "answered something other than the `isTemplate` object it was asked for"
+    else:
+        what = f"exited {probe.code}"
+    raise Failure(
+        f"`gh repo view {mine} …` {what} ({_detail(probe)}), so it is not known whether "
+        f"you have published a template, and nothing was created."
+        + ("" if launched else " Install `gh` and authenticate it, or render the overlay locally.")
+        + f" {TEMPLATE_PRECONDITION}"
+    )
+
+
+def _is_template(printed_json: str) -> bool | None:
+    """`isTemplate` from what `gh repo view --json isTemplate` printed, or `None` for anything
+    that is not exactly an object carrying a boolean there."""
+    try:
+        document = json.loads(printed_json)
+    except json.JSONDecodeError:
+        return None
+    value = document.get("isTemplate") if isinstance(document, dict) else None
+    return value if isinstance(value, bool) else None
 
 
 def _from_template(
@@ -175,6 +333,7 @@ def _from_template(
         # Creating the overlay is idempotent by rule: `gh` may give up on the clone with the
         # repository already created, so the second run finds a tree and must not re-create.
         return Created(target, "template", (f"{target} already exists and was left alone",))
+    template = _template_for(owner, root=root, runner=runner)
     slug = f"{owner}/{name}"
     created = runner.run(
         [
@@ -184,13 +343,13 @@ def _from_template(
             slug,
             "--private",
             "--template",
-            f"{owner}/{TEMPLATE_REPOSITORY}",
+            template,
             "--clone",
         ],
         root,
     )
     if _populated(target):
-        return Created(target, "template", (f"created {slug} from {TEMPLATE_REPOSITORY}",))
+        return Created(target, "template", (f"created {slug} from {template}",), template)
     if created.code in (NOT_FOUND, TIMED_OUT):
         # `gh` could not be launched at all, or hung until the seam gave up. Neither is a state two
         # further subprocesses and a ten-second wait can learn anything about: `gh repo view` would
@@ -225,7 +384,12 @@ def _from_template(
     # failure is cheaper than refusing to try.
     cloned = runner.run(["git", "clone", "--", f"git@github.com:{slug}.git", name], root)
     if _populated(target):
-        return Created(target, "template", (f"cloned {slug} on the second attempt",))
+        return Created(
+            target,
+            "template",
+            (f"cloned {slug}, generated from {template}, on the second attempt",),
+            template,
+        )
     raise Failure(
         f"{slug} produced no tree at {target}: `gh repo create --clone` reported success and "
         f"left nothing, and the "
@@ -265,16 +429,20 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
     happening, one harness over. Each is rewritten through `fsops.write_within`: the overlay
     root *is* a root, so the contained walk applies and there is no carve-out to take.
 
-    **Every rewrite is re-stamped into the scaffold ledger.** `create --local` renders these
-    files through the engine, which records each one's digest; a rewrite behind the ledger's
-    back makes the file read as hand-edited for ever after, so `overlay upgrade` reported
-    `skip_modified .claude-plugin/plugin.json (hand-edited)` and never refreshed it again — for
-    the one file carrying `stayfixed.requires`, the version-compatibility declaration the README
-    advertises, and attributing to the owner an edit stayfixed itself made. Re-stamping is the
-    narrow answer of the two the review offered; rendering the suffix through the `Template`
-    instead would put an owner-dependent value into the shipped tree, which every *other*
-    consumer of that tree (`upgrade`'s hash rule, `overlay publish-template`) would then have to
-    know about. A `--template` clone carries no ledger at all, and gets no record written for it.
+    **A rewrite of a file stayfixed wrote is re-stamped into the scaffold ledger.** `create
+    --local` renders these files through the engine, which records each one's digest; a rewrite
+    behind the ledger's back makes the file read as hand-edited for ever after, so `overlay
+    upgrade` reported `skip_modified .claude-plugin/plugin.json (hand-edited)` and never
+    refreshed it again — for the one file carrying `stayfixed.requires`, the
+    version-compatibility declaration the README advertises, and attributing to the owner an
+    edit stayfixed itself made. Re-stamping is the narrow answer of the two the review offered;
+    rendering the suffix through the `Template` instead would put an owner-dependent value into
+    the shipped tree, which every *other* consumer of that tree (`upgrade`'s hash rule, `overlay
+    publish-template`) would then have to know about. **Only a file whose bytes before the
+    rewrite were the recorded ones**: a manifest the owner edited is still renamed, but
+    re-stamping it recorded their edit as stayfixed's, and the next `upgrade` refreshed it away.
+    Its record stays, and `upgrade` goes on naming it. A `--template` clone carries no ledger at
+    all, and gets no record written for it.
 
     A manifest that is *absent* is a note rather than a failure. An overlay generated before the
     Codex half shipped carries two of the three, and refusing to name the other two over it
@@ -289,24 +457,39 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
     require_overlay(root, because=NOT_AN_OVERLAY)
     suffix = segment("owner", owner.strip().lower())
     ledger = Manifest.read(root)
-    renamed: list[str] = []
+    ledgered = bool(ledger.records)
+    # Every manifest is read and decided before any is written, so one that cannot be read stops
+    # the run with nothing rewritten, rather than after the ones before it were rewritten and
+    # before their records were re-stamped.
+    rewrites: list[tuple[str, str, str]] = []
     absent: list[str] = []
     notes: list[str] = []
-    restamped = False
     for relative in MANIFESTS:
         if not (root / relative).is_file():
             absent.append(relative)
             continue
-        written = _rename(root, relative, suffix)
-        if written is None:
-            continue
-        renamed.append(relative)
+        before = _read_manifest(root, relative)
+        body = _renamed(before, relative, suffix)
+        if body is not None:
+            rewrites.append((relative, before, body))
+    restamped = False
+    for relative, before, body in rewrites:
+        fsops.write_within(root, relative, body)
         record = ledger.get(relative)
-        if record is not None:
-            ledger = ledger.with_record(replace(record, sha256=digest(written)))
+        # Only a file that held what stayfixed wrote there is vouched for again. One the owner
+        # edited is still renamed, and its record is left as it was, so `upgrade` goes on naming
+        # it as hand-edited rather than refreshing their edit away.
+        if record is not None and digest(before) == record.sha256:
+            ledger = ledger.with_record(replace(record, sha256=digest(body)))
             restamped = True
+    # Written before anything is removed: a removal that fails below must not take the records of
+    # the renames with it.
     if restamped:
         ledger.write(root)
+    ledger, retirement, retired_paths, changed = _retire(root, ledger, ledgered=ledgered)
+    if changed:
+        ledger.write(root)
+    renamed = [relative for relative, _, _ in rewrites]
     if renamed:
         notes.append(f"named this overlay after {suffix}: {', '.join(renamed)}")
     else:
@@ -316,23 +499,89 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
             f"this overlay carries no {', '.join(absent)}, so there was nothing to name there; "
             f"`stayfixed overlay upgrade` adds what a newer template ships"
         )
+    notes += retirement
     notes.append(_install_secret_scan(root, runner))
-    return Initialised(tuple(renamed), tuple(notes))
+    return Initialised(tuple(renamed), tuple(notes), (*renamed, *retired_paths))
 
 
-def _rename(root: Path, relative: str, suffix: str) -> str | None:
-    """The bytes written, or `None` when this manifest already named the owner.
+def _retire(
+    root: Path, ledger: Manifest, *, ledgered: bool
+) -> tuple[Manifest, list[str], list[str], bool]:
+    """Remove each file a release no longer ships that still holds what stayfixed wrote there,
+    name each one kept, and say which paths this changed and whether the ledger did.
 
-    The text and not a boolean, because the caller re-stamps the scaffold ledger with exactly
-    what went to disk — reading the file back to hash it would hash whatever is there now.
+    `overlay upgrade` removes them too, but nobody is told to run it on an overlay just made:
+    `overlay create --template` and `setup --overlay create:` generate one from a template
+    repository, and a template published at an earlier release ships
+    `common/memory/README.md`, which the note reader reads as a note, so `memory index --check`
+    failed right after the first attach. `init` is the step every such overlay runs.
+
+    The engine's `plan` decides, by the digest the ledger records or, in a tree generated from a
+    template, which carries none, by the digest a release shipped (`template.retired`). Its
+    verdict is acted on here rather than through `apply`, which would write a ledger into a tree
+    that arrived without one. A file `plan` cannot read is named and left, never a reason to stop
+    `init`.
+
+    A removed file whose successor (`layout.SUCCESSORS`) is absent gets the shipped successor in
+    its place: such a template carried the old name only, and a directory left empty is one git
+    does not keep, so a clone of the overlay elsewhere would have no `common/memory/` for the
+    `developer` link to reach.
     """
-    path = root / relative
+    planned = plan(root, preset_defaults(root.name), retired())
+    notes = [f"left {r.target}: {r.reason}" for r in planned.refusals]
+    changed = False
+    removed: list[str] = []
+    written: list[str] = []
+    for action in planned.actions:
+        if action.verb is Verb.SKIP_MODIFIED:
+            notes.append(f"left {action.target} ({action.reason})")
+            continue
+        if not unlinks(action):
+            continue
+        try:
+            fsops.remove_within(root, action.target)
+        except OSError as exc:
+            raise Refusal(f"{action.target} cannot be removed: {fsops.said(exc)}") from exc
+        notes.append(f"removed {action.target}, which this release no longer ships")
+        removed.append(action.target)
+        if ledger.get(action.artifact_id) is not None:
+            ledger = ledger.without(frozenset({action.artifact_id}))
+            changed = True
+    successors = {SUCCESSORS[target] for target in removed if target in SUCCESSORS}
+    shipped = [template for template in templates() if template.id in successors]
+    for action in plan(root, preset_defaults(root.name), shipped).actions:
+        if action.verb is not Verb.CREATE or action.payload is None:
+            continue
+        try:
+            fsops.write_within(root, action.target, action.payload)
+        except OSError as exc:
+            raise Refusal(f"{action.target} cannot be written: {fsops.said(exc)}") from exc
+        notes.append(f"wrote {action.target} in its place")
+        written.append(action.target)
+        if ledgered and action.record is not None:
+            ledger = ledger.with_record(action.record)
+            changed = True
+    return ledger, notes, [*removed, *written], changed
+
+
+def _read_manifest(root: Path, relative: str) -> str:
     try:
-        document = json.loads(path.read_text(encoding="utf-8"))
+        return (root / relative).read_text(encoding="utf-8")
     except OSError as exc:
         raise Failure(f"{relative} cannot be read: {exc}") from exc
     except UnicodeDecodeError:
         raise Failure(f"{relative} is not UTF-8 text") from None
+
+
+def _renamed(text: str, relative: str, suffix: str) -> str | None:
+    """The manifest named after the owner, or `None` when it already named them.
+
+    The text and not a boolean, because the caller re-stamps the scaffold ledger with exactly
+    what goes to disk — reading the file back to hash it would hash whatever is there then.
+    Nothing is written here: every manifest is decided before any is written.
+    """
+    try:
+        document = json.loads(text)
     except json.JSONDecodeError as exc:
         raise Failure(f"{relative} is not valid JSON: {exc}") from exc
     if not isinstance(document, dict):
@@ -340,6 +589,8 @@ def _rename(root: Path, relative: str, suffix: str) -> str | None:
     changed = False
     if (renamed := _suffixed(document.get("name"), suffix)) is not None:
         document["name"] = renamed
+        changed = True
+    if _named_for(document, ACCOUNT_KEYS[relative], suffix):
         changed = True
     # The marketplace's entries name the plugin they publish, so an entry left unsuffixed would
     # advertise a plugin whose manifest no longer answers to that name.
@@ -351,9 +602,30 @@ def _rename(root: Path, relative: str, suffix: str) -> str | None:
                 changed = True
     if not changed:
         return None
-    body = json.dumps(document, indent=2) + "\n"
-    fsops.write_within(root, relative, body)
-    return body
+    return json.dumps(document, indent=2) + "\n"
+
+
+def _named_for(document: dict[str, object], key: str, account: str) -> bool:
+    """Put `account` under `document[key]["name"]` where nobody has put a name; whether it changed.
+
+    "Where nobody has": the key is absent (an overlay generated from a template that predates it,
+    which is exactly what an owner's own published copy can be), or its name is the template's
+    `PLACEHOLDER_ACCOUNT`. A name the owner wrote, and any other field beside it (an email, a
+    URL), stay: `init` is run more than once and by people who edited the file first, and an
+    account name that overwrote a person's own would be a rewrite of something stayfixed does not
+    own. A value of another shape (`"author": "a string"`) is left alone for the same reason.
+    """
+    current = document.get(key)
+    if current is None:
+        document[key] = {"name": account}
+        return True
+    if (
+        isinstance(current, dict)
+        and current.get("name", PLACEHOLDER_ACCOUNT) == PLACEHOLDER_ACCOUNT
+    ):
+        current["name"] = account
+        return True
+    return False
 
 
 def _install_secret_scan(root: Path, runner: Runner) -> str:
@@ -366,8 +638,7 @@ def _install_secret_scan(root: Path, runner: Runner) -> str:
     done: Completed = runner.run(["pre-commit", "install"], root)
     if done.code == 0:
         return "installed the commit-time secret scan with `pre-commit install`"
-    detail = done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"
     return (
-        f"`pre-commit install` did not run ({detail}), so the commit-time secret scan is not "
-        f"installed; install pre-commit and run it in {root}. The push-time scan still runs"
+        f"`pre-commit install` did not run ({_detail(done)}), so the commit-time secret scan "
+        f"is not installed; install pre-commit and run it in {root}. The push-time scan still runs"
     )

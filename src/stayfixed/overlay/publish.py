@@ -33,6 +33,7 @@ from stayfixed.errors import Failure, Refusal
 from stayfixed.overlay.create import TEMPLATE_REPOSITORY, _render_locally
 from stayfixed.overlay.identity import segment
 from stayfixed.overlay.layout import OVERLAY_FILES
+from stayfixed.printed import answered
 from stayfixed.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
 from stayfixed.scaffold import MANIFEST_PATH
 
@@ -72,7 +73,7 @@ class Existing:
 
 
 def _detail(done: Completed) -> str:
-    return done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"
+    return answered(done)
 
 
 def _gh(runner: Runner, argv: list[str], cwd: Path) -> Completed:

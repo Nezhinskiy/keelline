@@ -30,15 +30,8 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         "AttachLedger",  # what `ledger` returns; doctor cannot annotate it otherwise
         "read_binding",
         "Binding",
-        "MISMATCH",
         "overlay_entries",
         "LOCAL_SETTINGS",  # the file those entries live in
-        # the rest of `Binding.state`'s closed vocabulary: doctor branches on MISMATCH, and a
-        # consumer that can recognise the bad state and cannot name the good ones is the reason
-        # this set is the export rather than the member that had a caller first
-        "BOUND",
-        "UNBOUND",
-        "STATES",
         # the `.gitignore` region's name and body, for `init`, which records the same region as
         # its own: one spelling
         "IGNORE_REGION",

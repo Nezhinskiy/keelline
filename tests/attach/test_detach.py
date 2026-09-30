@@ -222,7 +222,7 @@ def test_a_ledger_naming_a_file_attach_could_not_have_written_removes_nothing(
     # ever writes `.codex/rules/<file>`, so anything else in `rules` is a repository asking for
     # a deletion no attach could have earned.
     #
-    # Mutation: `mutations.toml`'s "detach deletes whatever the ledger names" — make
+    # Mutation: `mutations.toml`'s "detach deletes whatever file the ledger names" — make
     # `_rule_is_writable` answer True unconditionally and the workflow file goes.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
@@ -387,19 +387,19 @@ def test_detach_removes_the_directories_the_attach_created(tmp_path: Path) -> No
     # `rglob` that finds nothing would satisfy every equality in this case on its own.
     assert _directories(root) > before
     removed = _detach(root, machine, home)
+    # `paths.memory` and the `docs/` above it are on the list too: the fixture had no `docs/`, so
+    # the attach created both, and the detach takes back what it created once it is empty.
+    memory = PurePosixPath(DEFAULT_MEMORY)
     assert set(removed.directories_removed) == {
         ".stayfixed/local",
         ".stayfixed",
         ".codex/rules",
         ".codex",
         ".claude",
+        str(memory),
+        str(memory.parent),
     }
-    # `paths.memory` is the documented exception and is named here so a change to it has to change
-    # this line: `worktree.detach_main` withdraws the links and not the directory that held them,
-    # because that directory is repository-configured and may be one the project keeps for its own
-    # reasons.
-    memory = PurePosixPath(DEFAULT_MEMORY)
-    assert _directories(root) - before == {str(memory), str(memory.parent)}
+    assert _directories(root) == before
 
 
 def _detach_after_attach(root: Path, store: Path, machine: Path, home: Path) -> Detached:
@@ -529,8 +529,11 @@ def test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything
     ignore = root / GITIGNORE
     ignore.write_text(f"{begin}\n" + ignore.read_text(encoding="utf-8"), encoding="utf-8")
     before = snapshot(root)
-    with pytest.raises(RegionError):
+    with pytest.raises(RegionError) as refused:
         _detach(root, machine, home)
+    # The refusal names the file, as the exclude block's does. Mutation: `mutations.toml`'s "a
+    # doubled .gitignore region is refused without its file".
+    assert GITIGNORE in str(refused.value)
     assert_snapshot_unchanged(root, before)
     assert (root / LEDGER).is_file()
     assert (root / "docs" / "memory" / "developer").is_symlink()
@@ -660,3 +663,645 @@ def test_a_manifest_a_clone_committed_cannot_block_the_withdrawal(
     # the result says so rather than claiming a withdrawal it did not make.
     assert removed.ignore_region_removed is False
     assert extract((root / GITIGNORE).read_text(encoding="utf-8"), IGNORE_REGION, Style.HASH)
+
+
+def test_detach_takes_back_the_exclude_block_the_empty_directories_and_the_harness_slug(
+    tmp_path: Path,
+) -> None:
+    # Each is a thing `attach` made that a detach left behind: the block in `info/exclude`, the
+    # empty `paths.memory` directory with the `docs/` it had to create above it, and the empty
+    # `~/.claude/projects/<slug>/` the harness link sat in. Each is a name the run computes, and
+    # each goes only when nothing else is in it.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    before = _directories(root)
+    assert not (root / "docs").exists()
+    _attach(root, store, machine, home, confirmed=True)
+    resolved = resolve(root, _config(root, machine), machine=machine)
+    assert resolved is not None
+    record(resolved, _config(root, machine))
+    _attach(root, store, machine, home, confirmed=True)
+    harness = harness_memory_path(root, home)
+    exclude = root / ".git" / "info" / "exclude"
+    # Non-vacuous: each of the three exists before the detach.
+    assert harness.is_symlink()
+    assert extract(exclude.read_text(encoding="utf-8"), "attach", Style.HASH) is not None
+    assert (root / DEFAULT_MEMORY).is_dir()
+    _detach(root, machine, home)
+    assert extract(exclude.read_text(encoding="utf-8"), "attach", Style.HASH) is None
+    assert not (root / DEFAULT_MEMORY).exists()
+    assert not (root / "docs").exists()
+    assert not harness.parent.exists()
+    assert _directories(root) == before
+
+
+def test_the_settings_fallback_written_after_the_links_is_hidden_too(tmp_path: Path) -> None:
+    # The settings file is a candidate for the exclude block only on a run that writes it, and
+    # the fallback key is written after the links. Whether it will be is decided before the
+    # first write (`write._fallback_possible`), so the run hides the file in its one block.
+    #
+    # Mutation: `mutations.toml`'s "attach decides the settings fallback only once it has
+    # written" reddens this through `check-ignore`.
+    from tests.attach.test_write import _check_ignore
+
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    assert not (root / SETTINGS).exists()
+    resolved = resolve(root, _config(root, machine), machine=machine)
+    assert resolved is not None
+    record(resolved, _config(root, machine))
+    harness_memory_path(root, home).mkdir(parents=True)
+    _attach(root, store, machine, home)
+    # Non-vacuous: the fallback was taken, so the file exists and is this run's.
+    assert "autoMemoryDirectory" in (root / SETTINGS).read_text(encoding="utf-8")
+    assert _check_ignore(root, SETTINGS)
+    # `.gitignore` shows, as it should: the fixture tracks it and the attach added its region.
+    status = git(root, "status", "--porcelain", "--untracked-files=all")
+    assert SETTINGS not in status
+
+
+def _fallback_forced(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+    """An attached repository whose store is approved and whose harness link cannot be made —
+    a real directory already sits where it goes — so the next attach takes the settings-file
+    fallback. Returns `(root, store, machine, home)` with no settings file written yet."""
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    resolved = resolve(root, _config(root, machine), machine=machine)
+    assert resolved is not None
+    record(resolved, _config(root, machine))
+    harness_memory_path(root, home).mkdir(parents=True)
+    assert not (root / SETTINGS).exists()
+    return root, store, machine, home
+
+
+def test_a_fallback_that_would_write_through_a_symlinked_claude_is_skipped_with_a_note(
+    tmp_path: Path,
+) -> None:
+    # The fallback writes the settings file, and a `.claude` linked in from elsewhere is a layout
+    # the owner chose, not something to write through or refuse. So the fallback is not taken:
+    # the run goes through, writes nothing behind the link, and says what the harness link is
+    # missing and how to get it. Before, the write failed with an `OSError` after every earlier
+    # write; then, a refusal took the whole attach away from an ordinary layout.
+    #
+    # Mutation: `mutations.toml`'s "attach takes the fallback through a linked-in .claude".
+    from stayfixed.attach.write import FALLBACK_UNAVAILABLE
+
+    root, store, machine, home = _fallback_forced(tmp_path)
+    (tmp_path / "dotfiles-claude").mkdir()
+    (root / ".claude").symlink_to(tmp_path / "dotfiles-claude", target_is_directory=True)
+    attached = _attach(root, store, machine, home)
+    assert attached.notes == (FALLBACK_UNAVAILABLE,)
+    assert not attached.settings_written
+    assert list((tmp_path / "dotfiles-claude").iterdir()) == []
+    # Nothing to hide, so the block names no settings file.
+    exclude = (root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+    assert SETTINGS not in exclude
+
+
+def test_a_symlinked_exclude_file_is_refused_first_when_only_the_fallback_needs_a_line(
+    tmp_path: Path,
+) -> None:
+    # Every other path this run places is ignored already, so the only exclude line the run
+    # needs is the fallback's settings file. That need is known before the first write, and so
+    # is the refusal of a symlinked exclude file.
+    root, store, machine, home = _fallback_forced(tmp_path)
+    exclude = root / ".git" / "info" / "exclude"
+    held = [
+        line for line in exclude.read_text(encoding="utf-8").splitlines() if SETTINGS not in line
+    ]
+    elsewhere = tmp_path / "exclude-elsewhere"
+    elsewhere.write_text("\n".join([*held, "/.codex/rules/", ".stayfixed/"]) + "\n", "utf-8")
+    exclude.unlink()
+    exclude.symlink_to(elsewhere)
+    overlay = store.parents[2]
+    project_files, overlay_files = snapshot(root), snapshot(overlay)
+    outside = elsewhere.read_bytes()
+    with pytest.raises(Refusal) as refused:
+        _attach(root, store, machine, home)
+    assert "symlink" in str(refused.value)
+    assert_snapshot_unchanged(root, project_files)
+    assert_snapshot_unchanged(overlay, overlay_files)
+    assert elsewhere.read_bytes() == outside
+    assert not (root / SETTINGS).exists()
+
+
+def test_a_first_attach_with_a_symlinked_exclude_that_hides_everything_attaches(
+    tmp_path: Path,
+) -> None:
+    # A real directory at the harness path, the harness's own, does not make a first attach need
+    # the fallback: no approval is recorded for a store that does not exist yet, so the gate
+    # cannot open and no settings file is written. A symlinked exclude file that already hides
+    # every path the run places is therefore never written, and never refused.
+    #
+    # Mutation: `mutations.toml`'s "a first attach treats the unapproved gate as possibly open":
+    # the settings file becomes a candidate, the exclude file must take a line, and its symlink
+    # is refused. (The linked-`.claude` case in `test_write.py` cannot see this guard: the
+    # fallback is off the table there for the link alone.)
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    harness_memory_path(root, home).mkdir(parents=True)
+    exclude = root / ".git" / "info" / "exclude"
+    elsewhere = tmp_path / "exclude-elsewhere"
+    held = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
+    # Everything the run places, and not the settings file: the run does not write it, so it is
+    # not a candidate, and nothing is left for the exclude file to take. The link tree is listed
+    # here too, beside the fixture's committed `.gitignore` line for it: the owner's own line
+    # hides it whatever that line says, so a path both hide needs no line of the block. (Asked
+    # which pattern decides, git names the `.gitignore`, which outranks the owner's file; read
+    # that way, the link tree needed a line and the symlinked file was refused.)
+    elsewhere.write_text(
+        held + f"/{DEFAULT_MEMORY}/\n/.codex/rules/\n.stayfixed/\n", encoding="utf-8"
+    )
+    exclude.unlink(missing_ok=True)
+    exclude.symlink_to(elsewhere)
+    outside = elsewhere.read_bytes()
+    attached = _attach(root, store, machine, home)
+    # Non-vacuous: the attach did run to the end and placed its tree.
+    assert attached.links.created
+    assert elsewhere.read_bytes() == outside
+    assert not (root / SETTINGS).exists()
+
+
+def test_a_tracked_settings_file_the_owners_symlinked_exclude_hides_does_not_refuse(
+    tmp_path: Path,
+) -> None:
+    # The owner's symlinked exclude file hides the whole footprint, and the repository tracks its
+    # own `.claude/settings.local.json`. git shows a tracked file whatever an exclude line says, so
+    # asking "does git show it?" gave it a line that hides nothing, and that line needed the
+    # symlinked file written, which is refused: an attach nothing had to write into the exclude
+    # file exited 2. Only what the owner's own two files leave visible gets a line.
+    #
+    # Mutation: `mutations.toml`'s "the exclude block also lists what git shows in spite of the
+    # owner's excludes".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    (root / ".claude").mkdir()
+    (root / SETTINGS).write_text("{}\n", encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "the repository tracks its settings file")
+    exclude = root / ".git" / "info" / "exclude"
+    elsewhere = tmp_path / "exclude-elsewhere"
+    held = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
+    elsewhere.write_text(
+        held + f"/{DEFAULT_MEMORY}/\n/.codex/rules/\n/{SETTINGS}\n.stayfixed/\n", encoding="utf-8"
+    )
+    exclude.unlink(missing_ok=True)
+    exclude.symlink_to(elsewhere)
+    outside = elsewhere.read_bytes()
+    attached = _attach(root, store, machine, home, confirmed=True)
+    # Non-vacuous: the run wrote the tracked settings file, so it was a candidate for the block.
+    assert attached.settings_written
+    assert RULE in (root / SETTINGS).read_text(encoding="utf-8")
+    assert elsewhere.read_bytes() == outside
+
+
+# --- the exclude block is shared by every checkout, and is taken back exactly ----------------
+
+
+def _exclude_file(root: Path) -> Path:
+    return root / ".git" / "info" / "exclude"
+
+
+def test_detaching_one_checkout_keeps_the_block_another_attached_checkout_needs(
+    tmp_path: Path,
+) -> None:
+    # The block lives in the exclude file every worktree shares, while the ledger, the settings
+    # file and the `.codex/rules/` copies are per checkout. Detaching the main checkout took the
+    # block away while a worktree was still attached, and `git status` there listed that
+    # worktree's settings file and rule copy.
+    #
+    # Mutation: `mutations.toml`'s "detach takes the shared block while another checkout is
+    # attached".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    side = tmp_path / "side"
+    git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    _attach(root, store, machine, home, confirmed=True)
+    _attach(side, store, machine, home, confirmed=True)
+    # Non-vacuous: the worktree is attached, with files of its own for the block to hide.
+    assert (side / LEDGER).is_file()
+    assert (side / SETTINGS).is_file() and (side / ".codex" / "rules" / "common.rules").is_file()
+    removed = _detach(root, machine, home)
+    assert removed.exclude_block_kept is True
+    assert removed.exclude_block_removed is False
+    assert extract(_exclude_file(root).read_text(encoding="utf-8"), "attach", Style.HASH)
+    status = git(side, "status", "--porcelain", "--untracked-files=all")
+    assert SETTINGS not in status
+    assert ".codex/rules/common.rules" not in status
+    # The last attached checkout's detach takes the block.
+    last = _detach(side, machine, home)
+    assert last.exclude_block_removed is True and last.exclude_block_kept is False
+    assert extract(_exclude_file(root).read_text(encoding="utf-8"), "attach", Style.HASH) is None
+
+
+def test_an_exclude_file_attach_created_is_removed_by_detach(tmp_path: Path) -> None:
+    # A repository whose `info/exclude` does not exist (`git init` with no templates) got one
+    # from `attach`, and `detach` left it behind empty, against "a file left holding nothing is
+    # removed rather than left empty".
+    #
+    # Mutation: `mutations.toml`'s "detach leaves the exclude file attach created".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    _exclude_file(root).unlink(missing_ok=True)
+    _attach(root, store, machine, home, confirmed=True)
+    # Non-vacuous: the attach did create the file for its block.
+    assert extract(_exclude_file(root).read_text(encoding="utf-8"), "attach", Style.HASH)
+    _detach(root, machine, home)
+    assert not _exclude_file(root).exists()
+
+
+def test_an_exclude_file_that_was_there_and_empty_stays_there_and_empty(tmp_path: Path) -> None:
+    # The other half: an empty file the owner had is the owner's, and survives the round trip.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    _exclude_file(root).write_bytes(b"")
+    _attach(root, store, machine, home, confirmed=True)
+    assert extract(_exclude_file(root).read_text(encoding="utf-8"), "attach", Style.HASH)
+    _detach(root, machine, home)
+    assert _exclude_file(root).read_bytes() == b""
+
+
+@pytest.mark.parametrize("ending", ["\n", "\r\n"], ids=["lf", "crlf"])
+def test_an_exclude_file_with_no_final_line_ending_comes_back_without_one(
+    tmp_path: Path, ending: str
+) -> None:
+    # The block starts on a line of its own, so `attach` ends the owner's last line first, and
+    # `detach` left that line ending behind. The block records that it added one, and `detach`
+    # takes it back when nothing follows the block.
+    #
+    # Mutation: `mutations.toml`'s "detach keeps the line ending attach added".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    held = f"# the owner's{ending}/owner-only".encode()
+    _exclude_file(root).write_bytes(held)
+    _attach(root, store, machine, home, confirmed=True)
+    # Non-vacuous: the attach wrote its block after a line it had to end.
+    assert (
+        _exclude_file(root)
+        .read_bytes()
+        .startswith(f"# the owner's{ending}/owner-only{ending}".encode())
+    )
+    # A second attach that rewrites the block carries the record along.
+    _grant(store.parents[2], allow=(RULE, "Bash(ls:*)"))
+    _attach(root, store, machine, home, confirmed=True)
+    _detach(root, machine, home)
+    assert _exclude_file(root).read_bytes() == held
+
+
+def test_a_line_the_owner_added_after_the_block_keeps_its_line_ending(tmp_path: Path) -> None:
+    # The line ending `attach` added sits before the block; with the owner's own line after it,
+    # taking it back would join two lines, so it stays.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    _exclude_file(root).write_bytes(b"/owner-only")
+    _attach(root, store, machine, home, confirmed=True)
+    with _exclude_file(root).open("a", encoding="utf-8") as stream:
+        stream.write("/added-later\n")
+    _detach(root, machine, home)
+    assert _exclude_file(root).read_bytes() == b"/owner-only\n/added-later\n"
+
+
+def test_an_exclude_file_that_is_not_utf8_neither_blocks_attach_nor_detach(
+    tmp_path: Path,
+) -> None:
+    # The exclude file is the owner's, and git reads it as bytes. Read as UTF-8 text, a byte
+    # outside it -- a comment in Latin-1, say -- refused `attach` and `detach` both. Its bytes are
+    # kept exactly, in the attach and in the round trip.
+    #
+    # Mutation: `mutations.toml`'s "the exclude file is read as UTF-8 text".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    held = "# propriété de l'équipe\n/owner-only\n".encode("latin-1")
+    _exclude_file(root).write_bytes(held)
+    _attach(root, store, machine, home, confirmed=True)
+    written = _exclude_file(root).read_bytes()
+    assert written.startswith(held)
+    assert b"# stayfixed:attach:begin" in written
+    _detach(root, machine, home)
+    assert _exclude_file(root).read_bytes() == held
+
+
+def test_the_exclude_file_refusals_print_the_path_through_the_quoting_rule(
+    tmp_path: Path,
+) -> None:
+    # The checkout's directory name usually comes from the clone URL, so the exclude file's path
+    # is printed through `printed.quoted`, which escapes a line break or an escape sequence in
+    # it, as the store's refusals already print theirs.
+    #
+    # Mutation: `mutations.toml`'s "the exclude file's symlink refusal prints its path raw".
+    from stayfixed.attach.exclude import planned_block
+
+    root = tmp_path / "clone\n::error::x"
+    root.mkdir()
+    git(root, "init", "-q", "-b", "main")
+    exclude = _exclude_file(root)
+    exclude.unlink(missing_ok=True)
+    exclude.symlink_to(tmp_path / "elsewhere")
+    with pytest.raises(Refusal) as refused:
+        planned_block(root, ["placed"])
+    assert "symlink" in str(refused.value)
+    assert "\n" not in str(refused.value)
+
+
+# --- the directories above and at `paths.memory` come back as they were ----------------------
+
+
+def test_an_empty_docs_directory_the_owner_had_survives_the_round_trip(tmp_path: Path) -> None:
+    # `attach` records which directories above `paths.memory` it created, and `detach` removes
+    # only those: an empty `docs/` the owner already had is not the attach's. Nothing tested that
+    # half, so dropping the record check left every test green.
+    #
+    # Mutation: `mutations.toml`'s "detach removes a directory above paths.memory it never made".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    parent = root / PurePosixPath(DEFAULT_MEMORY).parts[0]
+    parent.mkdir()
+    _attach(root, store, machine, home, confirmed=True)
+    # Non-vacuous: the attach built its tree below it, so the detach had an empty `docs/` to take.
+    assert (root / DEFAULT_MEMORY).is_dir()
+    _detach(root, machine, home)
+    assert not (root / DEFAULT_MEMORY).exists()
+    assert parent.is_dir()
+
+
+def test_an_empty_memory_directory_the_owner_had_survives_the_round_trip(tmp_path: Path) -> None:
+    # `detach` removed `paths.memory` whenever it was empty, and so took an empty directory the
+    # owner had made before the attach, against a round trip documented as byte for byte. The
+    # ledger now records whether the attach created it.
+    #
+    # Mutation: `mutations.toml`'s "detach removes a paths.memory it never made".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    (root / DEFAULT_MEMORY).mkdir(parents=True)
+    _attach(root, store, machine, home, confirmed=True)
+    # A second attach finds the directory there, and must not forget whose it is.
+    _attach(root, store, machine, home, confirmed=True)
+    assert (root / DEFAULT_MEMORY / "MEMORY.md").is_symlink()
+    _detach(root, machine, home)
+    assert (root / DEFAULT_MEMORY).is_dir()
+    assert list((root / DEFAULT_MEMORY).iterdir()) == []
+
+
+# --- every refusal is made before the first withdrawal ----------------------------------------
+
+
+def _withdrawable(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home, confirmed=True)
+    assert (root / SETTINGS).is_file()
+    return root, store, machine, home
+
+
+def test_a_codex_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn(
+    tmp_path: Path,
+) -> None:
+    # A `.codex` that became a symlink after the attach was found by the removal of the first rule
+    # copy, after `.claude/settings.local.json` was withdrawn: `internal error: UnsafePath`, with
+    # the settings gone, the links and the ledger in place, and every later run failing at the
+    # same line. Each recorded rule copy is held to the project while the run is planned now.
+    #
+    # Mutation: `mutations.toml`'s "detach finds a linked .codex by removing through it".
+    root, _store, machine, home = _withdrawable(tmp_path)
+    elsewhere = tmp_path / "codex-elsewhere"
+    shutil.move(root / ".codex", elsewhere)
+    (root / ".codex").symlink_to(elsewhere)
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _detach(root, machine, home)
+    assert ".codex" in str(refused.value)
+    assert_snapshot_unchanged(root, before)
+
+
+@pytest.mark.parametrize("group", ["a//b", "../../x"])
+def test_a_group_added_since_the_attach_refuses_before_anything_is_withdrawn(
+    tmp_path: Path, group: str
+) -> None:
+    # A `memory.groups` entry added after the attach that is not one plain directory name was
+    # found by the link tree's withdrawal, after the settings, the rule copies and the earlier
+    # links were withdrawn, and the refusal printed the entry through `repr`. It is held to the
+    # link tree while the run is planned now, and the refusal counts it rather than quoting it:
+    # the entry is the repository's.
+    #
+    # Mutation: `mutations.toml`'s "detach finds an escaping group by withdrawing the tree".
+    root, _store, machine, home = _withdrawable(tmp_path)
+    text = (root / "stayfixed.toml").read_text(encoding="utf-8")
+    (root / "stayfixed.toml").write_text(
+        text.replace('groups = ["developer", "project-stable"]', f'groups = ["{group}"]'),
+        encoding="utf-8",
+    )
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _detach(root, machine, home)
+    assert group not in str(refused.value)
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_doubled_exclude_block_refuses_detach_naming_the_exclude_file(tmp_path: Path) -> None:
+    # The same refusal `attach` makes, and the same missing file name.
+    #
+    # Mutation: `mutations.toml`'s "a doubled exclude block is refused without its file".
+    root, _store, machine, home = _withdrawable(tmp_path)
+    path = _exclude_file(root)
+    begin = "# stayfixed:attach:begin\n"
+    path.write_text(path.read_text(encoding="utf-8") + begin, encoding="utf-8")
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _detach(root, machine, home)
+    assert "info/exclude" in str(refused.value)
+    assert_snapshot_unchanged(root, before)
+
+
+def test_detach_writes_nothing_through_an_exclude_file_that_became_a_symlink(
+    tmp_path: Path,
+) -> None:
+    # `attach` never writes through a symlinked exclude file, so a block behind one is not one it
+    # put there, and `detach` leaves the link and the file it points at alone rather than reading
+    # the block through it and replacing the link with a regular file.
+    #
+    # Mutation: `mutations.toml`'s "detach reads the block through a symlinked exclude file".
+    root, _store, machine, home = _withdrawable(tmp_path)
+    path = _exclude_file(root)
+    elsewhere = tmp_path / "dotfiles-exclude"
+    shutil.move(path, elsewhere)
+    path.symlink_to(elsewhere)
+    held = elsewhere.read_bytes()
+    assert b"stayfixed:attach:begin" in held
+    detached = _detach(root, machine, home)
+    assert path.is_symlink()
+    assert elsewhere.read_bytes() == held
+    assert not detached.exclude_block_removed
+
+
+def test_an_exclude_file_ending_in_a_lone_carriage_return_keeps_its_last_pattern(
+    tmp_path: Path,
+) -> None:
+    # git ends a line at `\n` alone, so an exclude file ending `/zz\r` holds the pattern `/zz` on
+    # an unended last line. The block was read as starting a new line after the `\r`, so its first
+    # marker was glued onto that line and `zz` showed in `git status` while the repository was
+    # attached. The file comes back byte for byte on detach.
+    #
+    # Mutations: `mutations.toml`'s "a hash region reads a lone carriage return as a line end",
+    # "the exclude block reads a lone carriage return as a line end" and "detach takes back a
+    # line ending attach never added".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    held = b"/qq\n/zz\r"
+    _exclude_file(root).write_bytes(held)
+    (root / "zz").write_text("mine\n", encoding="utf-8")
+    assert "zz" not in git(root, "status", "--porcelain")
+    _attach(root, store, machine, home, confirmed=True)
+    assert "zz" not in git(root, "status", "--porcelain")
+    _detach(root, machine, home)
+    assert _exclude_file(root).read_bytes() == held
+
+
+@pytest.mark.parametrize("kind", ["committed", "unreadable"])
+def test_a_ledger_no_attach_of_that_checkout_wrote_does_not_keep_the_block(
+    tmp_path: Path, kind: str
+) -> None:
+    # The block stays while another checkout still holds a ledger, and any file at the ledger's
+    # path counted: a clone that committed `.stayfixed/local/attach.json` has it in every
+    # worktree, and one that will not parse records no attach, so the block was kept for good.
+    # Only an untracked ledger that reads as one counts now.
+    #
+    # Mutations: `mutations.toml`'s "detach counts a committed ledger as another attach" and
+    # "detach counts an unreadable ledger as another attach".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    side = tmp_path / "side"
+    _attach(root, store, machine, home, confirmed=True)
+    if kind == "committed":
+        git(root, "add", "-f", LEDGER)
+        git(root, "commit", "-qm", "a ledger somebody committed")
+        git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    else:
+        git(root, "worktree", "add", "-q", str(side), "-b", "side")
+        (side / LEDGER).parent.mkdir(parents=True)
+        (side / LEDGER).write_text("{not json", encoding="utf-8")
+    # Non-vacuous: the other checkout has a file at the ledger's path.
+    assert (side / LEDGER).is_file()
+    removed = _detach(root, machine, home)
+    assert removed.exclude_block_kept is False
+    assert removed.exclude_block_removed is True
+
+
+def test_an_info_directory_attach_created_is_removed_by_detach(tmp_path: Path) -> None:
+    # A repository made without git's templates has no `.git/info/` at all, and the write of the
+    # exclude file created it; `detach` removed the file and left the directory behind. The block
+    # records that its directory was created for it, and `detach` takes the directory back when
+    # it is empty.
+    #
+    # Mutation: `mutations.toml`'s "detach leaves the info directory attach created".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    info = _exclude_file(root).parent
+    shutil.rmtree(info)
+    _attach(root, store, machine, home, confirmed=True)
+    # Non-vacuous: the attach did create the directory for its block.
+    assert _exclude_file(root).is_file()
+    _detach(root, machine, home)
+    assert not info.exists()
+
+
+def test_an_info_directory_the_owner_had_survives_detach(tmp_path: Path) -> None:
+    # The other half: a directory that was there before the attach, even empty, is not the
+    # attach's to take.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    info = _exclude_file(root).parent
+    _exclude_file(root).unlink()
+    assert info.is_dir() and not any(info.iterdir())
+    _attach(root, store, machine, home, confirmed=True)
+    _detach(root, machine, home)
+    assert info.is_dir()
+
+
+@pytest.mark.parametrize(
+    "linked",
+    [DEFAULT_MEMORY, ".stayfixed", ".stayfixed/local", ".claude"],
+    ids=["paths-memory", "stayfixed", "stayfixed-local", "claude"],
+)
+def test_a_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn(
+    tmp_path: Path, linked: str
+) -> None:
+    # Each removal `detach` makes is a walk that refuses a symlinked component, and the check made
+    # before the first withdrawal was not that walk: it held `paths.memory` with its last
+    # component allowed to be a link, and asked nothing of the ledger's or the settings file's
+    # path. So `paths.memory`, `.stayfixed` or `.stayfixed/local` moved away and linked back ended
+    # as `internal error: UnsafePath` with the settings file already withdrawn. Every removal
+    # target is walked first now, and the refusal says which one.
+    #
+    # Mutations: `mutations.toml`'s "detach walks to the ledger only when it removes it", "detach
+    # walks to the settings file only when it rewrites it" and "detach walks to a link-tree name
+    # only when it removes it".
+    root, _store, machine, home = _withdrawable(tmp_path)
+    elsewhere = tmp_path / ("moved-" + linked.replace("/", "-"))
+    shutil.move(root / linked, elsewhere)
+    (root / linked).symlink_to(elsewhere, target_is_directory=True)
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _detach(root, machine, home)
+    assert "symlink" in str(refused.value)
+    assert "internal error" not in str(refused.value)
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_rule_copy_that_is_itself_a_symlink_is_withdrawn(tmp_path: Path) -> None:
+    # The copy's own name being a link is not a link on the way to it: the removal unlinks the
+    # name and follows nothing, as it did before the check above existed, which refused this
+    # with a sentence that blamed `.codex`.
+    #
+    # Mutation: `mutations.toml`'s "detach refuses a rule copy that is itself a symlink".
+    root, _store, machine, home = _withdrawable(tmp_path)
+    rule = root / ".codex" / "rules" / "common.rules"
+    mine = tmp_path / "mine.rules"
+    shutil.copy(rule, mine)
+    rule.unlink()
+    rule.symlink_to(mine)
+    detached = _detach(root, machine, home)
+    assert ".codex/rules/common.rules" in detached.rules_removed
+    assert not rule.is_symlink()
+    assert mine.is_file()
+
+
+def test_a_linked_claude_directory_attach_never_wrote_into_does_not_stop_detach(
+    tmp_path: Path,
+) -> None:
+    # A `.claude` kept elsewhere and linked in is an ordinary layout, and an overlay that grants
+    # nothing gives `attach` nothing to write there. `detach` rewrote the settings file whether or
+    # not it held anything of stayfixed's, so the same layout that attached cleanly could not be
+    # detached. A file with nothing to withdraw is not written at all.
+    #
+    # Mutation: `mutations.toml`'s "detach rewrites a settings file it withdraws nothing from".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    dotfiles = tmp_path / "dotfiles-claude"
+    dotfiles.mkdir()
+    (dotfiles / "settings.local.json").write_text('{"theme": "dark"}', encoding="utf-8")
+    (root / ".claude").symlink_to(dotfiles, target_is_directory=True)
+    _attach(root, store, machine, home, confirmed=True)
+    _detach(root, machine, home)
+    assert (dotfiles / "settings.local.json").read_text(encoding="utf-8") == '{"theme": "dark"}'
+    assert not (root / LEDGER).exists()

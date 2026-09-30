@@ -109,7 +109,9 @@ def test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not
     [
         pytest.param(lambda t: write._first_attach(_record(t)), None, id="first-attach"),
         pytest.param(
-            lambda t: store._bound(_record(t).parents[2], "widget", t), False, id="store-bound"
+            lambda t: getattr(store._bound(_record(t).parents[2], "widget", t), "said", None),
+            store.RECORD_UNREADABLE,
+            id="store-bound",
         ),
     ],
 )

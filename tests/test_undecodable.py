@@ -112,7 +112,7 @@ RAISING: list[tuple[str, Callable[[Path], Callable[[], object]], type[Exception]
     ),
     (
         "the .gitignore attach writes its region into",
-        lambda t: (_plant(t / write.GITIGNORE), lambda: write._write_ignore_region(t))[1],
+        lambda t: (_plant(t / write.GITIGNORE), lambda: write._planned_ignore_region(t))[1],
         Refusal,
     ),
     (
@@ -124,15 +124,15 @@ RAISING: list[tuple[str, Callable[[Path], Callable[[], object]], type[Exception]
         "an overlay rule attach copies for Codex",
         lambda t: (
             _plant(t / "overlay" / COMMON_CODEX / "rules.md"),
-            lambda: write._codex_rules(
-                t / "project", Binding("widget", t / "overlay", t / "store", None, None, "")
+            lambda: write._codex_rule_texts(
+                Binding("widget", t / "overlay", t / "store", None, None, "")
             ),
         )[1],
         Failure,
     ),
     (
         "an overlay manifest init renames",
-        lambda t: (_plant(t / "plugin.json"), lambda: create._rename(t, "plugin.json", "-you"))[1],
+        lambda t: (_plant(t / "plugin.json"), lambda: create._read_manifest(t, "plugin.json"))[1],
         Failure,
     ),
     (
@@ -192,9 +192,11 @@ ABSENT: list[tuple[str, Callable[[Path], Callable[[], object]], object]] = [
         "the overlay's project record, asked whether it is bound",
         lambda t: (
             _plant(t / store.PROJECTS / "widget" / store.PROJECT_RECORD),
-            lambda: store._bound(t, "widget", t),
+            # The cause, and not a bare `False`: the binding check says which of its four
+            # answers this is, and an undecodable record is the unreadable one.
+            lambda: getattr(store._bound(t, "widget", t), "said", None),
         )[1],
-        False,
+        store.RECORD_UNREADABLE,
     ),
     (
         "the attach record's first-attach date",

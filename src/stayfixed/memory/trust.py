@@ -220,7 +220,15 @@ def store_digest(store: Store, config: Config) -> str:
 
 
 def _key(store: Store) -> str:
-    return str(store.path.resolve())
+    return _path_key(store.path)
+
+
+def _path_key(path: Path) -> str:
+    """The one spelling of a trust record's key: the store's directory, resolved.
+
+    `approval_recorded` asks it of a path before any store exists there, and a second spelling
+    would let the two disagree about which record is the store's."""
+    return str(path.resolve())
 
 
 class UnreadableTrustRecord(Refusal):
@@ -278,6 +286,27 @@ def _recorded(machine: Path | None) -> dict[str, str]:
             f"so nothing here will overwrite it — repair or delete it"
         )
     return {k: v for k, v in raw.items() if isinstance(v, str)}
+
+
+def approval_recorded(path: Path, machine: Path | None) -> bool:
+    """Whether this machine records any approval for a store at `path`, whatever its digest.
+
+    For a caller that must answer the gate before the store exists: `attach` asks it on a first
+    attach, before the link tree `resolve` needs is built. No record at all is a gate that cannot
+    open for that store, whatever it will hold; a record, current or not, is one that might.
+    """
+    return _path_key(path) in _recorded(machine)
+
+
+def require_readable_record(machine: Path | None) -> None:
+    """Refuse, as the gate itself would, when this machine's trust record is there and cannot be
+    read; say nothing otherwise.
+
+    For a caller that writes before it reaches the gate: `attach` reads the record in the index
+    render and the harness link, both after its first write, so it asks this first and a broken
+    record costs it nothing on disk.
+    """
+    _recorded(machine)
 
 
 def state(store: Store, config: Config) -> TrustState:

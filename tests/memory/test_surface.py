@@ -23,6 +23,9 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         # the resolver and the store it yields, for attach, doctor and docs
         "resolve",
         "Store",
+        # the store and why there is none, for `docs check --memory-graph`'s notice
+        "resolved",
+        "Unresolved",  # what `resolved` answers when there is no store
         "overlay_root",
         "permitted_roots",
         "main_checkout",
@@ -39,6 +42,7 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         "harness_memory_path",
         "Links",  # what `link` returns
         "PartialLink",  # what it raises part-way, carrying `.created`
+        "linked_names",  # every name the tree holds, which attach hides from git
         # the bundles doctor reports on, and the two types they are made of
         "fit",
         "render",
@@ -68,6 +72,21 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         # ask this area whether it may, to see a store that was trusted and is not any more,
         # and to tell a broken record from an unapproved store.
         "may_inject",
+        "approval_recorded",  # the gate answered for a store attach has not built yet
+        "require_readable_record",  # the trust record read before attach writes anything
+        # the binding's one classifier and its whole vocabulary: `attach`, `attach --check`,
+        # `doctor` and the session-start line answer the binding question with it, where a second
+        # classifier in `attach` had drifted from this one
+        "binding_state",
+        "BINDING_STATES",
+        "BOUND",
+        "UNBOUND",
+        "MISMATCH",
+        "NO_ORIGIN",
+        "NO_REMOTE",
+        "NO_ORIGIN_CAUSE",
+        "NO_ORIGIN_WAY_OUT",
+        "DIFFERENT_REMOTE",
         "changed",
         "TrustState",
         "UnreadableTrustRecord",

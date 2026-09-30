@@ -126,6 +126,28 @@ def test_a_mismatched_record_and_a_missing_overlay_each_get_their_own_line(
 
 
 @needs_git
+def test_a_checkout_with_no_origin_hears_the_cause_every_other_surface_says(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The session-start line read a checkout with no `origin` in a recorded project as a
+    # different remote and sent the reader to `--check` about it. It says the one cause and way
+    # out the memory commands, `attach`, `--check` and `doctor` say.
+    #
+    # Mutation: `mutations.toml`'s "the session-start line says nothing about a missing origin".
+    from stayfixed.attach.hooks import NO_ORIGIN
+    from stayfixed.memory.api import NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT
+
+    # The line is spelled out in the hook module, which discovery imports and which must not
+    # import the memory area, so its words are held to the memory area's here. No mutation: a
+    # changed spelling on either side reddens this line.
+    assert f"stayfixed: {NO_ORIGIN_CAUSE}; {NO_ORIGIN_WAY_OUT}" == NO_ORIGIN
+    root, overlay, machine = _recorded(tmp_path, monkeypatch)
+    _bind(overlay)
+    git(root, "remote", "remove", "origin")
+    assert _run(root, machine, None) == NO_ORIGIN
+
+
+@needs_git
 def test_real_directories_are_counted_and_a_group_name_never_reaches_the_context(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

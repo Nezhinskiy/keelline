@@ -64,8 +64,6 @@ import stayfixed
 from stayfixed import REPOSITORY_URL
 from stayfixed.attach.api import (
     LEDGER,
-    MISMATCH,
-    UNBOUND,
     Binding,
     ledger,
     overlay_entries,
@@ -79,8 +77,14 @@ from stayfixed.findings import listed
 from stayfixed.guards.api import hooks_dir
 from stayfixed.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from stayfixed.memory.api import (
+    DIFFERENT_REMOTE,
+    MISMATCH,
+    NO_ORIGIN,
+    NO_ORIGIN_CAUSE,
+    NO_ORIGIN_WAY_OUT,
     PROJECTS,
     SLOTS,
+    UNBOUND,
     GitUnavailable,
     Store,
     fit,
@@ -670,11 +674,12 @@ def _attached(context: Context) -> Row:
             "run `stayfixed attach --store <overlay>/projects/<project>/memory --check`; if this "
             "checkout was never attached on this machine, remove the ledger",
         )
+    if state == NO_ORIGIN:
+        return Row(RED, NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT)
     if state == MISMATCH:
         return Row(
             RED,
-            "the overlay records a different remote for this project, so this is not the "
-            "repository it was bound to",
+            DIFFERENT_REMOTE,
             "run `stayfixed attach --check`, and `--trust-remote` only if it should be",
         )
     status, shape, remedy = _harness_shape(context, harness)
@@ -1101,10 +1106,11 @@ def _budgets(context: Context) -> Row:
 # `native_caps.hook_output_chars`. `doctor` reports a bundle that does not fit *and* one that
 # reaches the cap, and the second needs a threshold that the first does not.
 #
-# A fraction and not `parts == slots`: `preset-rules` has one slot and any preset at all fills it,
-# so that predicate warns on every correct installation and says nothing. A named cap
-# (CONTRIBUTING.md#named-caps), and the shipped file that changes with it is `hooks/hooks.json`,
-# which is where a slot count is raised when this warning turns out to be right.
+# A fraction and not `parts == slots`: `preset-rules` has one slot and a preset that carries rules
+# fills it, so that predicate warns on every correct installation that has any and says nothing.
+# A named cap (CONTRIBUTING.md#named-caps), and the shipped file that changes with it is
+# `hooks/hooks.json`, which is where a slot count is raised when this warning turns out to be
+# right.
 NEARLY_FULL = 0.9
 
 

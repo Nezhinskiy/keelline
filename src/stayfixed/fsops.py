@@ -237,6 +237,18 @@ def open_within(root: Path, relative: str) -> Iterator[tuple[int, str]]:
             os.close(handle)
 
 
+def check_within(root: Path, relative: str) -> None:
+    """Walk to `root/relative` as every write and removal here does, and touch nothing.
+
+    For a caller that must know before its first write whether a later one would be refused: it
+    raises the same `UnsafePath` the write or removal would, from the same walk, so the two cannot
+    disagree about which components count. A component that is not there is not an error, since
+    a removal through it has nothing to remove.
+    """
+    with contextlib.suppress(FileNotFoundError), open_within(root, relative):
+        pass
+
+
 def _mode_of(dir_fd: int, name: str) -> int | None:
     """The mode to carry over, and `None` for a file that is not there to carry one.
 
@@ -268,14 +280,19 @@ def _sync_directory(dir_fd: int) -> None:
         os.fsync(dir_fd)
 
 
-def write_atomically_at(dir_fd: int, name: str, text: str, *, encoding: str = "utf-8") -> None:
-    """Replace `name` inside the already-opened directory, keeping the mode it had."""
+def write_atomically_at(
+    dir_fd: int, name: str, text: str, *, encoding: str = "utf-8", errors: str = "strict"
+) -> None:
+    """Replace `name` inside the already-opened directory, keeping the mode it had.
+
+    `errors` is the codec's: `surrogateescape` writes back the bytes a file was read with under
+    the same handler, for a caller that must keep bytes that are not UTF-8 exactly."""
     mode = _mode_of(dir_fd, name)
     temporary = f".stayfixed-{os.getpid()}-{name}.tmp"
     create = NEW_FILE_MODE if mode is None else 0o600
     handle = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, create, dir_fd=dir_fd)
     try:
-        with os.fdopen(handle, "w", encoding=encoding) as stream:
+        with os.fdopen(handle, "w", encoding=encoding, errors=errors) as stream:
             stream.write(text)
             if mode is not None:
                 # `os.fchmod` on the descriptor rather than
@@ -304,7 +321,9 @@ def _unlink_quietly(dir_fd: int, name: str) -> None:
         os.unlink(name, dir_fd=dir_fd)
 
 
-def write_atomically(path: Path, text: str, *, encoding: str = "utf-8") -> None:
+def write_atomically(
+    path: Path, text: str, *, encoding: str = "utf-8", errors: str = "strict"
+) -> None:
     """Replace `path` with `text` in one step, keeping the mode it already had.
 
     The plain-path form, for callers that already hold a trusted absolute path: the memory
@@ -318,7 +337,7 @@ def write_atomically(path: Path, text: str, *, encoding: str = "utf-8") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     dir_fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     try:
-        write_atomically_at(dir_fd, path.name, text, encoding=encoding)
+        write_atomically_at(dir_fd, path.name, text, encoding=encoding, errors=errors)
     finally:
         os.close(dir_fd)
 

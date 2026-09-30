@@ -31,6 +31,8 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         "uninstall",
         # where an overlay's hooks really live, for attach and doctor
         "hooks_dir",
+        # the same resolver for the exclude file attach and detach keep a block in
+        "git_path",
         # which roots a configuration's paths may reach, for ledger.scan and memory.refs
         "contained_roots",
         # the commit gate stayfixed.assess.gates runs

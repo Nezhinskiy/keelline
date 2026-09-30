@@ -35,9 +35,12 @@ from smoke_hooks import developer_free_env, fixture_repository
 
 CANARY = "CANARY-IN-REPO-RULE"
 DELIMITER = "<<<stayfixed:repository-data"
-# The remote the overlay records for `smoke`. The clone has no remote of its own and does not
-# choose this one, which is the whole of why `attach` can tell the two apart.
+# The remote the overlay records for `smoke`, and the one the clone has instead. The clone chooses
+# its own `project.name` and its own `origin`, and not what the overlay recorded under that name,
+# which is the whole of why `attach` can tell the two apart. It has an `origin` of its own because
+# a checkout with none is a state of its own (`no-origin`), not the one this scenario is about.
 RECORDED_REMOTE = "git@example.com:the-owner/smoke.git"
+CLONES_REMOTE = "git@example.com:somebody-else/smoke.git"
 # How many rows this scenario declares. Asserted at the end, because six of the eight assert an
 # ABSENCE and a run that executed one of them prints an identically green last line.
 EXPECTED_ROWS = 8
@@ -86,6 +89,16 @@ def _run(argv: list[str], env: dict[str, str], cwd: Path) -> subprocess.Complete
 
 def plant(fixture: Path, scratch: Path, plugin_root: Path) -> Planted:
     clone = fixture_repository(fixture, scratch / "clone")
+    subprocess.run(  # noqa: S603
+        ["git", "-C", str(clone), "remote", "add", "origin", CLONES_REMOTE],  # noqa: S607
+        check=True,
+        capture_output=True,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_SYSTEM": os.devnull,
+        },
+    )
     home = scratch / "home"
     data = scratch / "data"
     (home / ".config" / "stayfixed").mkdir(parents=True, exist_ok=True)

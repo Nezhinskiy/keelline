@@ -9,7 +9,7 @@ import pytest
 from stayfixed import __version__
 from stayfixed.config.loader import preset_defaults
 from stayfixed.hooks.api import EVENTS
-from stayfixed.overlay.layout import OVERLAY_FILES, PLACEHOLDER_NAMES
+from stayfixed.overlay.layout import OVERLAY_FILES, PLACEHOLDER_NAMES, RETIRED_OVERLAY_FILES
 from stayfixed.overlay.template import template_root, templates
 from stayfixed.presets import load_preset
 from stayfixed.scaffold import MANIFEST_PATH
@@ -211,6 +211,17 @@ def test_no_file_in_the_tree_is_undeclared() -> None:
     assert present == set(OVERLAY_FILES)
 
 
+def test_no_retired_file_is_one_the_template_ships() -> None:
+    # `overlay upgrade` plans a retired file's removal beside the shipped files' refresh, under
+    # the same id. A name in both would be refreshed and removed by one run, and the tree would
+    # ship a file the next upgrade deletes. No mutation: the two tuples are constants, and this
+    # holds them apart for whoever edits either.
+    assert RETIRED_OVERLAY_FILES
+    assert set(RETIRED_OVERLAY_FILES).isdisjoint(OVERLAY_FILES)
+    for relative in RETIRED_OVERLAY_FILES:
+        assert not (template_root() / relative).exists(), relative
+
+
 def test_the_templates_plan_cleanly_into_an_empty_directory(tmp_path: Path) -> None:
     from stayfixed.scaffold import apply, plan
 
@@ -373,3 +384,102 @@ def test_the_overlay_tree_is_the_shared_resolvers_answer() -> None:
     from stayfixed.templates import tree
 
     assert template_root() == tree("overlay")
+
+
+# --- the rendered overlay is valid, reachable and honest ---------------------------------------
+
+
+def _render_into(tmp_path: Path) -> Path:
+    from stayfixed.overlay.create import _render_locally
+
+    return _render_locally(tmp_path, "rendered")
+
+
+def test_nothing_in_a_fresh_common_memory_fails_the_note_reader(tmp_path: Path) -> None:
+    # The template's own documentation for `common/memory/` was a `README.md` with no
+    # frontmatter, which `memory index --check` reads as a note, cannot parse, and reports —
+    # exit 1 in every project attached to a freshly created overlay. The store walk skips a name
+    # that starts with `_` (`memory.notes.walk`), so the documentation is `_README.md`.
+    # Asserted through the real reader rather than by a name: whatever else lands in this
+    # directory has to be a note or be skipped.
+    # Mutation: rename `_README.md` back to `README.md` (and `OVERLAY_FILES` with it) → reddens
+    # on `unreadable`.
+    from stayfixed.memory.notes import walk
+
+    rendered = _render_into(tmp_path)
+    directory = rendered / "common" / "memory"
+    assert (directory / "_README.md").is_file(), "the documentation moved, it did not go"
+    assert list(directory.glob("*.md")), "an empty directory makes the walk below vacuous"
+    walked = walk(rendered / "common", ["memory"])
+    assert walked.unreadable == []
+
+
+def test_the_overlay_ships_a_marketplace_and_manifests_the_harness_validates() -> None:
+    # `claude plugin validate` refuses a marketplace with no `owner` and warns on a plugin
+    # manifest with no `author`. The template carries a neutral placeholder for both, and
+    # `overlay init` puts the account in (`tests/overlay/test_create.py`).
+    root = template_root()
+    market = json.loads((root / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
+    assert isinstance(market.get("owner"), dict), "a marketplace with no owner does not validate"
+    assert market["owner"].get("name"), market["owner"]
+    for relative in (".claude-plugin/plugin.json", ".codex-plugin/plugin.json"):
+        manifest = json.loads((root / relative).read_text(encoding="utf-8"))
+        assert isinstance(manifest.get("author"), dict), relative
+        assert manifest["author"].get("name"), relative
+
+
+def _paragraphs(text: str) -> list[str]:
+    """Blank-line separated blocks, and each table row on its own."""
+    found: list[str] = []
+    for block in re.split(r"\n\s*\n", text):
+        found.extend(block.splitlines() if block.lstrip().startswith("|") else [block])
+    return found
+
+
+def test_no_rendered_markdown_says_a_rules_file_is_injected(tmp_path: Path) -> None:
+    # Nothing reads `common/rules/`: the rules a session starts with are notes carrying
+    # `metadata.startup`, injected by `memory session-context --bundle standing-rules`. A
+    # directory whose README promises injection is a promise nothing keeps, so the README says
+    # what is true, and every paragraph anywhere that speaks of the directory agrees.
+    # Mutation: restore "injected at the start of every session" to the row in the overlay's
+    # README, or to `common/rules/README.md` → reddens.
+    rendered = _render_into(tmp_path)
+    rules = (rendered / "common" / "rules" / "README.md").read_text(encoding="utf-8")
+    assert "nothing reads" in rules.lower()
+    assert "metadata.startup" in rules
+    assert "common/memory" in rules
+    spoken = 0
+    for path in sorted(rendered.rglob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        for paragraph in _paragraphs(text):
+            if path.parent.name == "rules" or "common/rules" in paragraph:
+                spoken += 1
+                # Injection may be spoken of, but only of the notes that are injected (named by
+                # their `metadata.startup` or by the bundle that injects them), never of the
+                # directory's own files.
+                if "inject" in paragraph:
+                    assert "metadata.startup" in paragraph or "standing-rules" in paragraph, (
+                        path.name,
+                        paragraph,
+                    )
+    assert spoken, "no paragraph spoke of the directory, so nothing above was checked"
+
+
+def test_the_overlay_documents_its_own_install_where_a_user_reads_it() -> None:
+    # An overlay is a plugin repository and nothing installed it: the two `claude plugin`
+    # commands, with the names `overlay init` produces, are what makes its `hooks/` and
+    # `skills/` reach a session. Documented in the template README, which is the overlay's own
+    # first page, and in the `overlay init` section of the reference, where the names come from.
+    add = "claude plugin marketplace add git@github.com:<owner>/<name>.git"
+    install = (
+        "claude plugin install stayfixed-overlay-<owner>@stayfixed-overlay-marketplace-<owner>"
+    )
+    readme = (template_root() / "README.md").read_text(encoding="utf-8")
+    assert add in readme
+    assert install in readme
+    reference = (Path(__file__).resolve().parents[2] / "docs" / "cli.md").read_text(
+        encoding="utf-8"
+    )
+    section = reference.split("## `stayfixed overlay init", 1)[1].split("\n## ", 1)[0]
+    assert add in section
+    assert install in section

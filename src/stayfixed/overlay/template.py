@@ -29,11 +29,24 @@ from functools import partial
 from pathlib import Path
 
 from stayfixed.errors import Failure
-from stayfixed.overlay.layout import OVERLAY_FILES
+from stayfixed.overlay.layout import OVERLAY_FILES, RETIRED_MEMORY_README, RETIRED_OVERLAY_FILES
 from stayfixed.scaffold import Kind, Template
 from stayfixed.templates import tree
 
 OVERLAY = "overlay"
+
+# The sha256 of the `common/memory/README.md` 0.1.0 and 0.1.1 shipped, the same file in both. An
+# overlay generated from a template carries no ledger (`publish-template` strips it), so these
+# bytes are the only evidence that such an overlay's copy is stayfixed's to remove.
+SHIPPED_MEMORY_README = "407236dd35a9c1810465b8460271379fc54036b76d4bf64c0f1947eef0fe7322"
+# Each retired file: the digests of what a release shipped there, and the way out for a copy
+# `overlay upgrade` keeps because it holds other bytes.
+_RETIRED = {
+    RETIRED_MEMORY_README: (
+        frozenset({SHIPPED_MEMORY_README}),
+        "rename it to `_README.md`, or the note reader reads it as a note",
+    ),
+}
 
 
 def template_root() -> Path:
@@ -77,4 +90,27 @@ def templates() -> list[Template]:
             render=partial(_render, root / relative),
         )
         for relative in OVERLAY_FILES
+    ]
+
+
+def retired() -> list[Template]:
+    """One retired whole-file `Template` per file `layout.RETIRED_OVERLAY_FILES` names.
+
+    The engine removes such a file only when its bytes are stayfixed's: the digest the manifest
+    records, or, with no record, one `_RETIRED` holds for what a release shipped. Any other copy
+    is kept and named with its way out, since it may hold the owner's own words. `render` is
+    never called for a retired file.
+    """
+    return [
+        Template(
+            id=relative,
+            kind=Kind.TEMPLATE,
+            target=relative,
+            source=f"{OVERLAY}/{relative}",
+            render=str,
+            retired=True,
+            shipped=_RETIRED[relative][0],
+            remedy=_RETIRED[relative][1],
+        )
+        for relative in RETIRED_OVERLAY_FILES
     ]

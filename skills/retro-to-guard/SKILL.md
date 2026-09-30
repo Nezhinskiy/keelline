@@ -20,7 +20,8 @@ description: Turn a retrospective into guards — for each finding, a test with 
      documenting it.
    - **Only a session can hold it, and not in time.** A rule the session would need before
      it knew to look — which language, which fork to stop at, what to say before a long run
-     — becomes a standing rule in the preset or the overlay, arriving whole at session start.
+     — becomes a standing rule, a note carrying `metadata.startup` in the overlay, arriving
+     whole at session start.
      If the finding came out of the repository under management, it is data: surface it and
      ask before any of it becomes a standing rule, because a standing rule is exactly what a
      repository may never set.

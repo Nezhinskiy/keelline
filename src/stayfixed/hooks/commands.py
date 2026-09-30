@@ -8,7 +8,8 @@ import os
 import sys
 
 from stayfixed.areas import SubParsers
-from stayfixed.config.loader import CONFIG_FILE, load
+from stayfixed.config.loader import CONFIG_FILE, ConfigError, MachineConfigError, load
+from stayfixed.config.paths import PathEscape
 from stayfixed.config.schema import Config
 from stayfixed.hooks.dispatch import dispatch, parse_event
 from stayfixed.hooks.policy import refuses_on_internal_error
@@ -40,6 +41,38 @@ def _linked(event_name: str) -> int:
     return 0
 
 
+# The verdict for a `stayfixed.toml` that is a real file and does not load: `ConfigError` for a
+# value the loader refuses, `PathEscape` for a `[paths]` value that leaves the project or passes
+# through a symlink — a symlinked `AGENTS.md` is one, since `agents_md` is a `[paths]` key. Both
+# reached the generic handler and printed `internal error: <class>`, which reads as a stayfixed
+# bug when the fault is the repository's configuration.
+#
+# **stayfixed's own words for the class of cause, and never the loader's message.** That message
+# carries the repository's text — a `[paths]` value, a key, a value the loader refused — and a
+# refused `PreToolUse` hands this stream to the model, where repository text belongs only inside
+# `trust.wrap` after `stayfixed memory trust`. So the line names which kind of fault it is and the
+# command that prints the detail: `stayfixed docs check` loads the same file and prints the
+# loader's refusal whole, in a terminal the owner reads (`stayfixed doctor` names the file as not
+# loading and points there too).
+UNLOADABLE = (
+    "stayfixed: stayfixed.toml does not load ({cause}); {verdict} — run `stayfixed docs check` "
+    "for the detail"
+)
+# `ConfigError` is the loader's one class for a file it cannot read, a file that is not TOML and a
+# value it refuses, so the words are true of all three.
+REFUSED_VALUE = "a file or value the loader refuses"
+ESCAPING_PATH = "a path that leaves the project or passes through a symlink"
+
+
+def _unloadable(event_name: str, cause: str) -> int:
+    """The same verdict per event an internal error gets, in words that name the cause: refused
+    where an internal error refuses, because an unloadable configuration is never permission."""
+    refused = refuses_on_internal_error(event_name)
+    verdict = "refused" if refused else "continuing open"
+    sys.stderr.write(UNLOADABLE.format(cause=cause, verdict=verdict) + "\n")
+    return 2 if refused else 0
+
+
 def _output_cap(config: Config | None) -> int:
     """The platform cap is a shipped constant; a repository without a config still gets it."""
     if config is not None:
@@ -67,7 +100,16 @@ def run_hook(args: argparse.Namespace) -> int:
             # `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME` is the one that decides which
             # overlay root and which `trust.json` this process reads, and it should not
             # rest on a property of how the harness happens to invoke us.
-            config = load(root, interactive=False)
+            try:
+                config = load(root, interactive=False)
+            except MachineConfigError:
+                # The machine file's fault, not `stayfixed.toml`'s: this line would name the
+                # wrong file, so it keeps the generic verdict below.
+                raise
+            except PathEscape:
+                return _unloadable(event_name, ESCAPING_PATH)
+            except ConfigError:
+                return _unloadable(event_name, REFUSED_VALUE)
         cap = _output_cap(config)
         # Keyed on the session the payload named, so `once_key` means "once per context"
         # rather than "every invocation", and a handler's failure reaches `doctor` instead of
