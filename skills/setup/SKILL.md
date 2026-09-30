@@ -6,13 +6,14 @@ description: Configure the machine for stayfixed — the preset, the personal pa
 # Machine setup
 
 1. Run `stayfixed setup --preset recommended` and relay what it writes to the machine
-   configuration file and which plugins and standing rules the preset enables. It asks nothing;
+   configuration file and which plugins the preset enables. It asks nothing;
    `--yes` exists only to confirm creating an overlay repository (step 4).
 2. For the commit-message hook, run `stayfixed setup --git-hooks` inside the repository and
    relay what it installed and what existing hook it kept and chained to;
    `stayfixed setup --git-hooks --uninstall` restores it.
 3. Personal parameters (reply language, artifact language) are the user's to set; do not
-   guess them.
+   guess them. Nothing in this release reads either: a language preference the user wants
+   followed is a personal standing rule, a note with `metadata.startup` in the overlay.
 4. Offer the private overlay — one repository holding the user's own standing rules,
    cross-project notes and per-project bindings. `setup` is what records it, through
    `--overlay`, and there are two ways in:
@@ -28,8 +29,8 @@ description: Configure the machine for stayfixed — the preset, the personal pa
    recording it, or one somebody else created that needs renaming:
    `stayfixed overlay create --owner NAME --local` renders one on this machine with no network
    call, `stayfixed overlay create --owner NAME --name stayfixed-private --template` creates it on
-   GitHub once the template repository is published to their account, and `stayfixed overlay
-   init --owner NAME --root PATH` makes it theirs. Relay what
+   GitHub from their own published template, or from the publisher's public one when they have
+   none, and `stayfixed overlay init --owner NAME --root PATH` makes it theirs. Relay what
    `init` renamed and whether the secret scan installed.
 5. After a stayfixed release, `stayfixed overlay upgrade --root PATH --dry-run` says what would
    change. Relay the report, and relay the `ASK FIRST` list separately: those two files can

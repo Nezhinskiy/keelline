@@ -45,6 +45,7 @@ from stayfixed.memory.api import DELIMITER, PROJECTS, harness_memory_path, marke
 from stayfixed.runner import Completed
 from tests.floor import developer_free_environ
 from tests.gitfixture import git
+from tests.overlay.test_upgrade import SHIPPED_MEMORY_README
 from tests.snapshot import (
     assert_snapshot_changed,
     assert_snapshot_unchanged,
@@ -250,7 +251,13 @@ def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, st
     return rows
 
 
-def _install_path(tmp_path: Path, *, initialised: bool = False, attach: bool = True) -> Walkthrough:
+def _install_path(
+    tmp_path: Path,
+    *,
+    initialised: bool = False,
+    attach: bool = True,
+    earlier_template: bool = False,
+) -> Walkthrough:
     """Steps 1-5: the overlay, the machine layer, a repository, attach, and a note in it.
 
     Every step is the real launcher with the real argv. Step 1's overlay is created **outside** the
@@ -266,6 +273,11 @@ def _install_path(tmp_path: Path, *, initialised: bool = False, attach: bool = T
 
     `attach=False` stops before step 4 and answers the unattached state, which is what a
     session's first `SessionStart` sees on a project nobody has bound yet.
+
+    `earlier_template` turns step 1's tree into what a template published at 0.1.x generates:
+    no ledger, since `publish-template` leaves it out, and the `common/memory/README.md` those
+    releases shipped. `gh` is out of reach offline, so the rendered tree is made that shape
+    before step 2, which is where such an overlay meets this release first.
 
     `init` runs here rather than in `_project`, which has no launcher environment: `_cli` needs
     the scratch home, the fake `PATH` and the plugin data root, and those are built from this
@@ -311,6 +323,11 @@ def _install_path(tmp_path: Path, *, initialised: bool = False, attach: bool = T
         "--root",
         str(overlays),
     )
+    if earlier_template:
+        shutil.rmtree(overlay / ".stayfixed")
+        (overlay / "common" / "memory" / "README.md").write_text(
+            SHIPPED_MEMORY_README, encoding="utf-8"
+        )
     # 2. make it this owner's, and install its commit-time secret scan.
     step("overlay", "init", "--owner", OWNER, "--root", str(overlay))
     # 3. the machine layer, into a scratch machine file and a scratch home. **Two runs**, as
@@ -463,6 +480,29 @@ def test_setup_then_overlay_then_attach_then_a_session_sees_memory(tmp_path: Pat
     assert not [line for line in calls if line.startswith("gh ")], calls
 
 
+def test_an_overlay_from_a_template_an_earlier_release_published_passes_the_index_check(
+    tmp_path: Path,
+) -> None:
+    # `overlay create --template` and `setup --overlay create:` generate the overlay from a
+    # template repository, which carries no ledger, and one published at 0.1.x ships
+    # `common/memory/README.md`, which the note reader reads as a note with no frontmatter:
+    # `memory index --check` failed right after the first attach, and only an `overlay upgrade`
+    # nobody had been told to run put it right. `overlay init`, which every such overlay runs,
+    # now removes it where it holds the bytes a release shipped.
+    #
+    # Mutation: `mutations.toml`'s "overlay init leaves the memory README a release shipped".
+    walk = _install_path(tmp_path, earlier_template=True)
+    assert not (walk.overlay / "common" / "memory" / "README.md").exists()
+    # Non-vacuous: the new name is there, and the tree still has no ledger of its own.
+    assert (walk.overlay / "common" / "memory" / "_README.md").is_file()
+    assert not (walk.overlay / ".stayfixed").exists()
+    # Step 5 writes a note after the attach, which leaves any index out of date; without it the
+    # store is what the first attach rendered its index from.
+    (walk.store / "project-stable" / "no-force-push.md").unlink()
+    checked = _cli(walk, "memory", "index", "--check", "--machine", str(walk.machine))
+    assert checked.returncode == 0, checked.stdout + checked.stderr
+
+
 def test_the_machine_file_is_the_only_thing_that_says_where_the_overlay_is(
     tmp_path: Path,
 ) -> None:
@@ -595,10 +635,9 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
     assert_snapshot_changed(root, before)
     step("detach", "--machine", str(machine), tty=True)
     assert_snapshot_unchanged(root, before)
-    # Stated rather than left to the file walk: `detach_main` withdraws the links and not the
-    # directory that held them, because "withdrawing a link is not licence to delete a
-    # directory". What is left is empty, and this is where that is written down.
-    assert list((root / "docs" / "memory").iterdir()) == []
+    # Stated rather than left to the file walk, which sees files alone: the directory the links
+    # sat in is taken back too once it is empty, so a detach leaves no empty `paths.memory`.
+    assert not (root / "docs" / "memory").exists()
 
 
 def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:

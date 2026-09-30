@@ -1,6 +1,9 @@
 {
   "name": "stayfixed-overlay-marketplace",
   "description": "One private overlay, published from its own repository.",
+  "owner": {
+    "name": "your-account"
+  },
   "plugins": [
     {
       "name": "stayfixed-overlay",

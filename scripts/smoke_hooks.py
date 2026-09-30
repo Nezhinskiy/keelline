@@ -30,9 +30,6 @@ DELIMITER = "<<<stayfixed:repository-data"
 # bundle that renders anything on it.
 STANDING_RULE = "SMOKE-STANDING-RULE"
 VOLATILE_NOTE = "SMOKE-VOLATILE-NOTE"
-# stayfixed's own rules, from the shipped preset rather than from the repository — so this one
-# is the row that proves `preset-rules` still renders when the store is empty of them.
-PRESET_RULE = "### decision-forks"
 # The one `STAYFIXED_*` variable an entry keeps: the floor a test runner puts under the product's
 # own bounds on `git` (`stayfixed.gitenv.FLOOR_VARIABLE`, which can only raise them). Spelled out
 # rather than imported, because this script runs without `stayfixed` importable.
@@ -109,12 +106,14 @@ SAMPLES: dict[str, tuple[Sample, ...]] = {
 # green. These are the entries that carry repository bytes toward the model, which is the one
 # thing the smoke scenario exists to watch.
 #
-# Measured 2026-09-19 against the fixture's store, trusted: preset-rules 3,176 characters,
-# standing-rules part 1 1,010, volatile-notes part 1 993, every other part empty. The index
+# Measured 2026-09-19 against the fixture's store, trusted: standing-rules part 1 1,010,
+# volatile-notes part 1 993, every other part empty. `preset-rules` is empty too, and for a reason
+# of its own: the shipped preset carries no `[rules]` table (stayfixed imposes no standing rule),
+# so that row asserts the bundle says nothing rather than that it renders something. The index
 # bundle is empty on purpose — `memory session-context` renders it only under Codex, and this
 # run is not Codex — so those three rows assert that harness gate rather than a store.
 INJECTED: dict[str, tuple[str, ...]] = {
-    "open memory session-context --bundle preset-rules --part 1": (PRESET_RULE,),
+    "open memory session-context --bundle preset-rules --part 1": (),
     "open memory session-context --bundle standing-rules --part 1": (DELIMITER, STANDING_RULE),
     "open memory session-context --bundle standing-rules --part 2": (),
     "open memory session-context --bundle standing-rules --part 3": (),

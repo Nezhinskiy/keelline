@@ -62,12 +62,12 @@ controls:
   stops this half from standing for nothing.
 * **it must lie outside the repository the agent works in**, which now means outside *every*
   checkout of it. The old check refused `candidate == project` or `project in candidate.parents`
-  and nothing else, so a parent directory and a sibling worktree both passed — and this
-  project's own `worktree-by-default` preset rule makes `--root` a worktree, which is exactly
-  the shape that passed. It now also refuses a candidate that *holds* the project root, and a
-  candidate inside, holding or equal to any checkout of the project root's repository that `git`
-  can name: what a repository ships reaches its own checkouts and nowhere else, so refusing
-  every checkout of it removes the tree a clone can stage.
+  and nothing else, so a parent directory and a sibling worktree both passed — and working
+  in a worktree, which is ordinary, makes `--root` one, which is exactly the shape that passed.
+  It now also refuses a candidate that *holds* the project root, and a candidate inside, holding
+  or equal to any checkout of the project root's repository that `git` can name: what a
+  repository ships reaches its own checkouts and nowhere else, so refusing every checkout of it
+  removes the tree a clone can stage.
   `_outside_the_project` says how `git` is asked and from which side, and why. It is not a claim
   that the same bytes cannot be somewhere else on the machine — a separate clone of the same
   remote passes — only that the owner put them there. When `git` gives no answer for the project
@@ -121,6 +121,7 @@ from stayfixed.overlay.api import (
     target_root,
 )
 from stayfixed.presets import load_preset
+from stayfixed.printed import answered
 from stayfixed.runner import Runner
 from stayfixed.setup.machine import USER_SETTINGS, read_machine, write_machine
 
@@ -245,7 +246,7 @@ def _install_plugins(
         # itself (its own docstring: "a missing binary is a finding, never a traceback").
         added = runner.run(add_argv_of(source), home)
         if added.code != 0:
-            detail = added.stderr.strip() or added.stdout.strip() or f"exit {added.code}"
+            detail = answered(added)
             notes.append(f"{agent}: could not register marketplace {source} ({detail})")
             continue
         for selector in selectors:
@@ -255,7 +256,7 @@ def _install_plugins(
                 if selector not in installed:
                     installed.append(selector)
             else:
-                detail = done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"
+                detail = answered(done)
                 notes.append(f"{agent}: `{' '.join(argv)}` did not succeed ({detail})")
     return tuple(installed), tuple(notes)
 
@@ -707,10 +708,10 @@ def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
     `git worktree add .worktrees/x` produces and which the first draft accepted. The `git` arms
     are the sibling case the paths cannot see: `stayfixed.worktrees/feature` is not under
     `stayfixed/`, so a clone committing its own manifests at its own root passed the path arm
-    whenever `--root` was one of its worktrees — and this project's own preset rule makes
-    `--root` a worktree by default. The first applies the path arm to every checkout
-    `_repository` lists; the second, `_candidate_repository`, catches the checkouts that list
-    names by their git directory. See each for why it is asked from the side it is.
+    whenever `--root` was one of its worktrees — and working in a worktree makes `--root` one.
+    The first applies the path arm to every checkout `_repository` lists; the second,
+    `_candidate_repository`, catches the checkouts that list names by their git directory. See
+    each for why it is asked from the side it is.
 
     **What it does not cover, stated rather than implied.** When `git` gives no answer for the
     project root, the `git` arms are silent and only the path arm stands — `_repository` says
@@ -852,9 +853,26 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
         raise Refusal(
             f"{fault}. {owner}/{name} was created and cloned to {created.root}, but {_CREATED}"
         )
-    init_instance(created.root, owner, runner=runner)
+    initialised = init_instance(created.root, owner, runner=runner)
     _outside_the_project(created.root, project_root=project_root)
-    return created.root, f"created the overlay at {created.root}"
+    if created.template is None:
+        # `create` found a populated destination and generated nothing (no `gh` call at all),
+        # which is what re-running `setup --overlay create:` does after the first run, so there is
+        # no template to name. `init` still ran on it, and an overlay named by an earlier release
+        # has its manifests completed or its old memory README removed, so the note says what
+        # `init` changed rather than that the overlay was left alone.
+        changed = initialised.changed
+        return created.root, (
+            f"found the overlay already at {created.root}, so nothing was generated; "
+            + (
+                f"`overlay init` changed {', '.join(changed)}"
+                if changed
+                # Not "nothing": `init` also runs `pre-commit install`, which may write the
+                # overlay's untracked git hook on this run.
+                else "`overlay init` changed none of the overlay's tracked files"
+            )
+        )
+    return created.root, f"created the overlay at {created.root}, generated from {created.template}"
 
 
 def setup(

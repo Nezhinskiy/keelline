@@ -24,13 +24,22 @@ _PLAN_OK = (
 )
 
 
+# Said when `--memory-graph` had no store to walk, which used to be silence: a line with no NOTE
+# read exactly like a graph with nothing wrong in it. The reason is the resolver's own sentence,
+# which every cause it refuses on now carries — stayfixed's text, which prints — and never its
+# detail, which carries `memory.groups` and `paths.memory`, both the repository's.
+NO_STORE = "memory-store-unresolved"
+
+
 def _graph_notices(args: argparse.Namespace, root: Path, config: Config) -> list[Finding]:
     from stayfixed.docs.graph import check_memory_graph
-    from stayfixed.memory.api import resolve
+    from stayfixed.memory.api import resolved
 
     machine = Path(args.machine) if args.machine else None
-    store = resolve(root, config, override=args.store, machine=machine)
-    return check_memory_graph(store, config) if store is not None else []
+    found = resolved(root, config, override=args.store, machine=machine)
+    if found[0] is None:
+        return [Finding(NO_STORE, "", None, found[1].said)]
+    return check_memory_graph(found[0], config)
 
 
 def run_docs_check(args: argparse.Namespace) -> Result:
@@ -58,7 +67,10 @@ def run_docs_check(args: argparse.Namespace) -> Result:
     # The success line names the enforced set alone. Naming the graph here once made an exit-0
     # line vouch for a graph the run had just reported broken.
     verdict = _OK
-    if notices:
+    unchecked = [n for n in notices if n.rule == NO_STORE]
+    if unchecked:
+        verdict += f" — the memory graph was not checked: {unchecked[0].detail}"
+    elif notices:
         verdict += (
             f" — {len(notices)} advisory NOTE(s) are unresolved and do not gate; this line does "
             "not vouch for the memory store"

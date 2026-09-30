@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import tomllib
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -156,21 +157,48 @@ def test_the_index_bundle_is_empty_when_no_index_file_exists(tmp_path: Path) -> 
     assert blocks(Bundle.INDEX, store, config) == []
 
 
-RULES = (
-    "decision-forks",
-    "worktree-by-default",
-    "research-freshness",
-    "ci-after-push",
-    "language-by-audience",
-)
+RULES = ("first-rule", "second-rule", "third-rule", "fourth-rule", "fifth-rule")
 # A rule body with fewer words than this is a stub rather than a rule.
 MIN_RULE_BODY_WORDS = 20
+# A preset that carries a `[rules]` table, written the way a preset is: TOML, with `"""` bodies
+# that keep the newline before their closing quotes. The shipped `recommended` preset carries none
+# (a standing rule is the user's own note, `metadata.startup`), so the bundle's behaviour *with*
+# rules is held on this fixture and its behaviour without them on the shipped file, below.
+A_PRESET_WITH_RULES = tomllib.loads(
+    "[rules]\n"
+    + "".join(
+        f'{name} = """\n'
+        + ("A sentence of the rule that is long enough to count. " * 4)
+        + '\n"""\n'
+        for name in RULES
+    )
+)
 
 
-def test_the_shipped_preset_rules_render_in_table_order(tmp_path: Path) -> None:
-    # The preset is the plugin's, so this reads the real one: a rule dropped from the table,
-    # renamed, or reordered reddens here. Mutation: swap the first two tables in
-    # `recommended.toml` → reddens on order; delete `ci-after-push` → reddens on length.
+def _preset_with_rules(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the preset the bundle reads one that carries rules, as a user's own would."""
+    monkeypatch.setattr(bundles_module, "load_preset", lambda name: A_PRESET_WITH_RULES)
+
+
+def test_the_recommended_preset_imposes_no_standing_rule(tmp_path: Path) -> None:
+    # stayfixed supports standing rules (`metadata.startup` notes) and imposes none: the shipped
+    # preset carries no `[rules]` table, so the `preset-rules` bundle is silent for it. Read the
+    # real file, not a fixture: a rule added back to `recommended.toml` reddens here.
+    # Mutation: put any `[rules]` table with one string back in `recommended.toml` → both
+    # assertions redden.
+    from stayfixed.presets import load_preset
+
+    assert "rules" not in load_preset("recommended")
+    store, config = a_store(tmp_path)
+    assert blocks(Bundle.PRESET_RULES, store, config) == []
+
+
+def test_a_presets_rules_render_in_table_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A rule dropped from the table, renamed, or reordered reddens here. Mutation: swap the first
+    # two tables in the fixture → reddens on order; delete the last → reddens on length.
+    _preset_with_rules(monkeypatch)
     store, config = a_store(tmp_path)
     produced = blocks(Bundle.PRESET_RULES, store, config)
     assert [block.split("\n", 1)[0] for block in produced] == [f"### {name}" for name in RULES]
@@ -179,17 +207,19 @@ def test_the_shipped_preset_rules_render_in_table_order(tmp_path: Path) -> None:
     assert all(len(block.split("\n\n", 1)[1].split()) >= MIN_RULE_BODY_WORDS for block in produced)
 
 
-def test_the_shipped_preset_rules_fit_one_hook_slot(tmp_path: Path) -> None:
+def test_a_presets_rules_fit_one_hook_slot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # A bundle that needs two parts is not wrong, but it is a change the hooks file has to
-    # know about (`SLOTS`), so a growing table reddens here before it silently spills.
-    # Mutation, run 2026-09-17: pad one rule body in the shipped preset with 8,940 characters
-    # of prose. The bundle spilled and this reddened with `assert 2 == 1`, then went green
-    # again when the padding came out. The five rules render from about 3.1 KB of body today
-    # against a slot of `hook_output_chars - CAP_MARGIN`, so this is a tripwire with room in
-    # front of it, not a bound anything sits against.
+    # know about (`SLOTS`), so a preset that grows past one slot is counted, not silently
+    # spilled. The rules that fit are one part; the same rules padded past the cap are two, which
+    # is what makes the first assertion a measurement and not a constant.
+    # Mutation: make `split` return every block as its own part → the first assertion reddens.
+    _preset_with_rules(monkeypatch)
     store, config = a_store(tmp_path)
     produced = blocks(Bundle.PRESET_RULES, store, config)
-    assert len(split(produced, cap=config.native_caps.hook_output_chars - CAP_MARGIN)) == 1
+    cap = config.native_caps.hook_output_chars - CAP_MARGIN
+    assert len(split(produced, cap=cap)) == 1
+    padded = [*produced, "### padding\n\n" + "word " * (cap // 5 + 10)]
+    assert len(split(padded, cap=cap)) == 2
 
 
 def test_a_rule_renders_as_one_heading_one_blank_line_and_a_stripped_body(
@@ -207,9 +237,13 @@ def test_a_rule_renders_as_one_heading_one_blank_line_and_a_stripped_body(
     assert blocks(Bundle.PRESET_RULES, store, config) == ["### spaced\n\nA body."]
 
 
-def test_no_shipped_rule_renders_with_padding(tmp_path: Path) -> None:
-    # The same claim against the real preset, which is where the stray line was found: the
-    # fixture above proves the code strips, this proves the thing it ships strips to something.
+def test_no_rule_of_a_preset_written_as_toml_renders_with_padding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The same claim against a preset parsed from TOML, which is where the stray line was found:
+    # the fixture above proves the code strips a padded string, this proves a `"""` body as TOML
+    # hands it over strips to something. It ran against the shipped file while that carried rules.
+    _preset_with_rules(monkeypatch)
     store, config = a_store(tmp_path)
     produced = blocks(Bundle.PRESET_RULES, store, config)
     assert produced != []

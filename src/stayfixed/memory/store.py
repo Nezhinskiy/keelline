@@ -59,7 +59,7 @@ from stayfixed.config.schema import Config
 from stayfixed.errors import Failure
 from stayfixed.findings import listed
 from stayfixed.gitenv import git_run
-from stayfixed.printed import clipped
+from stayfixed.printed import clipped, quoted
 
 LOCAL_STORE = Path(".stayfixed") / "local" / "memory"
 # The overlay's per-project directory, named once. It was a bare literal at the two call
@@ -97,6 +97,26 @@ class Store:
     # `Store` is frozen and `resolve` builds it exactly once, from the `machine` it was given.
     # Putting the value here makes the mismatch unrepresentable instead of documented.
     machine: Path | None = None
+
+
+@dataclass(frozen=True)
+class Unresolved:
+    """Why no store resolved: stayfixed's own sentence, and the repository's words it is about.
+
+    Two fields because the two reach a reader differently. `said` is built of nothing a
+    repository chose, so it prints as it is and a command puts it *before* the region
+    `trust.wrap` marks as data — which is where a way out has to be for anyone to act on it.
+    `detail` may carry `memory.groups` entries, `paths.memory` or the project's name, and reaches
+    a reader only inside that region (`memory.commands._no_store`). Every cause has a sentence of
+    its own, so only `detail` may be absent; `str()` joins what there is, for a caller that only
+    reports it wrapped.
+    """
+
+    said: str
+    detail: str | None = None
+
+    def __str__(self) -> str:
+        return ": ".join(part for part in (self.said, self.detail) if part)
 
 
 class GitUnavailable(Failure):
@@ -318,18 +338,102 @@ def origin_remote(root: Path) -> str | None:
     return origin.value
 
 
-def _bound(overlay: Path, project: str, root: Path) -> bool:
+# The one answer to "does the overlay's record bind this checkout's `origin`", which `memory`
+# commands, `attach`, `attach --check`, `doctor` and the session-start line all read
+# (`binding_state`). A checkout with no `origin` is its own state and is asked first: it used to be
+# answered twice, here and in `attach.binding`, and the second answer called it a different remote
+# URL and pointed at `--trust-remote`, which then refused for the missing `origin`.
+UNBOUND = "unbound"
+BOUND = "bound"
+MISMATCH = "mismatch"
+NO_ORIGIN = "no-origin"
+BINDING_STATES = (UNBOUND, BOUND, MISMATCH, NO_ORIGIN)
+
+# Each cause, and the way out that fits it. They used to be one `False` and one sentence, "run
+# `stayfixed attach`", which for a changed remote is the command that refuses. Fixed text: the
+# project's name and the record's path, which the repository chooses, go in `Unresolved.detail`
+# and never in these. The two a surface says with a way out of its own are kept apart from their
+# way out, so every surface says the same cause.
+NO_RECORD = (
+    "the overlay records no remote for this project, so nothing binds it to this repository; "
+    "run `stayfixed attach` to bind it"
+)
+RECORD_UNREADABLE = (
+    "the overlay's record of this project cannot be read, so the binding cannot be checked; "
+    "repair or remove the file named below, then run `stayfixed attach`"
+)
+NO_ORIGIN_CAUSE = (
+    "this checkout has no `origin` remote, so there is nothing to bind to the overlay or to check "
+    "its record against"
+)
+NO_ORIGIN_WAY_OUT = (
+    "add the `origin` remote (the one this project was bound with, when the overlay records one), "
+    "then run `stayfixed attach`"
+)
+NO_REMOTE = f"{NO_ORIGIN_CAUSE}; {NO_ORIGIN_WAY_OUT}"
+DIFFERENT_REMOTE = (
+    "the overlay records a different remote URL under this project's name (the same repository "
+    "under another URL form, https or ssh, counts as different too)"
+)
+REMOTE_MISMATCH = (
+    f"{DIFFERENT_REMOTE}; run `stayfixed attach --trust-remote` only if this checkout should be "
+    f"bound to it"
+)
+_UNBOUND_CAUSES = {UNBOUND: NO_RECORD, NO_ORIGIN: NO_REMOTE, MISMATCH: REMOTE_MISMATCH}
+# Asked before any of the four: a machine record naming an overlay root that is not there (the
+# overlay moved, or this machine never cloned it) read as "no record of this project", whose way
+# out, `stayfixed attach`, refuses a `--store` outside the root the machine records. The root is
+# the owner's own configuration and not the repository's, so it is part of this sentence, through
+# `printed.quoted`, rather than a detail printed inside the region that marks repository text.
+OVERLAY_GONE = (
+    "the overlay root the machine configuration records, {root}, is not a directory on this "
+    "machine; record where the overlay is now with `stayfixed setup --preset NAME --overlay "
+    "PATH`, then run `stayfixed attach`"
+)
+
+
+# Two of the resolver's own sentences, for the causes a store most often fails on. Each is
+# stayfixed's text: the path it is about, and the groups that did not resolve, stay in the detail.
+STORE_MISSING = "the memory store's directory does not exist"
+BUILT_BY_ATTACH = "; run `stayfixed attach` to build it"
+
+
+def binding_state(recorded: str | None, origin: str | None) -> str:
+    """`no-origin`, `unbound`, `mismatch` or `bound`, for the remote the overlay records for this
+    project and this checkout's `origin` — and never `bound` because nobody looked.
+
+    A missing `origin` is answered first, whatever the record says: with nothing to compare, a
+    record is neither a mismatch nor a binding, and the way out is the same with a record or
+    without one. URLs are compared exactly: normalising `git@…` against `https://…` is a binding
+    rule, and a hostile clone is caught by this comparison, since it chooses `project.name` and not
+    which remote the overlay recorded under it.
+    """
+    if origin is None:
+        return NO_ORIGIN
+    if recorded is None:
+        return UNBOUND
+    return BOUND if recorded == origin else MISMATCH
+
+
+def _bound(overlay: Path, project: str, root: Path) -> Unresolved | None:
+    """`None` when the overlay's record binds this checkout's `origin`, else which cause failed.
+
+    The answers are the causes above, each with the project's name, or the record's path, as the
+    detail they are about; the state is `binding_state`'s.
+    """
     record = overlay / PROJECTS / project / PROJECT_RECORD
-    if not record.is_file():
-        return False
-    try:
-        raw = tomllib.loads(record.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, *UNPARSEABLE):
-        return False
-    recorded = raw.get("remote")
-    if not isinstance(recorded, str) or not recorded:
-        return False
-    return origin_remote(root) == recorded
+    recorded = None
+    if record.is_file():
+        try:
+            raw = tomllib.loads(record.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, *UNPARSEABLE):
+            # The path and never the exception: a TOML error's message quotes the file's own
+            # text, and this file holds a remote URL.
+            return Unresolved(RECORD_UNREADABLE, quoted(str(record)))
+        value = raw.get("remote")
+        recorded = value if isinstance(value, str) and value else None
+    cause = _UNBOUND_CAUSES.get(binding_state(recorded, origin_remote(root)))
+    return None if cause is None else Unresolved(cause, f"project {quoted(project)}")
 
 
 def _inside(candidate: Path, parent: Path) -> bool:
@@ -404,11 +508,32 @@ def _group_targets(
     return groups, unavailable
 
 
+def _names_own_share(override: str | None, config: Config, overlay: Path | None) -> bool:
+    """Whether `--store` names this project's own share of the recorded overlay, in overlay mode.
+
+    That directory is the far end of the link tree, not a store of its own: `developer` lives in
+    `common/memory`, beside it, so resolving groups *under* it answered a smaller store — the
+    index it rendered had no developer notes, and `--check` then called that index current. A
+    store is one store however it is named, so this name resolves as the plain run does.
+    """
+    if override is None or overlay is None or config.memory.mode != "overlay":
+        return False
+    own = permitted_roots(overlay, config.project.name)[1]
+    return Path(override).expanduser().resolve() == own.resolve()
+
+
+# A store and no reason, or no store and the reason: `resolved`'s answer, which never holds both
+# and never neither.
+Resolution = tuple[Store, None] | tuple[None, Unresolved]
+
+
 def _resolve_at(
     root: Path, config: Config, override: str | None, machine: Path | None
-) -> tuple[Store | None, str | None]:
+) -> Resolution:
     mode = config.memory.mode
     overlay = overlay_root(machine)
+    if _names_own_share(override, config, overlay):
+        override = None
     if override is not None:
         base = Path(override).expanduser()
     elif mode == "local-only":
@@ -422,11 +547,17 @@ def _resolve_at(
             # ships by default, where the whole store is otherwise ungoverned by `contained`.
             base = contained(root, str(LOCAL_STORE))
         except PathEscape as exc:
-            return None, f"{exc}; local-only memory must be a real directory"
+            return None, Unresolved(
+                "the local-only store is not a real directory inside the project",
+                f"{exc}; local-only memory must be a real directory",
+            )
     else:
         declared = _declared(root, config)
         if declared is None:
-            return None, f"paths.memory ({config.paths.memory!r}) does not stay inside the project"
+            return None, Unresolved(
+                "paths.memory does not stay inside the project",
+                f"paths.memory ({config.paths.memory!r}) does not stay inside the project",
+            )
         base = declared
         # Check 1, the shape: in every mode but `local-only` and an explicit `override`,
         # `paths.memory` itself must be a real directory — one link per group, not one link for the
@@ -435,22 +566,25 @@ def _resolve_at(
         # check below (`permitted_roots`) never runs, and the whole store silently becomes whatever
         # `paths.memory` was pointed at — including another project's share.
         if declared.is_symlink():
-            return None, (
-                f"{config.paths.memory} is a symlink; {mode} memory must be a real directory"
+            return None, Unresolved(
+                f"paths.memory is a symlink, and {mode} memory must be a real directory",
+                f"{config.paths.memory} is a symlink; {mode} memory must be a real directory",
             )
     if mode == "overlay":
         if overlay is None:
-            return (
-                None,
-                "no overlay root is recorded in the machine configuration; run `stayfixed setup`",
+            return None, Unresolved(
+                "no overlay root is recorded in the machine configuration; run `stayfixed setup`"
             )
-        if not _bound(overlay, config.project.name, root):
-            return None, (
-                f"the overlay does not record this repository's origin remote for project "
-                f"{config.project.name!r}; run `stayfixed attach`"
-            )
+        if not overlay.is_dir():
+            return None, Unresolved(OVERLAY_GONE.format(root=quoted(str(overlay))))
+        unbound = _bound(overlay, config.project.name, root)
+        if unbound is not None:
+            return None, unbound
     if not base.is_dir():
-        return None, f"{base} does not exist; run `stayfixed attach`"
+        # `attach` builds the directory only in overlay mode, where it is the link tree; elsewhere
+        # it refuses, so it is named as the way out only there.
+        said = STORE_MISSING + (BUILT_BY_ATTACH if mode == "overlay" else "")
+        return None, Unresolved(said, str(base))
     groups, unavailable = _group_targets(base, config, overlay if mode == "overlay" else None)
     if not groups:
         # Counted, and capped at `LISTED_LIMIT` like every list of names: `memory.groups` is
@@ -459,9 +593,9 @@ def _resolve_at(
         # thing; each group clipped, since nothing bounds one group's length either.
         reasons = [f"{clipped(k)}: {unavailable[k]}" for k in sorted(unavailable)]
         if not reasons:
-            return None, "the store has no groups"
+            return None, Unresolved("the store has no groups")
         head = f"none of the {len(reasons)} configured group(s) resolved"
-        return None, f"{head}: {listed(reasons)}"
+        return None, Unresolved(head, listed(reasons))
     return Store(base, mode, root, groups, unavailable, machine), None
 
 
@@ -471,7 +605,7 @@ def resolved(
     *,
     override: str | None = None,
     machine: Path | None = None,
-) -> tuple[Store | None, str | None]:
+) -> Resolution:
     """The store and, when there is none, why — in **one** pass.
 
     `resolve` and `refusal_reason` each walk the whole resolution, and a caller that needs both
@@ -481,19 +615,21 @@ def resolved(
     once per bundle entry. The two functions below stay, because a caller that wants only one
     of the two answers should not have to say so; this is the one for callers that want both.
 
-    The reason is repository-authored text: see `refusal_reason` for what that obliges a
-    consumer to do with it.
+    The reason's `detail` is repository-authored text: see `refusal_reason` for what that
+    obliges a consumer to do with it. Its `said` is stayfixed's own and prints as it is.
+
+    There is always exactly one of the two, and the type says so (`Resolution`): a caller that
+    tests `found[0] is None` holds a reason, and has no "no reason" case to invent words for.
     """
-    store, reason = _resolve_at(root, config, override, machine)
-    if store is not None:
-        return store, None
+    found = _resolve_at(root, config, override, machine)
+    if found[0] is not None:
+        return found
     # A worktree resolves through the checkout it is *registered against*, never through
     # whatever a redirected `GIT_DIR` named and never merely because a directory sits above it.
     parent = _registered_worktree(root)
     if parent is None:
-        return None, reason
-    upstream, upstream_reason = _resolve_at(parent, config, override, machine)
-    return upstream, None if upstream is not None else upstream_reason
+        return found
+    return _resolve_at(parent, config, override, machine)
 
 
 def resolve(
@@ -527,7 +663,8 @@ def refusal_reason(
     consumer, which refuses to put this text into `HookResult.context` for exactly that reason.
     A consumer that must show the detail wraps it first with `trust.wrap`.
     """
-    return resolved(root, config, override=override, machine=machine)[1]
+    reason = resolved(root, config, override=override, machine=machine)[1]
+    return None if reason is None else str(reason)
 
 
 def inside_project(store: Store) -> bool:

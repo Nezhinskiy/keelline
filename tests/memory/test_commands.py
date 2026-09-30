@@ -9,6 +9,7 @@ import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.findings import LISTED_LIMIT
+from stayfixed.memory import bundles as bundles_module
 from stayfixed.memory.api import DELIMITER
 from stayfixed.printed import UNPRINTABLE
 from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
@@ -987,6 +988,12 @@ def test_every_other_bundle_is_harness_neutral(
     # Claude Code would empty the channel the whole store exists for, and
     # `scripts/smoke_hooks.py` would still pass because it runs under Claude Code.
     store = _a_trusted_store_with_an_index(project)
+    # The shipped preset carries no rules, so `preset-rules` would be empty under both harnesses
+    # for a reason that says nothing about the harness: a preset that has one is what puts the
+    # bundle under this assertion.
+    monkeypatch.setattr(
+        bundles_module, "load_preset", lambda name: {"rules": {"greeting": "Hello there."}}
+    )
     for bundle in ("preset-rules", "standing-rules", "volatile-notes"):
         claude = _session_context(
             store, monkeypatch, capsys, bundle=bundle, env={"CLAUDE_PLUGIN_ROOT": "/p"}
@@ -996,3 +1003,152 @@ def test_every_other_bundle_is_harness_neutral(
         )
         assert claude != "", bundle
         assert _without_nonces(claude) == _without_nonces(codex), bundle
+
+
+def test_the_recommended_preset_prints_nothing_for_preset_rules(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The `SessionStart` entry for this bundle still runs on every session, and for the shipped
+    # preset it says nothing: stayfixed imposes no standing rule. Through the real command with
+    # the real preset (`CONFIG` names `recommended`), under both harnesses, exit 0 and no bytes.
+    # Mutation: put a `[rules]` string back in `recommended.toml` → this reddens.
+    store = _a_trusted_store_with_an_index(project)
+    for env in ({"CLAUDE_PLUGIN_ROOT": "/p"}, {"PLUGIN_ROOT": "/p"}):
+        assert _session_context(store, monkeypatch, capsys, bundle="preset-rules", env=env) == ""
+
+
+SECOND_NOTE = (
+    "---\nname: second\ndescription: second description\nmetadata:\n  type: project\n---\n\nB.\n"
+)
+
+
+@needs_git
+def test_the_store_named_by_its_overlay_path_is_the_store_the_link_tree_names(
+    overlay_project: Path,
+) -> None:
+    # `--store <overlay>/projects/<name>/memory` resolved the groups under that directory, where
+    # `developer` is not — it lives in `common/memory` — so the index it wrote had no developer
+    # notes and `--check` then called that index current. One store, however it is named: the
+    # same groups and the same bytes either way.
+    #
+    # Mutation: `mutations.toml`'s "an override naming this project's share resolves a smaller
+    # store".
+    overlay = overlay_project.parent / "overlay"
+    share = overlay / "projects" / "widget" / "memory"
+    (overlay / "common" / "memory" / "second.md").write_text(SECOND_NOTE, encoding="utf-8")
+    (overlay_project / "docs" / "memory" / "MEMORY.md").symlink_to(share / "MEMORY.md")
+    named = ["--store", str(share), *common(overlay_project)]
+
+    assert invoke(["memory", "index", *common(overlay_project)]) == 0
+    plain = (share / "MEMORY.md").read_bytes()
+    assert b"developer/second.md" in plain
+    assert invoke(["memory", "index", *named]) == 0
+    assert (share / "MEMORY.md").read_bytes() == plain
+    assert invoke(["memory", "index", "--check", *named]) == 0
+
+
+@needs_git
+def test_the_share_named_outside_overlay_mode_is_the_store_it_names(overlay_project: Path) -> None:
+    # The rule above is overlay mode's: there the share is the far end of the link tree. A
+    # repository in any other mode has no link tree, so `--store` naming the same directory is an
+    # override like any other and resolves to that directory, not to `paths.memory`.
+    #
+    # Mutation: `mutations.toml`'s "an override naming the share is dropped in every mode".
+    from stayfixed.config.loader import load
+    from stayfixed.memory.store import resolved
+
+    config_file = overlay_project / "stayfixed.toml"
+    config_file.write_text(
+        config_file.read_text(encoding="utf-8").replace('mode = "overlay"', 'mode = "in-repo"'),
+        encoding="utf-8",
+    )
+    machine = overlay_project.parent / "machine.toml"
+    share = overlay_project.parent / "overlay" / "projects" / "widget" / "memory"
+    (share / "developer").mkdir()
+    store, why = resolved(
+        overlay_project,
+        load(overlay_project, machine=machine),
+        override=str(share),
+        machine=machine,
+    )
+    assert why is None and store is not None
+    assert store.path.resolve() == share.resolve()
+
+
+def _binding_project(tmp_path: Path, cause: str) -> tuple[Path, Path]:
+    """An attached-shaped overlay project whose binding fails for exactly one of its four causes."""
+    root = tmp_path / "project"
+    root.mkdir(parents=True)
+    git(root, "init", "-q", "-b", "main")
+    if cause != "no-remote":
+        origin = "git@example.com:acme/other.git" if cause == "mismatch" else REMOTE
+        git(root, "remote", "add", "origin", origin)
+    overlay = tmp_path / "overlay"
+    (overlay / "common" / "memory").mkdir(parents=True)
+    (overlay / "projects" / "widget" / "memory").mkdir(parents=True)
+    record = overlay / "projects" / "widget" / "project.toml"
+    if cause == "unreadable":
+        record.write_text("remote = [\n", encoding="utf-8")
+    elif cause != "no-record":
+        record.write_text(f'remote = "{REMOTE}"\n', encoding="utf-8")
+    (root / "docs" / "memory").mkdir(parents=True)
+    (root / "docs" / "memory" / "developer").symlink_to(overlay / "common" / "memory")
+    (root / "stayfixed.toml").write_text(OVERLAY_CONFIG, encoding="utf-8")
+    machine = tmp_path / "machine.toml"
+    # A machine record naming a directory that is not there: the overlay moved, or this machine
+    # never cloned it. Its own cause, and not "no record of this project".
+    recorded = tmp_path / "moved-away" if cause == "overlay-gone" else overlay
+    machine.write_text(f'[overlay]\nroot = "{recorded}"\n', encoding="utf-8")
+    return root, machine
+
+
+# Each cause's own words, which only its own refusal may carry.
+BINDING_CAUSES = {
+    "no-record": "records no remote for this project",
+    "unreadable": "cannot be read",
+    "no-remote": "has no `origin` remote",
+    "mismatch": "records a different remote",
+    "overlay-gone": "is not a directory on this machine",
+}
+
+
+@needs_git
+@pytest.mark.parametrize("cause", sorted(BINDING_CAUSES))
+def test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it(
+    tmp_path: Path, cause: str
+) -> None:
+    # `store._bound` answered one `False` for four causes, and the refusal said "run `stayfixed
+    # attach`" for all of them — which for a changed remote is the command that refuses. Each
+    # cause now says itself, in stayfixed's own words before the region that holds the
+    # repository's; only the mismatch names `--trust-remote`.
+    #
+    # Mutation: `mutations.toml`'s "the binding check answers a missing record with the
+    # mismatch's way out".
+    from stayfixed.memory.trust import DELIMITER
+    from tests.cli import cli
+
+    root, machine = _binding_project(tmp_path, cause)
+    code, out, err = cli(root, tmp_path, "memory", "index", machine=machine)
+    assert code == 1
+    said = out + err
+    lead = said.split(DELIMITER, 1)[0]
+    assert BINDING_CAUSES[cause] in lead
+    for other, words in BINDING_CAUSES.items():
+        if other != cause:
+            assert words not in said, other
+    assert ("--trust-remote" in lead) is (cause == "mismatch")
+    if cause != "mismatch":
+        assert "--trust-remote" not in said
+    if cause == "unreadable":
+        # The file is named, and inside the region: its path carries the project's name.
+        assert "project.toml" in said.split(DELIMITER, 1)[1]
+    if cause == "overlay-gone":
+        # A recorded overlay that is not there is answered by recording where it is now, which
+        # `setup --overlay` does; `attach --store <new place>` refuses a store outside the
+        # recorded overlay, so it is not the first thing to run.
+        assert "setup" in lead and "--overlay" in lead
+        # The root is the owner's own machine configuration, not the repository's: it prints as
+        # stayfixed's own words, quoted, and never inside the region that marks repository text.
+        # Mutation: `mutations.toml`'s "the recorded overlay root is printed as repository text".
+        assert "moved-away" in lead
+        assert DELIMITER not in said

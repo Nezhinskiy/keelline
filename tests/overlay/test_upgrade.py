@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
-from stayfixed.errors import Refusal
+from stayfixed.errors import Failure, Refusal
 from stayfixed.overlay.api import create, init_instance
 from stayfixed.overlay.upgrade import upgrade
 from stayfixed.scaffold import MANIFEST_PATH, Verb, digest
@@ -125,6 +126,16 @@ def test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release(tmp_path:
     verbs = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
     for manifest in (".claude-plugin/plugin.json", ".claude-plugin/marketplace.json"):
         assert verbs[manifest] is not Verb.SKIP_MODIFIED
+    # What the record now vouches for is the file `init` left: the owner's name and account, not
+    # the template's. A re-stamp of anything else would make those bytes read as hand-edited.
+    plugin = root / ".claude-plugin" / "plugin.json"
+    document = json.loads(plugin.read_text(encoding="utf-8"))
+    assert document["name"] == "stayfixed-overlay-octocat"
+    assert document["author"] == {"name": "octocat"}
+    recorded = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))["artifacts"]
+    assert recorded[".claude-plugin/plugin.json"]["sha256"] == digest(
+        plugin.read_text(encoding="utf-8")
+    )
     # And the refresh really is live: a release that moves the template updates the file rather
     # than leaving the owner on a manifest nothing can reach.
     # Still a manifest that names this overlay — a release moving the file is what is being
@@ -136,3 +147,236 @@ def test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release(tmp_path:
     _restamp(root, ".claude-plugin/plugin.json")
     moved = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
     assert moved[".claude-plugin/plugin.json"] is Verb.UPDATE
+
+
+def test_init_does_not_vouch_for_a_manifest_the_owner_edited(tmp_path: Path) -> None:
+    # `init` re-stamped the ledger with whatever it wrote, without asking whether the file it
+    # rewrote was stayfixed's to begin with. An owner who had edited `plugin.json` (a description
+    # of their own) and then ran `init` had their edit recorded as stayfixed's bytes, and the next
+    # `overlay upgrade` refreshed the file: the description, the suffix and the account were gone.
+    # `init` rewrites the name and account either way; the record moves only when the bytes it
+    # replaced were the ones recorded, so `upgrade` goes on naming the file as hand-edited.
+    #
+    # Mutation: `mutations.toml`'s "overlay init vouches for a manifest the owner edited".
+    root = _an_overlay(tmp_path)
+    plugin = root / ".claude-plugin" / "plugin.json"
+    document = json.loads(plugin.read_text(encoding="utf-8"))
+    document["description"] = "My own overlay."
+    plugin.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    before = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
+    assert before[".claude-plugin/plugin.json"] is Verb.SKIP_MODIFIED
+    init_instance(root, "acme", runner=FakeRunner())
+    after = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
+    assert after[".claude-plugin/plugin.json"] is Verb.SKIP_MODIFIED
+    upgrade(root, dry_run=False)
+    kept = json.loads(plugin.read_text(encoding="utf-8"))
+    assert kept["description"] == "My own overlay."
+    assert kept["name"] == "stayfixed-overlay-acme"
+    assert kept["author"] == {"name": "acme"}
+
+
+def test_init_reads_every_manifest_before_it_rewrites_any(tmp_path: Path) -> None:
+    # A manifest that cannot be read stops `init`, and it used to stop it after the ones before it
+    # were rewritten and before their records were re-stamped: those files then read as
+    # hand-edited to every later `upgrade`. Every manifest is read and decided first now, so the
+    # failure leaves the tree as it was.
+    #
+    # Mutation: `mutations.toml`'s "overlay init rewrites a manifest before reading the next".
+    root = _an_overlay(tmp_path)
+    (root / ".codex-plugin" / "plugin.json").write_text("{not json", encoding="utf-8")
+    before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+    with pytest.raises(Failure, match="not valid JSON"):
+        init_instance(root, "acme", runner=FakeRunner())
+    assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
+
+
+# --- a file an earlier release shipped and this one does not --------------------------------
+
+# The bytes 0.1.0 and 0.1.1 shipped at `common/memory/README.md`, whole: the note reader read the
+# file as a note with no frontmatter, so `memory index --check` failed in every project attached to
+# the overlay. Held here in full so the digest `overlay upgrade` removes the file by is checked
+# against the file it names rather than against itself.
+SHIPPED_MEMORY_README = (
+    "# Cross-project notes\n"
+    "\n"
+    "Notes that are true across your projects: how you like to work, what you have learned "
+    "about a\n"
+    "tool you use everywhere, standing preferences that are not rules.\n"
+    "\n"
+    "This directory is the store a bound repository links to as its `developer` group, alongside\n"
+    "that project's own notes under `projects/<name>/memory/`. The routing index a session "
+    "reads is\n"
+    "rendered from both; it is generated, so write the notes and let the index follow.\n"
+    "\n"
+    "A note about one project goes under `projects/<name>/memory/` instead. Keeping the two apart\n"
+    "is what stops one client's work reaching another client's session.\n"
+)
+MEMORY_README = "common/memory/README.md"
+
+
+def _with_the_shipped_memory_readme(root: Path, *, ledger: bool, text: str) -> Path:
+    """An overlay carrying the retired file, with the ledger an earlier `--local` render leaves
+    or with none, as an overlay generated from a template has (`publish-template` strips it)."""
+    path = root / MEMORY_README
+    path.write_text(text, encoding="utf-8")
+    manifest = root / MANIFEST_PATH
+    if not ledger:
+        manifest.unlink()
+        return path
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    document["artifacts"][MEMORY_README] = {
+        "id": MEMORY_README,
+        "kind": "template",
+        "location": "repo",
+        "target": MEMORY_README,
+        "template": f"overlay/{MEMORY_README}",
+        "version": "0.1.1",
+        "sha256": digest(SHIPPED_MEMORY_README),
+    }
+    manifest.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize("ledger", [True, False], ids=["recorded", "no-ledger"])
+def test_the_memory_readme_a_release_shipped_is_removed(tmp_path: Path, ledger: bool) -> None:
+    # `common/memory/README.md` became `_README.md`, which the note reader skips, and `upgrade`
+    # created the new name beside the old one: the old one stayed, and `memory index --check`
+    # went on reporting it unreadable. An overlay `--local` rendered carries a ledger that
+    # records the file; one generated from a template carries none, and there the bytes a
+    # release shipped are the only evidence the file is stayfixed's.
+    #
+    # Mutations: `mutations.toml`'s "a retired overlay file the ledger records is kept" and "a
+    # retired overlay file holding the shipped bytes is kept".
+    root = _an_overlay(tmp_path)
+    path = _with_the_shipped_memory_readme(root, ledger=ledger, text=SHIPPED_MEMORY_README)
+    planned = upgrade(root, dry_run=True).plan
+    removed = [a for a in planned.actions if a.verb is Verb.REMOVE]
+    assert [a.target for a in removed] == [MEMORY_README]
+    # Non-vacuous: the dry run left it, and the real run takes it and keeps the new name.
+    assert path.is_file()
+    upgrade(root, dry_run=False)
+    assert not path.exists()
+    assert (root / "common" / "memory" / "_README.md").is_file()
+
+
+@pytest.mark.parametrize("ledger", [True, False], ids=["recorded", "no-ledger"])
+def test_an_edited_memory_readme_is_kept_and_the_report_says_what_to_do(
+    tmp_path: Path, ledger: bool
+) -> None:
+    # A copy that is not the shipped bytes may hold the owner's own words, and nothing else holds
+    # them, so it is never removed: the report names it and the way out, since the note reader
+    # still reads it as a note.
+    #
+    # Mutations: `mutations.toml`'s "a retired overlay file with no ledger is removed whatever it
+    # holds" and "a kept retired overlay file is named without its way out".
+    root = _an_overlay(tmp_path)
+    edited = SHIPPED_MEMORY_README + "\nMy own line.\n"
+    path = _with_the_shipped_memory_readme(root, ledger=ledger, text=edited)
+    planned = upgrade(root, dry_run=True).plan
+    kept = {a.target: a for a in planned.actions}[MEMORY_README]
+    assert kept.verb is Verb.SKIP_MODIFIED
+    assert "_README.md" in kept.reason
+    upgrade(root, dry_run=False)
+    assert path.read_text(encoding="utf-8") == edited
+
+
+def test_the_digest_held_for_the_retired_readme_is_the_shipped_files() -> None:
+    # The constant and the bytes it names, checked against each other. No mutation: a changed
+    # digest reddens the removal test above through the no-ledger case.
+    from stayfixed.overlay.template import SHIPPED_MEMORY_README as held
+
+    assert digest(SHIPPED_MEMORY_README) == held
+
+
+@pytest.mark.parametrize("ledger", [True, False], ids=["recorded", "no-ledger"])
+def test_init_removes_the_memory_readme_a_release_shipped(tmp_path: Path, ledger: bool) -> None:
+    # An overlay generated from a template published at an earlier release arrives with the old
+    # README and no ledger, and nobody is told to run `overlay upgrade` on an overlay just made.
+    # `init`, which every such overlay runs, removes it, and drops a record the ledger holds.
+    #
+    # Mutation: `mutations.toml`'s "overlay init leaves the memory README a release shipped".
+    root = _an_overlay(tmp_path)
+    path = _with_the_shipped_memory_readme(root, ledger=ledger, text=SHIPPED_MEMORY_README)
+    done = init_instance(root, "octo", runner=FakeRunner())
+    assert not path.exists()
+    assert any(MEMORY_README in note for note in done.notes)
+    if ledger:
+        recorded = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))["artifacts"]
+        assert MEMORY_README not in recorded
+    else:
+        # A tree that arrived without a ledger is not given one.
+        assert not (root / MANIFEST_PATH).exists()
+
+
+@pytest.mark.parametrize("ledger", [True, False], ids=["recorded", "no-ledger"])
+def test_init_leaves_the_memory_directory_its_readme_under_the_new_name(
+    tmp_path: Path, ledger: bool
+) -> None:
+    # An overlay from a 0.1.x template has `common/memory/README.md` and no `_README.md`. Removing
+    # the one left the directory empty, git keeps no empty directory, and a clone of the overlay
+    # elsewhere had no `common/memory/` at all, so the `developer` link attach makes there
+    # dangled. `init` writes the shipped `_README.md` in its place, and records it where the tree
+    # has a ledger.
+    #
+    # Mutation: `mutations.toml`'s "overlay init leaves the memory directory empty".
+    root = _an_overlay(tmp_path)
+    successor = root / "common" / "memory" / "_README.md"
+    shipped = successor.read_text(encoding="utf-8")
+    successor.unlink()
+    manifest = root / MANIFEST_PATH
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    del document["artifacts"]["common/memory/_README.md"]
+    manifest.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    path = _with_the_shipped_memory_readme(root, ledger=ledger, text=SHIPPED_MEMORY_README)
+    done = init_instance(root, "octo", runner=FakeRunner())
+    assert not path.exists()
+    assert successor.read_text(encoding="utf-8") == shipped
+    assert any("common/memory/_README.md" in note for note in done.notes)
+    if ledger:
+        recorded = json.loads(manifest.read_text(encoding="utf-8"))["artifacts"]
+        assert recorded["common/memory/_README.md"]["sha256"] == digest(shipped)
+    else:
+        assert not manifest.exists()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root removes from a directory it cannot write")
+def test_a_memory_readme_init_cannot_remove_keeps_the_manifests_it_renamed_recorded(
+    tmp_path: Path,
+) -> None:
+    # `init` renamed the manifests, then failed to remove the old README, and exited with the new
+    # records only in memory: the renamed manifests then read as hand-edited to every `upgrade`.
+    # The records are written before anything is removed, so the refusal leaves them true.
+    #
+    # Mutation: `mutations.toml`'s "overlay init records its renames only after the removal".
+    root = _an_overlay(tmp_path)
+    path = _with_the_shipped_memory_readme(root, ledger=True, text=SHIPPED_MEMORY_README)
+    memory = root / "common" / "memory"
+    memory.chmod(0o555)
+    try:
+        with pytest.raises(Refusal, match="cannot be removed"):
+            init_instance(root, "acme", runner=FakeRunner())
+    finally:
+        memory.chmod(0o755)
+    assert path.is_file()
+    verbs = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
+    for manifest in (
+        ".claude-plugin/plugin.json",
+        ".claude-plugin/marketplace.json",
+        ".codex-plugin/plugin.json",
+    ):
+        assert verbs[manifest] is not Verb.SKIP_MODIFIED, manifest
+        assert json.loads((root / manifest).read_text(encoding="utf-8"))["name"].endswith("-acme")
+
+
+def test_init_keeps_an_edited_memory_readme_and_says_what_to_do(tmp_path: Path) -> None:
+    # Bytes that are not the shipped ones may be the owner's own words, so `init` leaves the file
+    # and its note carries the way out. Mutation: `mutations.toml`'s "overlay init leaves the
+    # memory README a release shipped", which drops the note with the removal; the engine's
+    # verdict itself is "a retired overlay file with no ledger is removed whatever it holds",
+    # proven through `upgrade`.
+    root = _an_overlay(tmp_path)
+    edited = SHIPPED_MEMORY_README + "\nMy own line.\n"
+    path = _with_the_shipped_memory_readme(root, ledger=False, text=edited)
+    done = init_instance(root, "octo", runner=FakeRunner())
+    assert path.read_text(encoding="utf-8") == edited
+    assert any(MEMORY_README in note and "_README.md" in note for note in done.notes)

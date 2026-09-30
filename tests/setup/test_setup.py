@@ -82,6 +82,20 @@ class FakeRunner:
         return Completed(0, "", "")
 
 
+# What `gh repo view <slug> --json isTemplate` answers (measured against gh 2.101.0): a template
+# exits 0 with `{"isTemplate":true}`, and a repository that does not exist exits 1 with GraphQL's
+# "Could not resolve to a Repository". `overlay create` asks it once to choose whose template to
+# generate from, so a `create:` run has to have the probe answered.
+_OCTOS_PROBE = "gh repo view octo/stayfixed-overlay-template"
+_A_TEMPLATE = Completed(0, '{"isTemplate":true}\n', "")
+_NO_SUCH_REPOSITORY = Completed(
+    1,
+    "",
+    "GraphQL: Could not resolve to a Repository with the name 'octo/stayfixed-overlay-template'."
+    " (repository)\n",
+)
+
+
 def _populate_overlay(argv: list[str], cwd: Path) -> None:
     """Stand in for a successful template generation, the same probe `overlay.create` reads."""
     if argv[:3] != ["gh", "repo", "create"]:
@@ -257,6 +271,29 @@ def test_a_selector_the_marketplace_does_not_carry_is_a_note_naming_the_argv(
     assert any("no plugin named" in note for note in report.notes), report.notes
 
 
+@pytest.mark.parametrize("step", ["marketplace add", "install"])
+def test_what_a_plugin_command_prints_cannot_drive_a_terminal(tmp_path: Path, step: str) -> None:
+    # A plugin command's answer was quoted raw in the note: a line break followed by `::error::`
+    # is a workflow command in a CI log, and an escape sequence drives a terminal.
+    #
+    # Mutation: `mutations.toml`'s "a subprocess's answer is quoted raw".
+    runner = FakeRunner(
+        answers={f"claude plugin {step}": Completed(1, "", "boom\n::error::forged\x1b[2J")}
+    )
+    report = setup(
+        "recommended",
+        home=tmp_path / "home",
+        machine=tmp_path / "config.toml",
+        runner=runner,
+        yes=True,
+        overlay=None,
+        project_root=tmp_path / "project",
+    )
+    said = " ".join(report.notes)
+    assert "forged" in said
+    assert "\n::error::" not in said and "\x1b" not in said
+
+
 def test_codex_gets_a_note_naming_the_unverified_plugins_rather_than_silence(
     tmp_path: Path,
 ) -> None:
@@ -420,7 +457,7 @@ def test_overlay_create_asks_github_and_records_the_new_root(
     monkeypatch.chdir(tmp_path)
     home = tmp_path / "home"
     machine = tmp_path / "config.toml"
-    runner = FakeRunner(on_call=_populate_overlay)
+    runner = FakeRunner(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
     report = setup(
         "recommended",
         home=home,
@@ -433,6 +470,125 @@ def test_overlay_create_asks_github_and_records_the_new_root(
     assert any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
     assert report.overlay == home / "stayfixed-private"
     assert overlay_root(machine) == report.overlay
+
+
+@pytest.mark.parametrize(
+    ("probe", "template"),
+    [
+        pytest.param(_A_TEMPLATE, "octo/stayfixed-overlay-template", id="the-owners-own"),
+        pytest.param(
+            _NO_SUCH_REPOSITORY,
+            "github.com/stayfixed/stayfixed-overlay-template",
+            id="the-publishers",
+        ),
+    ],
+)
+def test_overlay_create_generates_from_the_template_overlay_create_would_choose(
+    tmp_path: Path, probe: Completed, template: str
+) -> None:
+    # `--overlay create:` calls `overlay.create`, so a user with no template of their own reaches
+    # the publisher's the same way `overlay create --template` does. One resolution, two commands:
+    # a second copy of it here would be the place they drift. Mutation: the `setup` call passes a
+    # template of its own → one of the two cases reddens.
+    home = tmp_path / "home"
+    runner = FakeRunner(answers={_OCTOS_PROBE: probe}, on_call=_populate_overlay)
+    setup(
+        "recommended",
+        home=home,
+        machine=tmp_path / "config.toml",
+        runner=runner,
+        yes=True,
+        overlay="create:octo/stayfixed-private",
+        project_root=tmp_path / "project",
+    )
+    creating = next(argv for argv in runner.calls if argv[:3] == ["gh", "repo", "create"])
+    assert creating[creating.index("--template") + 1] == template
+
+
+def test_overlay_create_that_cannot_ask_gh_whose_template_creates_nothing(
+    tmp_path: Path,
+) -> None:
+    # A probe that failed for a reason other than "not found" never becomes a repository on the
+    # publisher's template: `gh repo create` is the one irreversible act `setup` performs.
+    home = tmp_path / "home"
+    runner = FakeRunner(
+        answers={_OCTOS_PROBE: Completed(1, "", "HTTP 401: Bad credentials")},
+        on_call=_populate_overlay,
+    )
+    with pytest.raises(Failure, match="Bad credentials"):
+        setup(
+            "recommended",
+            home=home,
+            machine=tmp_path / "config.toml",
+            runner=runner,
+            yes=True,
+            overlay="create:octo/stayfixed-private",
+            project_root=tmp_path / "project",
+        )
+    assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
+
+
+def test_rerunning_overlay_create_over_an_existing_overlay_creates_nothing_and_names_no_template(
+    tmp_path: Path,
+) -> None:
+    # Re-running `setup --overlay create:` after the first run is the ordinary case, and `create`
+    # answers a populated destination with no `gh` call and no template. The report used to say
+    # "generated from None". Mutation: drop the `created.template is None` branch in
+    # `_apply_overlay` and the report reads "created the overlay ... generated from None".
+    home = tmp_path / "home"
+    machine = tmp_path / "config.toml"
+    destination = home / "stayfixed-private"
+    _seed_overlay(destination)
+    runner = FakeRunner(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    report = setup(
+        "recommended",
+        home=home,
+        machine=machine,
+        runner=runner,
+        yes=True,
+        overlay="create:octo/stayfixed-private",
+        project_root=tmp_path / "project",
+    )
+    assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
+    assert not any(argv[:3] == ["gh", "repo", "view"] for argv in runner.calls)
+    text = " ".join(str(note) for note in vars(report).values())
+    assert "None" not in text
+    assert "already" in " ".join(report.notes)
+    assert overlay_root(machine) == destination
+
+
+def test_rerunning_overlay_create_says_what_init_changed_in_the_overlay_it_found(
+    tmp_path: Path,
+) -> None:
+    # The re-run runs `overlay init` on the overlay it found, and `init` may rename its manifests
+    # (an overlay named at 0.1.x has no account in them yet) or remove the old memory README. The
+    # report said "found the overlay ... and left it alone" all the same. It names what `init`
+    # changed now, and says nothing was changed only when nothing was.
+    #
+    # Mutation: `mutations.toml`'s "setup says it left alone an overlay init changed".
+    home = tmp_path / "home"
+    machine = tmp_path / "config.toml"
+    _seed_overlay(home / "stayfixed-private")
+
+    def overlay_note() -> str:
+        runner = FakeRunner(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+        report = setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=runner,
+            yes=True,
+            overlay="create:octo/stayfixed-private",
+            project_root=tmp_path / "project",
+        )
+        return next(note for note in report.notes if "found the overlay" in note)
+
+    first = overlay_note()
+    assert "left it alone" not in first
+    assert PLUGIN_MANIFEST in first and MARKETPLACE_MANIFEST in first
+    second = overlay_note()
+    assert PLUGIN_MANIFEST not in second
+    assert "changed none of the overlay's tracked files" in second
 
 
 def test_creating_an_overlay_without_yes_is_refused(tmp_path: Path) -> None:
@@ -764,8 +920,8 @@ def test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay(tmp_p
 
 def test_an_overlay_that_holds_the_project_root_is_refused(tmp_path: Path) -> None:
     # The containment refused `candidate == project` or `project in candidate.parents` and nothing
-    # else, so a *parent* passed — and `git worktree add .worktrees/x`, which this project's own
-    # `worktree-by-default` preset rule makes the ordinary case, puts `--root` exactly there. A
+    # else, so a *parent* passed — and `git worktree add .worktrees/x`, which is how feature work is
+    # ordinarily started, puts `--root` exactly there. A
     # clone shipping its two manifests at its own root was then accepted as the machine's trust
     # anchor.
     #
@@ -1520,7 +1676,7 @@ def test_a_created_tree_that_is_not_an_overlay_says_the_repository_now_exists(
             "recommended",
             home=home,
             machine=tmp_path / "config.toml",
-            runner=FakeRunner(on_call=_wrong_tree),
+            runner=FakeRunner(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_wrong_tree),
             yes=True,
             overlay="create:octo/stayfixed-private",
             project_root=tmp_path / "project",

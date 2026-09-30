@@ -15,12 +15,12 @@ from pathlib import Path
 import pytest
 
 from stayfixed.attach.api import Binding, read_binding
-from stayfixed.attach.binding import MEMORY_GROUP_ESCAPES, UNBOUND, binding_for, unlinked_groups
+from stayfixed.attach.binding import MEMORY_GROUP_ESCAPES, binding_for, unlinked_groups
 from stayfixed.attach.permissions import diff_permissions
 from stayfixed.config.loader import CONFIG_FILE, ConfigError, load, loads
 from stayfixed.config.paths import PathEscape
 from stayfixed.errors import Failure, Refusal
-from stayfixed.memory.api import PROJECT_RECORD, PROJECTS
+from stayfixed.memory.api import NO_ORIGIN, PROJECT_RECORD, PROJECTS, UNBOUND
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
 from stayfixed.presets import load_preset
 from stayfixed.scaffold import EntriesError
@@ -198,13 +198,18 @@ def test_git_being_unavailable_is_a_machine_fault_and_not_an_unbound_state(
         read_binding(root, store=store, machine=machine)
 
 
-def test_a_repository_with_no_origin_remote_is_a_mismatch_and_not_a_machine_fault(
+def test_a_repository_with_no_origin_remote_is_its_own_state_and_not_a_machine_fault(
     tmp_path: Path,
 ) -> None:
     # The other side of the distinction above, and the reason the test before it patches `git`
     # rather than deleting the remote: `git` running and answering nothing is a fact about the
-    # repository. It is not this repository the overlay recorded, so it is a mismatch.
-    assert _read(tmp_path, recorded="u", origin=None).state == "mismatch"
+    # repository. It used to be read as a mismatch, whose way out, `--trust-remote`, then refused
+    # for the missing `origin`; it is `no-origin`, recorded or not, and every surface says so.
+    #
+    # Mutation: `mutations.toml`'s "the binding classifier reads a missing origin as a different
+    # remote".
+    assert _read(tmp_path, recorded="u", origin=None).state == NO_ORIGIN
+    assert _read(tmp_path, recorded=None, origin=None).state == NO_ORIGIN
 
 
 def test_the_diff_lists_what_would_be_added_and_never_applies_it(tmp_path: Path) -> None:

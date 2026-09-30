@@ -250,7 +250,7 @@ stayfixed test attribute --command "uv sync --locked && uv run pytest tests/x.py
 
 # The private overlay
 stayfixed overlay create --owner you --name stayfixed-private --local   # render one here, no network call at all
-stayfixed overlay create --owner you --name stayfixed-private --template  # from <owner>/stayfixed-overlay-template, which you publish yourself
+stayfixed overlay create --owner you --name stayfixed-private --template  # from your <owner>/stayfixed-overlay-template if you published one, else stayfixed's
 stayfixed overlay init --owner you --root ../stayfixed-private   # name it after you; install the secret scan
 stayfixed overlay upgrade --root ../stayfixed-private --dry-run  # what a release would refresh
 stayfixed overlay publish-template --owner you                   # what it would create, mark and push; nothing leaves yet

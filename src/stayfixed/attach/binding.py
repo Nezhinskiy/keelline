@@ -19,8 +19,8 @@ variables "is not a partial defence, it is a redirect with a longer name". So:
 The third rule is a write and lives in `write.py`.
 
 **The two remotes on a `Binding` are repository-authored bytes** (principle 5), and nothing
-here puts either into a summary, a `Result.data` or a refusal message. What this module
-computes *about* them — one of three state labels — is stayfixed's own and may be printed.
+here puts either into a summary, a `Result.data` or a refusal message. What is computed *about*
+them — one of `memory.store.binding_state`'s four labels — is stayfixed's own and may be printed.
 """
 
 from __future__ import annotations
@@ -36,15 +36,15 @@ from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import (
     PROJECT_RECORD,
     PROJECTS,
+    binding_state,
     origin_remote,
     overlay_root,
     permitted_roots,
 )
 
-UNBOUND = "unbound"
-BOUND = "bound"
-MISMATCH = "mismatch"
-STATES = (UNBOUND, BOUND, MISMATCH)
+# The binding's states are `memory.store`'s (`BINDING_STATES`), and so is the one classifier that
+# decides between them (`binding_state`): this module answered the same question with a copy of
+# its own that called a checkout with no `origin` a mismatch.
 # The one directory under `projects/<name>/` that holds notes. `permitted_roots` is what names
 # it; this spelling exists so the `--store` refusal below can state the shape of the path it
 # wants without printing the project name it would otherwise embed.
@@ -79,6 +79,34 @@ MEMORY_GROUP_ESCAPES = (
 )
 
 
+OVERLAY_MODE = "overlay"
+# The first refusal `attach` owes, and `--check` with it. `worktree.attach_main` asks the same
+# question as the floor under this one, but it runs after every write `attach` makes: refused
+# there, a `local-only` project had `.gitignore`'s region, `.codex/rules/`, the settings merge,
+# the ledger and, in the overlay, `project.toml` and its group directories, and `doctor` then
+# read the ledger as "attached". `memory.mode` is one of the loader's enumerated values, so it
+# prints.
+NOT_OVERLAY = (
+    "memory.mode is {mode!r}, so this repository keeps its own note store and there is nothing "
+    "in an overlay to bind it to; only a repository whose memory.mode is 'overlay' is attached"
+)
+
+
+def not_overlay(config: Config) -> str | None:
+    """The refusal a repository whose notes do not live in the overlay earns, or `None`: one
+    spelling for `attach`, which raises it, and `attach --check`, which reports it."""
+    if config.memory.mode == OVERLAY_MODE:
+        return None
+    return NOT_OVERLAY.format(mode=config.memory.mode)
+
+
+def refuse_unless_overlay(config: Config) -> None:
+    """Raise `not_overlay`'s refusal, when there is one."""
+    refused = not_overlay(config)
+    if refused is not None:
+        raise Refusal(refused)
+
+
 @dataclass(frozen=True)
 class Binding:
     """What the overlay records about this repository, and what this repository says it is.
@@ -104,8 +132,8 @@ def _recorded(overlay: Path, project: str) -> str | None:
     """The remote the overlay bound to this project, or `None` when it has bound none.
 
     A record that exists and cannot be read raises rather than answering `None`.
-    `memory.store._bound` answers False for the same file, which is right for the hook path —
-    it degrades closed and says "run `stayfixed attach`". Here that advice *is* the command, and
+    `memory.store._bound` answers "unreadable" for the same file, which is right for the hook
+    path — it degrades closed and says to repair the file, then run `stayfixed attach`. Here
     "no record" is the state that invites a rebind, so a broken record has to stop the run
     instead of quietly becoming a first attach.
     """
@@ -138,20 +166,6 @@ def _recorded(overlay: Path, project: str) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _state(recorded: str | None, origin: str | None) -> str:
-    """`unbound`, `bound` or `mismatch` — and never `bound` because nobody looked.
-
-    A hostile clone is caught by this comparison: `attach` compares the remote to the overlay's
-    record and refuses a mismatch unless the owner passes `--trust-remote`. The clone chooses
-    `project.name`; it does not choose which remote the overlay recorded under that name.
-    """
-    if recorded is None:
-        return UNBOUND
-    if recorded != origin:
-        return MISMATCH
-    return BOUND
-
-
 def binding_for(root: Path, config: Config, *, machine: Path | None) -> Binding:
     """The binding this repository stands in, for a `Config` the caller already holds.
 
@@ -165,7 +179,7 @@ def binding_for(root: Path, config: Config, *, machine: Path | None) -> Binding:
     store = permitted_roots(overlay, project)[1]
     recorded = _recorded(overlay, project)
     origin = origin_remote(root)
-    return Binding(project, overlay, store, origin, recorded, _state(recorded, origin))
+    return Binding(project, overlay, store, origin, recorded, binding_state(recorded, origin))
 
 
 def read_binding(
