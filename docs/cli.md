@@ -2330,7 +2330,8 @@ only the *starting* point that has to be the one holding the record.
 
 **Writes**: it takes the recorded allow rules and the fallback key back out of
 `.claude/settings.local.json`, drops the hook entries marked `# stayfixed:…` there (a group that
-mixes one of those with your own entry is split, never replaced), removes the `.codex/rules/`
+mixes one of those with your own entry is split, never replaced), and leaves the file unwritten
+when none of those is in it, removes the `.codex/rules/`
 files it wrote, withdraws the link tree from this checkout and every worktree together with the
 harness memory link, removes the `stayfixed:ignore` region and the `stayfixed:attach` block in
 the repository's exclude file, and deletes the ledger, `.stayfixed/local/attach.json`. A file
@@ -2413,8 +2414,11 @@ It exits `2` on a refusal, in the order the run meets them:
 - A `git rev-parse --git-path info/exclude` that names no exclude file, an exclude file that cannot
   be read, or a `stayfixed:attach` block in it opened or closed twice (the refusal names the
   file).
-- A recorded `.codex/rules/` copy reached through a symlink: a `.codex` or `.codex/rules` that
-  became one after the attach.
+- A path the withdrawal writes or removes reached through a directory that became a symlink after
+  the attach: `.claude` when the settings file is to be rewritten, `.codex` or `.codex/rules` for
+  a recorded rule copy, `paths.memory` or a directory above it in any checkout, `.stayfixed` or
+  `.stayfixed/local` for the ledger. The refusal says which. A rule copy that is itself a link is
+  not one of these: it is unlinked, and what it points at stays.
 - A `memory.groups` entry added since the attach that does not name a subdirectory of
   `paths.memory`, in any checkout of the repository. The refusal counts it and does not print it.
 - A `.claude/settings.local.json` whose `permissions` is not an object, or whose

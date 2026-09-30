@@ -1334,7 +1334,21 @@ def _emptied(raw: dict[str, Any]) -> dict[str, Any]:
     return raw
 
 
-def _withdraw_settings(root: Path, recorded: AttachLedger) -> tuple[str, ...]:
+@dataclass(frozen=True)
+class SettingsWithdrawal:
+    """What `detach` takes out of the settings file, decided before its first withdrawal.
+
+    `text` is the file's new content, `""` when nothing is left and the file goes, and `None`
+    when nothing of stayfixed's is in it and it is not written at all: a rewrite of a file the
+    withdrawal leaves as it was reformats somebody's file, and through a `.claude` linked in from
+    elsewhere it is a write `detach` has no business making.
+    """
+
+    removed: tuple[str, ...]
+    text: str | None
+
+
+def _planned_settings(root: Path, recorded: AttachLedger) -> SettingsWithdrawal:
     """Take exactly the recorded rules, the marked entries and the fallback key back out.
 
     The allow rules come from the ledger and never from a guess at their content: that is the
@@ -1344,8 +1358,9 @@ def _withdraw_settings(root: Path, recorded: AttachLedger) -> tuple[str, ...]:
     """
     document = local_document(root)
     if not document.strip():
-        return ()
+        return SettingsWithdrawal((), None)
     raw = settings_document(document)
+    held = json.loads(json.dumps(raw))
     permissions, allow = _allow_list(raw)
     removed = tuple(rule for rule in recorded.allow if rule in allow)
     if permissions:
@@ -1354,13 +1369,20 @@ def _withdraw_settings(root: Path, recorded: AttachLedger) -> tuple[str, ...]:
     for key in recorded.settings_keys:
         raw.pop(key, None)
     remaining = json.loads(apply_entries(json.dumps(_emptied(raw), indent=2) + "\n", {}))
-    if remaining:
-        fsops.write_within(root, LOCAL_SETTINGS, json.dumps(remaining, indent=2) + "\n")
-    else:
-        # `{}` is not what the file looked like before `attach`; a file holding nothing is one
-        # this command created and is the last thing it takes away.
+    if remaining == held:
+        return SettingsWithdrawal(removed, None)
+    # `{}` is not what the file looked like before `attach`; a file holding nothing is one this
+    # command created and is the last thing it takes away.
+    return SettingsWithdrawal(removed, json.dumps(remaining, indent=2) + "\n" if remaining else "")
+
+
+def _withdraw_settings(root: Path, planned: SettingsWithdrawal) -> tuple[str, ...]:
+    """Write what `_planned_settings` decided."""
+    if planned.text:
+        fsops.write_within(root, LOCAL_SETTINGS, planned.text)
+    elif planned.text is not None:
         fsops.remove_within(root, LOCAL_SETTINGS)
-    return removed
+    return planned.removed
 
 
 def _ignore_region_remainder(root: Path) -> str | None:
@@ -1538,14 +1560,15 @@ def _withdraw_memory_directories(
     return tuple(removed)
 
 
-# Said when a `.codex/rules/` copy the ledger records is reached through a symlink: `.codex` or
-# `.codex/rules` became one after the attach. Its removal used to find that out, after the settings
-# file was withdrawn, as `internal error: UnsafePath`. The recorded name is not quoted: a ledger a
-# clone committed chooses it.
-RULES_LINKED = (
-    "a `.codex/rules/` copy this checkout's attach recorded is reached through a symlink (`.codex` "
-    "or `.codex/rules` is one now), and `detach` removes nothing through one, so nothing was "
-    "withdrawn; replace the link with the directory it points at and run `stayfixed detach` again"
+# Said when a path `detach` removes or rewrites is reached through a symlink: a directory on the
+# way to it became one after the attach. Its removal used to find that out, after the settings
+# file was withdrawn, as `internal error: UnsafePath`. The path is named by what it is, never by
+# its spelling: a recorded rule copy's name is a ledger's, which a clone can commit, and
+# `paths.memory` and the group names are the repository's.
+LINKED_ON_THE_WAY = (
+    "{what} is reached through a symlink ({where} is one now), and `detach` removes nothing "
+    "through one, so nothing was withdrawn; replace the link with the directory it points at and "
+    "run `stayfixed detach` again"
 )
 # Said when a `memory.groups` entry added since the attach is not one name inside `paths.memory`.
 # The link tree's withdrawal used to find that out, after the settings, the rule copies and the
@@ -1557,29 +1580,58 @@ GROUP_LEAVES_TREE = (
 )
 
 
-def _refuse_unwithdrawable(
-    root: Path, recorded: AttachLedger, checkouts: list[Path], config: Config
-) -> None:
-    """Hold every path the withdrawal removes through a walk to its checkout, before the first
-    withdrawal: each recorded rule copy, and each name of every checkout's link tree.
+def _walked(root: Path, relative: str, *, what: str, where: str) -> None:
+    """`fsops.check_within`, the removal's own walk, with its refusal said by name."""
+    try:
+        fsops.check_within(root, relative)
+    except UnsafePath as exc:
+        raise Refusal(LINKED_ON_THE_WAY.format(what=what, where=where)) from exc
 
-    The removals are `fsops` walks that refuse a symlinked component, and they used to be the
-    first to ask, after the settings file was already withdrawn. The same `contained` question
-    asked here refuses by name with nothing withdrawn; the walk stays the floor for a component
-    that changes in between.
+
+def _refuse_unwithdrawable(
+    root: Path,
+    recorded: AttachLedger,
+    checkouts: list[Path],
+    config: Config,
+    settings: SettingsWithdrawal,
+) -> None:
+    """Walk to every path the withdrawal writes or removes, before the first withdrawal: the
+    settings file when it is rewritten, each recorded rule copy, each name of every checkout's
+    link tree that is a link, and the ledger.
+
+    The writes and removals are `fsops` walks that refuse a symlinked component, and they used to
+    be the first to ask, after the settings file was already withdrawn. An earlier check here
+    asked `contained` instead, which is not the walk's question: it let `paths.memory`'s own last
+    component be a link, which the walk refuses, and refused a rule copy that is itself a link,
+    which the walk unlinks. `fsops.check_within` is the walk, so the two cannot disagree; it stays
+    the floor for a component that changes in between.
     """
+    if settings.text is not None:
+        _walked(root, LOCAL_SETTINGS, what=f"`{LOCAL_SETTINGS}`", where="`.claude`")
     for rule in recorded.rules:
-        try:
-            contained(root, rule)
-        except PathEscape as exc:
-            raise Refusal(RULES_LINKED) from exc
+        _walked(
+            root,
+            rule,
+            what="a `.codex/rules/` copy this checkout's attach recorded",
+            where="`.codex` or `.codex/rules`",
+        )
     for tree in checkouts:
         base = contained(tree, config.paths.memory, allow_final_symlink=True)
         for name in linked_names(config):
             try:
-                contained(base, name, allow_final_symlink=True)
+                target = contained(base, name, allow_final_symlink=True)
             except PathEscape as exc:
                 raise Refusal(GROUP_LEAVES_TREE) from exc
+            if target.is_symlink():
+                _walked(
+                    tree,
+                    f"{config.paths.memory}/{name}",
+                    what="a link in a checkout's link tree",
+                    where="`paths.memory` or a directory above it",
+                )
+    _walked(
+        root, LEDGER, what=f"the ledger, `{LEDGER}`", where="`.stayfixed` or `.stayfixed/local`"
+    )
 
 
 def _another_attached(root: Path, checkouts: list[Path]) -> bool:
@@ -1628,10 +1680,11 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     can know before its first withdrawal is asked before it: the ledger (which refuses one no
     attach could have written), the configuration (whose loader validates `paths.*`), the
     settings document's own shape through `owned_ids`, whether the footprint owns the ignore
-    region, `_checkouts`, which is the only thing here that needs `git`, the exclude block, and
-    every path the withdrawal removes (`_refuse_unwithdrawable`). What is left after
-    the first withdrawal is exactly what cannot precede it — a write that fails, and a component
-    of the tree that changed between the check and the removal.
+    region, `_checkouts`, which is the only thing here that needs `git`, the exclude block, what
+    the settings file becomes (`_planned_settings`), and every path the withdrawal writes or
+    removes, walked the way the write or removal walks it (`_refuse_unwithdrawable`). What is
+    left after the first withdrawal is exactly what cannot precede it — a write that fails, and a
+    component of the tree that changed between the check and the removal.
 
     **It needs the ledger in the checkout it is run from, and that is a limitation rather than a
     defect.** `.stayfixed/local/` is untracked and per-checkout, so a sibling worktree does not
@@ -1666,8 +1719,9 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     # would show that checkout's settings file and rule copies in its `git status`.
     kept = _another_attached(root, checkouts)
     hidden = None if kept else exclude.withdrawn_block(root)
-    _refuse_unwithdrawable(root, recorded, checkouts, config)
-    allow_removed = _withdraw_settings(root, recorded)
+    settings = _planned_settings(root, recorded)
+    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)
+    allow_removed = _withdraw_settings(root, settings)
     rules_removed: list[str] = []
     for rule in recorded.rules:
         if (root / rule).is_file():

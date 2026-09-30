@@ -3561,16 +3561,18 @@ before = '''    checkouts = _checkouts(root)
     # would show that checkout's settings file and rule copies in its `git status`.
     kept = _another_attached(root, checkouts)
     hidden = None if kept else exclude.withdrawn_block(root)
-    _refuse_unwithdrawable(root, recorded, checkouts, config)
-    allow_removed = _withdraw_settings(root, recorded)'''
+    settings = _planned_settings(root, recorded)
+    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)
+    allow_removed = _withdraw_settings(root, settings)'''
 after = '''    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
-    allow_removed = _withdraw_settings(root, recorded)
+    settings = _planned_settings(root, recorded)
+    allow_removed = _withdraw_settings(root, settings)
     checkouts = _checkouts(root)
     for tree in checkouts:
         harness_anchor(tree, home)
     kept = _another_attached(root, checkouts)
     hidden = None if kept else exclude.withdrawn_block(root)
-    _refuse_unwithdrawable(root, recorded, checkouts, config)'''
+    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)'''
 reddens = [
   "tests/attach/test_detach.py::test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn",
 ]
@@ -13237,11 +13239,9 @@ reddens = [
 name = "detach finds a linked .codex by removing through it"
 file = "src/stayfixed/attach/write.py"
 before = """    for rule in recorded.rules:
-        try:
-            contained(root, rule)"""
+        _walked("""
 after = """    for rule in ():
-        try:
-            contained(root, rule)"""
+        _walked("""
 reddens = [
   "tests/attach/test_detach.py::test_a_codex_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn",
 ]
@@ -13309,10 +13309,12 @@ reddens = [
 name = "detach finds the exclude block after it has withdrawn the settings"
 file = "src/stayfixed/attach/write.py"
 before = """    hidden = None if kept else exclude.withdrawn_block(root)
-    _refuse_unwithdrawable(root, recorded, checkouts, config)
-    allow_removed = _withdraw_settings(root, recorded)"""
-after = """    _refuse_unwithdrawable(root, recorded, checkouts, config)
-    allow_removed = _withdraw_settings(root, recorded)
+    settings = _planned_settings(root, recorded)
+    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)
+    allow_removed = _withdraw_settings(root, settings)"""
+after = """    settings = _planned_settings(root, recorded)
+    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)
+    allow_removed = _withdraw_settings(root, settings)
     hidden = None if kept else exclude.withdrawn_block(root)"""
 reddens = [
   "tests/attach/test_detach.py::test_a_doubled_exclude_block_refuses_detach_naming_the_exclude_file",
@@ -13541,4 +13543,60 @@ before = "        return ExcludeWrite(path, None, EXCLUDE_DIRECTORY_CREATED in r
 after = "        return ExcludeWrite(path, None, True)"
 reddens = [
   "tests/attach/test_detach.py::test_an_info_directory_the_owner_had_survives_detach",
+]
+
+# Every path `detach` writes or removes is walked before the first withdrawal, with the removal's
+# own walk. The earlier check asked `contained` instead, which let `paths.memory`'s last component
+# be a link and asked nothing of the ledger or the settings file, so each of those linked in after
+# the attach ended as `internal error: UnsafePath` with the settings file already withdrawn.
+[[mutation]]
+name = "detach walks to the ledger only when it removes it"
+file = "src/stayfixed/attach/write.py"
+before = """    _walked(
+        root, LEDGER, what=f"the ledger, `{LEDGER}`", where="`.stayfixed` or `.stayfixed/local`"
+    )"""
+after = ""
+reddens = [
+  "tests/attach/test_detach.py::test_a_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn[stayfixed]",
+  "tests/attach/test_detach.py::test_a_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn[stayfixed-local]",
+]
+
+[[mutation]]
+name = "detach walks to the settings file only when it rewrites it"
+file = "src/stayfixed/attach/write.py"
+before = "    if settings.text is not None:"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_detach.py::test_a_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn[claude]",
+]
+
+[[mutation]]
+name = "detach walks to a link-tree name only when it removes it"
+file = "src/stayfixed/attach/write.py"
+before = "            if target.is_symlink():"
+after = "            if False:"
+reddens = [
+  "tests/attach/test_detach.py::test_a_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn[paths-memory]",
+]
+
+# A rule copy that is itself a link is unlinked by the removal, which follows no final component;
+# a check that is not the walk refused it, blaming `.codex`.
+[[mutation]]
+name = "detach refuses a rule copy that is itself a symlink"
+file = "src/stayfixed/attach/write.py"
+before = "        fsops.check_within(root, relative)"
+after = "        contained(root, relative)"
+reddens = [
+  "tests/attach/test_detach.py::test_a_rule_copy_that_is_itself_a_symlink_is_withdrawn",
+]
+
+# A settings file with nothing of stayfixed's in it was rewritten anyway, which through a `.claude`
+# linked in from elsewhere stopped a detach whose attach had cleanly written nothing there.
+[[mutation]]
+name = "detach rewrites a settings file it withdraws nothing from"
+file = "src/stayfixed/attach/write.py"
+before = "    if remaining == held:"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_detach.py::test_a_linked_claude_directory_attach_never_wrote_into_does_not_stop_detach",
 ]

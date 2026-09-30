@@ -1208,3 +1208,73 @@ def test_an_info_directory_the_owner_had_survives_detach(tmp_path: Path) -> None
     _attach(root, store, machine, home, confirmed=True)
     _detach(root, machine, home)
     assert info.is_dir()
+
+
+@pytest.mark.parametrize(
+    "linked",
+    [DEFAULT_MEMORY, ".stayfixed", ".stayfixed/local", ".claude"],
+    ids=["paths-memory", "stayfixed", "stayfixed-local", "claude"],
+)
+def test_a_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn(
+    tmp_path: Path, linked: str
+) -> None:
+    # Each removal `detach` makes is a walk that refuses a symlinked component, and the check made
+    # before the first withdrawal was not that walk: it held `paths.memory` with its last
+    # component allowed to be a link, and asked nothing of the ledger's or the settings file's
+    # path. So `paths.memory`, `.stayfixed` or `.stayfixed/local` moved away and linked back ended
+    # as `internal error: UnsafePath` with the settings file already withdrawn. Every removal
+    # target is walked first now, and the refusal says which one.
+    #
+    # Mutations: `mutations.toml`'s "detach walks to the ledger only when it removes it", "detach
+    # walks to the settings file only when it rewrites it" and "detach walks to a link-tree name
+    # only when it removes it".
+    root, _store, machine, home = _withdrawable(tmp_path)
+    elsewhere = tmp_path / ("moved-" + linked.replace("/", "-"))
+    shutil.move(root / linked, elsewhere)
+    (root / linked).symlink_to(elsewhere, target_is_directory=True)
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _detach(root, machine, home)
+    assert "symlink" in str(refused.value)
+    assert "internal error" not in str(refused.value)
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_rule_copy_that_is_itself_a_symlink_is_withdrawn(tmp_path: Path) -> None:
+    # The copy's own name being a link is not a link on the way to it: the removal unlinks the
+    # name and follows nothing, as it did before the check above existed, which refused this
+    # with a sentence that blamed `.codex`.
+    #
+    # Mutation: `mutations.toml`'s "detach refuses a rule copy that is itself a symlink".
+    root, _store, machine, home = _withdrawable(tmp_path)
+    rule = root / ".codex" / "rules" / "common.rules"
+    mine = tmp_path / "mine.rules"
+    shutil.copy(rule, mine)
+    rule.unlink()
+    rule.symlink_to(mine)
+    detached = _detach(root, machine, home)
+    assert ".codex/rules/common.rules" in detached.rules_removed
+    assert not rule.is_symlink()
+    assert mine.is_file()
+
+
+def test_a_linked_claude_directory_attach_never_wrote_into_does_not_stop_detach(
+    tmp_path: Path,
+) -> None:
+    # A `.claude` kept elsewhere and linked in is an ordinary layout, and an overlay that grants
+    # nothing gives `attach` nothing to write there. `detach` rewrote the settings file whether or
+    # not it held anything of stayfixed's, so the same layout that attached cleanly could not be
+    # detached. A file with nothing to withdraw is not written at all.
+    #
+    # Mutation: `mutations.toml`'s "detach rewrites a settings file it withdraws nothing from".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    dotfiles = tmp_path / "dotfiles-claude"
+    dotfiles.mkdir()
+    (dotfiles / "settings.local.json").write_text('{"theme": "dark"}', encoding="utf-8")
+    (root / ".claude").symlink_to(dotfiles, target_is_directory=True)
+    _attach(root, store, machine, home, confirmed=True)
+    _detach(root, machine, home)
+    assert (dotfiles / "settings.local.json").read_text(encoding="utf-8") == '{"theme": "dark"}'
+    assert not (root / LEDGER).exists()

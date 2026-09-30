@@ -237,6 +237,18 @@ def open_within(root: Path, relative: str) -> Iterator[tuple[int, str]]:
             os.close(handle)
 
 
+def check_within(root: Path, relative: str) -> None:
+    """Walk to `root/relative` as every write and removal here does, and touch nothing.
+
+    For a caller that must know before its first write whether a later one would be refused: it
+    raises the same `UnsafePath` the write or removal would, from the same walk, so the two cannot
+    disagree about which components count. A component that is not there is not an error, since
+    a removal through it has nothing to remove.
+    """
+    with contextlib.suppress(FileNotFoundError), open_within(root, relative):
+        pass
+
+
 def _mode_of(dir_fd: int, name: str) -> int | None:
     """The mode to carry over, and `None` for a file that is not there to carry one.
 
