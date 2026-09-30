@@ -179,6 +179,21 @@ def test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_toke
     assert _WRITE_SCOPE.search(text) is None, _WRITE_SCOPE.search(text)
 
 
+def test_the_scan_workflow_can_read_a_pull_requests_commits_in_a_private_repository() -> None:
+    # On `pull_request` the gitleaks action calls `GET /repos/{owner}/{repo}/pulls/{n}/commits`
+    # to find what to scan, and on a private repository -- which an overlay is, `overlay create`
+    # passes `--private` -- that endpoint needs the "Pull requests: read" permission. A
+    # `permissions:` block naming `contents` alone leaves every other scope at none, so the scan
+    # would fail for want of it. The block is asserted by value and in full: exactly these two
+    # read scopes, so that neither a dropped scope nor an added one passes.
+    #
+    # Mutation: `mutations.toml`'s "the overlay's secret scan cannot list a pull request's commits".
+    text = _scan_workflow()
+    assert re.search(
+        r"^permissions:\n  contents: read\n  pull-requests: read\n(?!  )", text, re.MULTILINE
+    ), text
+
+
 def test_the_scan_workflow_pins_every_action_at_an_immutable_revision() -> None:
     # The same argument the `rev:` case above makes one directory over: a tag is
     # a name its owner can move. `actions/checkout@v7` and `gitleaks/gitleaks-action@v3` would be

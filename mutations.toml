@@ -3984,6 +3984,22 @@ reddens = [
   "tests/overlay/test_template.py::test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_token",
 ]
 
+# The permission the action's pull-request scan cannot run without. On `pull_request` it lists the
+# pull request's commits through `GET /repos/{owner}/{repo}/pulls/{n}/commits`, and a private
+# repository -- an overlay is one by design -- answers that to a token holding `pull-requests: read`
+# only. A `permissions:` block that names `contents` alone sets every other scope to none.
+[[mutation]]
+name = "the overlay's secret scan cannot list a pull request's commits"
+file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
+before = """permissions:
+  contents: read
+  pull-requests: read"""
+after = """permissions:
+  contents: read"""
+reddens = [
+  "tests/overlay/test_template.py::test_the_scan_workflow_can_read_a_pull_requests_commits_in_a_private_repository",
+]
+
 # The same argument the `rev:` entry above makes, one file over and with a token attached. A major
 # tag is a name its owner can move, so `@v7` resolving to different code tomorrow is somebody else
 # choosing what runs against a repository holding the owner's rules and notes. A full-length commit
@@ -3993,6 +4009,15 @@ name = "the overlay's secret scan follows a moveable action tag"
 file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
 before = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1"
 after = "actions/checkout@v7"
+reddens = [
+  "tests/overlay/test_template.py::test_the_scan_workflow_pins_every_action_at_an_immutable_revision",
+]
+
+[[mutation]]
+name = "the overlay's secret scan follows a moveable gitleaks-action tag"
+file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
+before = "gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0"
+after = "gitleaks/gitleaks-action@v3"
 reddens = [
   "tests/overlay/test_template.py::test_the_scan_workflow_pins_every_action_at_an_immutable_revision",
 ]

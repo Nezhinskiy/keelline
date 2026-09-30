@@ -7,8 +7,14 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Read-only, both. `pull-requests: read` is for the action's `GET /repos/{owner}/{repo}/pulls/{n}/commits`
+# on a `pull_request` run, which it needs to find the commits to scan: a private repository, which
+# an overlay is, answers that endpoint only to a token holding it. Leaks are still reported
+# without a write scope: the action's pull-request review comment is best-effort and its failure
+# is a warning; the job fails, and the summary and artifact name the leak.
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   gitleaks:
@@ -21,6 +27,8 @@ jobs:
       # trailing comment is the release each sha is; `.github/dependabot.yml` keeps both current.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The whole history is fetched so that the range the action scans -- the commits this
+          # push or pull request adds -- is reachable; the scan is of that range, not of all of it.
           fetch-depth: 0
       # A personal account needs no licence key; an organisation-owned repository does, and adds
       # `GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}` here (the action's own README).
