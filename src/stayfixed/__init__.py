@@ -1,6 +1,6 @@
 """stayfixed: a methodology harness for coding agents."""
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 # The public repository, spelled once — the install hint, the workflow pin and the
 # `ci-ref` row all derive from it. `release check`'s regex is anchored on `__version__` alone
