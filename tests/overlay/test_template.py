@@ -167,7 +167,8 @@ def test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_toke
     # Nothing asserted anything about this file before -- the reviewer rewrote it to
     # `pull_request_target:` with `contents: write` and `id-token: write` and all 43 cases
     # passed. Both halves are asserted: the trigger that makes a fork's code privileged, and
-    # any write scope, because `contents: read` alone is what a secret scan needs.
+    # any write scope, because a secret scan needs read scopes only (`contents`, and `pull-requests`
+    # to list a pull request's commits, asserted below) and never a write one.
     #
     # Mutations: `mutations.toml`'s "the overlay's secret scan runs a fork's head" and "the
     # overlay's secret scan is given a write token".
@@ -202,7 +203,8 @@ def test_the_scan_workflow_pins_every_action_at_an_immutable_revision() -> None:
     # at length that an unpinned revision "lets somebody else choose what runs on your machine".
     # A full-length commit sha is the only immutable reference Actions has.
     #
-    # Mutation: `mutations.toml`'s "the overlay's secret scan follows a moveable action tag".
+    # Mutations: `mutations.toml`'s "the overlay's secret scan follows a moveable action tag" and
+    # "the overlay's secret scan follows a moveable gitleaks-action tag".
     steps = [
         stripped.removeprefix("- uses:").strip()
         for line in _scan_workflow().splitlines()

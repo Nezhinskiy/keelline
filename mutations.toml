@@ -4013,6 +4013,9 @@ reddens = [
   "tests/overlay/test_template.py::test_the_scan_workflow_pins_every_action_at_an_immutable_revision",
 ]
 
+# The same entry for the workflow's other pin. The test loops over every `uses:` line, so each pin
+# needs its own mutation to show the loop examines it: `@v3` is a name the action's owner can move,
+# and this step is the one that holds the repository's token.
 [[mutation]]
 name = "the overlay's secret scan follows a moveable gitleaks-action tag"
 file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
