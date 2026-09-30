@@ -1938,7 +1938,8 @@ def test_the_exclude_block_hides_what_git_hid_and_gives_every_file_back(tmp_path
     # `/a1\r`, a pattern for another name.
     #
     # Mutations: `mutations.toml`'s "a hash region ends a line after a lone carriage return with
-    # the file's own ending" and "detach takes back a whole CRLF after a lone carriage return".
+    # the file's own ending", "detach leaves the newline it added after a lone carriage return"
+    # and "detach takes back half the CRLF attach added".
     from stayfixed.attach import exclude
 
     repo = tmp_path / "r"

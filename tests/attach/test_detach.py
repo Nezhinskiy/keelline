@@ -222,7 +222,7 @@ def test_a_ledger_naming_a_file_attach_could_not_have_written_removes_nothing(
     # ever writes `.codex/rules/<file>`, so anything else in `rules` is a repository asking for
     # a deletion no attach could have earned.
     #
-    # Mutation: `mutations.toml`'s "detach deletes whatever the ledger names" — make
+    # Mutation: `mutations.toml`'s "detach deletes whatever file the ledger names" — make
     # `_rule_is_writable` answer True unconditionally and the workflow file goes.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])

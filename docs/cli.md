@@ -2117,10 +2117,11 @@ the real run refuses with.
 repository already has), the Codex standing-rule files it would place under `.codex/rules/`, and
 `real_directories`: how many of this project's memory groups are still real directories rather than
 links into the overlay. Read it before the real run: everything under **Writes** below that carries
-content from the overlay is named here first. It does not make the refusals that come after the
-diff: an overlay rule file that is not UTF-8, a `trust.json` that does not parse, a doubled
-`stayfixed:ignore` region or `stayfixed:attach` block, a `.git/info` you cannot write. The real run
-makes them, before it writes anything.
+content from the overlay is named here first. It does not ask what the real run asks after the
+diff: an overlay rule file that is not UTF-8, which the real run fails on (`1`), and a `trust.json`
+that does not parse, a doubled `stayfixed:ignore` region or `stayfixed:attach` block or a
+`.git/info` you cannot write, which it refuses (`2`). The real run does both before it writes
+anything.
 
 It exits `1` when that count is non-zero, the same way it does on a mismatch or a checkout with no
 `origin` and for the same reason — all three are findings you act on before the real run, and
@@ -2537,21 +2538,21 @@ registrations and installed plugins those commands write into each harness's own
 `--overlay <path>` writes nothing in the overlay; it is only recorded.
 `--overlay create:<owner>/<name>` writes what `overlay create --template` writes — a private
 repository on GitHub and its clone — and then what `overlay init` writes in that clone, including
-its removal of the `common/memory/README.md` a template published at 0.1.x ships. Run again over
-the overlay it made, it generates nothing, but `overlay init` still runs there, and the report
-names each file `init` changed (an overlay named by 0.1.x gains its account) or says it changed
-none of the overlay's tracked files (`pre-commit install` may still have written its git hook). Exits `0`
-on success, `2` on a refused `--overlay` (missing, not an overlay, reachable from the project
-root, at a path that is not UTF-8 text and so cannot be recorded in the machine file, or `create:`
-without `--yes`), and `2` when a symlink stands between `<home>` and the settings file: that file
-is written through a walk that never follows one. Every one of those refusals happens before the
-first write, **with one exception**: for `--overlay create:<owner>/<name>`, "not an overlay" is a
-check on the tree that arrived, so it runs after the repository has been created on GitHub and
-cloned — along with the machine file, the settings merge and the plugin installs. That refusal
-says so, and names the repository and where it was cloned to, because nothing else would.
-Everything else `create:` can be refused for — the missing `--yes`, a malformed spec, a name that
-is not one path segment, a destination the project root could reach or the machine file could not
-record — still happens before `gh` is run at all.
+its removal of the `common/memory/README.md` a template published at 0.1.x ships. Run again over the
+overlay it made, it generates nothing, but `overlay init` still runs there, and the report names
+each file `init` changed (an overlay named by 0.1.x gains its account) or says it changed none of
+the overlay's tracked files (`pre-commit install` may still have written its git hook). Exits `0` on
+success, `2` on a refused `--overlay` (missing, not an overlay, reachable from the project root, at
+a path that is not UTF-8 text and so cannot be recorded in the machine file, or `create:` without
+`--yes`), and `2` when a symlink stands between `<home>` and the settings file: that file is written
+through a walk that never follows one. Every one of those refusals happens before the first write,
+**with one exception**: for `--overlay create:<owner>/<name>`, "not an overlay" is a check on the
+tree that arrived, so it runs after the repository has been created on GitHub and cloned — along
+with the machine file, the settings merge and the plugin installs. That refusal says so, and names
+the repository and where it was cloned to, because nothing else would. Everything else `create:` can
+be refused for — the missing `--yes`, a malformed spec, a name that is not one path segment, a
+destination the project root could reach or the machine file could not record — still happens before
+`gh` is run at all.
 
 The symlink refusal names the link, where it leads, and a `stayfixed setup --home …` that writes
 the file the link leads to — and where no `--home` can express the layout, it says that instead
