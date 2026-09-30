@@ -96,6 +96,7 @@ from stayfixed.memory.api import (
     require_readable_record,
     resolve,
 )
+from stayfixed.printed import answered
 from stayfixed.runner import Runner
 from stayfixed.scaffold import (
     EntriesError,
@@ -539,7 +540,7 @@ def _secret_scan(binding: Binding, runner: Runner) -> str | None:
     done = runner.run(["pre-commit", "install"], binding.overlay)
     if done.code == 0:
         return "installed the overlay's commit-time secret scan with `pre-commit install`"
-    detail = done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"
+    detail = answered(done)
     return (
         f"`pre-commit install` did not run in the overlay ({detail}), so its commit-time secret "
         f"scan is not installed; the push-time scan still runs"

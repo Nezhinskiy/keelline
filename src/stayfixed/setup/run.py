@@ -121,6 +121,7 @@ from stayfixed.overlay.api import (
     target_root,
 )
 from stayfixed.presets import load_preset
+from stayfixed.printed import answered
 from stayfixed.runner import Runner
 from stayfixed.setup.machine import USER_SETTINGS, read_machine, write_machine
 
@@ -245,7 +246,7 @@ def _install_plugins(
         # itself (its own docstring: "a missing binary is a finding, never a traceback").
         added = runner.run(add_argv_of(source), home)
         if added.code != 0:
-            detail = added.stderr.strip() or added.stdout.strip() or f"exit {added.code}"
+            detail = answered(added)
             notes.append(f"{agent}: could not register marketplace {source} ({detail})")
             continue
         for selector in selectors:
@@ -255,7 +256,7 @@ def _install_plugins(
                 if selector not in installed:
                     installed.append(selector)
             else:
-                detail = done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"
+                detail = answered(done)
                 notes.append(f"{agent}: `{' '.join(argv)}` did not succeed ({detail})")
     return tuple(installed), tuple(notes)
 

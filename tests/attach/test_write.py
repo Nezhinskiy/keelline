@@ -1983,3 +1983,25 @@ def test_a_doubled_gitignore_region_is_refused_naming_the_file(tmp_path: Path) -
         _attach_it(root, store, machine, tmp_path / "home")
     assert ".gitignore" in str(refused.value)
     assert _everything(tmp_path) == before
+
+
+def test_what_pre_commit_prints_cannot_drive_a_terminal(tmp_path: Path) -> None:
+    # `pre-commit install`'s answer was quoted raw in the note.
+    #
+    # Mutation: `mutations.toml`'s "a subprocess's answer is quoted raw".
+    root, store, machine = _attachable(tmp_path)
+    _overlay_repository(store.parents[2])
+    (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
+    runner = FakeRunner(answer=Completed(1, "", "boom\n::error::forged\x1b[2J"))
+    attached = attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=runner,
+        home=tmp_path / "home",
+    )
+    said = " ".join(attached.notes)
+    assert "forged" in said
+    assert "\n::error::" not in said and "\x1b" not in said

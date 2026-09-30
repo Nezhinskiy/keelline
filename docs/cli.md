@@ -2075,7 +2075,9 @@ it. There is no `--root`: the tree is rendered from this stayfixed's own package
 removes. With it, on GitHub through `gh` and `git`: the public repository `<owner>/<name>`, when
 there is none; its template flag, when it is not set; and a commit pushed to its default branch,
 unless it already carries this stayfixed's template. The clone and the commit are made in the
-same temporary directory. Exits `0`; `1` on a `gh` or `git` that failed, `2` on a refusal.
+same temporary directory. Exits `0`; `1` on a `gh` or `git` that failed, with what it printed
+quoted as `overlay create` quotes it (escaped, and cut to its first 120 characters and its
+length); `2` on a refusal.
 
 ---
 
@@ -2241,7 +2243,9 @@ files inside it.
 
 It also runs `pre-commit install` in the overlay when the overlay carries a pre-commit
 configuration and no hook is installed — the machine that cloned an overlay someone else created
-never ran `overlay init`. A missing `pre-commit` is a reported note, never a traceback.
+never ran `overlay init`. A missing `pre-commit` is a reported note, never a traceback, and what a
+failing one printed is quoted as `overlay create` quotes it (escaped, and cut to its first 120
+characters and its length).
 
 Exits `0` on success. Under `--check` it exits `1` on a mismatch, on a checkout with no `origin`,
 **or** on a non-zero count of memory groups that are still real directories, which are the findings
@@ -2558,7 +2562,8 @@ path ending in `.claude/settings.json`, or let this command write a real file an
 dotfiles manager adopt it.
 
 A plugin that fails to install or a harness that is absent is a note in the report, not a
-nonzero exit.
+nonzero exit. What the failing plugin command printed is quoted as `overlay create` quotes it
+(escaped, and cut to its first 120 characters and its length).
 
 ---
 

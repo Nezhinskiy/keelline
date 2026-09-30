@@ -21,6 +21,8 @@ something nothing upstream bounds in length, a TOML key, a label or a group.
 
 from __future__ import annotations
 
+from typing import Protocol
+
 from stayfixed.config.schema import PATH_VALUE
 
 # What a name outside `PATH_VALUE` prints as on a line whose command carries it in `--json`.
@@ -45,11 +47,12 @@ def quoted(name: str) -> str:
 # How many characters of a name a refusal prints before it clips the rest to a count. A named cap
 # (CONTRIBUTING.md#named-caps), and `docs/cli.md` states the number for the refusals that use it
 # (`docs trail`'s stale `[states]` keys and its `[[theme]]` label, the memory store's unresolved
-# groups, and what `overlay create` quotes from `gh`, `git` and `pre-commit`), so a change to
-# either is a change to both. `quoted` escapes a name and does
-# not bound its length, and a TOML key, a label or a group is bounded in length by nothing, so
-# without this a refusal's line is as long as the repository makes one name. 120 is well past any
-# name an operator would type, and short enough that the start still says which one it is.
+# groups, and what `answered` quotes from a subprocess for `overlay create`, `overlay
+# publish-template`, `attach` and `setup`), so a change to either is a change to both. `quoted`
+# escapes a name and does not bound its length, and a TOML key, a label or a group is bounded in
+# length by nothing, so without this a refusal's line is as long as the repository makes one name.
+# 120 is well past any name an operator would type, and short enough that the start still says
+# which one it is.
 CLIPPED_CHARS = 120
 
 
@@ -60,3 +63,23 @@ def clipped(name: str) -> str:
     if len(name) <= CLIPPED_CHARS:
         return quoted(name)
     return f"{quoted(name[:CLIPPED_CHARS])}…({len(name)} chars)"
+
+
+class _Answered(Protocol):
+    """What `runner.Completed` carries, named here so this leaf module imports no runner."""
+
+    @property
+    def code(self) -> int: ...
+    @property
+    def stdout(self) -> str: ...
+    @property
+    def stderr(self) -> str: ...
+
+
+def answered(done: _Answered) -> str:
+    """What a subprocess said about itself, its stderr before its stdout before its exit code,
+    through `clipped`: what `gh`, `git`, `pre-commit` or a harness's plugin command prints is not
+    text this project wrote, and a line break followed by `::error::` in it is a workflow command
+    in a CI log, and an escape sequence drives a terminal. One helper, so a caller that quotes one
+    cannot leave the clip out."""
+    return clipped(done.stderr.strip() or done.stdout.strip() or f"exit {done.code}")

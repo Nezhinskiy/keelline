@@ -331,3 +331,22 @@ def test_the_render_the_publisher_clones_beside_carries_no_scaffold_ledger(tmp_p
     assert stub.rendered_tree, "the stub never saw the render, so this asserts nothing"
     assert str(MANIFEST_PATH) not in stub.rendered_tree
     assert stub.rendered_tree == set(OVERLAY_FILES), stub.rendered_tree ^ set(OVERLAY_FILES)
+
+
+def test_what_gh_prints_cannot_drive_a_terminal() -> None:
+    # `gh`'s answer was quoted raw in the failure: a line break followed by `::error::` is a
+    # workflow command in a CI log, and an escape sequence drives a terminal.
+    #
+    # Mutation: `mutations.toml`'s "a subprocess's answer is quoted raw".
+    class _Hostile(_GitHub):
+        def run(self, argv: list[str], cwd: Path) -> Completed:
+            if argv[:3] == ["gh", "repo", "view"]:
+                self.calls.append((argv, cwd))
+                return Completed(1, "", "HTTP 500\n::error::forged\x1b[2J")
+            return super().run(argv, cwd)
+
+    with pytest.raises(Failure) as raised:
+        publish_template("owner", yes=False, runner=_Hostile())
+    message = str(raised.value)
+    assert "forged" in message
+    assert "\n::error::" not in message and "\x1b" not in message

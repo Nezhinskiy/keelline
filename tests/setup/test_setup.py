@@ -271,6 +271,29 @@ def test_a_selector_the_marketplace_does_not_carry_is_a_note_naming_the_argv(
     assert any("no plugin named" in note for note in report.notes), report.notes
 
 
+@pytest.mark.parametrize("step", ["marketplace add", "install"])
+def test_what_a_plugin_command_prints_cannot_drive_a_terminal(tmp_path: Path, step: str) -> None:
+    # A plugin command's answer was quoted raw in the note: a line break followed by `::error::`
+    # is a workflow command in a CI log, and an escape sequence drives a terminal.
+    #
+    # Mutation: `mutations.toml`'s "a subprocess's answer is quoted raw".
+    runner = FakeRunner(
+        answers={f"claude plugin {step}": Completed(1, "", "boom\n::error::forged\x1b[2J")}
+    )
+    report = setup(
+        "recommended",
+        home=tmp_path / "home",
+        machine=tmp_path / "config.toml",
+        runner=runner,
+        yes=True,
+        overlay=None,
+        project_root=tmp_path / "project",
+    )
+    said = " ".join(report.notes)
+    assert "forged" in said
+    assert "\n::error::" not in said and "\x1b" not in said
+
+
 def test_codex_gets_a_note_naming_the_unverified_plugins_rather_than_silence(
     tmp_path: Path,
 ) -> None:

@@ -35,7 +35,7 @@ from stayfixed.overlay.layout import (
     SUCCESSORS,
 )
 from stayfixed.overlay.template import retired, templates
-from stayfixed.printed import clipped
+from stayfixed.printed import answered
 from stayfixed.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
 from stayfixed.scaffold import Manifest, Verb, apply, digest, plan, unlinks
 
@@ -264,12 +264,12 @@ def _detail(done: Completed) -> str:
     exists; check `gh auth status`" — a cause that was not the cause, about a binary that was
     not there. The same idiom `setup.run` uses for its notes.
 
-    **Clipped here, once, for every caller.** What `gh`, `git` and `pre-commit` print is not text
-    this project wrote: a proxy or a wrapper can put a line break and `::error::` in it, which a
-    CI runner reads as a workflow command, or an escape sequence, which drives a terminal.
-    `printed.clipped` escapes both and bounds the length.
+    **Clipped, in `printed.answered`**, which every command quoting a subprocess goes through.
+    What `gh`, `git` and `pre-commit` print is not text this project wrote: a proxy or a wrapper
+    can put a line break and `::error::` in it, which a CI runner reads as a workflow command, or
+    an escape sequence, which drives a terminal.
     """
-    return clipped(done.stderr.strip() or done.stdout.strip() or f"exit {done.code}")
+    return answered(done)
 
 
 def _template_for(owner: str, *, root: Path, runner: Runner) -> str:
