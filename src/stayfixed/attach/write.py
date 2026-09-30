@@ -44,6 +44,7 @@ from __future__ import annotations
 import datetime
 import json
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -99,6 +100,7 @@ from stayfixed.runner import Runner
 from stayfixed.scaffold import (
     EntriesError,
     Manifest,
+    RegionError,
     Style,
     apply_entries,
     drop,
@@ -382,8 +384,17 @@ def _planned_ignore_region(root: Path) -> str | None:
             f"untracked — and writing the attach ledger into a tracked path would publish "
             f"your personal allow rules to every collaborator"
         ) from exc
-    updated = upsert(text, IGNORE_REGION, IGNORE_BODY, Style.HASH)
+    updated = _in_gitignore(upsert, text, IGNORE_REGION, IGNORE_BODY, Style.HASH)
     return None if updated == text else updated
+
+
+def _in_gitignore(region: Callable[..., str], *args: object) -> str:
+    """`upsert` or `drop` over `.gitignore`, with the file named in a refusal: "region 'ignore' is
+    opened or closed twice" said which region and never which file."""
+    try:
+        return region(*args)
+    except RegionError as exc:
+        raise RegionError(f"`{GITIGNORE}`: {exc}") from exc
 
 
 def _write_ignore_region(root: Path, updated: str) -> None:
@@ -1405,7 +1416,7 @@ def _ignore_region_remainder(root: Path) -> str | None:
         raise Failure(f"{GITIGNORE} cannot be read: {exc}") from exc
     except UnicodeDecodeError:
         raise Failure(f"{GITIGNORE} is not UTF-8 text") from None
-    remaining = drop(text, IGNORE_REGION, Style.HASH)
+    remaining = _in_gitignore(drop, text, IGNORE_REGION, Style.HASH)
     return None if remaining == text else remaining
 
 

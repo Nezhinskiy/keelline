@@ -13660,3 +13660,26 @@ reddens = [
   "tests/attach/test_write.py::test_the_exclude_block_hides_what_git_hid_and_gives_every_file_back",
   "tests/attach/test_detach.py::test_an_exclude_file_ending_in_a_lone_carriage_return_keeps_its_last_pattern",
 ]
+
+# Where the rule sources are read, not only that a bad one is refused: with a write put above the
+# read, the refusal still comes and the snapshot of what it left does not hold.
+[[mutation]]
+name = "attach reads the overlay's rule sources after its first write"
+file = "src/stayfixed/attach/write.py"
+before = "    rules = _codex_rule_texts(binding)"
+after = """    fsops.write_within(root, GITIGNORE, upsert("", IGNORE_REGION, IGNORE_BODY, Style.HASH))
+    rules = _codex_rule_texts(binding)"""
+reddens = [
+  "tests/attach/test_write.py::test_an_overlay_rule_that_is_not_utf8_stops_attach_before_it_writes",
+]
+
+# "region 'ignore' is opened or closed twice" named the region and never the file it is in.
+[[mutation]]
+name = "a doubled .gitignore region is refused without its file"
+file = "src/stayfixed/attach/write.py"
+before = '        raise RegionError(f"`{GITIGNORE}`: {exc}") from exc'
+after = "        raise"
+reddens = [
+  "tests/attach/test_write.py::test_a_doubled_gitignore_region_is_refused_naming_the_file",
+  "tests/attach/test_detach.py::test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything_is",
+]

@@ -1781,7 +1781,9 @@ def test_an_overlay_rule_that_is_not_utf8_stops_attach_before_it_writes(tmp_path
     # the exclude block so `git status` no longer showed it, and no ledger for `detach` to
     # remove it by. Every source is read while the run is planned now.
     #
-    # Mutation: `mutations.toml`'s "attach reads the overlay's rule sources while it copies them".
+    # Mutations: `mutations.toml`'s "attach copies past an overlay rule that is not UTF-8", which
+    # drops the refusal, and "attach reads the overlay's rule sources after its first write",
+    # which keeps it and moves it below a write, so the snapshot is what reddens.
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
     (store.parents[2] / COMMON_CODEX / "z.rules").write_bytes(b"\xff\xfe not text\n")
     before = _everything(tmp_path)
@@ -1967,3 +1969,17 @@ def test_the_exclude_block_hides_what_git_hid_and_gives_every_file_back(tmp_path
         if with_block != before | {"linked"} or after != held:
             wrong.append((held, sorted(before), sorted(with_block), after))
     assert wrong == []
+
+
+def test_a_doubled_gitignore_region_is_refused_naming_the_file(tmp_path: Path) -> None:
+    # "region 'ignore' is opened or closed twice" named the region and not the file it is in.
+    #
+    # Mutation: `mutations.toml`'s "a doubled .gitignore region is refused without its file".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    begin = "# stayfixed:ignore:begin\n"
+    (root / ".gitignore").write_text(begin + begin + "# stayfixed:ignore:end\n", encoding="utf-8")
+    before = _everything(tmp_path)
+    with pytest.raises(Refusal) as refused:
+        _attach_it(root, store, machine, tmp_path / "home")
+    assert ".gitignore" in str(refused.value)
+    assert _everything(tmp_path) == before

@@ -2285,7 +2285,8 @@ It exits `2` on a refusal, in the order the run meets them:
 - A `.stayfixed` that is a symlink, or an existing ledger naming files, settings keys or
   directories `attach` could not have written.
 - A `git check-ignore` that cannot answer; a `.gitignore`, when it needs the `stayfixed:ignore`
-  region, that cannot be read, is not UTF-8 or holds that region opened or closed twice.
+  region, that cannot be read, is not UTF-8 or holds that region opened or closed twice (the
+  refusal names the file).
 - A `.codex` or `.claude` that is a symlink, on a run that writes into it; a
   `git rev-parse --git-path info/exclude` that names no exclude file; an exclude file that cannot
   be read or holds a `stayfixed:attach` block opened or closed twice (the refusal names the file),
@@ -2410,7 +2411,7 @@ It exits `2` on a refusal, in the order the run meets them:
 - A home directory that is not there, or a component below it, `~/.claude` included, that is a
   symlink, in any checkout of the repository.
 - A `stayfixed:ignore` region in `.gitignore` opened or closed twice, or otherwise with markers
-  that no longer say where it ends.
+  that no longer say where it ends (the refusal names the file).
 - A `git rev-parse --git-path info/exclude` that names no exclude file, an exclude file that cannot
   be read, or a `stayfixed:attach` block in it opened or closed twice (the refusal names the
   file).

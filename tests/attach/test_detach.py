@@ -529,8 +529,11 @@ def test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything
     ignore = root / GITIGNORE
     ignore.write_text(f"{begin}\n" + ignore.read_text(encoding="utf-8"), encoding="utf-8")
     before = snapshot(root)
-    with pytest.raises(RegionError):
+    with pytest.raises(RegionError) as refused:
         _detach(root, machine, home)
+    # The refusal names the file, as the exclude block's does. Mutation: `mutations.toml`'s "a
+    # doubled .gitignore region is refused without its file".
+    assert GITIGNORE in str(refused.value)
     assert_snapshot_unchanged(root, before)
     assert (root / LEDGER).is_file()
     assert (root / "docs" / "memory" / "developer").is_symlink()
