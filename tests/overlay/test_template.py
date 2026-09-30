@@ -181,7 +181,7 @@ def test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_toke
 
 def test_the_scan_workflow_pins_every_action_at_an_immutable_revision() -> None:
     # The same argument the `rev:` case above makes one directory over: a tag is
-    # a name its owner can move. `actions/checkout@v4` and `gitleaks/gitleaks-action@v2` were
+    # a name its owner can move. `actions/checkout@v7` and `gitleaks/gitleaks-action@v3` would be
     # mutable major tags in a file that runs with `secrets.GITHUB_TOKEN` over a repository
     # holding the owner's rules and notes -- while the sibling `.pre-commit-config.yaml` argued
     # at length that an unpinned revision "lets somebody else choose what runs on your machine".
