@@ -94,7 +94,8 @@ def test_the_template_pins_gitleaks_at_a_revision() -> None:
     # Mutation: `mutations.toml`'s "the overlay template follows gitleaks' default branch".
     config = (template_root() / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     assert "gitleaks" in config
-    revisions = re.findall(r"^\s*rev:\s*(\S+)\s*$", config, re.MULTILINE)
+    # A trailing `# frozen: vX.Y.Z` comment is the release a sha is, and is not part of the value.
+    revisions = re.findall(r"^\s*rev:\s*(\S+)(?:\s+#.*)?$", config, re.MULTILINE)
     assert revisions, "no `rev:` at all, so the hook follows whatever the repo's default branch is"
     for revision in revisions:
         assert _PINNED_REV.match(revision), revision
@@ -163,12 +164,28 @@ def _block(text: str, key: str) -> list[str]:
     return found
 
 
+def _top_level_lines(text: str, key: str) -> list[str]:
+    """The non-comment lines of the top-level `key:` block, nested keys included."""
+    lines = text.splitlines()
+    if f"{key}:" not in lines:
+        return []
+    found: list[str] = []
+    for line in lines[lines.index(f"{key}:") + 1 :]:
+        if line and not line.startswith(" "):
+            break
+        if line.strip() and not line.strip().startswith("#"):
+            found.append(line)
+    return found
+
+
 def test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_token() -> None:
     # Nothing asserted anything about this file before -- the reviewer rewrote it to
     # `pull_request_target:` with `contents: write` and `id-token: write` and all 43 cases
     # passed. Both halves are asserted: the trigger that makes a fork's code privileged, and
     # any write scope, because a secret scan needs read scopes only (`contents`, and `pull-requests`
-    # to list a pull request's commits, asserted below) and never a write one.
+    # for the action's reads of a pull request, asserted below) and never a write one. That the
+    # workflow-level block is exactly those two scopes, and that no job replaces it, is asserted
+    # below.
     #
     # Mutations: `mutations.toml`'s "the overlay's secret scan runs a fork's head" and "the
     # overlay's secret scan is given a write token".
@@ -176,7 +193,6 @@ def test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_toke
     triggers = _block(text, "on")
     assert triggers, "no `on:` block was found, so the assertion below measures nothing"
     assert "pull_request_target" not in triggers, triggers
-    assert re.search(r"^permissions:\n  contents: read\n", text, re.MULTILINE), text
     assert _WRITE_SCOPE.search(text) is None, _WRITE_SCOPE.search(text)
 
 
@@ -186,13 +202,61 @@ def test_the_scan_workflow_can_read_a_pull_requests_commits_in_a_private_reposit
     # passes `--private` -- that endpoint needs the "Pull requests: read" permission. A
     # `permissions:` block naming `contents` alone leaves every other scope at none, so the scan
     # would fail for want of it. The block is asserted by value and in full: exactly these two
-    # read scopes, so that neither a dropped scope nor an added one passes.
+    # read scopes, so that neither a dropped scope nor an added one passes. And no job carries a
+    # `permissions:` key of its own, because a job's block replaces the workflow's: a job with
+    # `permissions: read-all`, or with `contents: read` alone, would leave this block looking
+    # right above a token that is not the one it describes.
     #
-    # Mutation: `mutations.toml`'s "the overlay's secret scan cannot list a pull request's commits".
+    # Mutations: `mutations.toml`'s "the overlay's secret scan cannot list a pull request's
+    # commits" and "the overlay's secret scan sets its own permissions on the job".
     text = _scan_workflow()
     assert re.search(
         r"^permissions:\n  contents: read\n  pull-requests: read\n(?!  )", text, re.MULTILINE
     ), text
+    jobs = _top_level_lines(text, "jobs")
+    assert jobs, "no `jobs:` block was found, so the assertion below measures nothing"
+    assert not [line for line in jobs if "permissions" in line], jobs
+
+
+def test_the_scan_workflow_checkout_leaves_no_token_behind() -> None:
+    # The job never pushes, so the checkout has no use for the token it would otherwise persist
+    # for every later step, the third-party action among them. `fetch-depth: 0` sits in the same
+    # `with:` block, so the key is looked for by value and not by name.
+    #
+    # Mutation: `mutations.toml`'s "the overlay's secret scan checks out with a persisted token".
+    assert re.search(r"^ +persist-credentials: false$", _scan_workflow(), re.MULTILINE)
+
+
+def test_the_scan_workflow_skips_the_template_repository_and_scans_everything_made_from_it() -> (
+    None
+):
+    # The public template repository is organisation-owned, and the action fails every run there
+    # for want of a licence key. A repository made from the template has `is_template` false, so
+    # the condition below runs it. The expression is asserted whole: its inverse, `is_template`
+    # without the `!`, would scan the template and skip every overlay, which is the worst of both.
+    #
+    # Mutations: `mutations.toml`'s "the overlay's secret scan runs on the template repository"
+    # and "the overlay's secret scan skips every repository made from the template".
+    lines = _top_level_lines(_scan_workflow(), "jobs")
+    assert "    if: ${{ !github.event.repository.is_template }}" in lines, lines
+
+
+def test_the_scan_workflow_runs_the_gitleaks_the_pre_commit_hook_pins() -> None:
+    # gitleaks-action v3.0.0 runs its own default, 8.24.3, unless `GITLEAKS_VERSION` says
+    # otherwise, so pinning the action at a sha does not choose the rules a push is scanned by.
+    # The workflow is the scan that cannot be skipped and the hook is the one that can; the two
+    # name one release, and the hook's `rev:` is a sha whose release is its `# frozen:` comment.
+    #
+    # Mutations: `mutations.toml`'s "the overlay's secret scan runs the action's older default
+    # gitleaks", "the overlay's secret scan runs a different gitleaks than the hook" and "the
+    # overlay template's hook goes back to naming gitleaks by its tag".
+    config = (template_root() / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    frozen = re.findall(
+        r"^\s*rev:\s*[0-9a-f]{40}\s+# frozen: v(\d+\.\d+\.\d+)$", config, re.MULTILINE
+    )
+    assert len(frozen) == 1, "the hook's `rev:` is not a sha followed by `# frozen: vX.Y.Z`"
+    pinned = re.findall(r'^ +GITLEAKS_VERSION: "(\d+\.\d+\.\d+)"$', _scan_workflow(), re.MULTILINE)
+    assert pinned == frozen, (pinned, frozen)
 
 
 def test_the_scan_workflow_pins_every_action_at_an_immutable_revision() -> None:
