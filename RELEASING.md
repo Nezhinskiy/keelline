@@ -348,6 +348,11 @@ and let the smoke run say whether an install still works.
 pins two actions by full-length sha, and this repository's `.github/dependabot.yml` scans
 `.github/workflows/` at the root and nothing else — a nested tree under `src/` is not a
 workflow directory the platform reads, so those two pins rot here until somebody looks.
+The same file's `GITLEAKS_VERSION` and the `rev:` of the template's `.pre-commit-config.yaml`
+(a sha, with its release in a `# frozen:` comment) are not action pins at all, so no configured
+Dependabot sees them (it has a `pre-commit` ecosystem, which neither `dependabot.yml` sets up):
+bump them by hand, to one gitleaks release, in one commit.
+`tests/overlay/test_template.py` holds the two equal.
 A rendered overlay ships its own `dependabot.yml` and keeps itself current from then on;
 what this line is about is the state every *new* overlay starts from. Check them here, at
 the release that publishes the template.

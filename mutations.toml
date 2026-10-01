@@ -3917,7 +3917,7 @@ reddens = [
 [[mutation]]
 name = "the overlay template follows gitleaks' default branch"
 file = "src/stayfixed/templates/overlay/.pre-commit-config.yaml"
-before = "    rev: v8.21.2"
+before = "    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e  # frozen: v8.30.1"
 after = "    rev: main"
 reddens = [
   "tests/overlay/test_template.py::test_the_template_pins_gitleaks_at_a_revision",
@@ -3969,9 +3969,10 @@ reddens = [
   "tests/overlay/test_template.py::test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_token",
 ]
 
-# The other half, and the half that makes the first one dangerous. A secret scan needs
-# `contents: read` and nothing else; a write scope on the token this workflow hands a third-party
-# action is a repository that can be pushed to by whatever that action does.
+# The other half, and the half that makes the first one dangerous. A secret scan needs read scopes
+# only (`contents`, and `pull-requests` for the action's reads of the pull request); a write scope
+# on the token this workflow hands a third-party action is a repository that can be pushed to by
+# whatever that action does.
 [[mutation]]
 name = "the overlay's secret scan is given a write token"
 file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
@@ -3984,17 +3985,123 @@ reddens = [
   "tests/overlay/test_template.py::test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_token",
 ]
 
+# The permission the action's pull-request scan cannot run without. On `pull_request` it lists the
+# pull request's commits through `GET /repos/{owner}/{repo}/pulls/{n}/commits`, and a private
+# repository -- an overlay is one by design -- answers that to a token holding `pull-requests: read`
+# only. A `permissions:` block that names `contents` alone sets every other scope to none.
+[[mutation]]
+name = "the overlay's secret scan cannot list a pull request's commits"
+file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
+before = """permissions:
+  contents: read
+  pull-requests: read"""
+after = """permissions:
+  contents: read"""
+reddens = [
+  "tests/overlay/test_template.py::test_the_scan_workflow_can_read_a_pull_requests_commits_in_a_private_repository",
+]
+
 # The same argument the `rev:` entry above makes, one file over and with a token attached. A major
-# tag is a name its owner can move, so `@v4` resolving to different code tomorrow is somebody else
+# tag is a name its owner can move, so `@v7` resolving to different code tomorrow is somebody else
 # choosing what runs against a repository holding the owner's rules and notes. A full-length commit
 # sha is the only immutable reference Actions has (principle 9).
 [[mutation]]
 name = "the overlay's secret scan follows a moveable action tag"
 file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
-before = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0"
-after = "actions/checkout@v4"
+before = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1"
+after = "actions/checkout@v7"
 reddens = [
   "tests/overlay/test_template.py::test_the_scan_workflow_pins_every_action_at_an_immutable_revision",
+]
+
+# The same entry for the workflow's other pin. The test loops over every `uses:` line, so each pin
+# needs its own mutation to show the loop examines it: `@v3` is a name the action's owner can move,
+# and this step is the one that holds the repository's token.
+[[mutation]]
+name = "the overlay's secret scan follows a moveable gitleaks-action tag"
+file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
+before = "gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0"
+after = "gitleaks/gitleaks-action@v3"
+reddens = [
+  "tests/overlay/test_template.py::test_the_scan_workflow_pins_every_action_at_an_immutable_revision",
+]
+
+# A job's own `permissions:` block replaces the workflow's, it does not add to it. The workflow-level
+# block can therefore read exactly `contents: read` and `pull-requests: read` while the job holds
+# `read-all`, or `contents: read` alone, and every assertion over the top-level block stays green.
+[[mutation]]
+name = "the overlay's secret scan sets its own permissions on the job"
+file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
+before = "    runs-on: ubuntu-latest"
+after = """    runs-on: ubuntu-latest
+    permissions: read-all"""
+reddens = [
+  "tests/overlay/test_template.py::test_the_scan_workflow_can_read_a_pull_requests_commits_in_a_private_repository",
+]
+
+# `actions/checkout` persists the token it was given into the repository's git configuration for
+# every later step, and this job never pushes. The same line is in `.github/workflows/check.yml`
+# in this repository.
+[[mutation]]
+name = "the overlay's secret scan checks out with a persisted token"
+file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
+before = "          persist-credentials: false"
+after = "          persist-credentials: true"
+reddens = [
+  "tests/overlay/test_template.py::test_the_scan_workflow_checkout_leaves_no_token_behind",
+]
+
+# The public template repository is organisation-owned, so the action fails every run there for
+# want of a licence key. Without the condition the template's own badge is red from the day it is
+# published; with the condition inverted, the template is scanned and every overlay is skipped.
+[[mutation]]
+name = "the overlay's secret scan runs on the template repository"
+file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
+before = "    if: ${{ !github.event.repository.is_template }}"
+after = "    if: ${{ true }}"
+reddens = [
+  "tests/overlay/test_template.py::test_the_scan_workflow_skips_a_repository_marked_as_a_template_and_scans_the_rest",
+]
+
+[[mutation]]
+name = "the overlay's secret scan skips every repository made from the template"
+file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
+before = "    if: ${{ !github.event.repository.is_template }}"
+after = "    if: ${{ github.event.repository.is_template }}"
+reddens = [
+  "tests/overlay/test_template.py::test_the_scan_workflow_skips_a_repository_marked_as_a_template_and_scans_the_rest",
+]
+
+# gitleaks-action v3.0.0 downloads its own default gitleaks (8.24.3) unless `GITLEAKS_VERSION` says
+# otherwise, and pinning the action at a sha does not pin that binary. The workflow is the scan that
+# cannot be skipped, so it names the release the hook pins; these three break that agreement in the
+# three ways it can break.
+[[mutation]]
+name = "the overlay's secret scan runs the action's older default gitleaks"
+file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
+before = '          GITLEAKS_VERSION: "8.30.1"'
+after = '          # GITLEAKS_VERSION: "8.30.1"'
+reddens = [
+  "tests/overlay/test_template.py::test_the_scan_workflow_runs_the_gitleaks_the_pre_commit_hook_pins",
+]
+
+[[mutation]]
+name = "the overlay's secret scan runs a different gitleaks than the hook"
+file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
+before = '          GITLEAKS_VERSION: "8.30.1"'
+after = '          GITLEAKS_VERSION: "8.24.3"'
+reddens = [
+  "tests/overlay/test_template.py::test_the_scan_workflow_runs_the_gitleaks_the_pre_commit_hook_pins",
+]
+
+[[mutation]]
+name = "the overlay template's hook goes back to naming gitleaks by its tag"
+file = "src/stayfixed/templates/overlay/.pre-commit-config.yaml"
+before = "    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e  # frozen: v8.30.1"
+after = "    rev: v8.30.1"
+reddens = [
+  "tests/overlay/test_template.py::test_the_template_pins_gitleaks_at_a_revision",
+  "tests/overlay/test_template.py::test_the_scan_workflow_runs_the_gitleaks_the_pre_commit_hook_pins",
 ]
 
 # The author-side trust rule's other half for the template: a hook shipped by the author executes on
