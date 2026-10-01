@@ -161,12 +161,14 @@ step 7's sentence true.
 
    - **Contract changes are not fixes.** For a 0.x minor, which may break what the one before
      it did, call out what a script or a habit can depend on, under `Changed` or in a short
-     "Upgrading from 0.X" lead above the entries, because a `Fixed` entry hides it. 0.2.0's
-     were `stayfixed attach --check` exiting `2` instead of `0` for a repository whose
-     `memory.mode` is not `overlay` (`docs/cli.md` documents the exit codes as the way a caller
-     tells a finding from a refusal, so a CI script that ran it goes red); `attach` newly
-     writing a marked block into `.git/info/exclude`, a file it did not touch before; and
-     `reply_language` and `artifact_language`, which `setup` still records and nothing reads.
+     "Upgrading from 0.X" lead above the entries, because a `Fixed` entry hides it. Two of
+     0.2.0's sat under `Fixed` and are what that hides: `stayfixed attach --check` exiting `2`
+     instead of `0` for a repository whose `memory.mode` is not `overlay` (`docs/cli.md`
+     documents the exit codes as the way a caller tells a finding from a refusal, so a CI
+     script that ran it goes red), and `attach` newly writing a marked block into
+     `.git/info/exclude`, a file it did not touch before. The third, `reply_language` and
+     `artifact_language`, which `setup` still records and nothing reads, is the one 0.2.0 did
+     call out, under `Changed`.
 
 5. **Edit the README's install section, then commit.** `README.md`'s Install section names the
    release twice, in **Released as X.Y.Z.** and in the tagged `/plugin marketplace add
