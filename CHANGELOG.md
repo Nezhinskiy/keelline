@@ -2,6 +2,115 @@
 
 <!-- towncrier release notes start -->
 
+## 0.2.0 (2026-09-30)
+
+### Fixed
+
+- A first `stayfixed attach` now writes the store's `MEMORY.md` when there is none. The index link
+  it creates used to dangle, and `stayfixed memory index --check` reported the index out of date,
+  until `stayfixed memory index` was run.
+- A freshly created overlay now passes `claude plugin validate`: its marketplace names an `owner`
+  and both plugin manifests an `author`, which `stayfixed overlay init` sets to your account (an
+  existing name of your own is kept). The documentation the overlay ships in `common/memory/` is
+  now `_README.md`, which the note reader skips. `stayfixed overlay init` and `stayfixed overlay
+  upgrade` remove the old `README.md` where it still holds the text 0.1.x shipped, so `memory index
+  --check` no longer reports it unreadable in every attached project; a copy you edited is kept, and
+  the line says to rename it to `_README.md`. Where the overlay has no `_README.md`, as one generated
+  from a 0.1.x template has not, `overlay init` writes it in the old file's place, so
+  `common/memory/` is not left empty for git to drop.
+- When a real `stayfixed.toml` does not load (a file or value the loader refuses, or a `[paths]`
+  entry that leaves the project or passes through a symlink, such as a symlinked `AGENTS.md`),
+  `stayfixed hook` now says so in its own words and points at `stayfixed docs check` for the
+  detail, instead of printing `internal error` with the loader's message. The verdict per event is
+  unchanged: a `PreToolUse` call is still refused, and every other event still continues open. On
+  0.1.1 a refused `PreToolUse` printed that message on the stderr the model reads, and it could
+  carry a key, a table name or a `[paths]` value the repository chose (plain names only: letters,
+  digits, `.`, `_` and `-`, and in a path also `/`); it now prints only stayfixed's own words.
+- `stayfixed attach` and `stayfixed doctor` no longer call a checkout "not the repository it was
+  bound to" when the overlay records a different remote URL. URLs are compared exactly, so an https
+  clone of a repository the overlay recorded over ssh (or the other way round) is a mismatch too,
+  and the message now says so; `--trust-remote` still rebinds it. A checkout with no `origin` is no
+  longer a mismatch at all: `attach`, `attach --check` and `doctor` called it one and pointed at
+  `--trust-remote`, which then refused for the missing `origin`. The memory commands used to answer
+  every binding failure with one sentence, that the overlay does not record this repository's origin
+  remote for the project, and to run `stayfixed attach`. They now name the cause (no `origin` in this
+  checkout, no remote recorded for the project, an unreadable record, a different remote URL, or an
+  overlay root that is no longer a directory on this machine) with the way out that fits it, only a
+  different remote URL points at `--trust-remote`, and a missing `origin` is said in the same words
+  by the memory commands, `attach`, `attach --check`, `doctor` and the session-start line.
+- `stayfixed attach` no longer leaves its machine-local files for `git status` to list. The note
+  link tree, the `.codex/rules/` copies and, when `attach` writes it, `.claude/settings.local.json`
+  are hidden through a marked block in the repository's own exclude file (`.git/info/exclude`,
+  which every worktree shares). A path your own exclude file or global excludes file already hides
+  gets no line; a committed `.gitignore` does not count, because a pull can change it. `.gitignore`
+  is now written only when it does not already hide `.stayfixed/local/` and
+  `.stayfixed/assessment.json`. `stayfixed detach` removes the block and gives the exclude file back
+  as it was, but keeps the block while another checkout of the repository is still attached
+  (`exclude_block_kept` in `--json`). It also removes the empty directories `attach` created, which
+  it used to leave behind: `paths.memory`, the one above it and the harness's
+  `~/.claude/projects/<slug>/`.
+- `stayfixed attach` now makes every refusal before it writes anything. A repository whose
+  `memory.mode` is not `overlay` used to be refused only after `.gitignore`, `.codex/rules/`,
+  `.claude/settings.local.json`, the ledger and the overlay's record of the project had been written,
+  and `stayfixed attach --check` exited `0` for it; both now exit `2`. A `.stayfixed`, `.codex` or
+  `.claude` that is a symlink used to have `.gitignore` and more written and then stop with `internal
+  error: UnsafePath`; it is now refused, naming the symlink. An overlay rule file that is not UTF-8
+  and a `trust.json` that does not parse used to stop `attach` after `.gitignore` and some or all of
+  the rest had been written; both are now found first. `stayfixed detach` likewise refuses, naming it,
+  a `.codex`, `.claude`, `.stayfixed`, `.stayfixed/local` or `paths.memory` that became a symlink
+  after the attach, before it withdraws anything; it used to stop with `internal error: UnsafePath`,
+  in most of those cases after taking the settings file away. A `.claude` linked in from elsewhere
+  that `attach` never wrote into no longer stops `detach` at all. When the harness memory link is held
+  back until the store is approved, `attach` now says so and names the way out: run `stayfixed memory
+  trust --in-repo-memory`, then `stayfixed attach` again.
+- `stayfixed docs check --memory-graph` now says when there was no memory store to check, and why,
+  instead of passing without a word about the graph; its exit code is unchanged.
+- `stayfixed init` no longer glues its `.gitignore` region onto a last line that ends in a lone
+  carriage return. git ends a line only at a newline, so it read your last pattern and the region's
+  first line as one pattern, and your pattern stopped hiding anything.
+- `stayfixed memory index --store <overlay>/projects/<name>/memory` now resolves the same store as a
+  plain `stayfixed memory index` in the attached project, `developer` group included, and so writes
+  the same `MEMORY.md`. It used to leave the developer notes out, and `--check` then called that
+  index current. The same holds for every `memory` command that takes `--store`.
+- `stayfixed overlay create --local` now leaves a git repository on branch `main` with no remote,
+  and its last line names the two commands that give it one (`git remote add origin <url>` and
+  `git push -u origin main`). It used to leave a plain directory. A directory that is already a git
+  repository is left on its own branch with its own remotes, and the line says so.
+- `stayfixed overlay create`, `stayfixed overlay init`, `stayfixed overlay publish-template`,
+  `stayfixed attach` and `stayfixed setup` now quote what `gh`, `git`, `pre-commit` and a harness's
+  plugin command print in their failure lines the way stayfixed quotes a name a repository chose: a
+  line break or an escape sequence in it is escaped, so it can neither start a CI workflow command
+  such as `::error::` nor drive a terminal, and an answer longer than 120 characters is cut to its
+  first 120 and its length.
+- `stayfixed overlay init` no longer records a plugin manifest you had edited as stayfixed's own. It
+  recorded every manifest it renamed as the bytes it wrote, so an edit made before `init` (a
+  description of your own, say) read as stayfixed's, and the next `stayfixed overlay upgrade`
+  refreshed the file: your edit and the account suffix on its name were gone. Such a manifest is still
+  renamed, and `overlay upgrade` now keeps listing it as hand-edited. `init` also reads every
+  manifest before it rewrites any, so one that cannot be read stops it with none of them changed.
+- `stayfixed setup --overlay create:<owner>/<name>` run again over the overlay it made no longer
+  says it created the overlay: it says it found it and generated nothing, and names the files
+  `stayfixed overlay init` changed there.
+
+### Changed
+
+- The `recommended` preset no longer carries a `[rules]` table, so the `preset-rules` session-start
+  bundle is empty for it. stayfixed supports standing rules and imposes none: yours are notes with
+  `metadata.startup` in your overlay's `common/memory/` or a project's memory, which the
+  `standing-rules` bundle injects at the start of every session. A preset of your own that carries
+  a `[rules]` table is still rendered by `preset-rules`. The machine configuration's
+  `reply_language` and `artifact_language` are still recorded by `stayfixed setup`, but nothing
+  reads them now: they had a meaning only through the preset's rule about which language each
+  audience gets. A language preference you want followed is a standing-rule note of your own too.
+- `stayfixed overlay create --template` and `stayfixed setup --overlay create:<owner>/<name>` now
+  generate the overlay from `github.com/stayfixed/stayfixed-overlay-template` when you have not
+  published your own `<owner>/stayfixed-overlay-template`, so an account that never ran
+  `stayfixed overlay publish-template` can still create one; the fallback is looked up on
+  github.com whatever host `gh` defaults to. The command names the template it used. When `gh`
+  cannot say whether you have your own (an expired token, a network error, no `gh` on the
+  machine), it stops with `gh`'s own message and creates nothing, instead of falling back.
+
+
 ## 0.1.1 (2026-09-28)
 
 ### Fixed

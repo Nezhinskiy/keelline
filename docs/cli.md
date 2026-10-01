@@ -3010,7 +3010,7 @@ why so few of them are trusted with anything.
 
 ```toml
 [stayfixed]
-version = "0.1.1"        # required; there is no default
+version = "0.2.0"        # required; there is no default
 state = "installed"      # initialised | adopting | installed — default: initialised
 enforced = []            # tool-owned: the gates promoted while adopting
 preset = "recommended"
