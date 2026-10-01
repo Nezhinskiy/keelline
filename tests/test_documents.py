@@ -419,6 +419,38 @@ def test_the_readme_installs_the_release_the_tree_carries() -> None:
     assert "set both to the new version" in RELEASING.read_text(encoding="utf-8")
 
 
+# A fenced `toml` block, and inside one the `[stayfixed]` table's `version =` line: the table
+# runs to the next table header or the end of the block, so a `version` key in another table
+# is not taken for it.
+_TOML_FENCE = re.compile(r"^```toml\n(.*?)^```", re.MULTILINE | re.DOTALL)
+_STAYFIXED_TABLE = re.compile(r"^\[stayfixed\]\n((?:(?!\[).*\n)*)", re.MULTILINE)
+_VERSION_KEY = re.compile(r'^version = "([^"]*)"', re.MULTILINE)
+
+
+@pytest.mark.parametrize("document", [README, ROOT / "docs" / "cli.md"], ids=lambda path: path.name)
+def test_the_example_configurations_carry_the_running_version(document: Path) -> None:
+    """`doctor` warns whenever `[stayfixed] version` is not `__version__`, so an example that
+    kept the last release's number is a copy-paste that makes a brand-new project warn.
+
+    `release check` reads six sources and none of them is an example in a document, so
+    `RELEASING.md` step 3 once named these two blocks as held by nothing but the person cutting
+    the release. This holds them, the way the Install section is held above.
+
+    Mutation (declared, one per document): the example's `version` becomes `0.0.1-<version>`
+    -> this reddens for that document.
+    """
+    versions = [
+        key.group(1)
+        for fence in _TOML_FENCE.finditer(document.read_text(encoding="utf-8"))
+        for table in _STAYFIXED_TABLE.finditer(fence.group(1))
+        for key in _VERSION_KEY.finditer(table.group(1))
+    ]
+    # A floor as well as the equality: a document whose example lost its `[stayfixed]` table
+    # would otherwise compare an empty list and pass.
+    assert versions, f"{document.name} has no example `[stayfixed]` table with a version"
+    assert versions == [__version__] * len(versions), (document.name, versions)
+
+
 def test_the_readme_points_at_the_methodology_and_the_reference() -> None:
     # The two documents a reader is sent to; a README that lost either link would still pass
     # the link walk (it checks the links that exist). Mutation: remove the methodology link.
