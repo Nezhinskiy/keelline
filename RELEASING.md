@@ -107,11 +107,12 @@ step 7's sentence true.
    `tests/test_fixtures.py` fails until it names the version the tree carries, and the release
    workflow runs the suite on the tag.
 
-   **And the two example configurations, which are on no gate at all.** `README.md`'s and
-   `docs/cli.md`'s example `stayfixed.toml` blocks both carry `version = "0.1.0"`; after the
-   first release that is a copy-paste that makes `stayfixed doctor` warn on a brand-new
-   project. `release check` cannot see them — they are examples and not sources — so they
-   are named here or nowhere.
+   **And the two example configurations, which a test holds.** `README.md`'s and `docs/cli.md`'s
+   example `stayfixed.toml` blocks each carry `version = "X.Y.Z"`, and a copy of a stale one
+   makes `stayfixed doctor` warn on a brand-new project. `release check` cannot see them,
+   because they are examples and not sources, so `tests/test_documents.py` holds them instead:
+   it fails until both name the version the tree carries, and the release workflow runs the
+   suite on the tag.
 
 4. **Assemble the changelog.**
 
@@ -124,19 +125,50 @@ step 7's sentence true.
    Read what it wrote, and **edit it**. A fragment written as a note to the author rather than
    as a release note is worth fixing now — this is the text users see. The version comes before
    the changelog because `release notes` refuses a `--version` that is not the project's; after
-   this step `CHANGELOG.md` carries the heading and `changelog.d/` is empty.
+   this step `CHANGELOG.md` carries the heading and `changelog.d/` is empty. Four things to look
+   for, in this order:
 
-   **On a first release, fold the `Fixed` entries into the features they repair.** There is no
-   released version for a fix to be a fix *relative to*, so every `Fixed` entry in 0.1.0
-   describes a bug no user could have met — and reads as a warning about the release it ships
-   in. `init`, `attach`, `doctor` and `overlay` each accumulated several of these while 0.1.0
-   was being built, which is correct while it is being built: the fragments are the per-commit
-   record, and a fold done earlier is undone by the next commit. Do it here, once, over the
-   assembled file: state the feature as what it now is, delete the fixes that only describe
-   its development, and keep the ones a reader of 0.1.0 has to act on — a grammar that refuses
-   a `stayfixed.toml` which loaded before, a flag that means something narrower than it sounds.
-   The same folding applies to a `Changed` entry that changed something never released.
-   `release check --tag` cannot judge this: it counts pending fragments and never reads them.
+   - **A fix for something that never shipped.** A `Fixed` entry is a fix *relative to the
+     previous release*, so it is honest only if a user of that release could have met the bug,
+     and a `Changed` entry only if it changes something that release did. Fragments are the
+     per-commit record, so over a development cycle they accumulate fixes to code the same
+     cycle introduced; a fold done earlier is undone by the next commit, which is why the check
+     belongs here, once, over the assembled file. For each entry, ask whether the code it
+     describes was there at the previous tag: `git log --oneline vPREV..HEAD -- <the file it
+     touches>` shows whether it arrived after the tag, and `git show vPREV:<path>` shows what
+     the released code did, so you can look for the described bug in it. If the bug or the
+     behaviour is not there, state the feature as what it now is and delete the fix; keep the
+     ones a reader of the previous release has to act on — a grammar that refuses a
+     `stayfixed.toml` which loaded before, a flag that means something narrower than it sounds.
+     `release check --tag` cannot judge this: it counts pending fragments and never reads them.
+
+     **The first release is this rule with nothing to compare against.** There is no previous
+     tag, so every `Fixed` entry in 0.1.0 described a bug no user could have met, and read as a
+     warning about the release it shipped in. Fold them all into the features they repair
+     (`init`, `attach`, `doctor` and `overlay` each accumulated several), and do the same to a
+     `Changed` entry that changed something never released.
+
+   - **Lead with what the user sees.** Open each entry with the outcome, then say why or how.
+     An entry that opens with the mechanism can be read as meaning the opposite of what it goes
+     on to say. When an entry enumerates cases, such as five different refusals, make it a list,
+     so a reader can find the one that is theirs.
+
+   - **No internal terms without a user-facing meaning.** A reader of the changelog has not read
+     the code. 0.2.0's entries name "the note reader", "a real `stayfixed.toml`" (a file that is
+     not a symlink), "the session-start line" and "the `preset-rules` and `standing-rules`
+     bundle" without saying what each is to someone using the tool; say what the user would
+     see, or say the thing in the words the commands print.
+
+   - **Contract changes are not fixes.** For a 0.x minor, which may break what the one before
+     it did, call out what a script or a habit can depend on, under `Changed` or in a short
+     "Upgrading from 0.X" lead above the entries, because a `Fixed` entry hides it. Two of
+     0.2.0's sat under `Fixed` and are what that hides: `stayfixed attach --check` exiting `2`
+     instead of `0` for a repository whose `memory.mode` is not `overlay` (`docs/cli.md`
+     documents the exit codes as the way a caller tells a finding from a refusal, so a CI
+     script that ran it goes red), and `attach` newly writing a marked block into
+     `.git/info/exclude`, a file it did not touch before. The third, `reply_language` and
+     `artifact_language`, which `setup` still records and nothing reads, is the one 0.2.0 did
+     call out, under `Changed`.
 
 5. **Edit the README's install section, then commit.** `README.md`'s Install section names the
    release twice, in **Released as X.Y.Z.** and in the tagged `/plugin marketplace add

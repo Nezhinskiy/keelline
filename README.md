@@ -80,8 +80,8 @@ later package.
 
 ## Install
 
-**Released as 0.2.0.** Both commands below install that release. The plugin form takes the
-tag, and `uv tool install stayfixed` resolves from PyPI:
+**Released as 0.2.0.** The plugin form below takes that release's tag. `uv tool install
+stayfixed` names no version, so it installs the newest release on PyPI:
 
 As a Claude Code plugin:
 
