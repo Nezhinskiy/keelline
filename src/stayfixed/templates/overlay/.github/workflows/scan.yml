@@ -23,24 +23,27 @@ jobs:
   gitleaks:
     # The template repository itself is public and owned by an organisation, and the action
     # fails every run there for want of the licence key an organisation needs. A repository
-    # created from the template is not itself a template, so it is scanned. `is_template` is in
-    # the repository object of all three triggers' payloads; where it is absent it is false, and
-    # the job runs.
+    # created from the template is not itself a template, so it is scanned. Any repository
+    # marked as a template is skipped, though: the published one, an owner's own published
+    # template, or an overlay its owner later marks as one. `is_template` is in the repository
+    # object of all three triggers' payloads; where it is absent it is false, and the job runs.
     if: ${{ !github.event.repository.is_template }}
     runs-on: ubuntu-latest
     steps:
       # Both actions are pinned at a full-length commit sha, for the reason
-      # `.pre-commit-config.yaml` one directory up gives about `rev:`: a tag is a name its owner
-      # can move, and `v7` or `v3` resolving to different code tomorrow is somebody else choosing
-      # what runs against a repository holding your rules and your notes, with a token. The
-      # trailing comment is the release each sha is; `.github/dependabot.yml` keeps both current.
+      # `.pre-commit-config.yaml` at the repository root gives about `rev:`: a tag is a name its
+      # owner can move, and `v7` or `v3` resolving to different code tomorrow is somebody else
+      # choosing what runs against a repository holding your rules and your notes, with a token.
+      # The trailing comment is the release each sha is; `.github/dependabot.yml` keeps both
+      # current.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The whole history is fetched so that the commits the action names are reachable. It
           # scans `--no-merges --first-parent <first>^..<last>`: on a push, from the first to the
-          # last commit in the push's event payload (a payload with no commits scans nothing); on
-          # a pull request, from the first to the last of the commits it lists, which is one page
-          # of 30 at most; on a manual run (`workflow_dispatch`), all of the history.
+          # last commit in the push's event payload (a payload with no commits scans nothing, and
+          # one with a single commit scans just that commit, with `-1`); on a pull request, from
+          # the first to the last of the commits it lists, which is one page of 30 at most; on a
+          # manual run (`workflow_dispatch`), all of the history.
           fetch-depth: 0
           # The job never pushes, so the checkout leaves no token behind for the steps after it.
           persist-credentials: false

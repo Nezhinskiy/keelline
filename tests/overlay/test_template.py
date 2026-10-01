@@ -78,9 +78,10 @@ def test_the_template_ignores_env_files() -> None:
     assert {".env", ".env.*"} <= patterns, patterns
 
 
-# A `rev:` a pre-commit hook may carry: an immutable release tag, or a full commit sha. A
-# branch name is neither, and a branch is the whole of what this row exists to refuse.
-_PINNED_REV = re.compile(r"\Av\d+\.\d+\.\d+\Z|\A[0-9a-f]{40}\Z")
+# A `rev:` a pre-commit hook may carry: a full commit sha, the only reference its owner cannot
+# move. A release tag is a name its owner can move (the gitleaks release reads `immutable: false`)
+# and a branch is the whole of what this row exists to refuse, so neither passes.
+_PINNED_REV = re.compile(r"\A[0-9a-f]{40}\Z")
 
 
 def test_the_template_pins_gitleaks_at_a_revision() -> None:
@@ -91,11 +92,12 @@ def test_the_template_pins_gitleaks_at_a_revision() -> None:
     # possible pre-commit configuration, including one pinned at `main`, which is exactly the
     # state it is named for refusing.
     #
-    # Mutation: `mutations.toml`'s "the overlay template follows gitleaks' default branch".
+    # Mutations: `mutations.toml`'s "the overlay template follows gitleaks' default branch" and
+    # "the overlay template's hook goes back to naming gitleaks by its tag".
     config = (template_root() / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     assert "gitleaks" in config
     # A trailing `# frozen: vX.Y.Z` comment is the release a sha is, and is not part of the value.
-    revisions = re.findall(r"^\s*rev:\s*(\S+)(?:\s+#.*)?$", config, re.MULTILINE)
+    revisions = re.findall(r"^\s*rev:\s*(\S+)(?:\s+#.*)?\s*$", config, re.MULTILINE)
     assert revisions, "no `rev:` at all, so the hook follows whatever the repo's default branch is"
     for revision in revisions:
         assert _PINNED_REV.match(revision), revision
@@ -227,13 +229,13 @@ def test_the_scan_workflow_checkout_leaves_no_token_behind() -> None:
     assert re.search(r"^ +persist-credentials: false$", _scan_workflow(), re.MULTILINE)
 
 
-def test_the_scan_workflow_skips_the_template_repository_and_scans_everything_made_from_it() -> (
-    None
-):
+def test_the_scan_workflow_skips_a_repository_marked_as_a_template_and_scans_the_rest() -> None:
     # The public template repository is organisation-owned, and the action fails every run there
     # for want of a licence key. A repository made from the template has `is_template` false, so
-    # the condition below runs it. The expression is asserted whole: its inverse, `is_template`
-    # without the `!`, would scan the template and skip every overlay, which is the worst of both.
+    # the condition below runs it; any repository marked as a template, an owner's own published
+    # one or an overlay flagged later, is skipped with it. The expression is asserted whole: its
+    # inverse, `is_template` without the `!`, would scan the template and skip every overlay,
+    # which is the worst of both.
     #
     # Mutations: `mutations.toml`'s "the overlay's secret scan runs on the template repository"
     # and "the overlay's secret scan skips every repository made from the template".

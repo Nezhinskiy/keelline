@@ -4060,7 +4060,7 @@ file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
 before = "    if: ${{ !github.event.repository.is_template }}"
 after = "    if: ${{ true }}"
 reddens = [
-  "tests/overlay/test_template.py::test_the_scan_workflow_skips_the_template_repository_and_scans_everything_made_from_it",
+  "tests/overlay/test_template.py::test_the_scan_workflow_skips_a_repository_marked_as_a_template_and_scans_the_rest",
 ]
 
 [[mutation]]
@@ -4069,7 +4069,7 @@ file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
 before = "    if: ${{ !github.event.repository.is_template }}"
 after = "    if: ${{ github.event.repository.is_template }}"
 reddens = [
-  "tests/overlay/test_template.py::test_the_scan_workflow_skips_the_template_repository_and_scans_everything_made_from_it",
+  "tests/overlay/test_template.py::test_the_scan_workflow_skips_a_repository_marked_as_a_template_and_scans_the_rest",
 ]
 
 # gitleaks-action v3.0.0 downloads its own default gitleaks (8.24.3) unless `GITLEAKS_VERSION` says
@@ -4100,6 +4100,7 @@ file = "src/stayfixed/templates/overlay/.pre-commit-config.yaml"
 before = "    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e  # frozen: v8.30.1"
 after = "    rev: v8.30.1"
 reddens = [
+  "tests/overlay/test_template.py::test_the_template_pins_gitleaks_at_a_revision",
   "tests/overlay/test_template.py::test_the_scan_workflow_runs_the_gitleaks_the_pre_commit_hook_pins",
 ]
 
