@@ -259,7 +259,7 @@ in_project() {
 # python.org or Intel-Homebrew install (a spike measured exactly that fall-through).
 #
 # `STAYFIXED_PYTHON_CANDIDATES` names the *program* this script executes, and the probe asks it
-# only to exit 0 for a trivial `-c` — so unguarded it is a redirect with a longer name, and the
+# only to exit 0 for a trivial `-I -c` — so unguarded it is a redirect with a longer name, and the
 # repository-planted interpreter was measured running `<plugin>/scripts/stayfixed hook PreToolUse`
 # on every tool call. It is therefore honoured exactly where `config/machine.py` honours
 # `STAYFIXED_CONFIG`: from an interactive terminal. A hook's stdin is the harness's JSON payload
@@ -267,9 +267,24 @@ in_project() {
 # `env` block, while a machine owner debugging the probe by hand still gets their list.
 #
 # The containment is asked **before** the version probe and not after, because the version probe
-# *is* an execution: `"$c" -c …` runs the candidate, so a candidate that failed the containment
+# *is* an execution: `"$c" -I -c …` runs the candidate, so a candidate that failed the containment
 # afterwards would already have run. This is the same order the launcher check follows, and the
 # reason the original defect was reachable with three lines of `sh`.
+#
+# **Choosing the interpreter is half of the question; the other half is what it imports before
+# our first line.** An `env` block that cannot pick the program can still set `PYTHONPATH`, and
+# CPython's `site` imports a `sitecustomize` from it at startup — measured on this file before
+# the change: `PYTHONPATH=<dir with sitecustomize.py> sh hooks/run-hook.sh open --version`
+# printed the version and the planted module ran twice, once for the probe's `-c` and once for
+# the launcher. `PYTHONHOME` and `PYTHONUSERBASE` (a `usercustomize` or a `.pth` in the user
+# site) are the same door. So every execution of a candidate here is `-I`, isolated mode: no
+# `PYTHON*` variable is read, there is no user site, and neither the script's directory nor the
+# cwd is put on `sys.path`. The probe takes it too, because the probe is an execution, for the
+# reason above. `-I` is in every CPython since 3.4, so an interpreter below the floor still
+# reaches the version check rather than an option error, and the launcher already puts its own
+# `src` on `sys.path` and reads nothing else from it. The environment itself still reaches
+# stayfixed — `-I` hides it from the interpreter's startup, not from `os.environ` — because the
+# destinations it names are questions stayfixed answers for itself.
 candidates='/Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3 python3'
 if [ -t 0 ] && [ -n "${STAYFIXED_PYTHON_CANDIDATES:-}" ]; then candidates="$STAYFIXED_PYTHON_CANDIDATES"; fi
 p=
@@ -286,7 +301,7 @@ for c in $candidates; do
     skipped_in_project=1
     continue
   fi
-  if "$resolved" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
+  if "$resolved" -I -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
     p="$resolved"
     break
   fi
@@ -315,7 +330,8 @@ fi
 # keys on finding a token (measured with `chmod 000`).
 [ -f "$launcher" ] && [ -r "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"
 
-"$p" "$launcher" "$@"
+# `-I` for the reason the probe takes it: nothing the environment names is imported first.
+"$p" -I "$launcher" "$@"
 rc=$?
 case "$rc" in
   0|2) exit "$rc" ;;

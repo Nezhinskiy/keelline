@@ -372,7 +372,7 @@ wrapper, and `stayfixed doctor`'s `wrapper` row reports on the same basis.
 **Which values may choose what.** The wrapper asks one question of everything it reads: is this
 a *destination*, or does it choose a program, or the provenance of what runs? `CLAUDE_PROJECT_DIR`
 is a destination and is honoured. `STAYFIXED_PYTHON_CANDIDATES` is not — the probe asks a
-candidate only to exit `0` for a trivial `-c`, so an unguarded list picks the interpreter that
+candidate only to exit `0` for a trivial `-I -c`, so an unguarded list picks the interpreter that
 runs on every tool call — and it is therefore gated where `stayfixed`'s machine configuration
 gates `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME`: honoured from an interactive terminal, ignored
 everywhere else. A hook's stdin is the harness's JSON payload on a pipe and `stayfixed doctor`
@@ -413,6 +413,16 @@ a binary the clone does not choose. It is a union and not a check that the two a
 disagreement rule has no answer where `git` returns nothing — every project that is not a git
 repository — and its only fallback there is to trust the remaining variable on its own, which is
 the same hole under a longer name.
+
+**The chosen interpreter starts isolated.** Picking the program is half of what the environment
+could decide; the other half is what that program imports before stayfixed's first line. An `env`
+block that cannot choose the interpreter could still set `PYTHONPATH`, `PYTHONHOME` or
+`PYTHONUSERBASE`, and Python's startup then imports a `sitecustomize` or `usercustomize` of the
+repository's choosing. So the wrapper runs every candidate — the version probe as well as the
+launcher, because the probe is an execution too — with `-I`: no `PYTHON*` variable is read, there
+is no user site, and neither the working directory nor the script's own directory is on
+`sys.path`. The launcher puts the plugin's own `src` there itself. stayfixed still sees the whole
+environment; `-I` changes how the interpreter starts, not what `os.environ` holds.
 
 A machine whose interpreter really is inside the checkout — a vendored toolchain, or an in-tree
 virtual environment that is the only `python3` on `PATH` — gets `SF_NO_PY` rather than a silent
