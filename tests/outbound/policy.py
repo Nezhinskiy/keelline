@@ -138,13 +138,23 @@ GIT_GLOBAL_OPTIONS = {"-C": True, "-c": True, "--literal-pathspecs": False}
 GIT_CONFIG_KEYS = frozenset({"core.quotePath", "safe.bareRepository"})
 # Options with which a git command that otherwise reads the local repository asks a remote instead
 # (`git archive --remote=<url>`). Wherever one appears before the options end, the launch is not
-# local.
+# local. Matched by the start of the whole name: `git archive` refuses `--remote` and `--exec`
+# abbreviated (`--rem=<url>` exits 128, "Unexpected option --remote"), and the other two are
+# options of subcommands that reach a remote whatever they are given.
 GIT_REMOTE_OPTIONS = ("--remote", "--upload-pack", "--receive-pack", "--exec")
 # Options with which a local git subcommand runs a program: `grep -O` opens the matches in one,
 # `--textconv` runs a configured conversion and `--ext-diff` an external diff, either of which can
 # fetch, as Git LFS's does, and `cat-file --filters` runs the smudge filters `archive` does. By
 # subcommand, since an option means something else under another one: `git diff -O<file>` orders
-# its output.
+# its output. Each is matched as git parses it. A long one matches by any prefix of its name, since
+# git takes a prefix for the one option it begins (`grep --open-files-in=echo` is
+# `--open-files-in-pager`, `grep --textc` is `--textconv`); a prefix that begins two options, or
+# names another option whole (`grep --text`, `cat-file --filter=<spec>`), matches as well, which
+# refuses what git refuses in the first case and what it would allow in the second, until a launch
+# needs it. `diff` and `log` take no prefix at all, so one matched there refuses only what git
+# refuses. A short one matches anywhere in a cluster of short options, since git reads `-lOecho`
+# as `-l -Oecho`; that matches the `O` of `-eO` too, a pattern git reads as `-e`'s value, so the
+# match can refuse what git would allow and never the reverse.
 GIT_PROGRAM_OPTIONS: dict[str, tuple[str, ...]] = {
     "grep": ("-O", "--open-files-in-pager", "--textconv"),
     "cat-file": ("--filters", "--textconv"),

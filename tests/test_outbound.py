@@ -124,11 +124,28 @@ def _row(command: Argv) -> str | None:
     return None
 
 
+def _runs_a_program(part: str, subcommand: str) -> bool:
+    """Whether `part`, before the options end of `git <subcommand>`, is one of the subcommand's
+    `GIT_PROGRAM_OPTIONS` as git parses it: a long one by a prefix of its name, and a short one
+    anywhere in a cluster of short options."""
+    for option in GIT_PROGRAM_OPTIONS.get(subcommand, ()):
+        if option.startswith("--"):
+            name = part.partition("=")[0]
+            if len(name) > len("--") and option.startswith(name):
+                return True
+        elif part[:1] == "-" and part[1:2] != "-" and option[1:] in part[1:]:
+            return True
+    return False
+
+
 def _local(command: Argv, options: Argv) -> bool:
     if command[0] == "git":
         subcommand = command[1] if len(command) > 1 and isinstance(command[1], str) else ""
-        reaching = GIT_REMOTE_OPTIONS + GIT_PROGRAM_OPTIONS.get(subcommand, ())
-        if any(isinstance(part, str) and part.startswith(reaching) for part in options):
+        if any(
+            isinstance(part, str)
+            and (part.startswith(GIT_REMOTE_OPTIONS) or _runs_a_program(part, subcommand))
+            for part in options
+        ):
             return False
     return any(command[: len(prefix)] == prefix for prefix in LOCAL) or command in LOCAL_WHOLE
 
@@ -552,6 +569,9 @@ def test_every_table_entry_names_a_live_launch() -> None:
         "git_run(root, 'worktree', 'add', '../elsewhere')",
         "git_run(root, 'config', 'core.sshCommand', 'curl x')",
         "git_run(root, 'grep', '-Ocurl', 'x')",
+        "git_run(root, 'grep', '--open-files-in=echo', 'x')",
+        "git_run(root, 'grep', '--textc', 'x')",
+        "git_run(root, 'grep', '-lOecho', 'x')",
         "git_run(root, 'cat-file', '--filters', 'HEAD:x')",
         "git_run(root, 'diff', '--ext-diff', 'HEAD')",
         "git_run(root, 'archive', *opts)",
@@ -569,6 +589,9 @@ def test_every_table_entry_names_a_live_launch() -> None:
         "worktree-add",
         "config-write",
         "grep-pager",
+        "grep-pager-abbreviated",
+        "grep-textconv-abbreviated",
+        "grep-pager-bundled",
         "cat-file-filters",
         "diff-external",
         "spread-options",
@@ -586,6 +609,8 @@ def test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified(sour
     # `("git", "remote")` back in `LOCAL` -> remote-update passes; `("git", "worktree")` for
     # `("git", "worktree", "list")` -> worktree-add; `("git", "config")` for its read form ->
     # config-write; `_command` skips any option before the subcommand -> global-option-not-listed.
+    # git takes `--open-files-in` and `--textc` for the options they begin and reads `-lOecho` as
+    # `-l -Oecho`, each running `echo` on the matches, measured with git 2.54.
     launches = WALK.launches_in(f"{GIT_RUN}{source}", "src/stayfixed/x.py")
     assert unclassified(launches) == launches != []
 
@@ -596,8 +621,14 @@ def test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified(sour
         "git_run(root, 'diff', '-Oorder', '--name-only', 'HEAD')",
         "git_run(root, 'ls-files', '-z', '--', *paths)",
         "git_run(root, 'ls-files', '-z', '--end-of-options', *paths)",
+        "git_run(root, 'grep', '-Il', '--or', '-e', 'x')",
     ],
-    ids=["an-option-another-subcommand-runs-with", "--", "--end-of-options"],
+    ids=[
+        "an-option-another-subcommand-runs-with",
+        "--",
+        "--end-of-options",
+        "an-option-that-only-begins-alike",
+    ],
 )
 def test_an_argv_read_up_to_its_options_end_is_still_local(source: str) -> None:
     # The rules above must not refuse the tree's own shapes: options read whole, and what is not
@@ -605,7 +636,8 @@ def test_an_argv_read_up_to_its_options_end_is_still_local(source: str) -> None:
     # an option that runs a program under one subcommand is ordinary under another. By hand:
     # `--` leaves `END_OF_OPTIONS` -> the `--` case's `*paths` counts as an unread option, and
     # that case reddens; the same for `--end-of-options`; `-O` is listed for every subcommand ->
-    # the `git diff -O<orderfile>` case reddens.
+    # the `git diff -O<orderfile>` case reddens; a long option matches whatever shares its first
+    # three characters -> `--or`, which git never takes for `--open-files-in-pager`, reddens.
     launches = WALK.launches_in(f"{GIT_RUN}{source}", "src/stayfixed/x.py")
     assert launches and unclassified(launches) == []
 

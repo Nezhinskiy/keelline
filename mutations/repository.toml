@@ -3187,12 +3187,36 @@ reddens = [
 [[mutation]]
 name = "a program-running option no longer takes a git call out of the local table"
 file = "tests/test_outbound.py"
-before = '        reaching = GIT_REMOTE_OPTIONS + GIT_PROGRAM_OPTIONS.get(subcommand, ())'
-after = '        reaching = GIT_REMOTE_OPTIONS'
+before = '            and (part.startswith(GIT_REMOTE_OPTIONS) or _runs_a_program(part, subcommand))'
+after = '            and part.startswith(GIT_REMOTE_OPTIONS)'
 reddens = [
   "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[grep-pager]",
   "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[cat-file-filters]",
   "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[diff-external]",
+]
+
+# git takes a prefix of a long option for the one option it begins, so `git grep
+# --open-files-in=echo` and `git grep --textc` run a program as the full names do; matched by the
+# full name alone, both pass as local.
+[[mutation]]
+name = "an abbreviated program-running git option passes as local"
+file = "tests/test_outbound.py"
+before = '            if len(name) > len("--") and option.startswith(name):'
+after = '            if name == option:'
+reddens = [
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[grep-pager-abbreviated]",
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[grep-textconv-abbreviated]",
+]
+
+# git reads `-lOecho` as `-l -Oecho`, so a short program-running option bundled after other flags
+# runs its program as surely as one standing first; matched only at the start, it passes as local.
+[[mutation]]
+name = "a program-running git option bundled after other short flags passes as local"
+file = "tests/test_outbound.py"
+before = '        elif part[:1] == "-" and part[1:2] != "-" and option[1:] in part[1:]:'
+after = '        elif part.startswith(option):'
+reddens = [
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[grep-pager-bundled]",
 ]
 
 # A declaration vouches for one value; after its name is bound again the same text names another.
