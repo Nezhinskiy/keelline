@@ -30,6 +30,8 @@ a call there still runs, and is walked, when the annotation is evaluated.
   `sys.modules`, and code run from data by `exec`, `eval` or `pickle`;
 - a launcher module bound by assignment rather than by an import (`m = subprocess`): a call
   through it is seen only when it is `.run` handed an argv list;
+- a launcher named in an annotation anywhere but as a call's argument, such as `Annotated`
+  metadata (`Annotated[int, subprocess.run]`), which code reading the annotation could call;
 - a `Runner` reached through a subscript or a container rather than a name
   (`RUNNERS["x"].run(argv, root)`), and handed an argv that is not a list;
 - a launch the standard library makes on the package's behalf: `uuid.getnode()` can run
