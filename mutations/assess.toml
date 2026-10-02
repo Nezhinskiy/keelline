@@ -436,10 +436,11 @@ before = '    if linked or spelled != prefix.rstrip("\n"):'
 after = "    if linked:"
 reddens = ["tests/assess/test_read_base.py::test_a_prefix_git_spells_otherwise_than_the_caller_is_refused"]
 
-# The base's copy governs the change, so one that does not load fails the run: read as "no copy",
-# it would be the bootstrap, and the change would judge itself. The second entry is the wider
-# mistake, a handler that answers any error that way: a change can make the base's load refuse,
-# by planting a symlink on a path only the base's `[paths]` names.
+# The base's copy governs the change, so one that does not load fails the run: read as "no copy", it
+# would be the bootstrap, and the change would judge itself. `mutations/`'s "any error loading the
+# base's copy is read as the base having none" is the wider mistake, a handler that answers any
+# error that way: a change can make the base's load refuse, by planting a symlink on a path only the
+# base's `[paths]` names.
 [[mutation]]
 name = "a base stayfixed.toml that does not load is read as the base having none"
 file = "src/stayfixed/assess/rule.py"
@@ -898,6 +899,9 @@ before = "        raise Refusal(BASE_REFUSED.format(reason=exc)) from None"
 after = "        raise"
 reddens = ["tests/assess/test_gate_command.py::test_a_change_cannot_make_the_base_s_copy_fail_to_load_and_pass"]
 
+# In the block led by `mutations/`'s "the TOML readers answer a document nested past the parser as
+# an internal error": every reader of a document somebody else wrote answers one nested past the
+# parser as one that does not parse.
 [[mutation]]
 name = "a gate that recurses past the limit ends every gate after it"
 file = "src/stayfixed/assess/gates.py"
@@ -1281,6 +1285,8 @@ reddens = [
   "tests/assess/test_gates.py::test_without_waitid_a_custom_gate_still_answers_and_ends_its_group",
 ]
 
+# In the block led by `mutations/`'s "printable passes a name outside the grammar through": a name
+# the repository chose is printed through `printed.printable` or `printed.quoted`.
 [[mutation]]
 name = "assess points its own json at --json for a withheld name"
 file = "src/stayfixed/assess/assessment.py"
@@ -1290,6 +1296,8 @@ reddens = [
   "tests/assess/test_assessment.py::test_a_gate_finding_outside_the_path_grammar_is_withheld_without_pointing_at_json",
 ]
 
+# In the block led by `mutations/`'s "init's custom-gate note keeps a limit of its own": every list
+# of names nothing bounds in number takes `findings.listed`.
 [[mutation]]
 name = "the config line names every refused key"
 file = "src/stayfixed/assess/report.py"
@@ -1340,6 +1348,8 @@ reddens = [
   "tests/assess/test_tracked.py::test_adopt_promote_never_enforces_a_gate_that_reads_an_untracked_file",
 ]
 
+# In the block led by `mutations/`'s "every file a gate reads reads as tracked": a gate's verdict is
+# taken over files git tracks, as CI's is.
 [[mutation]]
 name = "the tracked check asks git outside a work tree"
 file = "src/stayfixed/assess/tracked.py"

@@ -51,9 +51,10 @@ before = '        if template.entries is None:'
 after = '        if False:'
 reddens = ["tests/scaffold/test_engine.py::test_a_keyed_entries_template_naming_no_entries_raises"]
 
-# The mirror of the entry above. `entries=None` silently uninstalled the user's wiring;
-# entries carrying no marker silently fail to install it, because `owned()` renders the
-# marked entries alone and so answers `{}` on both sides of the comparison.
+# The mirror of `mutations/`'s "a keyed-entries template with no entries silently removes them".
+# `entries=None` silently uninstalled the user's wiring; entries carrying no marker silently fail to
+# install it, because `owned()` renders the marked entries alone and so answers `{}` on both sides
+# of the comparison.
 [[mutation]]
 name = "a keyed-entries template with unmarked entries silently installs nothing"
 file = "src/stayfixed/scaffold/engine.py"
@@ -345,8 +346,8 @@ reddens = ["tests/docs/test_prose.py::test_typescript_and_toml_count_as_files_th
 
 # One digit rule, and every reader takes it from the constant. The allocator's `git log` source
 # respelled it inline, where widening the rule would have left it counting by the old one and
-# handing out a number some ref already holds — a survivor of "the Fixes claim stops sharing the
-# identifier digit rule", which is exactly what this entry now proves it is not.
+# handing out a number some ref already holds — a survivor of `mutations/`'s "the Fixes claim stops
+# sharing the identifier digit rule", which is exactly what this entry now proves it is not.
 [[mutation]]
 name = "the identifier digit rule widens and the allocator keeps the old one"
 file = "src/stayfixed/identifiers.py"
@@ -851,10 +852,11 @@ reddens = [
   "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
 ]
 
-# The other half of the two readers, and the one the half-write actually turned on: `contained()` is
-# what `plan()` asks, so a spelling the walk will refuse has to be refused *here*, above the first
-# write. `Path(relative).parts` drops an empty component, a trailing slash and a leading `./`, which
-# is why `plan` said yes. Restoring that spelling restores the disagreement, with the grammar left
+# The other half of the two readers, beside `mutations/`'s "the [paths] grammar admits a spelling
+# the write refuses again", and the one the half-write actually turned on: `contained()` is what
+# `plan()` asks, so a spelling the walk will refuse has to be refused *here*, above the first write.
+# `Path(relative).parts` drops an empty component, a trailing slash and a leading `./`, which is why
+# `plan` said yes. Restoring that spelling restores the disagreement, with the grammar left
 # tightened — the two guards must not be able to cover for each other.
 [[mutation]]
 name = "contained normalises the value away, so plan stops agreeing with apply"
@@ -950,7 +952,8 @@ reddens = [
 ]
 
 # `[budgets]` is a second reader with a second message and its own name list, so it is a second
-# entry rather than a second assertion under the one above.
+# entry rather than a second assertion under `mutations/`'s "an unknown key in a known table is
+# echoed back raw".
 [[mutation]]
 name = "an unknown budget key is echoed back raw"
 file = "src/stayfixed/config/loader.py"
@@ -975,10 +978,10 @@ reddens = [
 ]
 
 # The half the first fix missed: catching `ManifestError` alone let a symlinked manifest's
-# `PathEscape` through, and the detach exited 2 exactly as before. "an unreadable manifest blocks
-# the detach again" now puts that narrowing back; this one does the same to the reader, where
-# bytes that are not UTF-8 left `Manifest.read` as a `UnicodeDecodeError` rather than as its own
-# refusal.
+# `PathEscape` through, and the detach exited 2 exactly as before. `mutations/`'s "an unreadable
+# manifest blocks the detach again" now puts that narrowing back; this one does the same to the
+# reader, where bytes that are not UTF-8 left `Manifest.read` as a `UnicodeDecodeError` rather than
+# as its own refusal.
 
 [[mutation]]
 name = "the manifest reader lets undecodable bytes out as a crash again"
@@ -1015,6 +1018,8 @@ reddens = [
   "tests/hooks/test_dispatch.py::test_a_once_per_context_handler_that_says_nothing_keeps_its_one_delivery",
 ]
 
+# In the block led by `mutations/`'s "doctor asks the public repository with no bound of its own": a
+# caller's bound is chosen in one module and honoured in another, an entry each.
 [[mutation]]
 name = "the runner ignores the bound its caller asked for"
 file = "src/stayfixed/runner.py"
@@ -1024,6 +1029,8 @@ reddens = [
   "tests/test_runner.py::test_a_caller_that_asks_for_a_narrower_bound_gets_it",
 ]
 
+# In the block led by `mutations/`'s "a preset name outside the rule is quoted back again": a value
+# a clone writes into `[stayfixed] preset` or `profile` never reaches a refusal quoted.
 [[mutation]]
 name = "a profile outside one path segment is quoted back again"
 file = "src/stayfixed/scaffold/engine.py"
@@ -1077,8 +1084,9 @@ reddens = [
 ]
 
 # `force` reaches the retired path too: a hand-edited retired artifact the user has decided to
-# remove anyway. The second entry is the guard against the data loss that forcing a region would
-# otherwise cause: with a forced payload of `None`, the prose around the region goes with it.
+# remove anyway. `mutations/`'s "forcing a retired region deletes the file around it" is the guard
+# against the data loss that forcing a region would otherwise cause: with a forced payload of
+# `None`, the prose around the region goes with it.
 [[mutation]]
 name = "force stops reaching a retired artifact edited by hand"
 file = "src/stayfixed/scaffold/engine.py"
@@ -1109,9 +1117,12 @@ reddens = [
   "tests/scaffold/test_engine.py::test_a_retired_region_that_was_the_whole_file_removes_the_file",
 ]
 
-# The gate set and per-gate enforcement. The first, fourth and fifth entries bound what a
-# repository-authored gate name may reach in a refusal; the second and third hold the one fact
-# `state` and `enforced` state together.
+# The gate set and per-gate enforcement. `mutations/`'s "the loader admits a gate the project does
+# not run into [stayfixed] enforced", "a custom gate's name reaches the loader's refusals unbounded"
+# and "the loader admits a built-in gate stayfixed does not have" bound what a repository-authored
+# gate name may reach in a refusal; `mutations/`'s "an installed project stops enforcing every gate
+# it runs" and "an installed project's partial enforced list loads again" hold the one fact `state`
+# and `enforced` state together.
 [[mutation]]
 name = "the loader admits a gate the project does not run into [stayfixed] enforced"
 file = "src/stayfixed/config/loader.py"
@@ -1361,6 +1372,8 @@ reddens = [
   "tests/project/test_upgrade.py::test_forcing_a_left_copy_away_keeps_the_committed_file_recorded",
 ]
 
+# In the block led by `mutations/`'s "places are compared case-sensitively for ownership": paths are
+# compared for identity case-folded, and each entry puts exact equality back at one site.
 [[mutation]]
 name = "a left copy at a case variant of a file the plan targets is judged twice"
 file = "src/stayfixed/scaffold/engine.py"
@@ -1378,13 +1391,13 @@ before = "        if record is not None and path_key(record.target) != path_key(
 after = "        if record is not None and record.target != target:"
 reddens = ["tests/scaffold/test_engine.py::test_a_record_at_a_case_variant_of_the_target_is_that_file_and_never_a_relocation"]
 
-# The footprint commands' hidden-write invariant (`tests/project/test_footprint_invariant.py`)
-# is also named by other entries whose guards it holds. Its own are this one, the shared `.git`
-# predicate both call sites ask, and the guards made to refuse more than they should, which the
-# legitimate cases catch: "the ignore guard refuses a fixed name in the clone's excludes", "the
-# ignore guard refuses a new file at an ignored place", "the ignore guard refuses an artifact kept
-# out of git", "the ignore guard reads a tracked file as ignored" and "the engine refuses every
-# recorded artifact".
+# The footprint commands' hidden-write invariant (`tests/project/test_footprint_invariant.py`) is
+# also named by other entries whose guards it holds. Its own are `mutations/`'s "git's control
+# directory is named by no path", the shared `.git` predicate both call sites ask, and the guards
+# made to refuse more than they should, which the legitimate cases catch: `mutations/`'s "the ignore
+# guard refuses a fixed name in the clone's excludes", "the ignore guard refuses a new file at an
+# ignored place", "the ignore guard refuses an artifact kept out of git", "the ignore guard reads a
+# tracked file as ignored" and "the engine refuses every recorded artifact".
 
 [[mutation]]
 name = "git's control directory is named by no path"
@@ -1674,6 +1687,8 @@ reddens = [
   "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_named_verdict_whatever_it_points_at[SessionStart-0-continuing open-/dev/zero]",
 ]
 
+# In the block led by `mutations/`'s "the --name refusal prints the pattern": a name refusal words
+# the grammar rather than printing the pattern.
 [[mutation]]
 name = "a custom gate's name refusal prints the pattern"
 file = "src/stayfixed/config/loader.py"
@@ -1780,6 +1795,9 @@ reddens = [
   "tests/assess/test_assessment.py::test_a_gate_finding_outside_the_path_grammar_is_withheld_without_pointing_at_json",
 ]
 
+# In the block led by `mutations/`'s "the stale-key refusal says a re-run names the rest at exactly
+# the limit": a name a refusal carries is clipped, and the reason for a failed read names no
+# absolute path.
 [[mutation]]
 name = "clipped never clips"
 file = "src/stayfixed/printed.py"
@@ -1817,6 +1835,8 @@ reddens = [
   "tests/test_fsops.py::test_an_error_is_said_in_its_words_never_with_the_path_it_was_opened_by",
 ]
 
+# In the block led by `mutations/`'s "init's custom-gate note keeps a limit of its own": every list
+# of names nothing bounds in number takes `findings.listed`.
 [[mutation]]
 name = "the enforced-gate refusal names every gate the project runs"
 file = "src/stayfixed/config/loader.py"
@@ -1835,6 +1855,8 @@ reddens = [
   "tests/config/test_loader.py::test_unknown_keys_are_named_at_most_to_the_listed_limit",
 ]
 
+# In the block led by `mutations/`'s "printable passes a name outside the grammar through": a name
+# the repository chose is printed through `printed.printable` or `printed.quoted`.
 [[mutation]]
 name = "contained names the symlinked ancestor unescaped"
 file = "src/stayfixed/config/paths.py"

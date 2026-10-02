@@ -23,10 +23,11 @@ SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "mutation_oracle.py"
 # Built in two pieces so that this line is not itself read as a citation of whatever follows it.
 ANCHOR = "`mutations/`" + "'s"
 # The name runs to the next double quote and may wrap: a line break, the next line's indentation
-# and a comment's `#` read as one space. After it, `, "…"`, `and "…"` or `or "…"` cite further
-# names under the same anchor.
-_QUOTED = re.compile(r'\s*"([^"]*)"')
-_FURTHER = re.compile(r'\s*(?:,\s*(?:and|or)?|and|or)\s*(?:#\s*)?"([^"]*)"')
+# and a comment's `#` read as one space, there and between the anchor and the name. After it,
+# `, "…"`, `and "…"` or `or "…"` cite further names under the same anchor.
+_GAP = r"[\s#]*"
+_QUOTED = re.compile(_GAP + r'"([^"]*)"')
+_FURTHER = re.compile(_GAP + r"(?:," + _GAP + r"(?:and|or)?|and|or)" + _GAP + r'"([^"]*)"')
 _WRAP = re.compile(r"\s*\n\s*(?:#\s*)?")
 
 

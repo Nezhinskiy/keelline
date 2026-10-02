@@ -67,11 +67,12 @@ reddens = [
   "tests/test_neutral.py::test_the_gate_discriminates",
 ]
 
-# The other half of the same replacement, and it cuts both ways, so it is two entries. The
-# vendor arm reads the text with its URLs blanked out, which is the only thing between the gate
-# and a documentation URL whose path segment after a vendor name happens to be dashed — the
-# commonest shape one has. Without it the gate cries wolf on every public document that cites
-# one, which is how an arm gets loosened in the first place.
+# The other half of the replacement `mutations/`'s "the vendor-branch arm stops seeing a prefixed
+# branch name" makes, and it cuts both ways, so it is two entries. The vendor arm reads the text
+# with its URLs blanked out, which is the only thing between the gate and a documentation URL whose
+# path segment after a vendor name happens to be dashed — the commonest shape one has. Without it
+# the gate cries wolf on every public document that cites one, which is how an arm gets loosened in
+# the first place.
 [[mutation]]
 name = "the vendor arm reads a URL as if it were prose"
 file = "tests/test_neutral.py"
@@ -755,12 +756,12 @@ reddens = [
   "tests/hooks/test_hooks_json.py::test_every_entry_is_filed_under_the_event_its_command_dispatches",
 ]
 
-# The other failure mode of the guard "an area reaches past another area's api.py again" proves,
-# the one a walk-based guard has and a hand-written assertion does not: a walk that stops walking
-# reports no offences for the same reason a clean tree does. Narrowed to the ten `commands.py`
-# files, the walk still finds files, still finds crossings, and still finds no offence — so the
-# floor is what has to catch it, and the floor is asserted before anything is asserted about
-# the crossings.
+# The other failure mode of the guard `mutations/`'s "an area reaches past another area's api.py
+# again" proves, the one a walk-based guard has and a hand-written assertion does not: a walk that
+# stops walking reports no offences for the same reason a clean tree does. Narrowed to the ten
+# `commands.py` files, the walk still finds files, still finds crossings, and still finds no offence
+# — so the floor is what has to catch it, and the floor is asserted before anything is asserted
+# about the crossings.
 [[mutation]]
 name = "the cross-area import guard walks ten files instead of the package"
 file = "tests/test_areas.py"
@@ -770,13 +771,14 @@ reddens = [
   "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
 ]
 
-# The guard above walks `src/stayfixed/`, and `src/stayfixed/` contains no relative import — so
-# the spelling `from ..hooks.sink import DIRECTORY` could not be exercised by the walk, and the
-# first version of the rule dropped it on the floor (`and not node.level`) with every test
-# green. Nothing bans a relative import here: ruff's `TID` rules are not selected. The rule is
-# therefore tested against a synthetic module, and this mutation stops it resolving one: the
-# relative module name then reads as `hooks.sink`, which is not `stayfixed.*`, and the violation
-# walks past exactly as it used to. What reddens is the offence list, not a missing name.
+# The cross-area import guard (`mutations/`'s "the cross-area import guard walks ten files instead
+# of the package") walks `src/stayfixed/`, and `src/stayfixed/` contains no relative import — so the
+# spelling `from ..hooks.sink import DIRECTORY` could not be exercised by the walk, and the first
+# version of the rule dropped it on the floor (`and not node.level`) with every test green. Nothing
+# bans a relative import here: ruff's `TID` rules are not selected. The rule is therefore tested
+# against a synthetic module, and this mutation stops it resolving one: the relative module name
+# then reads as `hooks.sink`, which is not `stayfixed.*`, and the violation walks past exactly as it
+# used to. What reddens is the offence list, not a missing name.
 [[mutation]]
 name = "the boundary rule ignores a relative import again"
 file = "tests/test_areas.py"
@@ -787,10 +789,10 @@ reddens = [
 ]
 
 # The oracle proves HEAD in a detached worktree. Three entries are on the run itself — this one,
-# "the scratch checkout's src no longer precedes the editable install" and "the dirty-tree sweep
-# forgets the tests every entry names" — so a regression to in-place mutation, or a scratch `src`
-# that does not precede the editable install on sys.path, or a dirty-tree sweep that forgets the
-# named tests, is a finding rather than a quiet wrong answer.
+# `mutations/`'s "the scratch checkout's src no longer precedes the editable install" and "the
+# dirty-tree sweep forgets the tests every entry names" — so a regression to in-place mutation, or a
+# scratch `src` that does not precede the editable install on sys.path, or a dirty-tree sweep that
+# forgets the named tests, is a finding rather than a quiet wrong answer.
 [[mutation]]
 name = "the oracle collects pytest from the working tree again"
 file = "scripts/mutation_oracle.py"
@@ -1022,10 +1024,10 @@ reddens = [
   "tests/test_manifests.py::test_no_storefront_string_advertises_what_the_readme_says_is_not_yet",
 ]
 
-# The test above reads its expectation out of the README's own roadmap sentence, which is what
-# keeps the rule in one place — and is also what makes it vacuous the moment that sentence stops
-# yielding items. Shorten the list to one and the storefront may advertise anything the other
-# names cover.
+# The test that `mutations/`'s "the PyPI description advertises the unshipped memory MCP server"
+# reddens reads its expectation out of the README's own roadmap sentence, which is what keeps the
+# rule in one place — and is also what makes it vacuous the moment that sentence stops yielding
+# items. Shorten the list to one and the storefront may advertise anything the other names cover.
 #
 # Re-pointed when `init` and the project templates shipped and left that sentence holding exactly
 # the four items the test's floor requires. The entry quotes two lines of prose verbatim, so it is
@@ -1592,9 +1594,9 @@ reddens = [
   "tests/test_gitfixture.py::test_no_test_module_runs_a_git_of_its_own",
 ]
 
-# The document half of "one --check spells its own help string again". `docs/cli.md`'s
-# shared-flag table is held to the constants row by row; the new row has to be load-bearing too,
-# or a sentence could be spelled by hand there.
+# The document half of `mutations/`'s "one --check spells its own help string again".
+# `docs/cli.md`'s shared-flag table is held to the constants row by row; the new row has to be
+# load-bearing too, or a sentence could be spelled by hand there.
 [[mutation]]
 name = "the --check row in docs/cli.md drifts from its constant"
 file = "docs/cli.md"
@@ -1606,10 +1608,10 @@ reddens = [
 
 # No third entry for `attach --check`'s named exception. The mutation would be
 # `help=ATTACH_CHECK_HELP` -> `help=CHECK_HELP` in `attach/commands.py`, and `CHECK_HELP` is not
-# imported there — so the mutant raises `NameError` at import and the test errors rather than
-# fails. A mutation caught for an accidental reason reads as coverage and is worse than none.
-# The exception is held by `tests/test_command.py`'s `EXCEPTIONS` table, which "one --check
-# spells its own help string again" already proves load-bearing.
+# imported there — so the mutant raises `NameError` at import and the test errors rather than fails.
+# A mutation caught for an accidental reason reads as coverage and is worse than none. The exception
+# is held by `tests/test_command.py`'s `EXCEPTIONS` table, which `mutations/`'s "one --check spells
+# its own help string again" already proves load-bearing.
 
 # The oracle's own job, from the two sides that go quiet rather than loud. A budget that no
 # longer fits the set it has to prove is the failure this shape exists to end, and it is worth
@@ -1665,9 +1667,9 @@ reddens = [
 ]
 
 # The lock shares the scratch prefix, so the sweep's glob finds it and only the `is_dir()` arm
-# spares it. That is an invariant between two functions and nothing stated it: a sweep that took
-# the lock with it would let the next run in while the first was still working, which is the
-# hazard of "a second oracle takes the lock instead of refusing" with one more step in it.
+# spares it. That is an invariant between two functions and nothing stated it: a sweep that took the
+# lock with it would let the next run in while the first was still working, which is the hazard of
+# `mutations/`'s "a second oracle takes the lock instead of refusing" with one more step in it.
 [[mutation]]
 name = "the housekeeping sweep takes the lock with it"
 file = "scripts/mutation_oracle.py"
@@ -1836,8 +1838,9 @@ reddens = [
   "tests/scripts/test_mutation_oracle.py::test_a_stop_ends_the_pytest_in_flight_and_starts_no_other",
 ]
 
-# The same stop, reached the way it really is: a terminate in the middle of a run. The test
-# above calls `_stop_runs` itself, so without this `_prove`'s arm could stop calling it.
+# The same stop, reached the way it really is: a terminate in the middle of a run. The test that
+# `mutations/`'s "a stopped run still starts pytest" reddens calls `_stop_runs` itself, so without
+# this `_prove`'s arm could stop calling it.
 [[mutation]]
 name = "a terminate mid-run waits out the pytest runs in flight again"
 file = "scripts/mutation_oracle.py"
@@ -2408,6 +2411,8 @@ before = "`request_user_input` in the modes that offer it"
 after = "the ask tool in the modes that offer it"
 reddens = ["tests/skills/test_skills.py::test_the_readme_maps_every_tool_name_for_both_harnesses"]
 
+# In the block led by `mutations/`'s "adopt promote --builtin still runs the custom gates": a no to
+# running a clone's own commands holds through `--builtin`.
 [[mutation]]
 name = "the init skill hands over adopt promote without --builtin after a no"
 file = "skills/init/references/adoption.md"

@@ -2,6 +2,9 @@
 # Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
 # CONTRIBUTING.md, "Tests".
 
+# In the block led by `mutations/`'s "setup splits git's listing of checkouts at a carriage return
+# inside a path": a line-oriented git answer is split where git ended each line, never at a `\r` or
+# a line separator inside a name.
 [[mutation]]
 name = "attach splits git's worktree listing at a carriage return inside a path"
 file = "src/stayfixed/attach/write.py"
@@ -93,11 +96,11 @@ reddens = [
 # to every collaborator -- so the region goes first, and a region that cannot be written is a
 # refusal rather than a warning.
 #
-# Two entries, because the old single one was named for the order and tested the absence:
-# replacing the call with `pass` reddens both named tests against there being no region at all,
-# which is a weaker claim and the one the name did not make. The second entry below moves the
-# statement instead, and the tree afterwards is byte-identical either way -- so only an
-# assertion about the sequence of writes can see it.
+# Two entries, because the old single one was named for the order and tested the absence: replacing
+# the call with `pass` reddens both named tests against there being no region at all, which is a
+# weaker claim and the one the name did not make. `mutations/`'s "the ignore region is written after
+# the ledger it untracks" moves the statement instead, and the tree afterwards is byte-identical
+# either way -- so only an assertion about the sequence of writes can see it.
 [[mutation]]
 name = "the ignore region is never written at all"
 file = "src/stayfixed/attach/write.py"
@@ -164,10 +167,11 @@ reddens = [
   "tests/attach/test_write.py::test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created",
 ]
 
-# The floor under the entry above, and it is not dead. A spelling that escapes is refused before
-# the first write; a component of the overlay that is not a directory — or became a symlink
-# between the check and the write — can only be refused by the `O_NOFOLLOW` walk at the moment of
-# writing, which is the interval that walk exists for.
+# The floor under `mutations/`'s "the memory.groups containment is asked at write time only", and it
+# is not dead. A spelling that escapes is refused before the first write; a component of the overlay
+# that is not a directory — or became a symlink between the check and the write — can only be
+# refused by the `O_NOFOLLOW` walk at the moment of writing, which is the interval that walk exists
+# for.
 [[mutation]]
 name = "the write-time containment on the overlay's store directory is swallowed"
 file = "src/stayfixed/attach/write.py"
@@ -467,6 +471,8 @@ reddens = [
   "tests/attach/test_binding.py::test_a_project_name_reaches_neither_refusal_of_this_module",
 ]
 
+# In the block led by `mutations/`'s "the harness anchor stops asking whether the walk can reach
+# it": the harness anchor is asked about before the first write, at each of its three hoists.
 [[mutation]]
 name = "attach discovers the harness anchor from inside the link step"
 file = "src/stayfixed/attach/write.py"
@@ -485,6 +491,9 @@ reddens = [
   "tests/attach/test_detach.py::test_a_home_whose_claude_became_a_symlink_refuses_above_every_withdrawal",
 ]
 
+# `unlinked_groups` lists the `memory.groups` entries that are real directories under
+# `paths.memory`, never a link, and refuses a group name that escapes it in a fixed sentence that
+# never quotes the name.
 [[mutation]]
 name = "unlinked_groups stops excluding a linked group"
 file = "src/stayfixed/attach/binding.py"
@@ -553,11 +562,11 @@ reddens = [
   "tests/attach/test_write.py::test_the_refusal_counts_the_groups_and_never_names_one",
 ]
 
-# The overlay half of the never-moved snapshot, which the repository-write mutation, "the
-# never-moved check is asked one write too late", cannot reach: it hoists `_write_ignore_region`,
-# which lands under the root. `_record_binding` is the write that made `doctor` report a refused
-# attach as **bound**, and it lands in the overlay -- so this is the one that proves the second walk
-# is doing work rather than passing empty.
+# The overlay half of the never-moved snapshot, which the repository-write mutation, `mutations/`'s
+# "the never-moved check is asked one write too late", cannot reach: it hoists
+# `_write_ignore_region`, which lands under the root. `_record_binding` is the write that made
+# `doctor` report a refused attach as **bound**, and it lands in the overlay -- so this is the one
+# that proves the second walk is doing work rather than passing empty.
 [[mutation]]
 name = "the binding record is written above the never-moved refusal"
 file = "src/stayfixed/attach/write.py"
@@ -623,12 +632,12 @@ reddens = [
   "tests/attach/test_commands.py::test_check_counts_the_groups_that_never_moved_and_exits_one",
 ]
 
-# The fourth site of one family, repository bytes quoted back unbounded, whose third is "a tomllib
-# message is quoted back whole, so a hostile key reaches a refusal". The file is the
-# overlay's `projects/<name>/project.toml`, whose bytes are the machine owner's and may print —
-# except that the value stayfixed writes into it is this repository's `origin`, and a remote URL may
-# not print wherever it came from. `tomllib`'s message embeds the source for several of its faults,
-# so the whole exception is unbounded bytes in a `Failure` the attach skill relays.
+# The fourth site of one family, repository bytes quoted back unbounded, whose third is
+# `mutations/`'s "a tomllib message is quoted back whole, so a hostile key reaches a refusal". The
+# file is the overlay's `projects/<name>/project.toml`, whose bytes are the machine owner's and may
+# print — except that the value stayfixed writes into it is this repository's `origin`, and a remote
+# URL may not print wherever it came from. `tomllib`'s message embeds the source for several of its
+# faults, so the whole exception is unbounded bytes in a `Failure` the attach skill relays.
 [[mutation]]
 name = "the binding record's parse failure is quoted back whole"
 file = "src/stayfixed/attach/binding.py"
@@ -638,10 +647,10 @@ reddens = [
   "tests/attach/test_binding.py::test_a_binding_record_that_will_not_parse_reports_only_where_the_parser_stopped",
 ]
 
-# The mirror of "check loads the configuration twice again", over the half that writes. `attach`
-# called `read_binding` without a `Config` and then loaded a second one for its own
-# `memory.groups` refusals, so one run read `stayfixed.toml` and the machine file twice and the
-# two halves were free to disagree about `project.name`, `memory.groups` and `paths.memory`.
+# The mirror of `mutations/`'s "check loads the configuration twice again", over the half that
+# writes. `attach` called `read_binding` without a `Config` and then loaded a second one for its own
+# `memory.groups` refusals, so one run read `stayfixed.toml` and the machine file twice and the two
+# halves were free to disagree about `project.name`, `memory.groups` and `paths.memory`.
 [[mutation]]
 name = "attach loads the configuration twice again"
 file = "src/stayfixed/attach/write.py"
@@ -670,10 +679,10 @@ reddens = [
   "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
 ]
 
-# The verdict half of the finding behind "a repeated memory group is counted twice again". Since
-# `checked_components` became the one component rule, `contained` refuses `""`, `"."`, a trailing
-# slash and a doubled separator as well as a `..` -- and the first four of those never left
-# `paths.memory`, so the old sentence told four kinds of owner a thing about their own document
+# The verdict half of the finding behind `mutations/`'s "a repeated memory group is counted twice
+# again". Since `checked_components` became the one component rule, `contained` refuses `""`, `"."`,
+# a trailing slash and a doubled separator as well as a `..` -- and the first four of those never
+# left `paths.memory`, so the old sentence told four kinds of owner a thing about their own document
 # that was not true, with a remedy already done.
 [[mutation]]
 name = "the memory-group refusal describes an escape again"
@@ -727,8 +736,8 @@ reddens = [
 # blanket backstop is what makes that true of a failure no `except` here foresaw. Every other case
 # in this module reaches a path with an explicit `except` of its own, so the backstop survived
 # deletion green until the case beside this entry existed. It is also what keeps this module's
-# safety off `Policy.OPEN` being kept for it -- the two guards are independent, and the entry below
-# is the other one.
+# safety off `Policy.OPEN` being kept for it -- the two guards are independent, and `mutations/`'s
+# "the overlay-status handler refuses a session when it fails" is the other one.
 [[mutation]]
 name = "an open session handler lets an unforeseen failure out"
 file = "src/stayfixed/attach/hooks.py"
@@ -740,11 +749,11 @@ reddens = [
   "tests/attach/test_hooks.py::test_a_failure_with_no_except_of_its_own_is_silence_not_an_exception",
 ]
 
-# The mirror of "the background guard fails open again", over the one handler that must not fail
-# closed. `Policy.CLOSED` turns a failed overlay lookup into a deny on the one channel a refusal
-# travels -- the state the closed policy reserves for a guard that could not judge -- out of a
-# handler that reads two git remotes and a manifest and protects nothing. Asserted through the real
-# dispatcher, not by reading the constant back off the handler it was passed to.
+# The mirror of `mutations/`'s "the background guard fails open again", over the one handler that
+# must not fail closed. `Policy.CLOSED` turns a failed overlay lookup into a deny on the one channel
+# a refusal travels -- the state the closed policy reserves for a guard that could not judge -- out
+# of a handler that reads two git remotes and a manifest and protects nothing. Asserted through the
+# real dispatcher, not by reading the constant back off the handler it was passed to.
 [[mutation]]
 name = "the overlay-status handler refuses a session when it fails"
 file = "src/stayfixed/attach/hooks.py"
@@ -754,6 +763,9 @@ reddens = [
   "tests/attach/test_hooks.py::test_the_registration_is_what_the_dispatcher_acts_on",
 ]
 
+# In the block led by `mutations/`'s "the TOML readers answer a document nested past the parser as
+# an internal error": every reader of a document somebody else wrote answers one nested past the
+# parser as one that does not parse.
 [[mutation]]
 name = "attach meets an overlay record nested past the parser as an internal error"
 file = "src/stayfixed/attach/binding.py"
@@ -1131,6 +1143,8 @@ reddens = [
   "tests/attach/test_detach.py::test_a_group_added_since_the_attach_refuses_before_anything_is_withdrawn[../../x]",
 ]
 
+# In the block led by `mutations/`'s "the binding classifier reads a missing origin as a different
+# remote": a checkout with no `origin` hears one cause and one way out everywhere.
 [[mutation]]
 name = "the session-start line says nothing about a missing origin"
 file = "src/stayfixed/attach/hooks.py"
@@ -1240,6 +1254,8 @@ reddens = [
   "tests/attach/test_write.py::test_a_settings_file_an_earlier_attach_wrote_is_hidden_by_the_next_one",
 ]
 
+# In the block led by `mutations/`'s "a hash region reads a lone carriage return as a line end": git
+# ends a line at `\n` alone.
 [[mutation]]
 name = "the exclude block reads a lone carriage return as a line end"
 file = "src/stayfixed/attach/exclude.py"
@@ -1365,6 +1381,8 @@ reddens = [
   "tests/attach/test_detach.py::test_a_linked_claude_directory_attach_never_wrote_into_does_not_stop_detach",
 ]
 
+# In the block led by `mutations/`'s "a hash region ends a line after a lone carriage return with
+# the file's own ending": git drops one `\r` before the `\n` that ends a line.
 [[mutation]]
 name = "detach leaves the newline it added after a lone carriage return"
 file = "src/stayfixed/attach/exclude.py"

@@ -1041,12 +1041,15 @@ def test_an_entry_name_declared_twice_is_a_finding(tmp_path: Path) -> None:
 def test_a_citation_is_read_across_comment_lines_and_through_a_list() -> None:
     # Mutation: `_WRAP` matches nothing -> the wrapped name keeps its `#` and this reddens.
     # Mutation: `_FURTHER` matches nothing -> the second name of the list is lost and this reddens.
+    # Mutation: `_GAP` reads whitespace alone -> the name after a line-ending anchor is lost.
     text = (
         f'# as {ANCHOR} "the first\n'
         '#   wrapped one" and "the second", and also\n'
         f'   {ANCHOR} "a third" in a document, beside "a quote that is no citation".\n'
+        f"# and, wrapped after the set, {ANCHOR}\n"
+        '# "a fourth".\n'
     )
-    assert cited_names(text) == ["the first wrapped one", "the second", "a third"]
+    assert cited_names(text) == ["the first wrapped one", "the second", "a third", "a fourth"]
 
 
 @needs_git

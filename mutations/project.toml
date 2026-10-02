@@ -15,6 +15,8 @@ reddens = [
   "tests/overlay/test_template.py::test_the_template_ships_permissions_that_are_neither_granted_nor_pretended",
 ]
 
+# In the block led by `mutations/`'s "overlay init leaves the template's owner and author
+# placeholders": the overlay's marketplace validates only with an owner in it.
 [[mutation]]
 name = "the overlay template ships a marketplace with no owner"
 file = "src/stayfixed/templates/overlay/.claude-plugin/marketplace.json"
@@ -120,10 +122,10 @@ reddens = [
   "tests/overlay/test_template.py::test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_token",
 ]
 
-# The other half, and the half that makes the first one dangerous. A secret scan needs read scopes
-# only (`contents`, and `pull-requests` for the action's reads of the pull request); a write scope
-# on the token this workflow hands a third-party action is a repository that can be pushed to by
-# whatever that action does.
+# The other half of `mutations/`'s "the overlay's secret scan runs a fork's head", and the half that
+# makes that one dangerous. A secret scan needs read scopes only (`contents`, and `pull-requests`
+# for the action's reads of the pull request); a write scope on the token this workflow hands a
+# third-party action is a repository that can be pushed to by whatever that action does.
 [[mutation]]
 name = "the overlay's secret scan is given a write token"
 file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
@@ -152,11 +154,11 @@ reddens = [
   "tests/overlay/test_template.py::test_the_scan_workflow_can_read_a_pull_requests_commits_in_a_private_repository",
 ]
 
-# The same argument "the overlay template follows gitleaks' default branch" makes about `rev:`,
-# one file over and with a token attached. A major
-# tag is a name its owner can move, so `@v7` resolving to different code tomorrow is somebody else
-# choosing what runs against a repository holding the owner's rules and notes. A full-length commit
-# sha is the only immutable reference Actions has (principle 9).
+# The same argument `mutations/`'s "the overlay template follows gitleaks' default branch" makes
+# about `rev:`, one file over and with a token attached. A major tag is a name its owner can move,
+# so `@v7` resolving to different code tomorrow is somebody else choosing what runs against a
+# repository holding the owner's rules and notes. A full-length commit sha is the only immutable
+# reference Actions has (principle 9).
 [[mutation]]
 name = "the overlay's secret scan follows a moveable action tag"
 file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
@@ -166,9 +168,10 @@ reddens = [
   "tests/overlay/test_template.py::test_the_scan_workflow_pins_every_action_at_an_immutable_revision",
 ]
 
-# The same entry for the workflow's other pin. The test loops over every `uses:` line, so each pin
-# needs its own mutation to show the loop examines it: `@v3` is a name the action's owner can move,
-# and this step is the one that holds the repository's token.
+# The same mutation as `mutations/`'s "the overlay's secret scan follows a moveable action tag", for
+# the workflow's other pin. The test loops over every `uses:` line, so each pin needs its own
+# mutation to show the loop examines it: `@v3` is a name the action's owner can move, and this step
+# is the one that holds the repository's token.
 [[mutation]]
 name = "the overlay's secret scan follows a moveable gitleaks-action tag"
 file = "src/stayfixed/templates/overlay/.github/workflows/scan.yml"
@@ -502,7 +505,8 @@ reddens = [
 # would be written — invisible while the summary was four count lines, and a claim a reader checks
 # once the report prints. Three states and not two, keyed on `(refused, dry_run)`: an operator who
 # reads "initialised:" over a refusal stops looking for the thing they have to fix. The same
-# false-claim class as the entry above, and not a permission gate either.
+# false-claim class as `mutations/`'s "the init CI line claims a release for a ref the run did not
+# resolve", and not a permission gate either.
 [[mutation]]
 name = "a refused init run is headed as an initialised one"
 file = "src/stayfixed/project/commands.py"
@@ -630,14 +634,14 @@ reddens = [
   "tests/project/test_command.py::test_the_ci_line_has_no_arm_no_run_can_reach",
 ]
 
-# The `_enum` class, at four more sites, in two pairs: "a preset name outside the rule is quoted
-# back again" and "a preset this build does not ship is quoted back again", then "a profile outside
-# one path segment is quoted back again" and "a profile the listing lacks is quoted back again".
-# Each refusal is reached by a value a clone writes into `stayfixed.toml` — `[stayfixed] preset` or
-# `[stayfixed] profile` — and each ran `{name!r}` into a message the skills relay to a terminal and
-# a model. The first of each pair runs exactly for a value that failed its rule, so it could carry
-# ESC and line breaks; the second is reached only by a name that passed, and could still carry an
-# instruction spelled in letters. The anchor is
+# The `_enum` class, at four more sites, in two pairs: `mutations/`'s "a preset name outside the
+# rule is quoted back again" and "a preset this build does not ship is quoted back again", then
+# `mutations/`'s "a profile outside one path segment is quoted back again" and "a profile the
+# listing lacks is quoted back again". Each refusal is reached by a value a clone writes into
+# `stayfixed.toml` — `[stayfixed] preset` or `[stayfixed] profile` — and each ran `{name!r}` into a
+# message the skills relay to a terminal and a model. The first of each pair runs exactly for a
+# value that failed its rule, so it could carry ESC and line breaks; the second is reached only by a
+# name that passed, and could still carry an instruction spelled in letters. The anchor is
 # stayfixed's own vocabulary: the key, the rule in words, and the listing this build ships. Each
 # mutation puts the value back into its message.
 [[mutation]]
@@ -1015,6 +1019,9 @@ reddens = [
   "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[forged-record-at-an-ignored-file-uninstall]",
 ]
 
+# In the block led by `mutations/`'s "an unedited artifact kept out of git is skipped as not
+# stayfixed's once its template changes": what stayfixed last wrote under
+# `.stayfixed/local/artifacts/` is judged by `LocalDigests`.
 [[mutation]]
 name = "uninstall never judges an artifact only the ledger records"
 file = "src/stayfixed/project/uninstall.py"
@@ -1042,10 +1049,10 @@ reddens = [
   "tests/project/test_uninstall.py::test_forcing_a_region_copy_left_by_the_local_list_never_reaches_the_skeleton_beside_it",
 ]
 
-# The guard of "a force meant for AGENTS.md's region reaches the skeleton kept out of git", for the
-# copy a region left kept out of git when its id left `[artifacts] local`: the footprint pass
-# judges it at the skeleton's own file, so a force meant for it must not reach the write-once pass
-# there either.
+# The guard of `mutations/`'s "a force meant for AGENTS.md's region reaches the skeleton kept out of
+# git", for the copy a region left kept out of git when its id left `[artifacts] local`: the
+# footprint pass judges it at the skeleton's own file, so a force meant for it must not reach the
+# write-once pass there either.
 [[mutation]]
 name = "a force meant for a region's left copy reaches the skeleton kept out of git"
 file = "src/stayfixed/project/uninstall.py"
@@ -1140,6 +1147,8 @@ before = "        if path_key(directory) in marker_dirs:"
 after = "        if directory in marker_dirs:"
 reddens = ["tests/project/test_uninstall.py::test_a_case_variant_of_a_harness_directory_is_never_pruned"]
 
+# In the block led by `mutations/`'s "git's control directory is named by no path": the footprint
+# commands' hidden-write invariant, from the side of a guard that refuses too much.
 [[mutation]]
 name = "the ignore guard refuses a fixed name in the clone's excludes"
 file = "src/stayfixed/project/ignored.py"
@@ -1246,9 +1255,9 @@ before = "        return bool(self.footprint.refusals or self.once.refusals)"
 after = "        return bool(self.footprint.refusals)"
 reddens = ["tests/project/test_footprint_commands.py::test_a_plan_that_refuses_exits_one_heads_the_report_refused_and_changes_nothing[uninstall-once]"]
 
-# `uninstall`'s dry run stops at its report whatever the plans say, as `init`'s and `upgrade`'s
-# do (their entries: "init applies the write-once pass before it has looked at either plan's
-# refusals", "an upgrade dry run writes the footprint").
+# `uninstall`'s dry run stops at its report whatever the plans say, as `init`'s and `upgrade`'s do
+# (their entries: `mutations/`'s "init applies the write-once pass before it has looked at either
+# plan's refusals", "an upgrade dry run writes the footprint").
 [[mutation]]
 name = "an uninstall dry run removes the footprint"
 file = "src/stayfixed/project/uninstall.py"
@@ -1336,6 +1345,8 @@ reddens = [
   "tests/project/test_templates.py::test_every_id_offered_as_local_is_a_whole_file_of_the_footprint_pass",
 ]
 
+# In the block led by `mutations/`'s "the planning seam's checker reads a relative import as a
+# top-level module": the rest of the planning seam.
 [[mutation]]
 name = "a footprint command plans through the seam's private planner"
 file = "src/stayfixed/project/init.py"
@@ -1356,10 +1367,9 @@ reddens = [
   "tests/project/test_planning_seam.py::test_a_predict_the_ignore_guard_refused_leaves_replanning_refused",
 ]
 
-# `stayfixed gate` refuses a symlinked `stayfixed.toml`, and `init` reads it through the same
-# reader (`assess` reads it through `load`, whose entry is "load follows a symlinked
-# stayfixed.toml"): followed, a clone's link to
-# `/dev/zero` ends the run by exhausting memory.
+# `stayfixed gate` refuses a symlinked `stayfixed.toml`, and `init` reads it through the same reader
+# (`assess` reads it through `load`, whose entry is `mutations/`'s "load follows a symlinked
+# stayfixed.toml"): followed, a clone's link to `/dev/zero` ends the run by exhausting memory.
 [[mutation]]
 name = "init follows a symlinked stayfixed.toml that carries its version"
 file = "src/stayfixed/project/init.py"
@@ -1417,6 +1427,8 @@ reddens = [
   "tests/project/test_templates.py::test_the_rendered_trigger_runs_only_for_the_gate_branch_and_re_runs_on_a_retarget",
 ]
 
+# In the block led by `mutations/`'s "the reusable workflow's token may write the repository": the
+# caller's grant is the ceiling for every step of the reusable workflow.
 [[mutation]]
 name = "the caller init writes grants its token write access to the repository"
 file = "src/stayfixed/templates/project/stayfixed.yml"
@@ -1457,8 +1469,8 @@ reddens = [
   "tests/project/test_command.py::test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing",
 ]
 
-# The same line as "an id offered as local names no whole file of the footprint", with another
-# `after`: here the id is a whole file, and one a gate reads at its committed path.
+# The same line as `mutations/`'s "an id offered as local names no whole file of the footprint",
+# with another `after`: here the id is a whole file, and one a gate reads at its committed path.
 [[mutation]]
 name = "a file a gate reads at its committed path is offered as local"
 file = "src/stayfixed/project/templates.py"
@@ -1550,6 +1562,9 @@ reddens = [
   "tests/project/test_templates.py::test_the_rendered_trigger_runs_only_for_the_gate_branch_and_re_runs_on_a_retarget",
 ]
 
+# In the block led by `mutations/`'s "the TOML readers answer a document nested past the parser as
+# an internal error": every reader of a document somebody else wrote answers one nested past the
+# parser as one that does not parse.
 [[mutation]]
 name = "init meets an adopted stayfixed.toml nested past the parser as an internal error"
 file = "src/stayfixed/project/init.py"
@@ -1568,6 +1583,8 @@ reddens = [
   "tests/profiles/test_evaluate.py::test_a_file_that_does_not_parse_resolves_to_nothing[nested-past-the-stack]",
 ]
 
+# In the block led by `mutations/`'s "the hook takes a symlinked stayfixed.toml by what it points
+# at": a symlinked `stayfixed.toml` is asked about by its own name first.
 [[mutation]]
 name = "init's answer-sheet check takes a symlinked stayfixed.toml by what it points at"
 file = "src/stayfixed/project/init.py"

@@ -22,6 +22,8 @@ before = "    dirty = sum(1 for line in answer_lines(status) if line.strip())"
 after = "    dirty = sum(1 for line in status.splitlines() if line.strip())"
 reddens = ["tests/test_git_answers.py::test_a_dirty_name_holding_a_line_separator_is_one_entry"]
 
+# In the block led by `mutations/`'s "the runner decodes a launched program's output strictly
+# again": a launched program's output is read with replacement characters, never strictly.
 [[mutation]]
 name = "doctor's wrapper row decodes the wrapper's stderr strictly again"
 file = "src/stayfixed/doctor/checks.py"
@@ -44,6 +46,9 @@ reddens = [
   "tests/setup/test_setup.py::test_an_overlay_root_a_utf_8_file_cannot_record_is_refused_before_the_first_write[create]",
 ]
 
+# In the block led by `mutations/`'s "the bound on a query that grows is shrunk below git's
+# latency": the suite's floor hides a bound shrunk below git's latency, so a table of the named
+# bounds holds each to a second.
 [[mutation]]
 name = "the overlay sync's bound is shrunk below git's latency"
 file = "src/stayfixed/overlay/sync.py"
@@ -524,7 +529,8 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_harness_data_root_this_process_cannot_read_is_a_warning",
 ]
 
-# The floor under the row above, for every check at once.
+# The floor under `mutations/`'s "doctor renders an unreadable harness data root as a red row", for
+# every check at once.
 [[mutation]]
 name = "doctor renders an unreadable file as a broken check"
 file = "src/stayfixed/doctor/checks.py"
@@ -540,12 +546,13 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_red",
 ]
 
-# The committable-ledger defect of "detach prints the ledger's own strings", one field over.
-# `.stayfixed/local/attach.json` is a path a clone can commit, so a repository that commits a marked
-# hook entry *and* a ledger recording that entry's id got `hook-entries` to answer "all accounted
-# for" — a committable file silencing the one check whose entire purpose is that nobody's entries go
-# unlisted. An id is credible only if the entry it names is one the OVERLAY currently grants, and
-# the overlay is trusted by construction: its root comes from the machine file.
+# The committable-ledger defect of `mutations/`'s "detach prints the ledger's own strings", one
+# field over. `.stayfixed/local/attach.json` is a path a clone can commit, so a repository that
+# commits a marked hook entry *and* a ledger recording that entry's id got `hook-entries` to answer
+# "all accounted for" — a committable file silencing the one check whose entire purpose is that
+# nobody's entries go unlisted. An id is credible only if the entry it names is one the OVERLAY
+# currently grants, and the overlay is trusted by construction: its root comes from the machine
+# file.
 [[mutation]]
 name = "the attach ledger vouches for a hook entry on its own"
 file = "src/stayfixed/doctor/checks.py"
@@ -675,9 +682,10 @@ reddens = [
   "tests/setup/test_setup.py::test_a_symlinked_claude_directory_is_a_refusal_that_names_the_link",
 ]
 
-# The floor under the entry above, and not dead: a component that becomes a symlink between the
-# check and the write can only be refused by the walk, and that interval is what the walk is for.
-# Swallowing it would report a settings file this run never wrote.
+# The floor under `mutations/`'s "setup meets a symlinked ~/.claude only at write time", and not
+# dead: a component that becomes a symlink between the check and the write can only be refused by
+# the walk, and that interval is what the walk is for. Swallowing it would report a settings file
+# this run never wrote.
 [[mutation]]
 name = "the write-time containment on the settings file is swallowed"
 file = "src/stayfixed/setup/run.py"
@@ -1006,9 +1014,11 @@ reddens = [
 ]
 
 # `read_binding` refuses for two different reasons and `origin_remote` raises for a third, and all
-# three used to collapse into one `None` that the `attached` row read as "attached". These two
-# entries prove the three are told apart: the first turns the repository's own doing into a skip
-# nobody acts on, the second turns a missing overlay into an accusation against the repository.
+# three used to collapse into one `None` that the `attached` row read as "attached". Two entries
+# prove the three are told apart: `mutations/`'s "a ledger naming a store the overlay does not
+# permit is excused as our own input" turns the repository's own doing into a skip nobody acts on,
+# and `mutations/`'s "a machine with no overlay recorded is blamed on the repository" turns a
+# missing overlay into an accusation against the repository.
 [[mutation]]
 name = "a ledger naming a store the overlay does not permit is excused as our own input"
 file = "src/stayfixed/doctor/checks.py"
@@ -1055,9 +1065,9 @@ reddens = [
   "tests/setup/test_commands.py::test_a_tilde_in_settings_is_expanded_the_way_home_and_machine_already_are",
 ]
 
-# The defect of "the release record is compared against itself", one area over, and the one that
-# matters to a user: `doctor files` compares the INSTALLED copies to the INSTALLED record.
-# Compare the record to itself and a modified plugin reports green.
+# The defect of `mutations/`'s "the release record is compared against itself", one area over, and
+# the one that matters to a user: `doctor files` compares the INSTALLED copies to the INSTALLED
+# record. Compare the record to itself and a modified plugin reports green.
 [[mutation]]
 name = "doctor files compares the record to itself"
 file = "src/stayfixed/doctor/checks.py"
@@ -1264,11 +1274,10 @@ reddens = [
   "tests/overlay/test_publish.py::test_a_gh_that_cannot_answer_is_never_read_as_a_repository_that_is_absent",
 ]
 
-# --- Four doctor rows that named the wrong cause ----------------------------------------------
-# The three here and "a broken machine file is blamed on stayfixed.toml again" are the sentences a
-# person reads when something is wrong, so a row that names the wrong cause sends them to fix the
-# wrong thing. Each mutation restores exactly the sentence that was
-# there.
+# --- Four doctor rows that named the wrong cause ---------------------------------------------- The
+# three here and `mutations/`'s "a broken machine file is blamed on stayfixed.toml again" are the
+# sentences a person reads when something is wrong, so a row that names the wrong cause sends them
+# to fix the wrong thing. Each mutation restores exactly the sentence that was there.
 [[mutation]]
 name = "doctor calls a byte-correct file a mismatch again"
 file = "src/stayfixed/doctor/checks.py"
@@ -1341,14 +1350,14 @@ reddens = [
   "tests/overlay/test_requires.py::test_the_floor_is_compared_as_numbers_not_as_text",
 ]
 
-# The other half of "this reader answers for every string", after the digit bound "the version
-# grammar stops bounding its components" holds.
-# `json.loads` answers for a list, a string and a number as readily as for an object and `raw.get`
-# exists on none of them, so without this arm a manifest an owner can save raised `AttributeError`
-# out of a function whose docstring promises `None` for anything it cannot read. Both callers rest
-# on that promise: `doctor` renders a raised reader as "this check could not run", and the session
-# handler's backstop swallows it together with every other line of the same result — which is how
-# an overlay manifest silenced `NOT_ATTACHED` once already.
+# The other half of "this reader answers for every string", after the digit bound `mutations/`'s
+# "the version grammar stops bounding its components" holds. `json.loads` answers for a list, a
+# string and a number as readily as for an object and `raw.get` exists on none of them, so without
+# this arm a manifest an owner can save raised `AttributeError` out of a function whose docstring
+# promises `None` for anything it cannot read. Both callers rest on that promise: `doctor` renders a
+# raised reader as "this check could not run", and the session handler's backstop swallows it
+# together with every other line of the same result — which is how an overlay manifest silenced
+# `NOT_ATTACHED` once already.
 [[mutation]]
 name = "the requires reader raises for a manifest that is not an object"
 file = "src/stayfixed/overlay/requires.py"
@@ -1467,7 +1476,7 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_workflow_that_is_not_a_file_does_not_hang_the_row",
 ]
 
-# Over the bound is itself an answer, which is the sibling rule of "doctor reads an
+# Over the bound is itself an answer, which is the sibling rule of `mutations/`'s "doctor reads an
 # environment-named log with no bound of its own" one function down: a workflow `init` rendered is
 # under 2 KiB, a file a clone committed there has no cap at all, and a `uses:` line past the bound
 # would be compared against bytes nobody read. So the arm must not fall through to the ref's own
@@ -1507,9 +1516,9 @@ reddens = [
 # `NETWORK_TIMEOUT_SECONDS` is written for `gh repo create --clone` and the clone behind it; the
 # `ci-ref` row reads one tag listing, on a command that prints one line of output and `docs/cli.md`
 # calls a diagnostic. `stayfixed init` recording a `[ci] ref` is what made the block reachable at
-# all. Two entries, this one and "the runner ignores the bound its caller asked for", because the
-# choice and the honouring of it are in different modules: without the second, a caller's bound is
-# accepted and ignored.
+# all. Two entries, this one and `mutations/`'s "the runner ignores the bound its caller asked for",
+# because the choice and the honouring of it are in different modules: without the second, a
+# caller's bound is accepted and ignored.
 [[mutation]]
 name = "doctor asks the public repository with no bound of its own"
 file = "src/stayfixed/doctor/commands.py"
@@ -1542,6 +1551,9 @@ reddens = [
   "tests/project/test_upgrade.py::test_a_pre_release_build_never_moves_a_project_recording_the_release_down_to_itself",
 ]
 
+# In the block led by `mutations/`'s "the TOML readers answer a document nested past the parser as
+# an internal error": every reader of a document somebody else wrote answers one nested past the
+# parser as one that does not parse.
 [[mutation]]
 name = "setup meets a machine file nested past the parser as an internal error"
 file = "src/stayfixed/setup/machine.py"
@@ -1595,6 +1607,8 @@ reddens = [
   "tests/setup/test_setup.py::test_a_root_inside_a_bare_shaped_directory_is_refused[current-none]",
 ]
 
+# In the block led by `mutations/`'s "the hook takes a symlinked stayfixed.toml by what it points
+# at": a symlinked `stayfixed.toml` is asked about by its own name first.
 [[mutation]]
 name = "doctor reads a stayfixed.toml linked to /dev/zero as no stayfixed.toml"
 file = "src/stayfixed/doctor/checks.py"

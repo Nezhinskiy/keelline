@@ -39,10 +39,11 @@ reddens = [
   "tests/memory/test_worktree.py::test_an_overlay_store_gates_the_harness_link_on_the_directory_it_exposes",
 ]
 
-# The mirror of the entry above, and the direction the gate did not run in. Creation was gated
-# and revocation was not, so an approved link outlived the record that authorised it: one
-# `git pull` lapses the record, every channel `memory` controls shuts, and the one it does not
-# control kept pointing at the new bytes.
+# The mirror of `mutations/`'s "the harness link asks the gate about the notes rather than the
+# directory", and the direction the gate did not run in. Creation was gated and revocation was not,
+# so an approved link outlived the record that authorised it: one `git pull` lapses the record,
+# every channel `memory` controls shuts, and the one it does not control kept pointing at the new
+# bytes.
 [[mutation]]
 name = "the harness link outlives the trust record that authorised it again"
 file = "src/stayfixed/memory/worktree.py"
@@ -77,10 +78,11 @@ reddens = ["tests/memory/test_bundles.py::test_an_index_over_one_part_fills_the_
 # the cap. `fit` reported it; `render` handed it out and exited 0, and the platform cut it
 # — measured at 20,288 characters arriving with one of its two region markers, which is the
 # state `trust.wrap`'s nonce region exists to make unreachable.
-# Two specified rules that no assertion discriminated: both mutations below left all 617
-# tests green. The first decides which note leads a section and which sub-heading opens
-# it; the second flips a note set sized exactly at the budget from full injection to
-# descriptions only.
+# Two specified rules that no assertion discriminated: both mutations, `mutations/`'s
+# "group_order outranks the startup rank in the index order" and "the volatile budget excludes the
+# set that is exactly the budget", left all 617 tests green. The first decides which note leads a
+# section and which sub-heading opens it; the second flips a note set sized exactly at the budget
+# from full injection to descriptions only.
 [[mutation]]
 name = "group_order outranks the startup rank in the index order"
 file = "src/stayfixed/memory/index.py"
@@ -192,6 +194,8 @@ reddens = [
   "tests/test_surfaces.py::test_every_type_the_surface_names_in_a_signature_is_on_the_surface[memory]",
 ]
 
+# In the block led by `mutations/`'s "the hook path strips a checkout path that ends in a space": a
+# path answer loses its line ending and nothing else.
 [[mutation]]
 name = "the ledger sweep strips a root that ends in a space and walks the disk instead"
 file = "src/stayfixed/ledger/scan.py"
@@ -569,6 +573,8 @@ reddens = [
   "tests/docs/test_trail.py::test_no_repository_authored_value_reaches_the_listing_carrying_a_marker[carriage-return]",
 ]
 
+# In the block led by `mutations/`'s "a file name that is not UTF-8 is read as one a UTF-8 file can
+# hold": a name the disk holds in bytes that are not UTF-8 is never written into a UTF-8 file.
 [[mutation]]
 name = "the memory walk hands the index a note whose name it cannot write"
 file = "src/stayfixed/memory/notes.py"
@@ -620,6 +626,8 @@ reddens = [
   "tests/overlay/test_template.py::test_nothing_in_a_fresh_common_memory_fails_the_note_reader",
 ]
 
+# In the block led by `mutations/`'s "a link is created by path, outside the walk": a link is
+# created through the contained walk, never by path.
 [[mutation]]
 name = "the link tree creates a link by path again"
 file = "src/stayfixed/memory/worktree.py"
@@ -676,15 +684,15 @@ reddens = [
 ]
 
 # The anchor for the harness memory link, both halves of it. The walk under the home directory
-# refuses a symlinked component — intended, and `harness_link_parts` cites `setup --settings` as
-# the precedent — but `_link` and `_unlink` caught `NotASymlink` and `FileNotFoundError` and not
-# `UnsafePath`, so the ordinary stow / chezmoi layout half-attached a repository on the way in
-# and crashed `detach` on the way out. Five entries, because the guard is five decisions: the
-# question itself, the floor under it for the component that changes after it is asked, and the
-# three hoists that make the refusal precede the first write — `attach`'s, `detach`'s first
-# withdrawal, and the worktree link step every `SessionStart` runs. The first two hoists are
-# "attach discovers the harness anchor from inside the link step" and "detach discovers the
-# harness anchor from inside the withdrawal".
+# refuses a symlinked component — intended, and `harness_link_parts` cites `setup --settings` as the
+# precedent — but `_link` and `_unlink` caught `NotASymlink` and `FileNotFoundError` and not
+# `UnsafePath`, so the ordinary stow / chezmoi layout half-attached a repository on the way in and
+# crashed `detach` on the way out. Five entries, because the guard is five decisions: the question
+# itself, the floor under it for the component that changes after it is asked, and the three hoists
+# that make the refusal precede the first write — `attach`'s, `detach`'s first withdrawal, and the
+# worktree link step every `SessionStart` runs. The first two hoists are `mutations/`'s "attach
+# discovers the harness anchor from inside the link step" and "detach discovers the harness anchor
+# from inside the withdrawal".
 [[mutation]]
 name = "the harness anchor stops asking whether the walk can reach it"
 file = "src/stayfixed/memory/worktree.py"
@@ -760,6 +768,8 @@ reddens = [
   "tests/test_command.py::test_every_shared_flag_carries_the_one_help_string_or_a_named_exception",
 ]
 
+# In the block led by `mutations/`'s "a gate that could not judge counts as passing": every
+# configured gate is a value CI reads, and each built-in finds what its area's command finds.
 [[mutation]]
 name = "the docs gate drops the budget checks"
 file = "src/stayfixed/docs/hygiene.py"
@@ -788,6 +798,8 @@ before = '    return [Finding(TRAIL_STALE, config.paths.roadmap, None, "")]'
 after = "    return []"
 reddens = ["tests/assess/test_gates.py::test_a_stale_trail_is_a_failing_gate"]
 
+# In the block led by `mutations/`'s "a stayfixed.toml that is not UTF-8 crashes every command that
+# loads it": a file that is not UTF-8 is its reader's own failure, never an internal error.
 [[mutation]]
 name = "a trust record that is not UTF-8 crashes instead of refusing loudly"
 file = "src/stayfixed/memory/trust.py"
@@ -844,6 +856,9 @@ before = "    base = base or local_base(config)"
 after = '    base = base or f"origin/{config.project.base_branch}"'
 reddens = ["tests/docs/test_plans.py::test_a_tag_named_like_the_tracking_branch_does_not_choose_the_default_base"]
 
+# In the block led by `mutations/`'s "the TOML readers answer a document nested past the parser as
+# an internal error": every reader of a document somebody else wrote answers one nested past the
+# parser as one that does not parse.
 [[mutation]]
 name = "a trail.toml nested past the parser escapes its reader"
 file = "src/stayfixed/docs/trail.py"
@@ -1019,6 +1034,8 @@ reddens = [
   "tests/ledger/test_commands.py::test_check_with_a_base_answers_for_a_ledger_the_base_carries",
 ]
 
+# In the block led by `mutations/`'s "printable passes a name outside the grammar through": a name
+# the repository chose is printed through `printed.printable` or `printed.quoted`.
 [[mutation]]
 name = "the undeclared-document report prints a crafted name raw"
 file = "src/stayfixed/docs/commands.py"
@@ -1251,6 +1268,8 @@ reddens = [
   "tests/memory/test_refs.py::test_a_long_group_is_named_clipped_on_the_unresolved_groups_line",
 ]
 
+# In the block led by `mutations/`'s "init's custom-gate note keeps a limit of its own": every list
+# of names nothing bounds in number takes `findings.listed`.
 [[mutation]]
 name = "a duplicate identifier names every file that claims it"
 file = "src/stayfixed/ledger/check.py"
@@ -1269,6 +1288,8 @@ reddens = [
   "tests/ledger/test_check.py::test_a_duplicate_identifier_names_its_own_file_first_whatever_the_sort",
 ]
 
+# In the block led by `mutations/`'s "printable passes a name outside the grammar through": a name
+# the repository chose is printed through `printed.printable` or `printed.quoted`.
 [[mutation]]
 name = "memory refs names a note that stopped decoding unescaped"
 file = "src/stayfixed/memory/refs.py"
@@ -1460,6 +1481,8 @@ reddens = [
   "tests/ledger/test_check.py::test_a_listing_git_refuses_at_a_merge_base_is_a_failure_never_an_empty_ledger",
 ]
 
+# In the block led by `mutations/`'s "every file a gate reads reads as tracked": a gate's verdict is
+# taken over files git tracks, as CI's is.
 [[mutation]]
 name = "the trail gate's trail.toml is not asked about"
 file = "src/stayfixed/docs/trail.py"
