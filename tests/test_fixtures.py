@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
+from tests.declarations import declared
 from tests.gitfixture import git
 from tests.workflow_yaml import load, runs
 
@@ -383,7 +384,6 @@ def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> N
     """
     # Mutations (declared): the budget cut below the projection; the job given an `if:` that can
     # skip it. Both redden this case.
-    import tomllib
 
     jobs = _ci_jobs()
     # The walk first: an empty reading would make every "exactly one" below come out zero for a
@@ -407,10 +407,7 @@ def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> N
     bounds = [x for x in body if x.strip().startswith("timeout-minutes:")]
     assert len(bounds) == 1, bounds
     budget = int(bounds[0].split(":", 1)[1].strip()) * 60
-    entries = sum(
-        len(tomllib.loads(path.read_text(encoding="utf-8"))["mutation"])
-        for path in (ROOT / "mutations").glob("*.toml")
-    )
+    entries = len(declared())
     assert entries > 0, "mutations/ declares nothing, so this projects no cost at all"
     projected = entries * ORACLE_SECONDS_PER_ENTRY + ORACLE_SETUP_SECONDS + ORACLE_VARIANCE_SECONDS
     assert budget >= projected, (

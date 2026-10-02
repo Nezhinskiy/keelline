@@ -1,5 +1,6 @@
-# Mutation entries for `src/stayfixed/guards/`.
-# What an entry is and which file it belongs in: CONTRIBUTING.md, "Tests".
+# The guards group: the checks that judge a command, a commit or a test run.
+# Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
+# CONTRIBUTING.md, "Tests".
 
 # A `#` opens a comment only at the start of a word. `shlex`'s own `commenters` ends a token
 # at ANY unquoted `#`, which truncated `echo a#b && cat secrets/.env` to `['echo', 'a']` and

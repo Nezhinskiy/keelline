@@ -105,7 +105,10 @@ it finishes is outside the rule: nothing but that command ever wrote into it.
 ## Areas
 
 An area is a subpackage of `src/stayfixed/` that the CLI frame and the hook registry discover by
-name — there is no shared registry to edit.
+name — there is no shared registry to edit. One table does name areas, `GROUP_OF` in
+`scripts/mutation_oracle.py`, and it is a deliberate exception kept for a reason outside the code
+("Tests" gives it): it groups their mutation entries into files, and a new area needs no row there
+until its entries outgrow the group they fall into.
 
 Today the discovered ones are `assess`, `attach`, `docs`, `doctor`, `guards`, `hooks`,
 `ledger`, `memory`, `overlay`, `project`, `release` and `setup`. Three arrived with the install
@@ -208,12 +211,16 @@ after = "        if part in (_HERE,):"
 reddens = ["tests/test_fsops.py::test_a_parent_component_never_leaves_the_root"]
 ```
 
-The set is one file per group of the tree, so that no file grows to the 256 KiB at which the
-plugin directory holds a file for a reviewer, and an entry goes in the group file its `file` routes
-to: `GROUP_OF` in `scripts/mutation_oracle.py` maps path prefixes to groups, the first match winning
-and the empty prefix's group taking anything outside `src/stayfixed/`.
-`tests/scripts/test_mutation_oracle.py` reddens on an entry in the wrong file and on a file that
-reaches its cap; a group that does is split by its largest area, which is an edit to `GROUP_OF`.
+The set is one file per group of the tree, and an entry goes in the group file its `file` routes
+to: `GROUP_OF` in `scripts/mutation_oracle.py` maps path prefixes to groups, the longest matching
+prefix winning and the empty prefix's group taking anything outside `src/stayfixed/`. The groups are
+coarse on purpose. The plugin directory holds the version for a reviewer when a file reaches
+256 KiB and when the plugin passes 512 files, and the plugin folder is this repository's root, so
+every tracked file counts: one file per area would need no table, and would spend about twenty of
+those 512 where eight do. That trade is why `GROUP_OF` is a table kept by hand, the exception to
+"no shared registry" under "Areas". `tests/scripts/test_mutation_oracle.py` reddens on an entry in
+the wrong file and on a file that reaches its cap, three quarters of the directory's; a group that
+does is split by its largest area, which is an edit to `GROUP_OF`.
 A comment that cites an entry names the set and the entry's quoted name — `mutations/`'s "the
 containment walk stops refusing '..'" — and never its group file, so a regroup leaves the comment
 true.

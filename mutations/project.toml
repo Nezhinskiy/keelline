@@ -1,5 +1,6 @@
-# Mutation entries for `src/stayfixed/project/`, `templates/`, `profiles/` and `presets/`.
-# What an entry is and which file it belongs in: CONTRIBUTING.md, "Tests".
+# The project group: a repository's footprint and the templates, profiles and presets behind it.
+# Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
+# CONTRIBUTING.md, "Tests".
 
 # The one invariant here whose failure ships a permission to every machine that ever creates an
 # overlay from the template. The plugin author may never grant one; only the machine owner may, on

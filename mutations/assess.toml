@@ -1,5 +1,6 @@
-# Mutation entries for `src/stayfixed/assess/`.
-# What an entry is and which file it belongs in: CONTRIBUTING.md, "Tests".
+# The assess group: running a project's gates, its inventory, and the adoption state machine.
+# Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
+# CONTRIBUTING.md, "Tests".
 
 # Every configured gate as a value (`stayfixed.assess.gates`), each a verdict CI reads once the
 # gates run through it: a gate that could not judge counts as failing, one gate's error never

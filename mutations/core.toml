@@ -1,5 +1,6 @@
-# Mutation entries for the rest of `src/stayfixed/`.
-# What an entry is and which file it belongs in: CONTRIBUTING.md, "Tests".
+# The core group: the package's shared modules and every area no other group takes.
+# Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
+# CONTRIBUTING.md, "Tests".
 
 [[mutation]]
 name = "the containment walk stops refusing '..'"

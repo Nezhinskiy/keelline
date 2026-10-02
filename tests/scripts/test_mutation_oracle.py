@@ -9,7 +9,6 @@ named tests do not exist read as *caught*, and a `git status` that could not ans
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import shutil
 import signal
@@ -25,34 +24,22 @@ from types import ModuleType
 import pytest
 
 from tests import gitfixture
+from tests.declarations import load
 from tests.gitfixture import git as _git
+from tests.test_payload import FILE_MAX_BYTES
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "mutation_oracle.py"
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 
 def oracle(root: Path | None = None) -> ModuleType:
-    """The script, loaded by path because `scripts/` is not an importable package.
-
-    Registered in `sys.modules` before it is executed: `@dataclass` resolves a field's
-    annotations through `sys.modules[cls.__module__]`, and a module absent from there makes
-    the decorator raise on `Mutation` itself.
+    """A fresh copy of the script, loaded by path through `tests.declarations.load`.
 
     `root` redirects the module's `ROOT`, which is where it runs pytest and asks `git` about
     the tree, and `DECLARATIONS`, the `mutations/` directory beneath it. Every test below points
     it at a throwaway directory, so nothing here mutates a file in this checkout or reads its git
     state.
     """
-    name = "mutation_oracle_under_test"
-    spec = importlib.util.spec_from_file_location(name, SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    try:
-        spec.loader.exec_module(module)
-    except BaseException:
-        del sys.modules[name]
-        raise
+    module = load("mutation_oracle_under_test")
     if root is not None:
         # Through `__dict__`, not an attribute assignment: `ModuleType` types reads as
         # `Any` and writes as an error, and this one is deliberate.
@@ -1033,18 +1020,18 @@ def test_every_declared_entry_is_sound_before_any_run() -> None:
 # every file, every entry sits in the file its `file` routes to, and no file grows back to the
 # limit the split exists to stay under.
 
-GROUP_FILE_MAX_BYTES = 192 * 1024
-# A named cap below the payload guard's 256 KiB, kept as early warning: the directory holds a
-# file of 256 KiB or more for a reviewer, and a group file carries an area's whole history, so
-# 64 KiB of headroom is about a hundred entries. When a group crosses it, split that group by its
-# largest area: a deliberate edit to `GROUP_OF`.
+GROUP_FILE_MAX_BYTES = FILE_MAX_BYTES * 3 // 4
+# A named cap three quarters of the payload guard's, kept as early warning: the directory holds the
+# version for a reviewer at a file of `FILE_MAX_BYTES`, and a group file carries an area's whole
+# history, so the last quarter, 64 KiB, is about a hundred entries of headroom. When a group crosses
+# it, split that group by its largest area: a deliberate edit to `GROUP_OF`.
 
 
 def test_the_oracle_reads_every_group_file() -> None:
     # Mutation (declared): `declared()` reads only the first group file (`[:1]` on the sorted
     # glob) -> the count comes out at the first file's entries and the second assertion reddens.
     module = oracle()
-    files = sorted(module.DECLARATIONS.glob("*.toml"))
+    files = module.group_files()
     expected = sum(len(tomllib.loads(f.read_text("utf-8"))["mutation"]) for f in files)
     assert {f.stem for f in files} == {group for _, group in module.GROUP_OF}
     assert len(module.declared()) == expected
@@ -1055,7 +1042,7 @@ def test_every_entry_lives_in_its_group_file() -> None:
     # entry routes to the package's catch-all group instead, and the first of them, still in the
     # file its old row named, reddens this.
     module = oracle()
-    files = sorted(module.DECLARATIONS.glob("*.toml"))
+    files = module.group_files()
     assert files  # a walk-based assertion states its walk is non-empty
     for path in files:
         for entry in tomllib.loads(path.read_text("utf-8"))["mutation"]:
@@ -1067,7 +1054,27 @@ def test_no_group_file_reaches_the_cap() -> None:
     # `GROUP_FILE_MAX_BYTES` below the largest group file, which is what a group outgrowing it
     # looks like from here.
     module = oracle()
-    files = sorted(module.DECLARATIONS.glob("*.toml"))
+    files = module.group_files()
     assert files  # a walk-based assertion states its walk is non-empty
     for path in files:
         assert path.stat().st_size < GROUP_FILE_MAX_BYTES, path.name
+
+
+def test_a_row_routes_its_files_wherever_it_stands_in_the_table() -> None:
+    # `GROUP_OF` once took the first prefix that matched, so a row appended after
+    # `src/stayfixed/` was dead without a sound: its files went on routing to `core`. Mutation
+    # (declared): `group_for` takes the first match again -> the appended row routes nothing and
+    # this reddens.
+    module = oracle()
+    module.__dict__["GROUP_OF"] = (*module.GROUP_OF, ("src/stayfixed/newarea/", "newarea"))
+    assert module.group_for("src/stayfixed/newarea/x.py") == "newarea"
+    assert module.group_for("src/stayfixed/fsops.py") == "core"
+    assert module.group_for("README.md") == "repository"
+
+
+def test_no_prefix_is_routed_twice() -> None:
+    # Longest-prefix matching makes the order meaningless only while each prefix has one row: a
+    # repeated prefix would route to whichever `max` met first. Mutation: none of the code's; the
+    # subject is the table, watched red by appending a second `("src/stayfixed/", "records")` row.
+    prefixes = [prefix for prefix, _ in oracle().GROUP_OF]
+    assert len(prefixes) == len(set(prefixes)), prefixes

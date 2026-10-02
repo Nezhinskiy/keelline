@@ -1,5 +1,6 @@
-# Mutation entries for `src/stayfixed/attach/`.
-# What an entry is and which file it belongs in: CONTRIBUTING.md, "Tests".
+# The attach group: binding a repository to its private overlay, and unbinding it again.
+# Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
+# CONTRIBUTING.md, "Tests".
 
 [[mutation]]
 name = "attach splits git's worktree listing at a carriage return inside a path"

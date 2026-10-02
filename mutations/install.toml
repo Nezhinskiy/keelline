@@ -1,5 +1,6 @@
-# Mutation entries for `src/stayfixed/setup/`, `overlay/` and `doctor/`.
-# What an entry is and which file it belongs in: CONTRIBUTING.md, "Tests".
+# The install group: setting a machine up, the private overlay, and doctor's report on both.
+# Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
+# CONTRIBUTING.md, "Tests".
 
 # A line-oriented answer is split where git ended each line. `str.splitlines()` also breaks at
 # `\r`, U+2028 and five more that git prints raw inside a name: a worktree at `…/wt\rx` was

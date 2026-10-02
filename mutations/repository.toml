@@ -1,5 +1,6 @@
-# Mutation entries for everything outside `src/stayfixed/`: tests, scripts, hooks, workflows, docs.
-# What an entry is and which file it belongs in: CONTRIBUTING.md, "Tests".
+# The repository group: everything outside the package — tests, scripts, hooks, workflows, docs.
+# Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
+# CONTRIBUTING.md, "Tests".
 
 # The oracle's own two guards, declared here like any other. Self-mutation works because
 # `_check` rewrites the file on disk and the run it then launches is a subprocess that loads
@@ -2521,8 +2522,8 @@ reddens = [
 [[mutation]]
 name = "the oracle reads only the first group file"
 file = "scripts/mutation_oracle.py"
-before = '    for path in sorted(DECLARATIONS.glob("*.toml")):'
-after = '    for path in sorted(DECLARATIONS.glob("*.toml"))[:1]:'
+before = '    for path in group_files():'
+after = '    for path in group_files()[:1]:'
 reddens = ["tests/scripts/test_mutation_oracle.py::test_the_oracle_reads_every_group_file"]
 
 # Every entry sits in the group file `GROUP_OF` routes its `file` to; a table that lost a row
@@ -2534,8 +2535,17 @@ before = '    ("src/stayfixed/doctor/", "install"),'
 after = ''
 reddens = ["tests/scripts/test_mutation_oracle.py::test_every_entry_lives_in_its_group_file"]
 
-# The plugin directory holds the version for a reviewer when a file other than an image or a font is
-# 256 KiB or more; a guard that admits the boundary itself passes the one size the directory holds.
+# `GROUP_OF` routes by the longest prefix, so a row appended after `src/stayfixed/` is not dead;
+# taken first-match, that catch-all row would take the new row's files without a sound.
+[[mutation]]
+name = "the group table routes a file by its first matching row again"
+file = "scripts/mutation_oracle.py"
+before = "        key=lambda row: len(row[0]),"
+after = "        key=lambda row: 0,"
+reddens = ["tests/scripts/test_mutation_oracle.py::test_a_row_routes_its_files_wherever_it_stands_in_the_table"]
+
+# The plugin directory holds the version for a reviewer when a file other than an image or a font
+# is 256 KiB or more; a guard that admits the boundary passes the one size the directory holds.
 [[mutation]]
 name = "a file at the directory's size limit stops being a finding"
 file = "tests/test_payload.py"
@@ -2561,8 +2571,8 @@ before = "        if mode == SYMLINK_MODE:"
 after = "        if mode != SYMLINK_MODE:"
 reddens = ["tests/test_payload.py::test_a_symlink_is_a_finding"]
 
-# A Git submodule is the symlink's sibling on the directory's checklist, and a gitlink row is how the
-# tree carries one.
+# A Git submodule is the symlink's sibling on the directory's checklist, and a gitlink row is how
+# the tree carries one.
 [[mutation]]
 name = "a submodule stops being a payload finding"
 file = "tests/test_payload.py"
@@ -2579,8 +2589,8 @@ before = "        if content.startswith(LFS_POINTER):"
 after = "        if False:"
 reddens = ["tests/test_payload.py::test_a_git_lfs_pointer_is_a_finding"]
 
-# The directory admits text, SVG, PNG, JPEG, GIF and WebP images and fonts, and holds the version for
-# any other binary: a guard that never looks for one passes a `.pdf`, a `.zip` or an executable.
+# The directory admits text, SVG, PNG, JPEG, GIF and WebP images and fonts, and holds the version
+# for any other binary: a guard that never looks for one passes a `.pdf`, a `.zip` or an executable.
 [[mutation]]
 name = "a binary that is not an image or a font stops being a payload finding"
 file = "tests/test_payload.py"
@@ -2592,7 +2602,8 @@ reddens = [
   "tests/test_payload.py::test_a_binary_that_is_not_an_image_or_a_font_is_a_finding[zip]",
 ]
 
-# The checklist names `.ico` among the binaries it holds, and this guard once exempted it as an image.
+# The checklist names `.ico` among the binaries it holds, and this guard once exempted it as an
+# image.
 [[mutation]]
 name = "the payload guard exempts an .ico as an image again"
 file = "tests/test_payload.py"
@@ -2615,8 +2626,8 @@ reddens = [
   "tests/test_payload.py::test_a_system_file_is_a_finding_at_any_depth[skills/desktop.ini]",
 ]
 
-# A name Windows or macOS cannot hold stops validation. The directory's examples are a device name, a
-# trailing dot or space, and two names that differ only by capitalization: an entry each.
+# A name Windows or macOS cannot hold stops validation. The directory's examples are a device name,
+# a trailing dot or space, and two names that differ only by capitalization: an entry each.
 [[mutation]]
 name = "a Windows device name stops being a payload finding"
 file = "tests/test_payload.py"

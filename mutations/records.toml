@@ -1,5 +1,6 @@
-# Mutation entries for `src/stayfixed/memory/`, `docs/` and `ledger/`.
-# What an entry is and which file it belongs in: CONTRIBUTING.md, "Tests".
+# The records group: working memory, the project's documents, and the bug ledger.
+# Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
+# CONTRIBUTING.md, "Tests".
 
 [[mutation]]
 name = "a corrupt trust record reads as an empty one again"

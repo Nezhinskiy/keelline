@@ -23,11 +23,11 @@ from __future__ import annotations
 import hashlib
 import re
 import subprocess
-import tomllib
 from pathlib import Path
 
 import pytest
 
+from tests.declarations import declared, relative
 from tests.gitfixture import needs_git, run_git
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -551,15 +551,11 @@ def test_the_mutation_declarations_carry_no_source_repository_string() -> None:
     # entry is held to *that file's* table. Scoping it by the named file rather than by a
     # hand-kept list of path prefixes is what one gate can do that two could not — neither
     # copy could see the other's area, and every area added since was nobody's.
-    entries = [
-        entry
-        for path in sorted((ROOT / "mutations").glob("*.toml"))
-        for entry in tomllib.loads(path.read_text(encoding="utf-8"))["mutation"]
-    ]
+    entries = declared()
     assert len(entries) >= 200, len(entries)
     for entry in entries:
-        quoted = "\n".join(str(entry[key]) for key in ("name", "file", "before", "after"))
-        assert offending(quoted, table_for(ROOT / str(entry["file"]))) == [], entry["name"]
+        quoted = "\n".join((entry.name, relative(entry.file), entry.before, entry.after))
+        assert offending(quoted, table_for(entry.file)) == [], entry.name
 
 
 def test_the_exemption_is_exactly_the_presets_default_paths() -> None:

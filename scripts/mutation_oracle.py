@@ -54,14 +54,24 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 # The declarations, one TOML file per group of the tree rather than one file: the set grows with
-# every guard, and a single file had passed the 256 KiB at which the plugin directory holds a file
-# for a reviewer. Every `*.toml` here is read; which file an entry belongs in is `GROUP_OF`'s.
+# every guard, and a single file had passed the 256 KiB at which the plugin directory holds the
+# version for a reviewer. Every `*.toml` here is read; which file an entry belongs in is
+# `GROUP_OF`'s.
 DECLARATIONS = ROOT / "mutations"
-# Which group file an entry belongs in, by the path its `file` names: the first prefix that
-# matches wins, and the empty prefix takes everything outside the package. This table is the one
-# place the groups are spelled: `scripts/check_artifacts.py` globs the directory rather than
-# naming its files, and the tests hold every entry to the file its `file` routes to. A group that
-# outgrows its file is split by its largest area, which is an edit to this table.
+# Which group file an entry belongs in, by the path its `file` names: the longest prefix that
+# matches wins, so the order of the rows decides nothing, and the empty prefix takes everything
+# outside the package. This table is the one place the groups are spelled: each group file's header
+# says what its group holds in words and points here, `scripts/check_artifacts.py` globs the
+# directory rather than naming its files, and the tests hold every entry to the file its `file`
+# routes to.
+#
+# **A hand-kept table, and a deliberate exception to CONTRIBUTING's "areas are discovered by
+# name — there is no shared registry to edit".** One file per area would need no table, and it
+# would be about twenty files where these are eight. The plugin directory holds the version for a
+# reviewer past 512 files as well as at a file of 256 KiB, and with the repository root as the
+# plugin folder every tracked file counts against the 512 (`tests/test_payload.py` holds the tree
+# to both), so the groups are as coarse as the size limit lets them be. A group that outgrows its
+# file is split by its largest area, which is an edit to this table.
 GROUP_OF: tuple[tuple[str, str], ...] = (
     ("src/stayfixed/assess/", "assess"),
     ("src/stayfixed/attach/", "attach"),
@@ -98,14 +108,24 @@ class Mutation:
 
 
 def group_for(file: str) -> str:
-    """The group whose file declares a mutation of `file`, a path from the repository root."""
-    return next(group for prefix, group in GROUP_OF if file.startswith(prefix))
+    """The group whose file declares a mutation of `file`, a path from the repository root: the
+    group of the longest `GROUP_OF` prefix that `file` starts with."""
+    _, group = max(
+        ((prefix, group) for prefix, group in GROUP_OF if file.startswith(prefix)),
+        key=lambda row: len(row[0]),
+    )
+    return group
+
+
+def group_files() -> list[Path]:
+    """Every group file, in sorted order: the one place the declarations directory is globbed."""
+    return sorted(DECLARATIONS.glob("*.toml"))
 
 
 def declared() -> list[Mutation]:
     """Every entry of every group file: the files in sorted order, each file's in its own."""
     found: list[Mutation] = []
-    for path in sorted(DECLARATIONS.glob("*.toml")):
+    for path in group_files():
         found.extend(_entries(tomllib.loads(path.read_text(encoding="utf-8"))))
     return found
 
