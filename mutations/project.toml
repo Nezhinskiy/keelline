@@ -698,6 +698,8 @@ reddens = [
   "tests/project/test_init.py::test_an_adopted_key_that_is_not_bare_is_refused_naming_only_its_table",
 ]
 
+# A profile's locator reaches a file only through the contained walk, so a symlink out of the root
+# resolves to nothing.
 [[mutation]]
 name = "a profile locator stops refusing a symlinked file the repository planted"
 file = "src/stayfixed/profiles/evaluate.py"
@@ -707,6 +709,8 @@ reddens = [
   "tests/profiles/test_evaluate.py::test_a_locator_through_a_symlink_out_of_the_root_resolves_to_nothing",
 ]
 
+# Two harness renditions at one place are a refusal naming the harness's fixed name, never a
+# `KeyError`.
 [[mutation]]
 name = "a harness rendition that collides is a KeyError instead of a refusal"
 file = "src/stayfixed/project/templates.py"
@@ -829,6 +833,8 @@ before = "    if pinned and document != text and not _rewrites_the_workflow(foot
 after = "    if False:"
 reddens = ["tests/project/test_upgrade.py::test_a_hand_edited_workflow_holds_both_keys_until_it_is_forced"]
 
+# `upgrade` retires the CI workflow only when `[ci] mode` is `none`, never for a mode this build
+# merely does not render.
 [[mutation]]
 name = "upgrade retires the CI workflow for a mode it merely does not render"
 file = "src/stayfixed/project/footprint.py"
@@ -836,9 +842,9 @@ before = '        retired = tuple(t for t in retired if t.id != CI_ARTIFACT or c
 after = "        retired = tuple(retired)"
 reddens = ["tests/project/test_upgrade.py::test_a_mode_this_build_does_not_render_is_not_a_request_to_delete_the_gate"]
 
-# The other half of the same policy: `uninstall` retires every record it may, the workflow of a
-# mode this build merely does not render included, or it is left, unlisted, beside a deleted
-# manifest.
+# The other half of the policy `mutations/`'s "upgrade retires the CI workflow for a mode it merely
+# does not render" holds: `uninstall` retires every record it may, the workflow of a mode this build
+# merely does not render included, or it is left, unlisted, beside a deleted manifest.
 [[mutation]]
 name = "uninstall keeps a workflow the mode merely does not render, and leaves it unlisted"
 file = "src/stayfixed/project/footprint.py"
@@ -846,6 +852,7 @@ before = "    if not removing:\n        retired = tuple("
 after = "    if True:\n        retired = tuple("
 reddens = ["tests/project/test_uninstall.py::test_a_workflow_the_mode_no_longer_renders_still_goes"]
 
+# `upgrade --dry-run` writes nothing and reports everything.
 [[mutation]]
 name = "an upgrade dry run writes the footprint"
 file = "src/stayfixed/project/upgrade.py"
@@ -872,6 +879,8 @@ before = "    if (root / LEDGER).is_file():"
 after = "    if False:"
 reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_is_refused_and_told_to_detach"]
 
+# `uninstall` replans the write-once pass over the body the footprint pass leaves, so an untouched
+# footprint leaves only what was there before.
 [[mutation]]
 name = "uninstall plans the write-once pass before the region leaves AGENTS.md"
 file = "src/stayfixed/project/uninstall.py"
@@ -892,6 +901,8 @@ reddens = [
   "tests/project/test_uninstall.py::test_an_edited_artifact_kept_out_of_git_refuses_until_it_is_forced",
 ]
 
+# A `--force` naming a footprint file reaches the footprint pass alone: forced in the write-once
+# pass too, it would delete AGENTS.md's skeleton and the prose written into it.
 [[mutation]]
 name = "forcing AGENTS.md's region deletes the skeleton and the prose written into it"
 file = "src/stayfixed/project/uninstall.py"

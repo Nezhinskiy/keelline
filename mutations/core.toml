@@ -22,6 +22,8 @@ before = '    if relative.startswith("/"):'
 after = '    if False:'
 reddens = ["tests/test_fsops.py::test_an_absolute_path_is_refused"]
 
+# The machine file's location takes `XDG_CONFIG_HOME` or an override only from a caller at a
+# terminal.
 [[mutation]]
 name = "the machine path honours XDG_CONFIG_HOME non-interactively again"
 file = "src/stayfixed/config/machine.py"
@@ -82,6 +84,8 @@ reddens = [
   "tests/test_git_run.py::test_the_environment_is_scrubbed",
 ]
 
+# A relocated artifact whose old file was hand-edited leaves that file behind and reports it, rather
+# than removing it.
 [[mutation]]
 name = "a relocated artifact's hand-edited old file is orphaned silently"
 file = "src/stayfixed/scaffold/engine.py"
@@ -588,6 +592,7 @@ reddens = [
   "tests/test_fsops.py::test_a_symlink_is_created_through_the_walk_and_never_through_a_symlinked_parent",
 ]
 
+# `unlink_within` removes a link only when it points where the caller says it does.
 [[mutation]]
 name = "unlink_within removes a link that points elsewhere"
 file = "src/stayfixed/fsops.py"

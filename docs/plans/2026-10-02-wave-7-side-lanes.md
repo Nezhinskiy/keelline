@@ -1330,8 +1330,13 @@ what shipped:
   `git ls-tree -r -l -z`, not the index and `Path.stat()`, because the directory reads a commit.
 - Task 3: `.ico` left the exempt suffixes, since the checklist names it as a held binary, and the
   guard came to hold every file rule the checklist states, not the five the text lists.
-- Task 3 Step 1: the image case shipped as `test_an_image_or_a_font_is_exempt_from_the_size_limit`
-  over four paths, and the tree test asserts the walk listed `.claude-plugin/plugin.json`.
+- Task 3 Step 1: the image case shipped as `test_an_image_or_a_font_that_is_one_is_exempt` over
+  nine suffixes, and the tree test asserts the walk listed `.claude-plugin/plugin.json`.
+- Task 3: an image or a font is exempt only when its bytes open with its format's signature
+  (`SIGNATURES`; `.ttf` and `.otf` share the sfnt openings, and an SVG must be text).
+- Task 3: `.ico`, `.pdf` and `.zip` are findings by their suffix whatever their bytes
+  (`HELD_SUFFIXES`).
+- Task 3: `text`, `eol` and `crlf` joined the refused rewriting attributes, failing closed.
 - Task 4 Files and Steps 2 and 4: the guard shipped in `tests/test_outbound.py`, the walk in
   `tests/outbound/walk.py` and the policy in `tests/outbound/policy.py`, not in
   `tests/test_documents.py`; the entries' `reddens` name `tests/test_outbound.py`.

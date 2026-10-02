@@ -242,6 +242,10 @@ reddens = [
   "tests/assess/test_read_base.py::test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answers_with[not-utf-8]",
 ]
 
+# Where the project sits in the repository is asked of git, and the base's copy is read there: a
+# root reached through a symlink, or a component linked back to the top, is refused rather than read
+# at a path the base never had; a project in a subdirectory keeps its prefix; and a root outside any
+# repository is a failure, not an answer.
 [[mutation]]
 name = "a project root reached through a symlink reads the base at a path it never had"
 file = "src/stayfixed/assess/rule.py"
@@ -466,6 +470,8 @@ after = """    except Exception:
     except Failure as exc:"""
 reddens = ["tests/assess/test_gate_command.py::test_a_change_cannot_make_the_base_s_copy_fail_to_load_and_pass"]
 
+# The summary line counts each gate's findings and never prints a path, and the exit code counts
+# only the gates that enforce.
 [[mutation]]
 name = "the assess summary prints each finding's path instead of a count"
 file = "src/stayfixed/assess/report.py"
@@ -480,6 +486,9 @@ before = "        return tuple(r.name for r in self.results if r.failing and r.n
 after = "        return tuple(r.name for r in self.results if r.failing)"
 reddens = ["tests/assess/test_report.py::test_the_exit_code_counts_only_what_enforces_and_what_the_rule_refused"]
 
+# Each workflow annotation names its file from the repository's top and only inside the path
+# grammar, carries a finding's rule and never its detail, and a refused key's annotation takes the
+# same per-level cap as the findings'.
 [[mutation]]
 name = "an annotation writes any finding's path as its file"
 file = "src/stayfixed/assess/report.py"
@@ -520,6 +529,9 @@ before = '    if args.part == "builtin":'
 after = "    if False:"
 reddens = ["tests/assess/test_gate_command.py::test_builtin_runs_no_command_the_repository_wrote_and_custom_runs_only_those"]
 
+# What `stayfixed gate` hands its gates: `--only` refuses a name the configuration lacks without
+# quoting it, an upgrade's moved pin is admitted only at a commit a release tag names, and the gates
+# run under the configuration the verdict chose.
 [[mutation]]
 name = "gate --only passes a name the configuration lacks on to the gates, which quote it"
 file = "src/stayfixed/assess/commands.py"
@@ -577,6 +589,8 @@ before = "    custom = verdict.config.gates.custom"
 after = "    custom = loads(tree_text, root, machine=machine, interactive=False).gates.custom"
 reddens = ["tests/assess/test_gate_command.py::test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it"]
 
+# A configuration the rule refused fails every run that judged it, and a run judges it when `--only`
+# names the configuration check.
 [[mutation]]
 name = "a gate run that judged passes although the rule refused a key"
 file = "src/stayfixed/assess/report.py"
@@ -782,6 +796,7 @@ reddens = [
   "tests/assess/test_state.py::test_an_adopting_project_whose_every_gate_enforces_is_completed_to_installed",
 ]
 
+# `adopt promote` exits 1 when a gate it ran failed, beside the two lists it reports.
 [[mutation]]
 name = "adopt promote exits 0 with a gate failing"
 file = "src/stayfixed/assess/commands.py"
@@ -813,6 +828,7 @@ reddens = [
   "tests/assess/test_state.py::test_a_project_with_no_gate_is_refused_rather_than_installed",
 ]
 
+# `adopt begin` refuses a plan path outside the project root.
 [[mutation]]
 name = "adopt begin reads a plan outside the root"
 file = "src/stayfixed/assess/state.py"
@@ -1105,6 +1121,9 @@ reddens = [
   "tests/assess/test_probes.py::test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns[a-no-break-space-after-the-pattern]",
 ]
 
+# The scope probe asks about a workflow it has not seen, in both extensions and at a name outside
+# stayfixed's prefix; a workflows directory it could not list is could not look; and it stays silent
+# where `codeowners` already reports stayfixed's workflow unowned.
 [[mutation]]
 name = "the scope probe reads a workflows directory it could not list as nothing unowned"
 file = "src/stayfixed/assess/probes.py"
@@ -1485,6 +1504,8 @@ reddens = [
   "tests/assess/test_tracked.py::test_a_link_chain_longer_than_the_cap_is_named_where_the_walk_stopped",
 ]
 
+# A link walk answers by where it ends: an absolute target is one no checkout has, and a walk that
+# reaches a tracked file names nothing.
 [[mutation]]
 name = "a link to an absolute target reads as one a checkout has"
 file = "src/stayfixed/assess/tracked.py"
@@ -1689,6 +1710,8 @@ reddens = [
   "tests/assess/test_tracked.py::test_a_path_a_gate_answered_without_reaching_is_left_to_its_result",
 ]
 
+# Two names are one file only when both reach a file: a name that reaches none is never the same
+# file as another.
 [[mutation]]
 name = "a name that reaches no file reads as the same file as another"
 file = "src/stayfixed/assess/tracked.py"
@@ -1718,6 +1741,7 @@ reddens = [
   "tests/assess/test_tracked.py::test_a_link_retargeted_on_disk_and_not_staged_is_named[file-link]",
 ]
 
+# A listing of changed files git refuses is no answer, never an empty listing.
 [[mutation]]
 name = "a listing of changed files git refuses is read as an empty one"
 file = "src/stayfixed/assess/tracked.py"

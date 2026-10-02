@@ -380,6 +380,8 @@ reddens = [
   "tests/setup/test_setup.py::test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused",
 ]
 
+# `setup` asks git about `--root` from the nearest directory above it that exists, however many of
+# its components do not.
 [[mutation]]
 name = "setup asks git about --root from a directory that does not exist"
 file = "src/stayfixed/setup/run.py"

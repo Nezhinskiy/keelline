@@ -31,6 +31,8 @@ reddens = [
   "tests/memory/test_trust.py::test_every_digest_entry_is_the_same_width_whatever_its_key",
 ]
 
+# The harness link asks the trust gate about the store directory it exposes, so a committed index
+# reaches no harness link before trust.
 [[mutation]]
 name = "the harness link asks the gate about the notes rather than the directory"
 file = "src/stayfixed/memory/worktree.py"
@@ -152,6 +154,7 @@ reddens = [
   "tests/memory/test_bundles.py::test_a_rule_whose_body_is_not_a_string_is_skipped",
 ]
 
+# A note in a nested group is keyed on the group the configuration names, not on its folder.
 [[mutation]]
 name = "a nested group is keyed on its folder rather than its configured name"
 file = "src/stayfixed/memory/notes.py"
@@ -162,6 +165,7 @@ reddens = [
   "tests/memory/test_index.py::test_a_nested_groups_routing_key_is_the_configured_one",
 ]
 
+# A git that fails at everything is unavailable, never a repository that answered with no binding.
 [[mutation]]
 name = "a broken git reads as a repository that answered"
 file = "src/stayfixed/memory/store.py"
@@ -1011,6 +1015,8 @@ reddens = [
   "tests/assess/test_gate_command.py::test_deleting_every_entry_but_keeping_the_directory_fails_an_enforced_bugs_gate",
 ]
 
+# The bugs gate against a base: a base shaped like an option is refused before git sees it, a bare
+# mention still dangles where there is no ledger, and `bugs check --base` hands its base on.
 [[mutation]]
 name = "the bugs gate's base reaches git shaped like an option"
 file = "src/stayfixed/ledger/check.py"

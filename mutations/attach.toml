@@ -588,6 +588,7 @@ reddens = [
   "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
 ]
 
+# `detach` leaves the ignore region in place when `init`'s footprint owns it.
 [[mutation]]
 name = "detach withdraws a region the footprint owns"
 file = "src/stayfixed/attach/write.py"
@@ -623,6 +624,8 @@ reddens = [
   "tests/attach/test_commands.py::test_check_reads_each_of_its_two_documents_once",
 ]
 
+# `--check` exits 1 when memory groups never moved into the overlay, as it does when the binding is
+# wrong.
 [[mutation]]
 name = "check reports the groups that never moved and still exits zero"
 file = "src/stayfixed/attach/permissions.py"

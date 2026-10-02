@@ -41,14 +41,18 @@ IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg")
 FONT_SUFFIXES = (".woff", ".woff2", ".ttf", ".otf")
 EXEMPT_SUFFIXES = IMAGE_SUFFIXES + FONT_SUFFIXES
 _JPEG = re.compile(rb"\xff\xd8\xff")
+# `.ttf` and `.otf` are one container, sfnt, whatever outlines it carries: TrueType
+# (`\x00\x01\x00\x00`, or Apple's `true`), CFF (`OTTO`) or PostScript Type 1 (`typ1`). The suffix
+# does not decide which, so either suffix takes any of the four.
+_SFNT = re.compile(rb"\x00\x01\x00\x00|OTTO|true|typ1")
 SIGNATURES: dict[str, re.Pattern[bytes]] = {
     ".png": re.compile(rb"\x89PNG\r\n\x1a\n"),
     ".jpg": _JPEG,
     ".jpeg": _JPEG,
     ".gif": re.compile(rb"GIF8[79]a"),
     ".webp": re.compile(rb"RIFF.{4}WEBP", re.DOTALL),
-    ".ttf": re.compile(rb"\x00\x01\x00\x00|true"),
-    ".otf": re.compile(rb"OTTO"),
+    ".ttf": _SFNT,
+    ".otf": _SFNT,
     ".woff": re.compile(rb"wOFF"),
     ".woff2": re.compile(rb"wOF2"),
 }
@@ -264,6 +268,29 @@ def test_an_image_or_a_font_that_is_one_is_exempt(suffix: str) -> None:
     assert found == []
 
 
+@pytest.mark.parametrize("suffix", [".ttf", ".otf"])
+@pytest.mark.parametrize(
+    "opening",
+    [
+        pytest.param(b"\x00\x01\x00\x00", id="truetype"),
+        pytest.param(b"OTTO", id="cff"),
+        pytest.param(b"true", id="apple"),
+        pytest.param(b"typ1", id="type1"),
+    ],
+)
+def test_a_font_is_read_as_sfnt_whatever_its_suffix_says_of_its_outlines(
+    suffix: str, opening: bytes
+) -> None:
+    # A TrueType-outline `.otf` and a CFF `.ttf` are both valid fonts, and each was once a finding.
+    # Mutation (declared): `.otf` given `OTTO` alone -> its other three cases redden. Mutation:
+    # `.ttf` given the TrueType openings alone -> its `cff` and `type1` cases redden.
+    content = opening + b"\0" * 16
+    found = payload_findings(
+        [(f"font{suffix}", FILE_MAX_BYTES * 2, "100644")], read=lambda _: content
+    )
+    assert found == []
+
+
 @pytest.mark.parametrize(
     ("path", "content"),
     [
@@ -286,6 +313,7 @@ def test_an_exempt_file_is_judged_by_its_suffix_in_any_case_and_an_svg_by_being_
         pytest.param("photo.jpg", b"GIF89a\0", id="gif-as-jpeg"),
         pytest.param("photo.webp", b"RIFF\x24\x00\x00\x00AVI \0", id="riff-not-webp"),
         pytest.param("fonts/body.woff2", b"wOFF\0", id="woff-as-woff2"),
+        pytest.param("fonts/body.ttf", b"wOFF\0", id="woff-as-ttf"),
     ],
 )
 def test_a_file_that_is_not_the_image_or_font_its_suffix_names_is_a_finding(

@@ -832,6 +832,9 @@ reddens = [
   "tests/scripts/test_mutation_oracle.py::test_a_collection_that_prints_an_undecodable_byte_still_warms_the_cache",
 ]
 
+# Two more on the run itself, beside `mutations/`'s "the oracle collects pytest from the working
+# tree again": the scratch checkout's `src` precedes the editable install, and an uncommitted test a
+# `reddens` names stops the run.
 [[mutation]]
 name = "the scratch checkout's src no longer precedes the editable install"
 file = "scripts/mutation_oracle.py"
@@ -920,6 +923,8 @@ reddens = [
   "tests/test_fixtures.py::test_no_workflow_splices_an_expression_into_a_shell",
 ]
 
+# The checkout step peels the ref the platform names to its commit before comparing it with the
+# commit the gates are handed.
 [[mutation]]
 name = "the checkout step compares the platform's workflow sha without peeling it"
 file = ".github/workflows/check.yml"
@@ -2666,6 +2671,17 @@ after = "        elif False:"
 reddens = [
   "tests/test_payload.py::test_a_file_that_is_not_the_image_or_font_its_suffix_names_is_a_finding[executable-as-png]",
   "tests/test_payload.py::test_a_file_that_is_not_the_image_or_font_its_suffix_names_is_a_finding[gif-as-jpeg]",
+]
+
+# A `.ttf` and an `.otf` are one container, sfnt, whatever their outlines: split by suffix, a valid
+# TrueType-outline `.otf` read as "named .otf and not one".
+[[mutation]]
+name = "an .otf is read as CFF outlines only"
+file = "tests/test_payload.py"
+before = '    ".otf": _SFNT,'
+after = '    ".otf": re.compile(rb"OTTO"),'
+reddens = [
+  "tests/test_payload.py::test_a_font_is_read_as_sfnt_whatever_its_suffix_says_of_its_outlines[truetype-.otf]",
 ]
 
 # The checklist names an `.ico`, a `.pdf` and a `.zip` file as binaries it holds, whatever their
