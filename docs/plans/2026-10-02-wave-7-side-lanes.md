@@ -1145,6 +1145,33 @@ for path, size, mode in sorted(e, key=lambda x: -x[1])[:3]: print(size, path, FI
   That left about 24 files of the 512 at the peak of a release cycle; file count stayed the
   binding limit.
 
+**Task 5 Step 1, `claude plugin validate --strict` (2026-10-02, `claude` 2.1.285).** Run on the
+branch after Task 4, first in the working checkout and then on the tracked tree alone, extracted
+with `git archive HEAD | tar -x -C "$TREE"` into a scratch directory:
+
+```text
+$ claude plugin validate --strict .                              # working checkout
+✔ Validation passed                                              # exit 0 (marketplace manifest)
+$ claude plugin validate --strict .claude-plugin/plugin.json     # working checkout
+⚠ Found 1 warning:
+  ❯ root: CLAUDE.md at the plugin root is not loaded as project context. To ship context with
+    your plugin, use a skill (skills/<name>/SKILL.md) instead.
+✘ Validation failed (--strict treats warnings as errors)         # exit 1
+$ cd "$TREE" && claude plugin validate --strict .                # tracked tree
+✔ Validation passed                                              # exit 0
+$ cd "$TREE" && claude plugin validate --strict .claude-plugin/plugin.json
+✔ Validation passed                                              # exit 0
+```
+
+- `validate .` read only the marketplace manifest; the plugin manifest had to be named to be
+  validated with the plugin's skills, agents and hooks.
+- The one warning came from a `CLAUDE.md` that is untracked and git-ignored in that checkout:
+  the tracked tree carries none, and on it both manifests passed under `--strict`. A plugin
+  folder submitted from a clone is the tracked tree, so the warning does not reach the
+  directory; it does reach anyone who keeps a local `CLAUDE.md` at the root and validates there.
+- Step 2, the portal's Validate run, needs the owner at the portal with this branch pushed; it
+  had not run when this was written.
+
 ## Findings — benchmark
 
 Written by Tasks 6, 9 and 10.
