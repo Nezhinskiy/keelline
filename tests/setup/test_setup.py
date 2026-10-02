@@ -623,9 +623,9 @@ def test_the_recorded_overlay_root_is_accepted_inside_and_refused_outside_by_att
     # from any other refusal `read_binding` might raise for an unrelated reason.
     #
     # No new entry in `mutations/`: the guard both arms exercise is `binding.py`'s own
-    # store-must-match-`permitted_roots` check, already load-bearing there under "the overlay root
-    # comes from the machine file and not from the argument" — this test proves the two ends of the
-    # seam agree, not a new line to mutate.
+    # store-must-match-`permitted_roots` check, already load-bearing as `mutations/`'s "attach takes
+    # the overlay root from its argument instead of the machine file" — this test proves the two
+    # ends of the seam agree, not a new line to mutate.
     existing = tmp_path / "overlay"
     existing.mkdir()
     _seed_overlay(existing)

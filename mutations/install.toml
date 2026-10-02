@@ -576,11 +576,11 @@ reddens = [
   "tests/doctor/test_checks.py::test_an_overlay_that_cannot_be_asked_vouches_for_nothing_and_says_so",
 ]
 
-# Defence in depth, and the only guard in its commit with no entry here -- which is how it stayed
-# a claim rather than a fact. The `STAYFIXED_*` strip two lines above is what closes the seam; this
-# flag is the second, independent guard, so that a later edit narrowing the strip, or a second
-# variable gated on a terminal the way the wrapper gates `STAYFIXED_PYTHON_CANDIDATES`, still meets
-# a closed stdin. It also stops a wrapper that reads stdin holding the report open.
+# Defence in depth, and the only guard in its commit with no entry in `mutations/` -- which is how
+# it stayed a claim rather than a fact. The `STAYFIXED_*` strip two lines above is what closes the
+# seam; this flag is the second, independent guard, so that a later edit narrowing the strip, or a
+# second variable gated on a terminal the way the wrapper gates `STAYFIXED_PYTHON_CANDIDATES`, still
+# meets a closed stdin. It also stops a wrapper that reads stdin holding the report open.
 [[mutation]]
 name = "doctor's wrapper probe inherits this process's stdin"
 file = "src/stayfixed/doctor/checks.py"
@@ -1264,8 +1264,9 @@ reddens = [
 ]
 
 # --- Four doctor rows that named the wrong cause ----------------------------------------------
-# These are the sentences a person reads when something is wrong, so a row that names the wrong
-# cause sends them to fix the wrong thing. Each mutation restores exactly the sentence that was
+# The three here and "a broken machine file is blamed on stayfixed.toml again" are the sentences a
+# person reads when something is wrong, so a row that names the wrong cause sends them to fix the
+# wrong thing. Each mutation restores exactly the sentence that was
 # there.
 [[mutation]]
 name = "doctor calls a byte-correct file a mismatch again"
@@ -1339,7 +1340,8 @@ reddens = [
   "tests/overlay/test_requires.py::test_the_floor_is_compared_as_numbers_not_as_text",
 ]
 
-# The other half of "this reader answers for every string", after the digit bound above.
+# The other half of "this reader answers for every string", after the digit bound "the version
+# grammar stops bounding its components" holds.
 # `json.loads` answers for a list, a string and a number as readily as for an object and `raw.get`
 # exists on none of them, so without this arm a manifest an owner can save raised `AttributeError`
 # out of a function whose docstring promises `None` for anything it cannot read. Both callers rest

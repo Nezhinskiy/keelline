@@ -377,7 +377,6 @@ def test_the_gate_reads_the_whole_tree() -> None:
         "README.md",
         "src/stayfixed/cli.py",
         "docs/cli.md",
-        "mutations/core.toml",
         "hooks/run-hook.sh",
         "scripts/stayfixed",
         "tests/test_fsops.py",
@@ -385,6 +384,9 @@ def test_the_gate_reads_the_whole_tree() -> None:
         "agents/code-navigator.md",
     ):
         assert wanted in names, wanted
+    # The mutation declarations by their directory and not by a group file's name, which is
+    # `GROUP_OF`'s to choose and to change.
+    assert any(name.startswith("mutations/") for name in names), "no declaration file is walked"
     # **One assertion per tracked top-level tree, because the two floors below cannot hold
     # this.** Measured 2026-09-19: `tracked_files()` made to drop every path whose first
     # component is `.github`, `skills`, `agents` or `changelog.d` — 58 of 347 files, every

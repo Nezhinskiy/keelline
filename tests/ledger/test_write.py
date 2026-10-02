@@ -291,11 +291,11 @@ def test_a_repository_git_refuses_to_read_is_not_mistaken_for_no_repository(
 @needs_git
 def test_the_allocator_reads_the_git_source_with_the_shared_digit_rule(tmp_path: Path) -> None:
     # The `git log` reader used to respell the digit rule inline as `(\d{3,})` instead of
-    # taking `DIGITS` from `stayfixed.identifiers`, which owns it. A third spelling is one the
-    # entry in `mutations/` over that constant cannot reach, so widening the rule would have
-    # left the allocator counting by the old one and handing out a number some ref already
-    # holds. Mutation: `DIGITS = r"\d+"` — `BR-42.md` becomes an identifier the reader counts
-    # and this reddens (the declared entry over `identifiers.py`).
+    # taking `DIGITS` from `stayfixed.identifiers`, which owns it. A third spelling is one
+    # `mutations/`'s "the identifier digit rule widens and the allocator keeps the old one" cannot
+    # reach, so widening the rule would have left the allocator counting by the old one and
+    # handing out a number some ref already holds. Mutation: `DIGITS = r"\d+"` — `BR-42.md`
+    # becomes an identifier the reader counts and this reddens (that same entry).
     root, config = project(tmp_path)
     git(root, "init", "-q", "-b", "main")
     seed(root, config, 1)

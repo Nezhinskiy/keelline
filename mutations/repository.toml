@@ -36,12 +36,12 @@ reddens = [
   "tests/test_neutral.py::test_the_gate_discriminates",
 ]
 
-# The public-document half of the same gate, which had no entry here until two rounds of review
-# found two holes in it. `PUBLIC_FORBIDDEN` is the full table minus the digests of the paths the
-# preset itself ships, so that a README may say where the note store lives by default. Written
-# by hand as the full table instead, the exemption disappears and every public document that
-# names a default path reddens; written as the full table is also the shape a well-meaning
-# "simplification" takes, and the derivation fails silently either way.
+# The public-document half of the same gate, which had no entry in `mutations/` until two rounds of
+# review found two holes in it. `PUBLIC_FORBIDDEN` is the full table minus the digests of the paths
+# the preset itself ships, so that a README may say where the note store lives by default. Written
+# by hand as the full table instead, the exemption disappears and every public document that names a
+# default path reddens; written as the full table is also the shape a well-meaning "simplification"
+# takes, and the derivation fails silently either way.
 [[mutation]]
 name = "the public document table is written by hand instead of derived from the preset"
 file = "tests/test_neutral.py"
@@ -785,10 +785,11 @@ reddens = [
   "tests/test_areas.py::test_the_boundary_rule_resolves_a_relative_import_before_judging_it",
 ]
 
-# The oracle proves HEAD in a detached worktree. All three entries are on the run itself, so a
-# regression to in-place mutation — or a scratch `src` that does not precede the editable install on
-# sys.path, or a dirty-tree sweep that forgets the named tests — is a finding rather than a quiet
-# wrong answer.
+# The oracle proves HEAD in a detached worktree. Three entries are on the run itself — this one,
+# "the scratch checkout's src no longer precedes the editable install" and "the dirty-tree sweep
+# forgets the tests every entry names" — so a regression to in-place mutation, or a scratch `src`
+# that does not precede the editable install on sys.path, or a dirty-tree sweep that forgets the
+# named tests, is a finding rather than a quiet wrong answer.
 [[mutation]]
 name = "the oracle collects pytest from the working tree again"
 file = "scripts/mutation_oracle.py"
@@ -1665,7 +1666,7 @@ reddens = [
 # The lock shares the scratch prefix, so the sweep's glob finds it and only the `is_dir()` arm
 # spares it. That is an invariant between two functions and nothing stated it: a sweep that took
 # the lock with it would let the next run in while the first was still working, which is the
-# hazard above with one more step in it.
+# hazard of "a second oracle takes the lock instead of refusing" with one more step in it.
 [[mutation]]
 name = "the housekeeping sweep takes the lock with it"
 file = "scripts/mutation_oracle.py"
@@ -2515,9 +2516,20 @@ reddens = [
   "tests/scripts/test_check_artifacts.py::test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main[not-utf8]",
 ]
 
+# The declarations are a directory of group files, and a reader that stops after one proves one
+# group's entries and reports the run as the whole set.
 [[mutation]]
 name = "the oracle reads only the first group file"
 file = "scripts/mutation_oracle.py"
 before = '    for path in sorted(DECLARATIONS.glob("*.toml")):'
 after = '    for path in sorted(DECLARATIONS.glob("*.toml"))[:1]:'
 reddens = ["tests/scripts/test_mutation_oracle.py::test_the_oracle_reads_every_group_file"]
+
+# Every entry sits in the group file `GROUP_OF` routes its `file` to; a table that lost a row
+# would file the next entry for that area in the wrong group, and nothing else would notice.
+[[mutation]]
+name = "the group table loses a row and its entries route to the catch-all"
+file = "scripts/mutation_oracle.py"
+before = '    ("src/stayfixed/doctor/", "install"),'
+after = ''
+reddens = ["tests/scripts/test_mutation_oracle.py::test_every_entry_lives_in_its_group_file"]

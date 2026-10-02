@@ -86,7 +86,7 @@ def test_a_gate_finding_is_an_item_with_the_gate_s_rule_and_remedy(tmp_path: Pat
 
 @needs_git
 def test_the_summary_prints_counts_and_never_a_path(tmp_path: Path) -> None:
-    # Declared in `mutations/`: the gate table's count cell printing each finding's path.
+    # Declared: `mutations/`'s "the assess summary prints each finding's path instead of a count".
     root = _over_budget(tmp_path)
     summary = render(assess(root, machine=_machine(tmp_path), base=BASE))
     lines = summary.splitlines()

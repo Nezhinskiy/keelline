@@ -1380,8 +1380,10 @@ reddens = ["tests/scaffold/test_engine.py::test_a_record_at_a_case_variant_of_th
 # The footprint commands' hidden-write invariant (`tests/project/test_footprint_invariant.py`)
 # is also named by other entries whose guards it holds. Its own are this one, the shared `.git`
 # predicate both call sites ask, and the guards made to refuse more than they should, which the
-# legitimate cases catch: the four entries named for the ignore guard, and "the engine refuses
-# every recorded artifact".
+# legitimate cases catch: "the ignore guard refuses a fixed name in the clone's excludes", "the
+# ignore guard refuses a new file at an ignored place", "the ignore guard refuses an artifact kept
+# out of git", "the ignore guard reads a tracked file as ignored" and "the engine refuses every
+# recorded artifact".
 
 [[mutation]]
 name = "git's control directory is named by no path"
@@ -1724,8 +1726,8 @@ reddens = [
 # A name the repository chose — a file name, a note's name, a `memory.groups` entry, a TOML key —
 # printed raw forged a workflow command in CI with a line break and `::error::`, and drove the
 # terminal with an escape sequence. `printed.printable` withholds such a name where `--json`
-# carries it, `printed.quoted` escapes it where a refusal is the only channel, and each entry
-# below pins one bound or one printer that must go through it.
+# carries it, `printed.quoted` escapes it where a refusal is the only channel, and each entry on
+# this class pins one bound or one printer that must go through it.
 
 [[mutation]]
 name = "printable passes a name outside the grammar through"

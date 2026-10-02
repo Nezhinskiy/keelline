@@ -203,8 +203,9 @@ def test_the_cli_never_picks_the_github_source_for_you() -> None:
     # neither flag refuses and names both. A repository is created on an account only after
     # explicit confirmation, and a non-interactive caller — the usual one in this harness — can
     # express confirmation only by naming the source. Mutation:
-    # `source="template"` in that parser's `set_defaults` and this reddens; it is declared in
-    # `mutations/`, because the failure creates a repository nobody asked for.
+    # `source="template"` in that parser's `set_defaults` and this reddens; it is declared as
+    # `mutations/`'s "overlay create picks the GitHub source when nobody asked for it", because the
+    # failure creates a repository nobody asked for.
     from stayfixed.cli import build_parser, discover_registrars
     from stayfixed.overlay.commands import run_overlay_create
 

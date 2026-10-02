@@ -479,8 +479,9 @@ def test_the_ignore_region_is_written_before_the_ledger_and_not_merely_written(
     # question from the one `attach`'s own comment states: the ledger holds the owner's personal
     # allow rules and lives under a path the repository has no `.gitignore` line for, so a ledger
     # written first is a ledger `git add -A` publishes to every collaborator in the window before
-    # the region lands. `mutations/`'s entry for it replaced the call with `pass`, so both
-    # named tests reddened against absence and nothing anywhere reddened against order.
+    # the region lands. The one entry it had replaced the call with `pass`, which is what
+    # `mutations/`'s "the ignore region is never written at all" still does, so both named tests
+    # reddened against absence and nothing anywhere reddened against order.
     #
     # The order of the writes themselves, recorded at `fsops.write_within` — the one primitive
     # every write in this module goes through — rather than inferred from the tree afterwards,

@@ -681,7 +681,9 @@ reddens = [
 # and crashed `detach` on the way out. Five entries, because the guard is five decisions: the
 # question itself, the floor under it for the component that changes after it is asked, and the
 # three hoists that make the refusal precede the first write — `attach`'s, `detach`'s first
-# withdrawal, and the worktree link step every `SessionStart` runs.
+# withdrawal, and the worktree link step every `SessionStart` runs. The first two hoists are
+# "attach discovers the harness anchor from inside the link step" and "detach discovers the
+# harness anchor from inside the withdrawal".
 [[mutation]]
 name = "the harness anchor stops asking whether the walk can reach it"
 file = "src/stayfixed/memory/worktree.py"
@@ -1169,11 +1171,11 @@ reddens = [
   "tests/ledger/test_commands.py::test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite[colon]",
 ]
 
-# The same bounds, carried to the rest of the class. A name the refusal is the only channel for
-# is clipped to its start and its length when nothing bounds it upstream; the re-run note is said
-# only when keys were left off; a file `bugs renumber` could not sweep is carried in `--json` as a
-# path and a reason, the reason naming no absolute path; and the resolver's reason for a store
-# with no group resolved is counted and capped.
+# The bounds `findings.listed` sets, carried to the rest of the class. A name the refusal is the
+# only channel for is clipped to its start and its length when nothing bounds it upstream; the
+# re-run note is said only when keys were left off; a file `bugs renumber` could not sweep is
+# carried in `--json` as a path and a reason, the reason naming no absolute path; and the resolver's
+# reason for a store with no group resolved is counted and capped.
 
 [[mutation]]
 name = "the stale-key refusal says a re-run names the rest at exactly the limit"

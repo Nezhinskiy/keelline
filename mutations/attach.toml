@@ -552,10 +552,11 @@ reddens = [
   "tests/attach/test_write.py::test_the_refusal_counts_the_groups_and_never_names_one",
 ]
 
-# The overlay half of the never-moved snapshot, which the repository-write mutation above cannot
-# reach: it hoists `_write_ignore_region`, which lands under the root. `_record_binding` is the
-# write that made `doctor` report a refused attach as **bound**, and it lands in the overlay --
-# so this is the one that proves the second walk is doing work rather than passing empty.
+# The overlay half of the never-moved snapshot, which the repository-write mutation, "the
+# never-moved check is asked one write too late", cannot reach: it hoists `_write_ignore_region`,
+# which lands under the root. `_record_binding` is the write that made `doctor` report a refused
+# attach as **bound**, and it lands in the overlay -- so this is the one that proves the second walk
+# is doing work rather than passing empty.
 [[mutation]]
 name = "the binding record is written above the never-moved refusal"
 file = "src/stayfixed/attach/write.py"
@@ -621,7 +622,8 @@ reddens = [
   "tests/attach/test_commands.py::test_check_counts_the_groups_that_never_moved_and_exits_one",
 ]
 
-# The fourth site of the same family: repository bytes quoted back unbounded. The file is the
+# The fourth site of one family, repository bytes quoted back unbounded, whose third is "a tomllib
+# message is quoted back whole, so a hostile key reaches a refusal". The file is the
 # overlay's `projects/<name>/project.toml`, whose bytes are the machine owner's and may print —
 # except that the value stayfixed writes into it is this repository's `origin`, and a remote URL may
 # not print wherever it came from. `tomllib`'s message embeds the source for several of its faults,

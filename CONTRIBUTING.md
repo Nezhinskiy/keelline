@@ -208,15 +208,15 @@ after = "        if part in (_HERE,):"
 reddens = ["tests/test_fsops.py::test_a_parent_component_never_leaves_the_root"]
 ```
 
-That example lives in `mutations/core.toml`. The set is one file per group of the tree, so that no
-file grows to the 256 KiB at which the plugin directory holds a file for a reviewer, and an entry
-goes in the file its `file` routes to: `GROUP_OF` in `scripts/mutation_oracle.py` maps path
-prefixes to groups, the first match winning and anything outside `src/stayfixed/` falling to
-`repository.toml`. `tests/scripts/test_mutation_oracle.py` reddens on an entry in the wrong file
-and on a file that reaches its cap; a group that does is split by its largest area, which is an
-edit to `GROUP_OF`. A comment that cites an entry names the set and the entry's quoted name —
-`mutations/`'s "the containment walk stops refusing '..'" — and never its group file, so a regroup
-leaves the comment true.
+The set is one file per group of the tree, so that no file grows to the 256 KiB at which the
+plugin directory holds a file for a reviewer, and an entry goes in the group file its `file` routes
+to: `GROUP_OF` in `scripts/mutation_oracle.py` maps path prefixes to groups, the first match winning
+and the empty prefix's group taking anything outside `src/stayfixed/`.
+`tests/scripts/test_mutation_oracle.py` reddens on an entry in the wrong file and on a file that
+reaches its cap; a group that does is split by its largest area, which is an edit to `GROUP_OF`.
+A comment that cites an entry names the set and the entry's quoted name — `mutations/`'s "the
+containment walk stops refusing '..'" — and never its group file, so a regroup leaves the comment
+true.
 
 The oracle sweeps before it runs. A killed run — `kill -9`, a CI timeout, a cancelled agent —
 cannot run its own cleanup, and `git worktree prune` does not collect what it leaves: prune only

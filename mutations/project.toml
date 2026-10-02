@@ -57,7 +57,7 @@ reddens = [
 # Each of the six mutates a file no type checker reads and no import reaches: a YAML
 # workflow, a JSON permissions table, a `.gitignore`, the hook manifest. That is exactly why
 # they are here. `hooks/run-hook.sh` already has eighteen entries on the same argument --
-# CONTRIBUTING's rule is that a genuinely load-bearing guard goes into this file "instead of
+# CONTRIBUTING's rule is that a genuinely load-bearing guard goes into `mutations/` "instead of
 # only describing it", and a `# Mutation: ...` comment in a test body is a description.
 
 # The overlay's first secret scan, and the revision decides whose code runs on the owner's
@@ -151,7 +151,8 @@ reddens = [
   "tests/overlay/test_template.py::test_the_scan_workflow_can_read_a_pull_requests_commits_in_a_private_repository",
 ]
 
-# The same argument the `rev:` entry above makes, one file over and with a token attached. A major
+# The same argument "the overlay template follows gitleaks' default branch" makes about `rev:`,
+# one file over and with a token attached. A major
 # tag is a name its owner can move, so `@v7` resolving to different code tomorrow is somebody else
 # choosing what runs against a repository holding the owner's rules and notes. A full-length commit
 # sha is the only immutable reference Actions has (principle 9).
@@ -628,11 +629,14 @@ reddens = [
   "tests/project/test_command.py::test_the_ci_line_has_no_arm_no_run_can_reach",
 ]
 
-# The `_enum` class, at four more sites. Each refusal below is reached by a value a clone writes
-# into `stayfixed.toml` — `[stayfixed] preset` or `[stayfixed] profile` — and each ran `{name!r}` into
-# a message the skills relay to a terminal and a model. The first of each pair runs exactly for a
-# value that failed its rule, so it could carry ESC and line breaks; the second is reached only by a
-# name that passed, and could still carry an instruction spelled in letters. The anchor is
+# The `_enum` class, at four more sites, in two pairs: "a preset name outside the rule is quoted
+# back again" and "a preset this build does not ship is quoted back again", then "a profile outside
+# one path segment is quoted back again" and "a profile the listing lacks is quoted back again".
+# Each refusal is reached by a value a clone writes into `stayfixed.toml` — `[stayfixed] preset` or
+# `[stayfixed] profile` — and each ran `{name!r}` into a message the skills relay to a terminal and
+# a model. The first of each pair runs exactly for a value that failed its rule, so it could carry
+# ESC and line breaks; the second is reached only by a name that passed, and could still carry an
+# instruction spelled in letters. The anchor is
 # stayfixed's own vocabulary: the key, the rule in words, and the listing this build ships. Each
 # mutation puts the value back into its message.
 [[mutation]]
@@ -1352,7 +1356,8 @@ reddens = [
 ]
 
 # `stayfixed gate` refuses a symlinked `stayfixed.toml`, and `init` reads it through the same
-# reader (`assess` reads it through `load`, whose entry is below): followed, a clone's link to
+# reader (`assess` reads it through `load`, whose entry is "load follows a symlinked
+# stayfixed.toml"): followed, a clone's link to
 # `/dev/zero` ends the run by exhausting memory.
 [[mutation]]
 name = "init follows a symlinked stayfixed.toml that carries its version"
