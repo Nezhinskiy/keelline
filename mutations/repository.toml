@@ -2533,3 +2533,53 @@ file = "scripts/mutation_oracle.py"
 before = '    ("src/stayfixed/doctor/", "install"),'
 after = ''
 reddens = ["tests/scripts/test_mutation_oracle.py::test_every_entry_lives_in_its_group_file"]
+
+# The plugin directory holds a file of 256 KiB or more for a reviewer; a guard that admits the
+# boundary itself passes the one size the directory refuses.
+[[mutation]]
+name = "a file at the directory's size limit stops being a finding"
+file = "tests/test_payload.py"
+before = "        if size >= FILE_MAX_BYTES and not path.lower().endswith(EXEMPT_SUFFIXES):"
+after = "        if size > FILE_MAX_BYTES and not path.lower().endswith(EXEMPT_SUFFIXES):"
+reddens = ["tests/test_payload.py::test_a_file_at_the_limit_is_a_finding"]
+
+# File count, not bytes, is the limit the tree is closest to; a boundary moved by one is a listing
+# held for a reviewer the guard said was inside it.
+[[mutation]]
+name = "the payload's file count is a finding one file early"
+file = "tests/test_payload.py"
+before = "    if len(listed) > FILES_MAX:"
+after = "    if len(listed) >= FILES_MAX:"
+reddens = ["tests/test_payload.py::test_one_file_past_the_count_is_a_finding"]
+
+# A tracked symlink blocks the listing outright, so the payload guard must name one.
+[[mutation]]
+name = "a tracked symlink stops being a payload finding"
+file = "tests/test_payload.py"
+before = "        if mode == SYMLINK_MODE:"
+after = "        if mode != SYMLINK_MODE:"
+reddens = ["tests/test_payload.py::test_a_symlink_is_a_finding"]
+
+# `.DS_Store` and `__MACOSX` block the listing wherever they sit, and a commit adds them below the
+# root at least as often as at it.
+[[mutation]]
+name = "an archive tool's leftover is a payload finding only at the root"
+file = "tests/test_payload.py"
+before = "        if LEFTOVERS.intersection(components):"
+after = "        if LEFTOVERS.intersection(components[:1]):"
+reddens = [
+  "tests/test_payload.py::test_an_archive_tools_leftover_is_a_finding_at_any_depth[docs/.DS_Store]",
+  "tests/test_payload.py::test_an_archive_tools_leftover_is_a_finding_at_any_depth[a/__MACOSX/b]",
+]
+
+# `export-ignore` and `export-subst` in any `.gitattributes` block the listing; a guard that never
+# reads the file cannot see either.
+[[mutation]]
+name = "the payload guard stops reading .gitattributes"
+file = "tests/test_payload.py"
+before = '        if components[-1] == ".gitattributes":'
+after = '        if components[-1] == ".gitattribute":'
+reddens = [
+  "tests/test_payload.py::test_a_gitattributes_line_carrying_an_export_attribute_is_a_finding[export-ignore]",
+  "tests/test_payload.py::test_a_gitattributes_line_carrying_an_export_attribute_is_a_finding[export-subst]",
+]
