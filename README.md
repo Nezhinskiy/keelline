@@ -286,7 +286,7 @@ stayfixed commit check --range origin/main..HEAD       # attribution lines in co
 stayfixed commit strip .git/COMMIT_EDITMSG             # take the attribution block out of a message file
 stayfixed test hygiene                                 # the faults that make a red run unattributable
 stayfixed test audit-entrypoints                       # tests that never exercise what they name
-stayfixed test attribute --command "uv sync --locked && uv run pytest tests/x.py::t"   # the change, or the environment: three runs, one verdict
+stayfixed test attribute --command "uv sync --locked && uv run --locked pytest tests/x.py::t"   # the change, or the environment: three runs, one verdict
 
 # The private overlay
 stayfixed overlay create --owner you --name stayfixed-private --local   # render one here, no network call at all
