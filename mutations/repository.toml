@@ -2544,6 +2544,24 @@ before = "        key=lambda row: len(row[0]),"
 after = "        key=lambda row: 0,"
 reddens = ["tests/scripts/test_mutation_oracle.py::test_a_row_routes_its_files_wherever_it_stands_in_the_table"]
 
+# A comment cites an entry by its name and nothing else, so a name two entries share points every
+# such citation at two guards at once.
+[[mutation]]
+name = "the oracle lets two entries share a name"
+file = "scripts/mutation_oracle.py"
+before = "        if mutation.name in named:"
+after = "        if False:"
+reddens = ["tests/scripts/test_mutation_oracle.py::test_an_entry_name_declared_twice_is_a_finding"]
+
+# And the name must reach an entry: renamed, the entry CONTRIBUTING's own example cites leaves that
+# citation, and any other, naming nothing.
+[[mutation]]
+name = "an entry a comment cites by name is renamed"
+file = "mutations/core.toml"
+before = "name = \"the containment walk stops refusing '..'\""
+after = "name = \"the containment walk stops refusing a parent component\""
+reddens = ["tests/scripts/test_mutation_oracle.py::test_every_cited_entry_name_is_declared"]
+
 # The plugin directory holds the version for a reviewer when a file other than an image or a font
 # is 256 KiB or more; a guard that admits the boundary passes the one size the directory holds.
 [[mutation]]

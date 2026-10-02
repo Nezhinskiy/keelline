@@ -24,11 +24,12 @@ from types import ModuleType
 import pytest
 
 from tests import gitfixture
-from tests.declarations import load
+from tests.declarations import ANCHOR, cited_names, declared, load
 from tests.gitfixture import git as _git
 from tests.test_payload import FILE_MAX_BYTES
 
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+REPOSITORY = Path(__file__).resolve().parents[2]
 
 
 def oracle(root: Path | None = None) -> ModuleType:
@@ -1011,6 +1012,66 @@ def test_every_declared_entry_is_sound_before_any_run() -> None:
     # reason that is not about drift.
     assert len(declared) > 400, len(declared)
     assert module.static_findings(declared) == []
+
+
+def test_an_entry_name_declared_twice_is_a_finding(tmp_path: Path) -> None:
+    # A comment cites an entry by its name alone, so a second entry under one name makes every
+    # citation of it ambiguous. Mutation (declared): the name rule dropped -> the list below comes
+    # out empty.
+    subject = tmp_path / "guard.py"
+    subject.write_text("GUARD = True\nOTHER = True\n", encoding="utf-8")
+    module = oracle(root=tmp_path)
+    first = a_mutation(module, subject, ())
+    second = module.Mutation(
+        name="probe", file=subject, before="OTHER = True", after="OTHER = False", reddens=()
+    )
+    assert module.static_findings([first, second]) == [
+        "probe: another entry is declared under this name"
+    ]
+
+
+# --- citations: a comment names an entry, and the name must reach one ----------------------------
+#
+# CONTRIBUTING makes the entry's quoted name the one way a comment anywhere in the tree cites it,
+# so that a regroup of `mutations/` leaves every comment true. That holds only while every cited
+# name is declared: a renamed entry otherwise leaves its citations pointing at nothing, and the
+# release runbook was found pointing at such a name with the whole suite green.
+
+
+def test_a_citation_is_read_across_comment_lines_and_through_a_list() -> None:
+    # Mutation: `_WRAP` matches nothing -> the wrapped name keeps its `#` and this reddens.
+    # Mutation: `_FURTHER` matches nothing -> the second name of the list is lost and this reddens.
+    text = (
+        f'# as {ANCHOR} "the first\n'
+        '#   wrapped one" and "the second", and also\n'
+        f'   {ANCHOR} "a third" in a document, beside "a quote that is no citation".\n'
+    )
+    assert cited_names(text) == ["the first wrapped one", "the second", "a third"]
+
+
+@needs_git
+@pytest.mark.skipif(not (REPOSITORY / ".git").exists(), reason="no git checkout to ask")
+def test_every_cited_entry_name_is_declared() -> None:
+    """Every citation of an entry in a tracked file outside `docs/plans/` names a declared entry.
+
+    `docs/plans/` is left out because the delivered plans are a record (CONTRIBUTING.md, "Plans"):
+    each cites the entries as they were named when it was written. Mutation (declared): an entry a
+    comment cites is renamed -> its citations name nothing and this reddens.
+    """
+    names = {" ".join(mutation.name.split()) for mutation in declared()}
+    cited: list[tuple[str, str]] = []
+    for path in _git(REPOSITORY, "ls-files", "-z").split("\0"):
+        source = REPOSITORY / path
+        if not path or path.startswith("docs/plans/") or not source.is_file():
+            continue
+        try:
+            text = source.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        cited.extend((path, name) for name in cited_names(text))
+    # A walk-based assertion states its walk is non-empty: a parser that read nothing passes.
+    assert len(cited) > 100, len(cited)
+    assert [(path, name) for path, name in cited if name not in names] == []
 
 
 # --- the declarations directory, one file per group ------------------------------------------

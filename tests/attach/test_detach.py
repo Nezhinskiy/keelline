@@ -1158,8 +1158,8 @@ def test_an_exclude_file_ending_in_a_lone_carriage_return_keeps_its_last_pattern
     # attached. The file comes back byte for byte on detach.
     #
     # Mutations: `mutations/`'s "a hash region reads a lone carriage return as a line end",
-    # "the exclude block reads a lone carriage return as a line end" and "detach takes back a
-    # line ending attach never added".
+    # "the exclude block reads a lone carriage return as a line end" and "detach leaves the
+    # newline it added after a lone carriage return".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"

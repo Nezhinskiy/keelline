@@ -4,19 +4,30 @@
 test that counts or walks the entries, so that every one of them reads the declarations the one way
 the oracle does — `declared()`, over `group_files()` — and the directory's glob is spelled once, in
 the script. `tests/scripts/test_mutation_oracle.py` loads fresh copies through `load` for the tests
-that redirect the script's paths; everything else asks `declared()` here.
+that redirect the script's paths; everything else asks `declared()` here. `cited_names` reads the
+other half of the contract, a comment's citation of an entry by its name.
 """
 
 from __future__ import annotations
 
 import functools
 import importlib.util
+import re
 import sys
 from pathlib import Path
 from types import ModuleType
 from typing import Any
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "mutation_oracle.py"
+# How a comment cites an entry (CONTRIBUTING.md, "Tests"): the set, then the entry's quoted name.
+# Built in two pieces so that this line is not itself read as a citation of whatever follows it.
+ANCHOR = "`mutations/`" + "'s"
+# The name runs to the next double quote and may wrap: a line break, the next line's indentation
+# and a comment's `#` read as one space. After it, `, "…"`, `and "…"` or `or "…"` cite further
+# names under the same anchor.
+_QUOTED = re.compile(r'\s*"([^"]*)"')
+_FURTHER = re.compile(r'\s*(?:,\s*(?:and|or)?|and|or)\s*(?:#\s*)?"([^"]*)"')
+_WRAP = re.compile(r"\s*\n\s*(?:#\s*)?")
 
 
 def load(name: str) -> ModuleType:
@@ -51,3 +62,16 @@ def declared() -> list[Any]:
 def relative(path: Path) -> str:
     """An entry's `file` as the declaration spells it: from the repository root, with `/`."""
     return path.relative_to(SCRIPT.parents[1]).as_posix()
+
+
+def cited_names(text: str) -> list[str]:
+    """Every entry name `text` cites, each with its line wraps read as single spaces."""
+    names: list[str] = []
+    at = text.find(ANCHOR)
+    while at != -1:
+        quoted = _QUOTED.match(text, at + len(ANCHOR))
+        while quoted is not None:
+            names.append(" ".join(_WRAP.sub(" ", quoted.group(1)).split()))
+            quoted = _FURTHER.match(text, quoted.end())
+        at = text.find(ANCHOR, at + len(ANCHOR))
+    return names

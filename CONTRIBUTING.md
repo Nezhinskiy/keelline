@@ -223,7 +223,10 @@ the wrong file and on a file that reaches its cap, three quarters of the directo
 does is split by its largest area, which is an edit to `GROUP_OF`.
 A comment that cites an entry names the set and the entry's quoted name — `mutations/`'s "the
 containment walk stops refusing '..'" — and never its group file, so a regroup leaves the comment
-true.
+true. That makes a name a reference, and two things hold it to one: the oracle refuses a name
+two entries share, and `tests/scripts/test_mutation_oracle.py` resolves every such citation in a
+tracked file outside `docs/plans/` against the declared names, so renaming an entry is an edit to
+every comment that cites it.
 
 The oracle sweeps before it runs. A killed run — `kill -9`, a CI timeout, a cancelled agent —
 cannot run its own cleanup, and `git worktree prune` does not collect what it leaves: prune only

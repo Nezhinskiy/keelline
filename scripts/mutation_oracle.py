@@ -14,7 +14,8 @@ by twelve tests and still contain nothing.
 Each entry names one file, one exact substring to replace, and the tests that must fail when it
 is. A mutation that survives — the tests still pass with the guard broken — is a finding, and so
 is one whose `before` no longer appears in the file, because that means the assertion and the
-line it is about have drifted apart.
+line it is about have drifted apart. Each entry's `name` is its own across every group file,
+because a comment anywhere in the tree cites an entry by its name.
 
 Usage:
 
@@ -649,13 +650,18 @@ def static_findings(mutations: list[Mutation]) -> list[str]:
     """What is wrong with `mutations` that no pytest run is needed to see.
 
     A file that does not exist, a `before` that does not occur exactly once, a `reddens` id that
-    names no test, and an entry repeating another's `(file, before, after)` — which proves
-    nothing the first did not, since an entry is caught when any of its ids reddens. One read
-    and one parse per file, and one collection for every parametrized id.
+    names no test, an entry repeating another's `(file, before, after)` — which proves nothing
+    the first did not, since an entry is caught when any of its ids reddens — and a `name` another
+    entry also carries. A name is how every comment cites an entry (CONTRIBUTING.md, "Tests"), so
+    two entries under one name make each such citation point at two guards, and the suite's
+    citation test resolves a name to an entry only while there is one. Over the entries this is
+    handed: an unfiltered run, and the suite, see every group file at once. One read and one parse
+    per file, and one collection for every parametrized id.
     """
     findings: list[str] = []
     texts: dict[Path, str | None] = {}
     seen: dict[tuple[Path, str, str], str] = {}
+    named: set[str] = set()
     for mutation in mutations:
         if mutation.file not in texts:
             texts[mutation.file] = (
@@ -673,6 +679,9 @@ def static_findings(mutations: list[Mutation]) -> list[str]:
         if key in seen:
             findings.append(f"{mutation.name}: repeats the mutation of {seen[key]!r}")
         seen.setdefault(key, mutation.name)
+        if mutation.name in named:
+            findings.append(f"{mutation.name}: another entry is declared under this name")
+        named.add(mutation.name)
     bracketed = {
         node_id.split("::", 1)[0] for m in mutations for node_id in m.reddens if "[" in node_id
     }

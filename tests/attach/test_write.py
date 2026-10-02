@@ -1742,7 +1742,9 @@ def test_each_pattern_character_in_a_group_name_is_escaped(name: str, line: str)
     # under `paths.memory`, and `\` would escape whatever follows it. Only the space escape was
     # asserted, so any one of these could leave `_SPECIAL` unnoticed.
     #
-    # Mutations: `mutations/`'s four "the exclude line leaves ... unescaped" entries.
+    # Mutations: `mutations/`'s "the exclude line leaves a star unescaped", "the exclude line
+    # leaves a question mark unescaped", "the exclude line leaves a bracket unescaped" and "the
+    # exclude line leaves a backslash unescaped".
     from stayfixed.attach.exclude import pattern
 
     assert pattern(name) == line
