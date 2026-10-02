@@ -2816,7 +2816,7 @@ reddens = ["tests/test_outbound.py::test_the_readme_declares_every_program_that_
 # one that loses its declaration must be a finding, or a new such launch would be too.
 [[mutation]]
 name = "a launch the outbound walk cannot read loses its declaration"
-file = "tests/outbound/declarations.py"
+file = "tests/outbound/policy.py"
 before = '    ("src/stayfixed/release/notes.py", "build", "argv"): NO_ROWS,'
 after = ''
 reddens = ["tests/test_outbound.py::test_every_launch_is_classified"]
@@ -2827,14 +2827,16 @@ reddens = ["tests/test_outbound.py::test_every_launch_is_classified"]
 name = "a declaration covers every launch in its function again"
 file = "tests/test_outbound.py"
 before = '    return launch.file, launch.function, element.text'
-after = '    return launch.file, launch.function, next((k[2] for k in (*PASS_THROUGH, *OPERANDS) if k[:2] == (launch.file, launch.function)), element.text)'
-reddens = ["tests/test_outbound.py::test_a_declaration_covers_only_the_launch_it_names"]
+after = '    return launch.file, launch.function, next((k[2] for k in (*PASS_THROUGH, *VOUCHED_ELEMENTS) if k[:2] == (launch.file, launch.function)), element.text)'
+reddens = [
+  "tests/test_outbound.py::test_a_declaration_covers_only_the_launch_it_names[another-expression]",
+]
 
 # A declaration no launch relies on any more is ready to excuse the next launch that hands its
 # value.
 [[mutation]]
-name = "an operand declaration names a value no launch hands"
-file = "tests/outbound/declarations.py"
+name = "a vouched element names a value no launch hands"
+file = "tests/outbound/policy.py"
 before = '    ("src/stayfixed/ledger/check.py", "_base_ledger", "fork"): "a merge base git printed",'
 after = '''    ("src/stayfixed/ledger/check.py", "_base_ledger", "fork"): "a merge base git printed",
     ("src/stayfixed/ledger/check.py", "_base_ledger", "base"): "a merge base git printed",'''
@@ -2846,7 +2848,7 @@ reddens = [
 # must be a finding, because "not listed as outbound" is not "local".
 [[mutation]]
 name = "a local git subcommand leaves the outbound walk's classification"
-file = "tests/outbound/declarations.py"
+file = "tests/outbound/policy.py"
 before = '        ("git", "grep"),'
 after = ''
 reddens = ["tests/test_outbound.py::test_every_launch_is_classified"]
@@ -2855,7 +2857,7 @@ reddens = ["tests/test_outbound.py::test_every_launch_is_classified"]
 # that matches it.
 [[mutation]]
 name = "a dead row comes back to the outbound walk's network table"
-file = "tests/outbound/declarations.py"
+file = "tests/outbound/policy.py"
 before = '    ("git", "push"): "git push",'
 after = '''    ("git", "push"): "git push",
     ("git", "pull"): "git pull",'''
@@ -2866,8 +2868,8 @@ reddens = ["tests/test_outbound.py::test_every_table_entry_names_a_live_launch"]
 [[mutation]]
 name = "a git argv with unread options passes as local"
 file = "tests/test_outbound.py"
-before = '    if _local(command, options) and relied <= OPERANDS.keys():'
-after = '    if _local(command, options):'
+before = '    return keys if stable and keys <= VOUCHED_ELEMENTS.keys() else None'
+after = '    return keys'
 reddens = [
   "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[spread-options]",
   "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[spread-before-paths]",
@@ -2879,7 +2881,7 @@ reddens = [
 # pass as local.
 [[mutation]]
 name = "a remote option no longer takes a git call out of the local table"
-file = "tests/outbound/declarations.py"
+file = "tests/outbound/policy.py"
 before = 'GIT_REMOTE_OPTIONS = ("--remote", "--upload-pack", "--receive-pack", "--exec")'
 after = 'GIT_REMOTE_OPTIONS: tuple[str, ...] = ()'
 reddens = [
@@ -3019,8 +3021,8 @@ reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[in-annot
 [[mutation]]
 name = "a method that hands its argv on is taken for a launcher"
 file = "tests/outbound/walk.py"
-before = '            and "." not in scope'
-after = '            and True'
+before = '            if id(function) not in source.module_level and key not in launchers:'
+after = '            if False:'
 reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[method-forwarder]"]
 
 # A package module can re-export a launcher, so a star import of any of them binds names the walk
@@ -3054,4 +3056,178 @@ after = 'FORBIDDEN_MODULES = NETWORK_MODULES'
 reddens = [
   "tests/test_outbound.py::test_a_listed_module_is_forbidden_with_its_submodules[ctypes.util-True]",
   "tests/test_outbound.py::test_a_listed_module_is_forbidden_with_its_submodules[_posixsubprocess-True]",
+]
+
+# A function that hands its argv on in two calls is no launcher: derived from one, it exempts that
+# launch and the other is read as if the function's callers chose it.
+[[mutation]]
+name = "a function that hands its argv on twice is derived from the first"
+file = "tests/outbound/walk.py"
+before = '        twice = {key for key, found in handing.items() if len(found) > 1} - roots.keys()'
+after = '        twice: set[tuple[str, str]] = set()'
+reddens = [
+  "tests/test_outbound.py::test_a_function_that_hands_its_argv_on_twice_is_no_launcher[two-launchers]",
+  "tests/test_outbound.py::test_a_function_that_hands_its_argv_on_twice_is_no_launcher[fetch-then-merge-base]",
+  "tests/test_outbound.py::test_a_function_that_hands_its_argv_on_twice_is_no_launcher[a-second-configured]",
+  "tests/test_outbound.py::test_a_function_that_hands_its_argv_on_twice_is_no_launcher[one-per-branch]",
+]
+
+# A forwarder defined under a module-level `try` is derived, so its callers must be bound to it;
+# read from the top of the module alone, they are not, and its launches go unseen.
+[[mutation]]
+name = "the bindings and the derivation disagree on what is module-level"
+file = "tests/outbound/walk.py"
+before = '    functions = {node.name: (file, node.name) for node in module_level(tree)}'
+after = '    functions = {n.name: (file, n.name) for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[derived-under-try]"]
+
+# A function that rebinds its argv parameter before handing it on hands on something else.
+[[mutation]]
+name = "a parameter rebound before it is handed on is derived"
+file = "tests/outbound/walk.py"
+before = '    if parameter is None or not _stable(parameter, function):'
+after = '    if parameter is None:'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[parameter-rebound]"]
+
+# A starred argument before the argv's position moves the argv by a length the walk cannot know.
+[[mutation]]
+name = "a starred argument before the argv is skipped"
+file = "tests/outbound/walk.py"
+before = '    if not launcher.reads or any(isinstance(a, ast.Starred) for a in call.args[: launcher.at]):'
+after = '    if not launcher.reads:'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[star-before-the-argv]"]
+
+# A module constant rebound, augmented, mutated or shadowed does not hold its first value where it
+# is read.
+[[mutation]]
+name = "a module constant is read whatever rebinds or mutates it"
+file = "tests/outbound/walk.py"
+before = '        if not isinstance(target, ast.Name) or not _stable(target.id, tree):'
+after = '        if not isinstance(target, ast.Name):'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[constant-rebound]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[constant-augmented]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[constant-mutated]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[constant-shadowed]",
+]
+
+# `_SubprocessRunner(timeout=5).run(argv, root)` is a runner's `.run`, and a parameter `a_Runner`
+# holds one; matched case-sensitively, the first goes unseen and the second is refused.
+[[mutation]]
+name = "the runner suffix is matched case-sensitively"
+file = "tests/outbound/walk.py"
+before = '_RUNNER_NAME = re.compile(r"runner\Z", re.IGNORECASE)'
+after = '_RUNNER_NAME = re.compile(r"runner\Z")'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-constructor]",
+  "tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[constructor]",
+]
+
+# A parameter annotated with an alias of `Runner` holds a runner as surely as one annotated
+# `Runner`.
+[[mutation]]
+name = "the runner check does not follow an alias of Runner"
+file = "tests/outbound/walk.py"
+before = '        if found == aliases:'
+after = '        if True:'
+reddens = [
+  "tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[alias]",
+  "tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[imported-alias]",
+]
+
+# A runner bound by `:=` is held under that name as surely as one bound by `=`.
+[[mutation]]
+name = "the runner check reads no assignment expression"
+file = "tests/outbound/walk.py"
+before = '        elif isinstance(node, (ast.Assign, ast.NamedExpr)):'
+after = '        elif isinstance(node, ast.Assign):'
+reddens = ["tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[walrus]"]
+
+# `go, x = subprocess_runner(), 1` binds the runner to `go`.
+[[mutation]]
+name = "the runner check does not unpack a tuple assignment"
+file = "tests/outbound/walk.py"
+before = '    if isinstance(target, (ast.Tuple, ast.List)):'
+after = '    if False:'
+reddens = ["tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[tuple]"]
+
+# A lambda's parameter that its body calls `.run` on holds a runner, and a lambda's parameter has no
+# annotation to say so.
+[[mutation]]
+name = "the runner check skips a lambda"
+file = "tests/outbound/walk.py"
+before = '        elif isinstance(node, ast.Lambda):'
+after = '        elif False:'
+reddens = ["tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[lambda]"]
+
+# The `sh -c` row says stayfixed does not choose the command, which holds only for the user's own,
+# unread one; a script the package spells out itself must be a finding.
+[[mutation]]
+name = "every sh -c is its row again"
+file = "tests/test_outbound.py"
+before = '        if prefix not in USER_COMMANDS or (users and isinstance(users[0], Unread)):'
+after = '        if True:'
+reddens = [
+  "tests/test_outbound.py::test_sh_c_is_its_row_only_for_the_users_command[a-script-stayfixed-spells-out]",
+]
+
+# `executable=` replaces the program and `env=` can carry git's configuration, so a launch read as
+# a local `git status` could run or reach anything; not read, neither is seen.
+[[mutation]]
+name = "the outbound walk stops reading a launch's overrides"
+file = "tests/outbound/walk.py"
+before = '                if keyword.arg in OVERRIDING'
+after = '                if False'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_that_overrides_its_program_or_environment_is_a_finding[executable]",
+  "tests/test_outbound.py::test_a_launch_that_overrides_its_program_or_environment_is_a_finding[environment]",
+  "tests/test_outbound.py::test_a_launch_that_overrides_its_program_or_environment_is_a_finding[environment-handed-on]",
+]
+
+# Only an `env=` that calls `scrubbed_env()` needs no declaration; every other must be declared.
+[[mutation]]
+name = "an env= is taken for scrubbed without calling scrubbed_env"
+file = "tests/test_outbound.py"
+before = '    if override.text.startswith("env=") and override.calls == SCRUBBED_ENVIRONMENT:'
+after = '    if override.text.startswith("env="):'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_that_overrides_its_program_or_environment_is_a_finding[environment]",
+  "tests/test_outbound.py::test_a_launch_that_overrides_its_program_or_environment_is_a_finding[environment-handed-on]",
+]
+
+# A write to `os.environ` changes what every launch that inherits the environment reaches.
+[[mutation]]
+name = "the outbound walk stops recognising os.environ"
+file = "tests/outbound/walk.py"
+before = "    \"\"\"Whether `expr` is the process's environment, `os.environ` however it is reached.\"\"\""
+after = '''    """Whether `expr` is the process's environment, `os.environ` however it is reached."""
+    return False'''
+reddens = [
+  "tests/test_outbound.py::test_a_change_to_the_environment_every_launch_inherits_is_found[item]",
+  "tests/test_outbound.py::test_a_change_to_the_environment_every_launch_inherits_is_found[update]",
+  "tests/test_outbound.py::test_a_change_to_the_environment_every_launch_inherits_is_found[augmented]",
+  "tests/test_outbound.py::test_a_change_to_the_environment_every_launch_inherits_is_found[delete]",
+]
+
+# `git grep -O`, `cat-file --filters` and `diff --ext-diff` run a program of their own, which can
+# reach a network as Git LFS's filter does.
+[[mutation]]
+name = "a program-running option no longer takes a git call out of the local table"
+file = "tests/test_outbound.py"
+before = '        reaching = GIT_REMOTE_OPTIONS + GIT_PROGRAM_OPTIONS.get(subcommand, ())'
+after = '        reaching = GIT_REMOTE_OPTIONS'
+reddens = [
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[grep-pager]",
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[cat-file-filters]",
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[diff-external]",
+]
+
+# A declaration vouches for one value; after its name is bound again the same text names another.
+[[mutation]]
+name = "a pass-through declaration covers an element its function binds again"
+file = "tests/test_outbound.py"
+before = '    if unread and unread[0].stable and (key := _key(launch, unread[0])) in PASS_THROUGH:'
+after = '    if unread and (key := _key(launch, unread[0])) in PASS_THROUGH:'
+reddens = [
+  "tests/test_outbound.py::test_a_declaration_covers_only_the_launch_it_names[the-same-expression-rebound]",
 ]

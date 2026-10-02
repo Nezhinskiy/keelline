@@ -278,7 +278,7 @@ file's own Findings sections, which sit far apart so the appends do not touch th
 | `tests/test_payload.py` (create) | directory-prep | every path in `HEAD`'s tree inside the directory's file rules |
 | `README.md` | directory-prep | new section "What stayfixed sends where" |
 | `tests/outbound/walk.py` (create) | directory-prep | the walk: every launch in the package's syntax, and what it cannot see |
-| `tests/outbound/declarations.py` (create) | directory-prep | the policy: forbidden modules, root launchers, what each argv reaches, the declarations |
+| `tests/outbound/policy.py` (create) | directory-prep | the policy: forbidden modules, root launchers, what each argv reaches, the declarations |
 | `tests/test_outbound.py` (create) | directory-prep | every launch classified, and the section's Program column equal to what the launches reach |
 | `scripts/bench/bench.py` (create) | benchmark | `validate`, `run`, `report`, and the case and scaffold templates as strings; stdlib only |
 | `scripts/bench/repos.toml` (create) | benchmark | three public repositories, pinned by the owner, each with a bug and a plan |
@@ -592,44 +592,64 @@ Expected: caught.
 **Interfaces:**
 - Produces, in `tests/outbound/walk.py` (create), the mechanism, whose docstring is the one
   description of what the walk sees and what it cannot: `Launcher` (`program`, `at`, `spread`,
-  `keyword`, `reads`: how a launcher takes its argv); `Unread(text, spread)`, an argv element the
-  walk cannot read, by its source text; `Element = str | Unread`; `Launch(file, line, function,
-  argv: tuple[Element, ...])`; `STDLIB_LAUNCHERS`, the standard library's launchers whose argv
-  the walk reads; `Walk(roots)`, whose `launchers` are the roots and every module-level function
-  derived from them to a fixed point, `launches(root: Path = SRC) -> list[Launch]` and
-  `launches_in(text: str, file: str) -> list[Launch]`; `imported_modules(tree: ast.Module) ->
-  set[str]`, `imports(root: Path) -> list[tuple[str, str]]`, `package_files(root: Path) ->
-  list[Path]`; `misnamed_runners(source: str) -> list[tuple[int, str]]`; `ROOT`, `SRC`.
-- Produces, in `tests/outbound/declarations.py` (create), the policy: `NETWORK_MODULES`, the
+  `keyword`, `reads`: how a launcher takes its argv); `Unread(text, spread, stable)`, an argv
+  element the walk cannot read, by its source text, `stable` when every name in it is bound once
+  in its function and never mutated; `Element = str | Unread`; `Launch(file, line, function,
+  argv: tuple[Element, ...])`; `Override(file, line, function, text, calls)`, a launch's `env=`
+  or `executable=` and the package function its value calls, if any; `STDLIB_LAUNCHERS`, the
+  standard library's launchers whose argv the walk reads; `Walk(roots)`, whose `launchers` are
+  the roots and every module-level function derived from them to a fixed point (one that hands
+  its argv on in exactly one call), `launches(root: Path = SRC) -> list[Launch]`,
+  `overrides(root: Path = SRC) -> list[Override]`, `environment_writes(root: Path = SRC) ->
+  list[tuple[str, int, str]]`, and `launches_in`, `walk_in` and `environment_writes_in(text:
+  str, file: str)` for one file's text; `module_level(tree: ast.Module) -> list[...]`, the one
+  predicate for a module-level function; `imported_modules(tree: ast.Module) -> set[str]`,
+  `imports(root: Path) -> list[tuple[str, str]]`, `package_files(root: Path) -> list[Path]`;
+  `is_runner_name(name: str) -> bool` and `misnamed_runners(source: str) -> list[tuple[int,
+  str]]`; `ROOT`, `SRC`.
+- Produces, in `tests/outbound/policy.py` (create), the policy: `NETWORK_MODULES`, the
   standard-library modules that open a connection, each matched with its submodules;
   `NATIVE_MODULES` (`ctypes`, `_ctypes`, `_posixsubprocess`, `_winapi`), which start a process
   through no launcher the walk knows; `ROOT_LAUNCHERS: dict[tuple[str, str], Launcher]`, the two
   package launchers that cannot be derived (`gitenv.git_run`, `_SubprocessRunner.run`);
-  `NETWORK: dict[tuple[str, ...], str]`, an argv prefix to its README row key; `LOCAL` and
-  `LOCAL_WHOLE`, the prefixes and whole argvs that reach nothing past this machine;
-  `GIT_GLOBAL_OPTIONS: dict[str, bool]` (whether each takes a value), `GIT_CONFIG_KEYS` (what
-  `git -c` may set) and `GIT_REMOTE_OPTIONS`; `NO_ROWS`; `PASS_THROUGH: dict[tuple[str, str, str],
-  frozenset[str]]`, each launch whose program the walk cannot read, keyed by `(file, function,
-  source text of its first unread element)`, to the row keys it can reach, with the reason in a
-  comment; `OPERANDS: dict[tuple[str, str, str], str]`, each unread element before an options end,
-  keyed alike, to why it cannot be an option that changes what the launch reaches.
+  `NETWORK: dict[tuple[str, ...], str]`, an argv prefix to its README row key, and
+  `USER_COMMANDS`, the prefixes (`sh -c`) that are their row only for an unread, user-given
+  command; `LOCAL` and `LOCAL_WHOLE`, the prefixes and whole argvs that reach nothing past this
+  machine; `GIT_GLOBAL_OPTIONS: dict[str, bool]` (whether each takes a value), `GIT_CONFIG_KEYS`
+  (what `git -c` may set), `GIT_REMOTE_OPTIONS` and `GIT_PROGRAM_OPTIONS: dict[str, tuple[str,
+  ...]]`, by subcommand, the options that run a program; `NO_ROWS`; `PASS_THROUGH:
+  dict[tuple[str, str, str], frozenset[str]]`, each launch not classified by its argv, keyed by
+  `(file, function, source text of its first unread element)`, to the row keys it can reach,
+  with the reason in a comment; `VOUCHED_ELEMENTS: dict[tuple[str, str, str], str]`, each unread
+  element before an options end, keyed alike, to why it cannot be an option that changes what
+  the launch reaches; `SCRUBBED_ENVIRONMENT`, `gitenv.scrubbed_env`; and `OVERRIDES:
+  dict[tuple[str, str, str], str]`, each other `env=` or `executable=`, keyed by its source
+  text, to why it changes nothing its row does not say.
 - Produces, in `tests/test_outbound.py` (create), the assertions: `classify(launch: Launch) ->
   tuple[frozenset[str] | None, set[Key]]`, the rows a launch can reach (`None` when unclassified)
   and the declarations that answer rests on; `unclassified(launches: list[Launch]) ->
-  list[Launch]`; `github_files() -> set[str]`, every file the templates write under `.github/`
-  and `init`'s `CI_WORKFLOW`; `outbound_programs(launches: list[Launch]) -> set[str]`;
+  list[Launch]`; `undeclared_overrides(overrides: list[Override]) -> list[Override]`;
+  `github_files() -> set[str]`, every file the templates write under `.github/` and `init`'s
+  `CI_WORKFLOW`; `outbound_programs(launches: list[Launch]) -> set[str]`;
   `readme_outbound_rows() -> set[str]`, the first code span of each Program cell;
   `forbidden_imports(root: Path) -> list[tuple[str, str]]`. Its tests, as shipped:
   `test_no_module_imports_a_network_or_native_module`,
   `test_both_import_forms_name_the_module_they_reach`,
   `test_a_listed_module_is_forbidden_with_its_submodules`, `test_a_launch_of_any_shape_is_found`
-  (one case per entry of `LAUNCH_SHAPES`), `test_what_only_names_a_launcher_is_not_a_launch`,
-  `test_every_launch_is_classified`,
+  (one case per entry of `LAUNCH_SHAPES`),
+  `test_a_function_that_hands_its_argv_on_twice_is_no_launcher`,
+  `test_what_only_names_a_launcher_is_not_a_launch`, `test_every_launch_is_classified`,
   `test_the_declarations_name_exactly_what_the_classification_rests_on`,
   `test_a_declaration_covers_only_the_launch_it_names`,
   `test_every_table_entry_names_a_live_launch`,
   `test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified`,
-  `test_an_argv_read_up_to_its_options_end_is_still_local`, `test_every_runner_is_named_as_one`,
+  `test_an_argv_read_up_to_its_options_end_is_still_local`,
+  `test_sh_c_is_its_row_only_for_the_users_command`,
+  `test_a_launch_that_overrides_its_program_or_environment_is_a_finding`,
+  `test_every_override_is_scrubbed_or_declared`,
+  `test_a_change_to_the_environment_every_launch_inherits_is_found`,
+  `test_no_module_changes_the_environment_every_launch_inherits`,
+  `test_a_runner_held_under_another_name_is_found`, `test_every_runner_is_named_as_one`,
   `test_the_plugin_installs_reach_the_rows_their_entries_name` and
   `test_the_readme_declares_every_program_that_reaches_a_network`, which holds the section's
   Program column, and only that column, to the launches in both directions.
@@ -1313,7 +1333,7 @@ what shipped:
 - Task 3 Step 1: the image case shipped as `test_an_image_or_a_font_is_exempt_from_the_size_limit`
   over four paths, and the tree test asserts the walk listed `.claude-plugin/plugin.json`.
 - Task 4 Files and Steps 2 and 4: the guard shipped in `tests/test_outbound.py`, the walk in
-  `tests/outbound/walk.py` and the policy in `tests/outbound/declarations.py`, not in
+  `tests/outbound/walk.py` and the policy in `tests/outbound/policy.py`, not in
   `tests/test_documents.py`; the entries' `reddens` name `tests/test_outbound.py`.
 - Task 4 Step 4: "a module imports a network-capable library" landed in `mutations/core.toml`,
   where its `file`, `src/stayfixed/runner.py`, routes it, and reddens
@@ -1325,7 +1345,7 @@ what shipped:
   `_SubprocessRunner.run`, not listed by hand as three `_git` helpers.
 - Task 4: `LOCAL` listed only the forms in use (`git remote get-url`, `git worktree list`, bare
   `git remote` whole), not "every other git subcommand"; an unread element before the options end
-  had to be declared in `OPERANDS`; `git -c` was held to `GIT_CONFIG_KEYS`.
+  had to be vouched for in `VOUCHED_ELEMENTS`; `git -c` was held to `GIT_CONFIG_KEYS`.
 - Task 4: `NETWORK` dropped `git pull`, which nothing runs, and gained `sh -c`; `ctypes`,
   `_ctypes`, `_posixsubprocess` and `_winapi` became forbidden imports.
 - Task 4 Step 3: a declaration was keyed by its launch's first unread element, `(file, function,

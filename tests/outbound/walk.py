@@ -8,35 +8,47 @@ called — handed to `functools.partial`, passed as a callback, bound to another
 base class — or a star import of a launcher module or of a package module, which can re-export
 one. The standard library's launchers are `subprocess`, the `os` process functions (reached
 through `os`, `posix` or `nt`), `pty.spawn`, `asyncio`'s subprocess calls and an event loop's.
-The package's own start from the roots `tests/outbound/declarations.py` names and grow by
-derivation: a module-level function that hands its own argv — its `*args`, or a list parameter,
-as the argv's last part — to a launcher is a launcher too, read at its callers, and so is one
-that hands its argv to that one. A method or a nested function that does is not, because the
-walk does not follow the names it is called through: its own launch stays a finding until it is
-declared. A `Runner`'s `.run` is a launcher by its receiver's name, which ends in `runner` (held
-by `misnamed_runners`), or by an argv list handed to it, positionally or as `argv=`. A name is
-followed through every import, relative, dotted or a re-export, to the module that defines it.
+The package's own start from the roots `tests/outbound/policy.py` names and grow by derivation:
+a module-level function — one defined at the top of its module, or under a module-level `if`,
+`try` or `with` — that hands its own argv on to a launcher in exactly one call, as the argv's
+last part, is a launcher too, read at its callers. Its argv is its `*args`, or a list parameter,
+spread or whole, that the function never rebinds or mutates. A function that hands its argv on
+in two calls, a method and a nested function are not launchers: their own launches stay
+findings until declared. A `Runner`'s `.run` is a launcher by a receiver whose name ends in
+`runner`, in any case — a call to a `…Runner` class or a `…runner` factory counts by its name —
+or by an argv list handed to it, positionally or as `argv=`; `misnamed_runners` holds every name
+that holds a runner to that suffix. A name is followed through every import, relative, dotted
+or a re-export, to the module that defines it.
 
 **What it reads.** Each launch's argv, element by element: a string literal, or a module
-constant holding a string or a list of strings, is read; anything else is `Unread`, carrying
-its source text, and a launch whose argv the walk cannot read at all — a shell string, a
-launcher handed on — is one `Unread`. `isinstance` and `issubclass` only compare a class, so
-a launcher named there is not handed on; nor is one named as a type in an annotation, though
+constant holding a string or a list of strings, is read; anything else is `Unread`, carrying its
+source text. A constant is one name the module binds exactly once and never mutates, so a
+rebinding, an augmented assignment, an `.append` or a parameter of the same name makes it
+`Unread`. A launch whose argv the walk cannot read at all — a shell string, a launcher handed on,
+a starred argument before the argv's position — is one `Unread`. Each launch's `env=` and
+`executable=` are recorded beside it as an `Override`, the one replacing what the launch
+inherits and the other the program it runs. `isinstance` and `issubclass` only compare a class,
+so a launcher named there is not handed on; nor is one named as a type in an annotation, though
 a call there still runs, and is walked, when the annotation is evaluated.
 
-**What it cannot see.** Each of these is a launch the walk returns nothing for:
+**What it cannot see.** The walk reads syntax, so a launch whose program, argv, environment or
+receiver is decided by data flow it does not follow is beyond it. Each of these is probed to
+return nothing:
 
 - dynamic dispatch: `getattr(subprocess, "run")`, `importlib.import_module`, `__import__`,
   `sys.modules`, and code run from data by `exec`, `eval` or `pickle`;
-- a launcher module bound by assignment rather than by an import (`m = subprocess`): a call
-  through it is seen only when it is `.run` handed an argv list;
-- a launcher named in an annotation anywhere but as a call's argument, such as `Annotated`
-  metadata (`Annotated[int, subprocess.run]`), which code reading the annotation could call;
-- a `Runner` reached through a subscript or a container rather than a name
-  (`RUNNERS["x"].run(argv, root)`), and handed an argv that is not a list;
-- a launch the standard library makes on the package's behalf: `uuid.getnode()` can run
-  `ifconfig` or `ip`, and `platform.architecture()` runs `file`, because the walk reads the
-  package and not the standard library;
+- aliasing: a launcher module bound by assignment (`m = subprocess`), whose calls are seen only
+  as a `.run` handed an argv list; a `Runner` reached through a subscript or a container
+  (`RUNNERS["x"].run(argv, root)`) and handed an argv that is not a list; a launcher named as
+  `Annotated` metadata, which code reading the annotation could call;
+- values computed at run time: an argv element held in a variable is `Unread`, and the walk
+  does not follow where its value came from, so `sh -c` handed a script the package builds from
+  strings (`" ".join(["curl", url])`) is taken for the user's command, the `sh -c` row's;
+- launches and connections the standard library makes on the package's behalf, at import or
+  when called: `uuid.getnode()` can run `ifconfig`, `platform.architecture()` runs `file`,
+  `xml.sax` fetches an external entity through `urllib.request`, `pydoc.browse` serves HTTP and
+  `email.utils.make_msgid` asks DNS through `socket`, none of which the package imports by
+  name;
 - a process of the running interpreter that `multiprocessing` or `concurrent.futures` starts,
   which runs the package's own code rather than another program.
 
@@ -49,6 +61,7 @@ from __future__ import annotations
 
 import ast
 import re
+from collections import Counter
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from functools import cache, cached_property
@@ -74,11 +87,13 @@ class Launcher:
 
 @dataclass(frozen=True)
 class Unread:
-    """An argv element the walk cannot read, by its source text; `spread` when it stands for
-    any number of elements."""
+    """An argv element the walk cannot read, by its source text. `spread` when it stands for any
+    number of elements; `stable` when every name in it is bound once in its function and never
+    mutated, so the text names one value wherever it is handed."""
 
     text: str
     spread: bool = False
+    stable: bool = True
 
 
 Element: TypeAlias = str | Unread
@@ -93,6 +108,18 @@ class Launch:
     line: int
     function: str
     argv: tuple[Element, ...]
+
+
+@dataclass(frozen=True)
+class Override:
+    """A launch's `env=` or `executable=`, by its source text (`env=env`), and the package
+    function its value is a call to, as `(file, function)`, if it is one."""
+
+    file: str
+    line: int
+    function: str
+    text: str
+    calls: tuple[str, str] | None
 
 
 SUBPROCESS = Launcher(keyword="args")
@@ -136,6 +163,20 @@ OS_MODULES = frozenset({"os", "posix", "nt"})
 LAUNCHER_MODULES = OS_MODULES | {module for module, _ in STDLIB_LAUNCHERS}
 # The calls that only compare a class, by the name they are called through.
 CLASS_CHECKS = frozenset({"isinstance", "issubclass"})
+# The keywords of a launch that replace what it inherits or what it runs.
+OVERRIDING = frozenset({"env", "executable"})
+# The `os` functions that change the process's environment without going through `os.environ`.
+ENVIRONMENT_CALLS = frozenset({"putenv", "unsetenv"})
+# The methods that change a list, a dict or a set in place.
+MUTATORS = frozenset(
+    {"append", "extend", "insert", "remove", "pop", "clear", "sort", "reverse", "update"}
+    | {"setdefault", "popitem", "add", "discard", "__setitem__", "__delitem__", "__iadd__"}
+)
+_RUNNER_NAME = re.compile(r"runner\Z", re.IGNORECASE)
+
+Function: TypeAlias = ast.FunctionDef | ast.AsyncFunctionDef
+Launchers: TypeAlias = dict[tuple[str, str], Launcher]
+Site: TypeAlias = tuple[int, int]
 
 
 @dataclass(frozen=True)
@@ -157,6 +198,11 @@ def package_files(root: Path) -> list[Path]:
 
 def relative(path: Path) -> str:
     return path.relative_to(ROOT).as_posix()
+
+
+def is_runner_name(name: str) -> bool:
+    """Whether `name` is one a runner is held under: it ends in `runner`, in any case."""
+    return _RUNNER_NAME.search(name) is not None
 
 
 @cache
@@ -187,6 +233,68 @@ def imports(root: Path) -> list[tuple[str, str]]:
     ]
 
 
+def module_level(tree: ast.Module) -> list[Function]:
+    """The functions defined at module level: at the top of the module, or under a module-level
+    `if`, `try` or `with`, which still binds the name in the module. The one predicate both the
+    bindings and the derivation use, so a launcher derived is a launcher its callers can name."""
+    found: list[Function] = []
+    pending: list[ast.stmt] = list(tree.body)
+    while pending:
+        node = pending.pop(0)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            found.append(node)
+        elif isinstance(node, (ast.If, ast.Try, ast.With, ast.AsyncWith)):
+            pending.extend(
+                child
+                for field in ("body", "orelse", "finalbody", "handlers")
+                for child in getattr(node, field, [])
+            )
+        elif isinstance(node, ast.ExceptHandler):
+            pending.extend(node.body)
+    return found
+
+
+def _bound_names(scope: ast.AST) -> tuple[Counter[str], set[str]]:
+    """How many times each name is bound anywhere under `scope` — an assignment, a parameter, an
+    import, a `def`, a `for` target, a `del` — and the names mutated there: a mutating method
+    called on one, or an item of one assigned or deleted."""
+    bound: Counter[str] = Counter()
+    mutated: set[str] = set()
+    for node in ast.walk(scope):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            bound[node.id] += 1
+        elif isinstance(node, ast.arg):
+            bound[node.arg] += 1
+        elif isinstance(node, ast.alias):
+            bound[(node.asname or node.name).split(".")[0]] += 1
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bound[node.name] += 1
+        elif isinstance(node, (ast.Global, ast.Nonlocal)):
+            bound.update({name: 2 for name in node.names})
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            bound[node.name] += 1
+        elif isinstance(node, ast.Subscript) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            mutated.add(_dotted(node.value) or "")
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in MUTATORS
+        ):
+            mutated.add(_dotted(node.func.value) or "")
+    return bound, mutated
+
+
+@cache
+def _scope_names(scope: ast.AST) -> tuple[Counter[str], set[str]]:
+    return _bound_names(scope)
+
+
+def _stable(name: str, scope: ast.AST) -> bool:
+    """Whether `name` is bound at most once under `scope` and never mutated there."""
+    bound, mutated = _scope_names(scope)
+    return bound[name] <= 1 and name not in mutated
+
+
 def _strings(node: ast.expr | None) -> list[str] | None:
     """The strings of a tuple or list made only of string literals."""
     if not isinstance(node, (ast.Tuple, ast.List)):
@@ -200,8 +308,9 @@ def _strings(node: ast.expr | None) -> list[str] | None:
 
 
 def _constants(tree: ast.Module) -> dict[str, str | list[str]]:
-    """Module-level names bound to a string, or to a tuple or list of strings, such as git
-    arguments several calls share."""
+    """The module's constants: each name bound exactly once in the whole module, at its top, to
+    a string or to a tuple or list of strings, and never mutated — so it holds that value
+    wherever the module reads it."""
     bound: dict[str, str | list[str]] = {}
     value: ast.expr | None
     for node in tree.body:
@@ -211,7 +320,7 @@ def _constants(tree: ast.Module) -> dict[str, str | list[str]]:
             target, value = node.target, node.value
         else:
             continue
-        if not isinstance(target, ast.Name):
+        if not isinstance(target, ast.Name) or not _stable(target.id, tree):
             continue
         if isinstance(value, ast.Constant) and isinstance(value.value, str):
             bound[target.id] = value.value
@@ -245,14 +354,10 @@ def _bindings_of(file: str) -> Bindings:
 
 
 def _bindings(tree: ast.Module, file: str) -> Bindings:
-    """The file's own top-level functions, and what each of its imports binds, as written: a
+    """The file's own module-level functions, and what each of its imports binds, as written: a
     name imported from a package module is bound to that module's name for it, which
     `_resolved` follows."""
-    functions = {
-        node.name: (file, node.name)
-        for node in tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    }
+    functions = {node.name: (file, node.name) for node in module_level(tree)}
     stdlib: dict[str, tuple[str, str]] = {}
     modules: dict[str, str] = {}
     for node in ast.walk(tree):
@@ -340,15 +445,13 @@ def _dotted(node: ast.expr) -> str | None:
 
 def last_name(node: ast.expr) -> str:
     """The last name in a receiver: `runner`, `self._runner`, `context.runner`, and the
-    `subprocess_runner` of `subprocess_runner()`, alike."""
+    `subprocess_runner` of `subprocess_runner()` or the `_SubprocessRunner` of
+    `_SubprocessRunner(timeout=5)`, alike."""
     if isinstance(node, ast.Call):
         return last_name(node.func)
     if isinstance(node, ast.Name):
         return node.id
     return node.attr if isinstance(node, ast.Attribute) else ""
-
-
-Launchers: TypeAlias = dict[tuple[str, str], Launcher]
 
 
 def _module_of(names: Bindings, owner: ast.expr) -> str | None:
@@ -357,6 +460,15 @@ def _module_of(names: Bindings, owner: ast.expr) -> str | None:
     if dotted in names.modules:
         return names.modules[dotted]
     return _resolved(names, dotted).modules.get(dotted) if dotted in names.functions else None
+
+
+def _function_of(expr: ast.expr, names: Bindings) -> tuple[str, str] | None:
+    """The package function `expr` names, as `(file, function)`, if it names one."""
+    if isinstance(expr, ast.Name):
+        return _resolved(names, expr.id).functions.get(expr.id)
+    if isinstance(expr, ast.Attribute) and (module := _module_of(names, expr.value)):
+        return _lookup(module, expr.attr).functions.get(expr.attr)
+    return None
 
 
 def _bound_launcher(names: Bindings, name: str, launchers: Launchers) -> Launcher | None:
@@ -379,7 +491,7 @@ def _launcher(expr: ast.expr, names: Bindings, launchers: Launchers) -> Launcher
         return _bound_launcher(_lookup(module, expr.attr), expr.attr, launchers)
     if expr.attr in LOOP_LAUNCHES:
         return SHELL
-    if expr.attr == "run" and last_name(expr.value).endswith("runner"):
+    if expr.attr == "run" and is_runner_name(last_name(expr.value)):
         return RUNNER
     return None
 
@@ -404,28 +516,59 @@ def _launcher_of(call: ast.Call, names: Bindings, launchers: Launchers) -> Launc
     return None
 
 
-def _spread(expr: ast.expr, text: str, constants: dict[str, str | list[str]]) -> list[Element]:
-    """A list the walk cannot see into, read as a spread of it: a module constant's strings, or
-    one `Unread` of any length."""
-    named = constants.get(expr.id) if isinstance(expr, ast.Name) else None
-    return list(named) if isinstance(named, list) else [Unread(text, spread=True)]
+@dataclass(frozen=True)
+class _Source:
+    tree: ast.Module
+    file: str
+    names: Bindings
+    constants: dict[str, str | list[str]]
+    module_level: frozenset[int]
 
 
-def _element(node: ast.expr, constants: dict[str, str | list[str]]) -> list[Element]:
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return [node.value]
-    if isinstance(node, ast.Name) and isinstance(constants.get(node.id), str):
-        return [str(constants[node.id])]
-    if isinstance(node, ast.Starred):
-        return _spread(node.value, ast.unparse(node), constants)
-    return [Unread(ast.unparse(node))]
+def _source(file: str, text: str | None = None) -> _Source:
+    """The package file `file` read for the walk, or `text` read as that file."""
+    if text is None:
+        return _package_source(file)
+    tree = ast.parse(text)
+    level = frozenset(map(id, module_level(tree)))
+    return _Source(tree, file, _bindings(tree, file), _constants(tree), level)
+
+
+@cache
+def _package_source(file: str) -> _Source:
+    tree = _tree(file)
+    level = frozenset(map(id, module_level(tree)))
+    return _Source(tree, file, _bindings_of(file), _constants(tree), level)
+
+
+def _names_stable(expr: ast.expr, scope: ast.AST) -> bool:
+    return all(_stable(node.id, scope) for node in ast.walk(expr) if isinstance(node, ast.Name))
+
+
+def _read(
+    node: ast.expr, whole: bool, constants: dict[str, str | list[str]], scope: ast.AST
+) -> list[Element]:
+    """What the walk reads of one argument node: a string, a constant's strings, or an
+    `Unread` — of any length when the node is spread, or when it is the whole argv."""
+    spread = node.value if isinstance(node, ast.Starred) else node if whole else None
+    if spread is None:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return [node.value]
+        if isinstance(node, ast.Name) and isinstance(constants.get(node.id), str):
+            return [str(constants[node.id])]
+        return [Unread(ast.unparse(node), stable=_names_stable(node, scope))]
+    named = constants.get(spread.id) if isinstance(spread, ast.Name) else None
+    if isinstance(named, list):
+        return list(named)
+    return [Unread(ast.unparse(node), spread=True, stable=_names_stable(node, scope))]
 
 
 def _argv_nodes(call: ast.Call, launcher: Launcher) -> tuple[list[ast.expr], bool] | None:
     """The argument nodes `call` hands `launcher` as its argv, past the launcher's own
-    `program`, and whether they are one expression that is the whole argv, a list the walk
-    cannot see into; `None` when the walk reads no argv there."""
-    if not launcher.reads:
+    `program`, and whether they are one expression that is the whole argv; `None` when the walk
+    reads no argv there — a shell string, no argv found, or a starred argument before the argv's
+    position, which moves it by a length the walk does not know."""
+    if not launcher.reads or any(isinstance(a, ast.Starred) for a in call.args[: launcher.at]):
         return None
     if launcher.spread:
         return list(call.args[launcher.at :]), False
@@ -438,20 +581,17 @@ def _argv_nodes(call: ast.Call, launcher: Launcher) -> tuple[list[ast.expr], boo
 
 
 def _argv(
-    call: ast.Call, launcher: Launcher, constants: dict[str, str | list[str]]
+    call: ast.Call, launcher: Launcher, constants: dict[str, str | list[str]], scope: ast.AST
 ) -> tuple[Element, ...]:
-    """What the walk reads of the argv `call` hands `launcher`."""
+    """What the walk reads of the argv `call` hands `launcher`, with `scope` the outermost
+    function the call sits in, or the module."""
     if (handed := _argv_nodes(call, launcher)) is None:
         return (Unread(ast.unparse(call.args[0] if call.args else call)),)
     nodes, whole = handed
     parts: list[Element] = list(launcher.program)
     for node in nodes:
-        read = _spread(node, ast.unparse(node), constants) if whole else _element(node, constants)
-        parts.extend(read)
+        parts.extend(_read(node, whole, constants, scope))
     return tuple(parts)
-
-
-Function: TypeAlias = ast.FunctionDef | ast.AsyncFunctionDef
 
 
 def _handed_on(call: ast.Call, launcher: Launcher, function: Function | None) -> str | None:
@@ -470,18 +610,15 @@ def _handed_on(call: ast.Call, launcher: Launcher, function: Function | None) ->
 
 
 def _derived(
-    call: ast.Call,
-    launcher: Launcher,
-    function: Function | None,
-    constants: dict[str, str | list[str]],
+    call: ast.Call, launcher: Launcher, function: Function, source: _Source
 ) -> Launcher | None:
-    """The launcher `function` is when `call` hands `launcher` the function's own argv, with
-    nothing before it the walk cannot read: its callers' arguments are then read at each
-    caller, after what this call puts first."""
+    """The launcher `function` is when `call` hands `launcher` the function's own argv, which
+    the function never rebinds or mutates, with nothing before it the walk cannot read: its
+    callers' arguments are then read at each caller, after what this call puts first."""
     parameter = _handed_on(call, launcher, function)
-    if parameter is None or function is None:
+    if parameter is None or not _stable(parameter, function):
         return None
-    head = _argv(call, launcher, constants)[:-1]
+    head = _argv(call, launcher, source.constants, function)[:-1]
     if not all(isinstance(part, str) for part in head):
         return None
     program = tuple(str(part) for part in head)
@@ -495,25 +632,100 @@ def _derived(
 def _scoped(
     node: ast.AST,
     scope: tuple[str, ...] = (),
-    function: Function | None = None,
+    functions: tuple[Function, ...] = (),
     annotation: bool = False,
-) -> Iterator[tuple[ast.AST, str, Function | None, bool]]:
+) -> Iterator[tuple[ast.AST, str, tuple[Function, ...], bool]]:
     """Every node under `node`, with the dotted name of the function or class it sits in, the
-    innermost function, and whether it sits in an annotation: there `subprocess.Popen[bytes]`
-    names a type, though a call's arguments are still values when the annotation is evaluated."""
+    functions it sits in, outermost first, and whether it sits in an annotation: there
+    `subprocess.Popen[bytes]` names a type, though a call's arguments are still values when the
+    annotation is evaluated."""
     for field, value in ast.iter_fields(node):
         arguments = isinstance(node, ast.Call) and field in ("args", "keywords")
         inside = (annotation and not arguments) or field in ("annotation", "returns")
         for child in value if isinstance(value, list) else [value]:
             if not isinstance(child, ast.AST):
                 continue
-            yield child, ".".join(scope) or "<module>", function, inside
+            yield child, ".".join(scope) or "<module>", functions, inside
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                yield from _scoped(child, (*scope, child.name), child, inside)
+                yield from _scoped(child, (*scope, child.name), (*functions, child), inside)
             elif isinstance(child, ast.ClassDef):
-                yield from _scoped(child, (*scope, child.name), function, inside)
+                yield from _scoped(child, (*scope, child.name), functions, inside)
             else:
-                yield from _scoped(child, scope, function, inside)
+                yield from _scoped(child, scope, functions, inside)
+
+
+@dataclass(frozen=True)
+class _Call:
+    """A call in a source, where it sits, and the launcher it calls through, if any."""
+
+    node: ast.Call
+    scope: str
+    functions: tuple[Function, ...]
+
+
+def _calls(source: _Source) -> list[_Call]:
+    return [
+        _Call(node, scope, functions)
+        for node, scope, functions, _ in _scoped(source.tree)
+        if isinstance(node, ast.Call)
+    ]
+
+
+def _handing_on(
+    sources: list[tuple[_Source, list[_Call]]], launchers: Launchers
+) -> dict[tuple[str, str], list[tuple[_Source, _Call, Launcher]]]:
+    """Each function's calls that hand its own argv on to a launcher, by `(file, function)`: a
+    module-level function's, and a root's."""
+    found: dict[tuple[str, str], list[tuple[_Source, _Call, Launcher]]] = {}
+    for source, calls in sources:
+        for call in calls:
+            if not call.functions:
+                continue
+            function = call.functions[-1]
+            key = (source.file, call.scope)
+            if id(function) not in source.module_level and key not in launchers:
+                continue
+            launcher = _launcher_of(call.node, source.names, launchers)
+            if launcher is not None and _handed_on(call.node, launcher, function) is not None:
+                found.setdefault(key, []).append((source, call, launcher))
+    return found
+
+
+def _derive(
+    sources: list[_Source], roots: Launchers
+) -> tuple[Launchers, frozenset[tuple[str, Site]]]:
+    """The roots and every launcher derived from them in `sources`, and the call in each that
+    hands its argv on, by `(file, (line, column))`, which is read at its callers instead.
+
+    A launcher stands for its one handing on of its argv. A function found handing it on in more
+    than one call is blocked and the derivation starts again without it, so it is no launcher
+    and each of its launches stays a finding; blocked only grows, so this ends. A root's first
+    handing on is exempt and any other is a finding.
+    """
+    indexed = [(source, _calls(source)) for source in sources]
+    blocked: set[tuple[str, str]] = set()
+    while True:
+        launchers = dict(roots)
+        while True:
+            handing = _handing_on(indexed, launchers)
+            added = {
+                key: launcher
+                for key, [(source, call, outer), *_] in handing.items()
+                if key not in launchers and key not in blocked
+                if (launcher := _derived(call.node, outer, call.functions[-1], source))
+            }
+            if not added:
+                break
+            launchers.update(added)
+        twice = {key for key, found in handing.items() if len(found) > 1} - roots.keys()
+        if not twice & launchers.keys():
+            exempt = frozenset(
+                (source.file, (call.node.lineno, call.node.col_offset))
+                for key, [(source, call, _), *_] in handing.items()
+                if key in launchers
+            )
+            return launchers, exempt
+        blocked |= twice
 
 
 def _not_handed_on(tree: ast.Module) -> set[int]:
@@ -539,55 +751,36 @@ def _star_launches(node: ast.ImportFrom, file: str) -> bool:
     )
 
 
-@dataclass(frozen=True)
-class _Source:
-    tree: ast.Module
-    file: str
-    names: Bindings
-    constants: dict[str, str | list[str]]
-
-
-def _source(file: str, text: str | None = None) -> _Source:
-    tree = _tree(file) if text is None else ast.parse(text)
-    names = _bindings_of(file) if text is None else _bindings(tree, file)
-    return _Source(tree, file, names, _constants(tree))
-
-
-def _derive(sources: list[_Source], launchers: Launchers) -> Launchers:
-    """`launchers` and every launcher derived from them in `sources`, to a fixed point."""
-    found = dict(launchers)
-    while True:
-        added = {
-            (source.file, scope): launcher
-            for source in sources
-            for node, scope, function, _ in _scoped(source.tree)
-            # Only a module-level function: a method or a nested function is called through
-            # names the walk does not bind, so as a launcher its callers would go unread.
-            if isinstance(node, ast.Call)
-            and "." not in scope
-            and (outer := _launcher_of(node, source.names, found)) is not None
-            and (launcher := _derived(node, outer, function, source.constants)) is not None
-            and (source.file, scope) not in found
-        }
-        if not added:
-            return found
-        found.update(added)
-
-
-def _launches(source: _Source, launchers: Launchers) -> list[Launch]:
-    """Every launch in `source`: each call that starts a process, except a launcher's own
-    handing on of its argv, which is read at its callers; and each place a launcher is handed on
-    unread — named without being called, or star-imported — which the walk cannot follow."""
+def _walk(
+    source: _Source, launchers: Launchers, exempt: frozenset[tuple[str, Site]]
+) -> tuple[list[Launch], list[Override]]:
+    """Every launch in `source` and every override a launch call makes. A launch is each call
+    that starts a process, except a launcher's one handing on of its argv, which is read at its
+    callers; and each place a launcher is handed on unread — named without being called, or
+    star-imported — which the walk cannot follow. Overrides are read on every launch call, the
+    handing on included, since what it inherits every caller inherits."""
     not_handed_on = _not_handed_on(source.tree)
-    found = []
-    for node, scope, function, in_annotation in _scoped(source.tree):
+    launches: list[Launch] = []
+    overrides: list[Override] = []
+    for node, scope, functions, in_annotation in _scoped(source.tree):
         if isinstance(node, ast.Call):
             if (launcher := _launcher_of(node, source.names, launchers)) is None:
                 continue
-            if (source.file, scope) in launchers and _handed_on(node, launcher, function):
+            overrides.extend(
+                Override(source.file, node.lineno, scope, ast.unparse(keyword), called)
+                for keyword in node.keywords
+                if keyword.arg in OVERRIDING
+                for called in [
+                    _function_of(keyword.value.func, source.names)
+                    if isinstance(keyword.value, ast.Call)
+                    else None
+                ]
+            )
+            if (source.file, (node.lineno, node.col_offset)) in exempt:
                 continue
-            argv = _argv(node, launcher, source.constants)
-            found.append(Launch(source.file, node.lineno, scope, argv))
+            outermost = functions[0] if functions else source.tree
+            argv = _argv(node, launcher, source.constants, outermost)
+            launches.append(Launch(source.file, node.lineno, scope, argv))
         elif isinstance(node, (ast.Name, ast.Attribute)):
             if (
                 isinstance(node.ctx, ast.Load)
@@ -596,9 +789,47 @@ def _launches(source: _Source, launchers: Launchers) -> list[Launch]:
                 and _launcher(node, source.names, launchers) is not None
             ):
                 unread = (Unread(ast.unparse(node)),)
-                found.append(Launch(source.file, node.lineno, scope, unread))
+                launches.append(Launch(source.file, node.lineno, scope, unread))
         elif isinstance(node, ast.ImportFrom) and _star_launches(node, source.file):
-            found.append(Launch(source.file, node.lineno, scope, (Unread(ast.unparse(node)),)))
+            unread = (Unread(ast.unparse(node)),)
+            launches.append(Launch(source.file, node.lineno, scope, unread))
+    return launches, overrides
+
+
+def _is_environ(expr: ast.expr, names: Bindings) -> bool:
+    """Whether `expr` is the process's environment, `os.environ` however it is reached."""
+    if isinstance(expr, ast.Name):
+        bound = _resolved(names, expr.id).stdlib.get(expr.id)
+        return bound is not None and bound[0] in OS_MODULES and bound[1] == "environ"
+    return (
+        isinstance(expr, ast.Attribute)
+        and expr.attr == "environ"
+        and _module_of(names, expr.value) in OS_MODULES
+    )
+
+
+def _environment_writes(source: _Source) -> list[tuple[str, int, str]]:
+    """`(file, line, source text)` for each change `source` makes to the process's environment —
+    an item of `os.environ` set or deleted, a method that changes it, an augmented assignment, or
+    `os.putenv` and `os.unsetenv` — which every launch after it inherits."""
+    found = []
+    for node in ast.walk(source.tree):
+        if isinstance(node, ast.Subscript) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            changed = _is_environ(node.value, source.names)
+        elif isinstance(node, ast.AugAssign):
+            changed = _is_environ(node.target, source.names)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            in_place = node.func.attr in MUTATORS and _is_environ(node.func.value, source.names)
+            module = _module_of(source.names, node.func.value)
+            changed = in_place or (module in OS_MODULES and node.func.attr in ENVIRONMENT_CALLS)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            bound = _resolved(source.names, node.func.id).stdlib.get(node.func.id)
+            changed = bound is not None and bound[0] in OS_MODULES
+            changed = changed and bound is not None and bound[1] in ENVIRONMENT_CALLS
+        else:
+            continue
+        if changed:
+            found.append((source.file, getattr(node, "lineno", 0), ast.unparse(node)))
     return found
 
 
@@ -607,53 +838,141 @@ class Walk:
 
     def __init__(self, roots: Mapping[tuple[str, str], Launcher]) -> None:
         self.roots = dict(roots)
+        self._by_root: dict[Path, list[tuple[list[Launch], list[Override]]]] = {}
 
     @cached_property
+    def _derived(self) -> tuple[Launchers, frozenset[tuple[str, Site]]]:
+        return _derive([_source(relative(path)) for path in package_files(SRC)], self.roots)
+
+    @property
     def launchers(self) -> Launchers:
         """Every package launcher: the roots, and every one derived from them."""
-        sources = [_source(relative(path)) for path in package_files(SRC)]
-        return _derive(sources, self.roots)
+        return self._derived[0]
+
+    def _walked(self, root: Path) -> list[tuple[list[Launch], list[Override]]]:
+        if root not in self._by_root:
+            launchers, exempt = self._derived
+            self._by_root[root] = [
+                _walk(_source(relative(path)), launchers, exempt) for path in package_files(root)
+            ]
+        return self._by_root[root]
 
     def launches(self, root: Path = SRC) -> list[Launch]:
         """Every launch in the package files under `root`."""
+        return [launch for launches, _ in self._walked(root) for launch in launches]
+
+    def overrides(self, root: Path = SRC) -> list[Override]:
+        """Every `env=` and `executable=` a launch call under `root` passes."""
+        return [override for _, overrides in self._walked(root) for override in overrides]
+
+    def environment_writes(self, root: Path = SRC) -> list[tuple[str, int, str]]:
+        """Every change a package file under `root` makes to the process's environment."""
         return [
-            launch
+            write
             for path in package_files(root)
-            for launch in _launches(_source(relative(path)), self.launchers)
+            for write in _environment_writes(_source(relative(path)))
         ]
+
+    def environment_writes_in(self, text: str, file: str) -> list[tuple[str, int, str]]:
+        """Every change `text`, read as a package file `file`, makes to the environment."""
+        return _environment_writes(_source(file, text))
+
+    def walk_in(self, text: str, file: str) -> tuple[list[Launch], list[Override]]:
+        """Every launch and override in `text`, read as a package file `file` beside the
+        package's own."""
+        source = _source(file, text)
+        launchers, exempt = _derive([source], self.launchers)
+        return _walk(source, launchers, exempt)
 
     def launches_in(self, text: str, file: str) -> list[Launch]:
         """Every launch in `text`, read as a package file `file` beside the package's own."""
-        source = _source(file, text)
-        return _launches(source, _derive([source], self.launchers))
+        return self.walk_in(text, file)[0]
 
 
-_RUNNER = re.compile(r"\bRunner\b")
+def _runner_aliases(tree: ast.Module) -> set[str]:
+    """`Runner` and every name bound to it or to another such name: by an import under another
+    name, or an assignment, annotated or not. (A `type` statement is newer than the 3.11 floor
+    the package parses on.)"""
+    aliases = {"Runner"}
+    while True:
+        found = set(aliases)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.alias) and node.name.rpartition(".")[2] in aliases:
+                found.add(node.asname or node.name)
+            value = getattr(node, "value", None)
+            targets: list[ast.expr] = []
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+            elif isinstance(node, ast.AnnAssign):
+                targets = [node.target]
+            if isinstance(value, (ast.Name, ast.Attribute)) and last_name(value) in aliases:
+                found.update(t.id for t in targets if isinstance(t, ast.Name))
+        if found == aliases:
+            return aliases
+        aliases = found
 
 
-def _is_runner(annotation: ast.expr | None) -> bool:
-    return annotation is not None and _RUNNER.search(ast.unparse(annotation)) is not None
+def _holds_runner(annotation: ast.expr | None, aliases: set[str]) -> bool:
+    """Whether `annotation` names a runner: `Runner`, an alias of it, or any `…Runner` class."""
+    if annotation is None:
+        return False
+    names = re.findall(r"\w+", ast.unparse(annotation))
+    return any(name in aliases or is_runner_name(name) for name in names)
+
+
+def _made_runner(value: ast.expr | None) -> bool:
+    """Whether `value` is a call to a `…Runner` class or a `…runner` factory."""
+    return isinstance(value, ast.Call) and is_runner_name(last_name(value.func))
+
+
+def _pairs(target: ast.expr, value: ast.expr | None) -> list[tuple[ast.expr, ast.expr | None]]:
+    """Each name a target binds and the value it takes, unpacking a tuple into a tuple."""
+    if isinstance(target, (ast.Tuple, ast.List)):
+        values = value.elts if isinstance(value, (ast.Tuple, ast.List)) else []
+        if len(values) != len(target.elts):
+            return [(element, None) for element in target.elts]
+        return [pair for t, v in zip(target.elts, values, strict=True) for pair in _pairs(t, v)]
+    return [(target, value)]
 
 
 def misnamed_runners(source: str) -> list[tuple[int, str]]:
-    """`(line, name)` for each parameter, field, variable or function in `source` that holds or
-    returns a `Runner` — annotated so, or assigned from a call to a function whose name ends in
-    `runner` — under a name that does not end in `runner`, which is how the walk knows a runner's
-    `.run` when it is not handed an argv list."""
+    """`(line, name)` for each name in `source` that holds or returns a runner under a name that
+    does not end in `runner`, in any case, which is how the walk knows a runner's `.run` when it
+    is not handed an argv list. A name holds a runner when it is annotated with `Runner`, an alias
+    of it or a `…Runner` class; when it is assigned, plainly, in a tuple or by `:=`, from a call
+    to a `…Runner` class or a `…runner` factory; and when it is a lambda's parameter its body
+    calls `.run` on."""
+    tree = ast.parse(source)
+    aliases = _runner_aliases(tree)
     found: list[tuple[int, str]] = []
-    for node in ast.walk(ast.parse(source)):
+    for node in ast.walk(tree):
+        held: list[tuple[str, bool]] = []
         if isinstance(node, ast.arg):
-            held = [(node.arg, _is_runner(node.annotation))]
+            held = [(node.arg, _holds_runner(node.annotation, aliases))]
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            held = [(node.name, _is_runner(node.returns))]
+            held = [(node.name, _holds_runner(node.returns, aliases))]
         elif isinstance(node, ast.AnnAssign):
-            held = [(last_name(node.target), _is_runner(node.annotation))]
-        elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
-            made = last_name(node.value.func).endswith("runner")
-            held = [(last_name(target), made) for target in node.targets]
-        else:
-            continue
+            held = [(last_name(node.target), _holds_runner(node.annotation, aliases))]
+        elif isinstance(node, (ast.Assign, ast.NamedExpr)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            held = [
+                (last_name(name), _made_runner(value))
+                for target in targets
+                for name, value in _pairs(target, node.value)
+            ]
+        elif isinstance(node, ast.Lambda):
+            called = {
+                last_name(call.func.value)
+                for call in ast.walk(node.body)
+                if isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr == "run"
+                and isinstance(call.func.value, ast.Name)
+            }
+            held = [(a.arg, a.arg in called) for a in node.args.args]
         found.extend(
-            (node.lineno, name) for name, holds in held if holds and not name.endswith("runner")
+            (getattr(node, "lineno", 0), name)
+            for name, holds in held
+            if holds and not is_runner_name(name)
         )
     return found

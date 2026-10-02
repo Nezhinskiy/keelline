@@ -611,9 +611,9 @@ running it by hand would. What this command guarantees is that it does not move 
 to another commit to get its "before" reading, not that the three runs leave no trace.
 
 **The command is yours, and so is its environment.** `--command` takes the exact failing
-command *including the sync it needs to be meaningful* — `uv sync --locked && uv run pytest
-tests/x.py::t` for a Python project, the equivalent for another stack. That sync is the whole of
-what makes runs 2 and 3 comparable; a command that does not sync compares two drifted
+command *including the sync it needs to be meaningful* — `uv sync --locked && uv run --locked
+pytest tests/x.py::t` for a Python project, the equivalent for another stack. That sync is the
+whole of what makes runs 2 and 3 comparable; a command that does not sync compares two drifted
 environments and the verdict is worth nothing. It is also what makes this command the same tool
 for every language.
 

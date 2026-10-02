@@ -5,8 +5,7 @@ templates write under `.github/`, which GitHub runs. This module holds the secti
 column to both, in both directions: a *network* launch with no row is an undisclosed
 destination, which the plugin directory's security scan rejects, and a row with no launch is a
 promise about nothing. What a launch is, and what the walk that finds them cannot see, is
-`tests/outbound/walk.py`'s docstring; what each launch may reach is declared in
-`tests/outbound/declarations.py`.
+`tests/outbound/walk.py`'s docstring; what each launch may reach is `tests/outbound/policy.py`.
 """
 
 from __future__ import annotations
@@ -19,9 +18,10 @@ from pathlib import Path
 
 import pytest
 
-from tests.outbound.declarations import (
+from tests.outbound.policy import (
     GIT_CONFIG_KEYS,
     GIT_GLOBAL_OPTIONS,
+    GIT_PROGRAM_OPTIONS,
     GIT_REMOTE_OPTIONS,
     LOCAL,
     LOCAL_WHOLE,
@@ -29,15 +29,19 @@ from tests.outbound.declarations import (
     NETWORK,
     NETWORK_MODULES,
     NO_ROWS,
-    OPERANDS,
+    OVERRIDES,
     PASS_THROUGH,
     ROOT_LAUNCHERS,
+    SCRUBBED_ENVIRONMENT,
+    USER_COMMANDS,
+    VOUCHED_ELEMENTS,
 )
 from tests.outbound.walk import (
     ROOT,
     SRC,
     Element,
     Launch,
+    Override,
     Unread,
     Walk,
     imported_modules,
@@ -62,6 +66,7 @@ _SENDS_SECTION = re.compile(
 _CODE_SPAN = re.compile(r"`([^`]+)`")
 
 Key = tuple[str, str, str]
+Argv = tuple[Element, ...]
 FORBIDDEN_MODULES = NETWORK_MODULES | NATIVE_MODULES
 
 
@@ -78,17 +83,25 @@ def _key(launch: Launch, element: Unread) -> Key:
     return launch.file, launch.function, element.text
 
 
-def _options(argv: tuple[Element, ...]) -> tuple[Element, ...]:
+def _vouched(launch: Launch, parts: Argv) -> set[Key] | None:
+    """The `VOUCHED_ELEMENTS` entries that vouch for every unread element of `parts`, or `None`
+    when one is not vouched for, or names a value its function binds again or mutates."""
+    keys = {_key(launch, part) for part in parts if isinstance(part, Unread)}
+    stable = all(part.stable for part in parts if isinstance(part, Unread))
+    return keys if stable and keys <= VOUCHED_ELEMENTS.keys() else None
+
+
+def _options(argv: Argv) -> Argv:
     """The elements of `argv` before its options end."""
     ends = [at for at, part in enumerate(argv) if part in END_OF_OPTIONS]
     return argv[: ends[0]] if ends else argv
 
 
-def _command(argv: tuple[Element, ...]) -> tuple[Element, ...] | None:
-    """`argv` as the tables match it, git's global options taken out; `None` when one of them
-    sets configuration outside `GIT_CONFIG_KEYS`."""
+def _command(argv: Argv) -> tuple[Argv, Argv] | None:
+    """`argv` split into git's global options and the command the tables match, the global
+    options taken out; `None` when one of them sets configuration outside `GIT_CONFIG_KEYS`."""
     if argv[:1] != ("git",):
-        return argv
+        return (), argv
     at = 1
     while at < len(argv) and argv[at] in GIT_GLOBAL_OPTIONS:
         option = str(argv[at])
@@ -97,18 +110,27 @@ def _command(argv: tuple[Element, ...]) -> tuple[Element, ...] | None:
         if configures and str(value).partition("=")[0] not in GIT_CONFIG_KEYS:
             return None
         at += 1 + GIT_GLOBAL_OPTIONS[option]
-    return ("git", *argv[at:])
+    return argv[1:at], ("git", *argv[at:])
 
 
-def _row(command: tuple[Element, ...]) -> str | None:
-    return next((row for prefix, row in NETWORK.items() if command[: len(prefix)] == prefix), None)
+def _row(command: Argv) -> str | None:
+    """The README row `command` reaches: the first `NETWORK` prefix it starts with, and, for a
+    prefix in `USER_COMMANDS`, only when the element after it is the user's, unread."""
+    for prefix, row in NETWORK.items():
+        if command[: len(prefix)] != prefix:
+            continue
+        users = command[len(prefix) : len(prefix) + 1]
+        if prefix not in USER_COMMANDS or (users and isinstance(users[0], Unread)):
+            return row
+    return None
 
 
-def _local(command: tuple[Element, ...], options: tuple[Element, ...]) -> bool:
-    if command[0] == "git" and any(
-        isinstance(part, str) and part.startswith(GIT_REMOTE_OPTIONS) for part in options
-    ):
-        return False
+def _local(command: Argv, options: Argv) -> bool:
+    if command[0] == "git":
+        subcommand = command[1] if len(command) > 1 and isinstance(command[1], str) else ""
+        reaching = GIT_REMOTE_OPTIONS + GIT_PROGRAM_OPTIONS.get(subcommand, ())
+        if any(isinstance(part, str) and part.startswith(reaching) for part in options):
+            return False
     return any(command[: len(prefix)] == prefix for prefix in LOCAL) or command in LOCAL_WHOLE
 
 
@@ -116,26 +138,27 @@ def classify(launch: Launch) -> tuple[frozenset[str] | None, set[Key]]:
     """The README rows `launch` can reach — none for a local one — or `None` when it is
     unclassified; and the declarations that answer rests on.
 
-    A launch the walk cannot read the program of is declared in `PASS_THROUGH` by its first
-    unread element, or is unclassified. Otherwise its program decides: git's global options must
-    be read or declared in `OPERANDS`, since one of them can change what the subcommand after
-    them does; a network launch is its row whatever follows; and a launch is local only when
-    every element before its options end is read or declared, because an unread one can be an
-    option such as `--remote`.
+    A launch whose first unread element is declared in `PASS_THROUGH` reaches the rows declared
+    there, whatever else the walk read of it. Otherwise its argv decides: git's global options
+    must be read or vouched for in `VOUCHED_ELEMENTS`, since one of them can change what the
+    subcommand after them does; a network launch is its row whatever follows; and a launch is
+    local only when every element before its options end is read or vouched for, because an
+    unread one can be an option such as `--remote`. A declaration covers an element only while
+    the element is `stable`.
     """
     unread = [part for part in launch.argv if isinstance(part, Unread)]
-    if unread and (key := _key(launch, unread[0])) in PASS_THROUGH:
+    if unread and unread[0].stable and (key := _key(launch, unread[0])) in PASS_THROUGH:
         return PASS_THROUGH[key], {key}
-    command = _command(launch.argv)
-    if command is None:
+    split = _command(launch.argv)
+    if split is None:
         return None, set()
-    global_options = launch.argv[1 : len(launch.argv) - len(command) + 1]
+    global_options, command = split
     options = _options(launch.argv)
     if (row := _row(command)) is not None:
-        relied = {_key(launch, part) for part in global_options if isinstance(part, Unread)}
-        return (frozenset({row}), relied) if relied <= OPERANDS.keys() else (None, set())
-    relied = {_key(launch, part) for part in options if isinstance(part, Unread)}
-    if _local(command, options) and relied <= OPERANDS.keys():
+        relied = _vouched(launch, global_options)
+        return (None, set()) if relied is None else (frozenset({row}), relied)
+    relied = _vouched(launch, options)
+    if relied is not None and _local(command, options):
         return NO_ROWS, relied
     return None, set()
 
@@ -145,10 +168,28 @@ def unclassified(launches: list[Launch]) -> list[Launch]:
     return [launch for launch in launches if classify(launch)[0] is None]
 
 
+def _override_key(override: Override) -> Key | None:
+    """The `OVERRIDES` key `override` needs, or `None` for an `env=` that calls
+    `SCRUBBED_ENVIRONMENT`, which needs none."""
+    if override.text.startswith("env=") and override.calls == SCRUBBED_ENVIRONMENT:
+        return None
+    return override.file, override.function, override.text
+
+
+def undeclared_overrides(overrides: list[Override]) -> list[Override]:
+    """The overrides neither scrubbed nor declared in `OVERRIDES`."""
+    return [o for o in overrides if (key := _override_key(o)) and key not in OVERRIDES]
+
+
 def github_files() -> set[str]:
     """Every file stayfixed's templates write under a `.github/` directory, by the path it is
-    written at: a file there is one GitHub acts on. The project's workflow is the one written
-    there from a template outside one, so its path is `init`'s own constant."""
+    written at: a file there is one GitHub acts on.
+
+    A template under a `.github/` folder is found by its path. One written into `.github/` from a
+    template outside one is found only when its destination is named here, because the path it is
+    written at is computed at run time, which this does not follow: the project's workflow,
+    `init`'s `CI_WORKFLOW`, is the one today, and a second is a row this misses until it is added.
+    """
     from stayfixed.project.templates import CI_WORKFLOW
 
     shipped = {
@@ -194,7 +235,7 @@ def _plugin_installs() -> list[tuple[str, ...]]:
     return [tuple(build(value)) for build, value in builders]
 
 
-def _shown(argv: tuple[Element, ...]) -> tuple[str | None, ...]:
+def _shown(argv: Argv) -> tuple[str | None, ...]:
     return tuple(None if isinstance(part, Unread) else part for part in argv)
 
 
@@ -247,6 +288,7 @@ LAUNCH_SHAPES: dict[str, tuple[str, str, tuple[str | None, ...]]] = {
     "keyword-args": (TOP, "import subprocess\nsubprocess.run(args=['curl', 'x'])", ("curl", "x")),
     "runner-call": (TOP, "subprocess_runner().run(argv, root)", (None,)),
     "runner-call-literal": (TOP, "subprocess_runner().run(['curl', 'x'], r)", ("curl", "x")),
+    "runner-constructor": (TOP, "_SubprocessRunner(timeout=5).run(argv, root)", (None,)),
     "other-receiver": (TOP, "launch.run(['curl', 'x'], root)", ("curl", "x")),
     "other-receiver-keyword": (TOP, "launch.run(argv=['curl', 'x'], cwd=r)", ("curl", "x")),
     "relative": (TOP, "from .gitenv import git_run\ngit_run(r, 'fetch')", ("git", "fetch")),
@@ -277,6 +319,39 @@ LAUNCH_SHAPES: dict[str, tuple[str, str, tuple[str | None, ...]]] = {
         TOP,
         "def gh(runner, argv, cwd):\n    return runner.run(['gh', *argv], cwd)\ngh(r, ['api'], c)",
         ("gh", "api"),
+    ),
+    "derived-under-try": (
+        TOP,
+        f"{GIT_RUN}try:\n    import x\nexcept ImportError:\n    def ask(r, *a):\n"
+        "        return git_run(r, *a)\nask(r, 'push')",
+        ("git", "push"),
+    ),
+    "parameter-rebound": (
+        TOP,
+        "import subprocess\ndef f(argv):\n    argv = ['curl', 'x']\n    subprocess.run(argv)\n"
+        "f(['git', 'status'])",
+        (None,),
+    ),
+    "star-before-the-argv": (TOP, f"{GIT_RUN}git_run(*xs, 'status')", (None,)),
+    "constant-rebound": (
+        TOP,
+        f"{GIT_RUN}ARGS = ('status',)\nARGS = ('push', 'origin')\ngit_run(r, *ARGS)",
+        ("git", None),
+    ),
+    "constant-augmented": (
+        TOP,
+        f"{GIT_RUN}ARGS = ['status']\nARGS += ['x']\ngit_run(r, *ARGS)",
+        ("git", None),
+    ),
+    "constant-mutated": (
+        TOP,
+        f"{GIT_RUN}ARGS = ['status']\nARGS.insert(0, 'push')\ngit_run(r, *ARGS)",
+        ("git", None),
+    ),
+    "constant-shadowed": (
+        TOP,
+        f"{GIT_RUN}ARGS = ('status',)\ndef f():\n    ARGS = ('push',)\n    git_run(r, *ARGS)",
+        ("git", None),
     ),
     "asyncio-exec": (
         TOP,
@@ -338,9 +413,45 @@ def test_a_launch_of_any_shape_is_found(
     # `getoutput` joins `SUBPROCESS_INERT` (getoutput, imported-by-name); `last_name` stops
     # looking through a call (runner-call); `_dotted` reads only a bare name (dotted-module);
     # `asyncio`, `pty`, the event loop and `os` each leave the launcher tables (their cases);
-    # `fexec` leaves `OS_LAUNCH_PREFIXES` (os-fexec); `_derive` derives nothing (the three
-    # derived cases); `LAUNCHER_MODULES` loses `subprocess` and `os` (star-subprocess, star-os).
+    # `fexec` leaves `OS_LAUNCH_PREFIXES` (os-fexec); `_derive` derives nothing (the derived
+    # cases); `LAUNCHER_MODULES` loses `subprocess` and `os` (star-subprocess, star-os).
     assert [_shown(launch.argv) for launch in WALK.launches_in(source, file)] == [argv]
+
+
+# A function that hands its argv on in more than one call is no launcher: each of its launches
+# stays a finding, where deriving it from one would let the other pass unread.
+HANDED_ON_TWICE: dict[str, tuple[str, list[tuple[str | None, ...]]]] = {
+    "two-launchers": (
+        f"{GIT_RUN}import subprocess\ndef f(*args):\n    subprocess.run(['curl', *args])\n"
+        "    git_run(r, *args)\nf('status')",
+        [("curl", None), ("git", None)],
+    ),
+    "fetch-then-merge-base": (
+        f"{GIT_RUN}def fork(root, *refs):\n    git_run(root, 'fetch', 'origin', *refs)\n"
+        "    return git_run(root, 'merge-base', *refs)[1]\nfork(r, 'a', 'b')",
+        [("git", "fetch", "origin", None), ("git", "merge-base", None)],
+    ),
+    "a-second-configured": (
+        f"{GIT_RUN}def f(r, *args):\n    git_run(r, *args)\n    git_run(r, '-c', cfg, *args)\n"
+        "f(r, 'status')",
+        [("git", None), ("git", "-c", None, None)],
+    ),
+    "one-per-branch": (
+        f"{GIT_RUN}import sys\nif sys.platform == 'win32':\n    def ask(r, *a):\n"
+        "        return git_run(r, *a)\nelse:\n    def ask(r, *a):\n"
+        "        return git_run(r, '-c', cfg, *a)\nask(r, 'push')",
+        [("git", None), ("git", "-c", None, None)],
+    ),
+}
+
+
+@pytest.mark.parametrize(("source", "argvs"), HANDED_ON_TWICE.values(), ids=HANDED_ON_TWICE)
+def test_a_function_that_hands_its_argv_on_twice_is_no_launcher(
+    source: str, argvs: list[tuple[str | None, ...]]
+) -> None:
+    # The entry in `mutations/` that names this test derives such a function from its first
+    # handing on again, which exempts that one and reads the function's callers through it.
+    assert [_shown(launch.argv) for launch in WALK.launches_in(source, TOP)] == argvs
 
 
 def test_what_only_names_a_launcher_is_not_a_launch() -> None:
@@ -360,8 +471,8 @@ def test_what_only_names_a_launcher_is_not_a_launch() -> None:
 
 def test_every_launch_is_classified() -> None:
     # The entries in `mutations/` that name this test are its declared mutations. By hand:
-    # `OPERANDS` loses `gitenv`'s `base` -> `merge-base` hands an unread element before its
-    # options end; `-C` leaves `GIT_GLOBAL_OPTIONS` -> `overlay publish-template`'s
+    # `VOUCHED_ELEMENTS` loses `gitenv`'s `base` -> `merge-base` hands an unread element before
+    # its options end; `-C` leaves `GIT_GLOBAL_OPTIONS` -> `overlay publish-template`'s
     # `git -C <clone> push` matches no table.
     launches = WALK.launches(SRC)
     # A walk-based assertion states its walk is non-empty: a launcher the walk stopped
@@ -377,19 +488,27 @@ def test_the_declarations_name_exactly_what_the_classification_rests_on() -> Non
     # names this test adds such an entry. By hand: the `_custom.run` entry's function is renamed
     # -> it names nothing, and the launch it named is undeclared.
     relied = set().union(*(classify(launch)[1] for launch in WALK.launches(SRC)))
-    assert relied == PASS_THROUGH.keys() | OPERANDS.keys()
+    assert relied == PASS_THROUGH.keys() | VOUCHED_ELEMENTS.keys()
 
 
-def test_a_declaration_covers_only_the_launch_it_names() -> None:
-    # A declaration is about one value handed to one launch, so a second launch with a different
-    # argv in a declared function is unclassified. The entry in `mutations/` that names this test
-    # keys a declaration on its function alone again, and the `towncrier` entry covers the new
-    # launch.
+@pytest.mark.parametrize(
+    "extra",
+    [
+        "    runner.run(list(EXTRA), root)\n",
+        "    argv = ['curl', 'x']\n    runner.run(argv, root)\n",
+    ],
+    ids=["another-expression", "the-same-expression-rebound"],
+)
+def test_a_declaration_covers_only_the_launch_it_names(extra: str) -> None:
+    # A declaration is about one value handed to one launch, so a second launch in a declared
+    # function is unclassified, whether it hands another expression or the declared one after
+    # binding it again. The entries in `mutations/` that name this test key a declaration on its
+    # function alone again, and stop holding a declared element to one binding.
     notes = "src/stayfixed/release/notes.py"
     source = (ROOT / notes).read_text(encoding="utf-8")
-    extra = "    done = runner.run(argv, root)\n    runner.run(list(EXTRA), root)\n"
-    launches = WALK.launches_in(source.replace("    done = runner.run(argv, root)\n", extra), notes)
-    assert [_shown(launch.argv) for launch in unclassified(launches)] == [(None,)]
+    done = "    done = runner.run(argv, root)\n"
+    launches = WALK.launches_in(source.replace(done, done + extra), notes)
+    assert [launch.line for launch in unclassified(launches)] != []
 
 
 def test_every_table_entry_names_a_live_launch() -> None:
@@ -398,10 +517,10 @@ def test_every_table_entry_names_a_live_launch() -> None:
     # in `mutations/` that names this test puts a dead row in `NETWORK`. By hand, each reddening
     # its assertion: `("git", "show")` joins `LOCAL`; `("git", "stash")` joins `LOCAL_WHOLE`;
     # `--bare` joins `GIT_GLOBAL_OPTIONS`; `core.sshCommand` joins `GIT_CONFIG_KEYS`.
-    commands = [
-        command
+    commands: list[Argv] = [
+        split[1]
         for launch in WALK.launches(SRC)
-        if classify(launch)[0] is not None and (command := _command(launch.argv)) is not None
+        if classify(launch)[0] is not None and (split := _command(launch.argv)) is not None
     ]
     commands += _plugin_installs()
     launched = [launch.argv for launch in WALK.launches(SRC)]
@@ -430,6 +549,10 @@ def test_every_table_entry_names_a_live_launch() -> None:
         "git_run(root, 'archive', '--remote=git@example.com:x', 'HEAD')",
         "git_run(root, 'archive', '--format=tar', '-o', 'x.tar', '--remote', 'example', 'HEAD')",
         "git_run(root, 'worktree', 'add', '../elsewhere')",
+        "git_run(root, 'config', 'core.sshCommand', 'curl x')",
+        "git_run(root, 'grep', '-Ocurl', 'x')",
+        "git_run(root, 'cat-file', '--filters', 'HEAD:x')",
+        "git_run(root, 'diff', '--ext-diff', 'HEAD')",
         "git_run(root, 'archive', *opts)",
         "git_run(root, 'ls-files', *opts, '--', *paths)",
         "git_run(root, 'log', revisions)",
@@ -443,6 +566,10 @@ def test_every_table_entry_names_a_live_launch() -> None:
         "archive-remote",
         "archive-remote-late",
         "worktree-add",
+        "config-write",
+        "grep-pager",
+        "cat-file-filters",
+        "diff-external",
         "spread-options",
         "spread-before-paths",
         "unread-operand",
@@ -453,33 +580,143 @@ def test_every_table_entry_names_a_live_launch() -> None:
 )
 def test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified(source: str) -> None:
     # `LOCAL` is as narrow as each subcommand's other forms need, and a launch is local only
-    # when nothing before its options end is unread. The entries in `mutations/` that name this
-    # test redden the cases they list. By hand: `("git", "remote")` back in `LOCAL` ->
-    # remote-update passes; `("git", "worktree")` for `("git", "worktree", "list")` ->
-    # worktree-add; `_command` skips any option before the subcommand ->
-    # global-option-not-listed.
+    # when nothing before its options end is unread and no option there runs a program. The
+    # entries in `mutations/` that name this test redden the cases they list. By hand:
+    # `("git", "remote")` back in `LOCAL` -> remote-update passes; `("git", "worktree")` for
+    # `("git", "worktree", "list")` -> worktree-add; `("git", "config")` for its read form ->
+    # config-write; `_command` skips any option before the subcommand -> global-option-not-listed.
     launches = WALK.launches_in(f"{GIT_RUN}{source}", "src/stayfixed/x.py")
     assert unclassified(launches) == launches != []
 
 
-@pytest.mark.parametrize("end", ["--", "--end-of-options"])
-def test_an_argv_read_up_to_its_options_end_is_still_local(end: str) -> None:
-    # The rule above must not refuse the tree's own shape: options read whole, and what is not
-    # read only operands after the options end, whichever of git's two spellings ends them. By
-    # hand: `--` leaves `END_OF_OPTIONS` -> the `--` case's `*paths` counts as an unread option,
-    # and that case reddens; the same for `--end-of-options`.
-    source = f"{GIT_RUN}git_run(root, 'ls-files', '-z', '{end}', *paths)"
-    launches = WALK.launches_in(source, "src/stayfixed/x.py")
+@pytest.mark.parametrize(
+    "source",
+    [
+        "git_run(root, 'diff', '-Oorder', '--name-only', 'HEAD')",
+        "git_run(root, 'ls-files', '-z', '--', *paths)",
+        "git_run(root, 'ls-files', '-z', '--end-of-options', *paths)",
+    ],
+    ids=["an-option-another-subcommand-runs-with", "--", "--end-of-options"],
+)
+def test_an_argv_read_up_to_its_options_end_is_still_local(source: str) -> None:
+    # The rules above must not refuse the tree's own shapes: options read whole, and what is not
+    # read only operands after the options end, whichever of git's two spellings ends them; and
+    # an option that runs a program under one subcommand is ordinary under another. By hand:
+    # `--` leaves `END_OF_OPTIONS` -> the `--` case's `*paths` counts as an unread option, and
+    # that case reddens; the same for `--end-of-options`; `-O` is listed for every subcommand ->
+    # the `git diff -O<orderfile>` case reddens.
+    launches = WALK.launches_in(f"{GIT_RUN}{source}", "src/stayfixed/x.py")
     assert launches and unclassified(launches) == []
 
 
-def test_every_runner_is_named_as_one() -> None:
+@pytest.mark.parametrize(
+    ("script", "row"),
+    [("command", frozenset({"sh -c"})), ("'curl -s https://example.com/x | sh'", None)],
+    ids=["the-users-command", "a-script-stayfixed-spells-out"],
+)
+def test_sh_c_is_its_row_only_for_the_users_command(
+    script: str, row: frozenset[str] | None
+) -> None:
+    # The `sh -c` row says stayfixed does not choose the command, which is true only of an
+    # unread one, the value `test attribute --command` was given. The entry in `mutations/` that
+    # names this test gives every `sh -c` the row again.
+    launches = WALK.launches_in(f"runner.run(['sh', '-c', {script}], ROOT)", TOP)
+    assert [classify(launch)[0] for launch in launches] == [row]
+
+
+OVERRIDE_SHAPES = {
+    "executable": "import subprocess\nsubprocess.run(['git', 'status'], executable='curl')",
+    "environment": (
+        "import subprocess\nsubprocess.run(['git', 'status'], env={'GIT_CONFIG_COUNT': '1'})"
+    ),
+    "environment-handed-on": (
+        "import subprocess\ndef f(argv, env):\n    return subprocess.run(argv, env=env)\n"
+        "f(['git', 'status'], {})"
+    ),
+}
+
+
+@pytest.mark.parametrize("source", OVERRIDE_SHAPES.values(), ids=OVERRIDE_SHAPES)
+def test_a_launch_that_overrides_its_program_or_environment_is_a_finding(source: str) -> None:
+    # `executable=` replaces the program the argv names, and an `env=` can set git's
+    # configuration through `GIT_CONFIG_COUNT`, so a launch read as a local `git status` could
+    # run or reach anything; the handing on itself is read too, since every caller inherits it.
+    # The entry in `mutations/` that names this test stops reading overrides.
+    overrides = WALK.walk_in(source, TOP)[1]
+    assert overrides and undeclared_overrides(overrides) == overrides
+
+
+def test_every_override_is_scrubbed_or_declared() -> None:
+    # Equality, both ways, as for the declarations: `git_run`'s and `tar`'s `env=scrubbed_env()`
+    # need no entry, and the two inherited environments are declared with their reasons. By hand:
+    # the runner's entry is renamed -> its `env=env` is undeclared and the entry names nothing.
+    overrides = WALK.overrides(SRC)
+    assert len(overrides) >= 3
+    assert {key for o in overrides if (key := _override_key(o))} == OVERRIDES.keys()
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import os\nos.environ['GIT_CONFIG_COUNT'] = '1'",
+        "from os import environ\nenviron.update(GIT_SSH_COMMAND='curl')",
+        "import os\nos.environ |= {'GIT_DIR': 'x'}",
+        "import posix\nposix.putenv('GIT_DIR', 'x')",
+        "import os\ndel os.environ['PATH']",
+    ],
+    ids=["item", "update", "augmented", "putenv", "delete"],
+)
+def test_a_change_to_the_environment_every_launch_inherits_is_found(source: str) -> None:
+    # A launch that inherits the environment inherits whatever the package wrote into it, so a
+    # write anywhere changes what every runner launch after it reaches. The entry in
+    # `mutations/` that names this test stops recognising `os.environ`; by hand, `putenv` leaves
+    # `ENVIRONMENT_CALLS` -> the putenv case reddens.
+    assert len(WALK.environment_writes_in(source, TOP)) == 1
+
+
+def test_no_module_changes_the_environment_every_launch_inherits() -> None:
+    # Mutation: src/stayfixed/cli.py sets `os.environ["X"] = "1"` -> this reddens.
+    assert WALK.environment_writes(SRC) == []
+
+
+@pytest.mark.parametrize(
+    ("source", "misnamed"),
+    [
+        ("def f(launch: Runner) -> None: ...", [(1, "launch")]),
+        ("go = subprocess_runner()", [(1, "go")]),
+        ("go = _SubprocessRunner()", [(1, "go")]),
+        ("(go := subprocess_runner())", [(1, "go")]),
+        ("go, x = subprocess_runner(), 1", [(1, "go")]),
+        ("R2 = Runner\ndef f(x: R2) -> None: ...", [(2, "x")]),
+        ("from stayfixed.runner import Runner as R2\ndef f(x: R2) -> None: ...", [(2, "x")]),
+        ("f = lambda r, a: r.run(a, ROOT)", [(1, "r")]),
+        ("def f(a_Runner: Runner, probe: Probe) -> None:\n    probe.run(context)", []),
+    ],
+    ids=[
+        "annotated",
+        "factory",
+        "constructor",
+        "walrus",
+        "tuple",
+        "alias",
+        "imported-alias",
+        "lambda",
+        "any-case-and-not-a-runner",
+    ],
+)
+def test_a_runner_held_under_another_name_is_found(
+    source: str, misnamed: list[tuple[int, str]]
+) -> None:
     # The walk knows a `Runner`'s `.run` by its receiver's name when it is not handed an argv
-    # list, so that name is held here: every parameter, field, variable and function that holds
-    # or returns one ends in `runner`. Mutation: the check reads no annotation -> the first
-    # reddens. Mutation: an assignment from a `…runner()` call holds no runner -> the second.
-    assert misnamed_runners("def f(launch: Runner) -> None: ...") == [(1, "launch")]
-    assert misnamed_runners("go = subprocess_runner()") == [(1, "go")]
+    # list, so every name that holds one must end in `runner`, in any case. The entries in
+    # `mutations/` that name this test redden the cases they list. By hand: the check reads no
+    # annotation -> annotated.
+    assert misnamed_runners(source) == misnamed
+
+
+def test_every_runner_is_named_as_one() -> None:
+    # The tree held to the rule the cases above prove. Mutation: `_gh`'s `runner: Runner`
+    # parameter in src/stayfixed/overlay/publish.py is renamed `launch` -> this reddens.
     assert [
         (p, m) for p in package_files(SRC) if (m := misnamed_runners(p.read_text("utf-8")))
     ] == []
