@@ -12,3 +12,6 @@ history.
 
 Plans dated before 2026-09-28 predate the rename and keep the former name as the record, and
 so does the plan that performs it; read `stayfixed` for it in every path, command and variable.
+
+A plan over the plugin directory's 256 KiB file limit continues in a `-part-2.md` file beside it,
+which is the same plan: part 2 opens by naming part 1, and part 1's `Scope:` line governs both.
