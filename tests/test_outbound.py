@@ -223,10 +223,11 @@ _CODE_SPAN = re.compile(r"`([^`]+)`")
 
 @dataclass(frozen=True)
 class SeamCall:
-    """One place the package starts a process, and what the walk read of its argv: an element's
-    string, or `None` where it could not read one. `argv` is `None` when the walk could not read as
-    far as what decides the program (git's subcommand); `whole` is false when the reading ended at
-    a spread of unknown length."""
+    """One launch the walk found — a call that starts a process, a launcher named without being
+    called, or a star import of a launcher's module — and what it read of the argv: an element's
+    string, or `None` where it could not read one. `argv` is `None` for the last two, and for a call
+    the walk could not read as far as what decides the program (git's subcommand); `whole` is false
+    when the reading ended at a spread of unknown length, and for the last two."""
 
     file: str
     line: int
@@ -472,24 +473,27 @@ def _argv(
     return tuple(parts), whole
 
 
-def _scoped(node: ast.AST, scope: tuple[str, ...] = ()) -> Iterator[tuple[ast.AST, str]]:
-    """Every node under `node`, with the dotted name of the function or class it sits in. An
-    annotation is left out: `subprocess.Popen[bytes]` names a type and starts nothing."""
+def _scoped(
+    node: ast.AST, scope: tuple[str, ...] = (), annotation: bool = False
+) -> Iterator[tuple[ast.AST, str, bool]]:
+    """Every node under `node`, with the dotted name of the function or class it sits in and
+    whether it sits in an annotation: there `subprocess.Popen[bytes]` names a type, though a call
+    still runs when the annotation is evaluated."""
     for field, value in ast.iter_fields(node):
-        if field in ("annotation", "returns"):
-            continue
+        inside = annotation or field in ("annotation", "returns")
         for child in value if isinstance(value, list) else [value]:
             if not isinstance(child, ast.AST):
                 continue
-            yield child, ".".join(scope) or "<module>"
+            yield child, ".".join(scope) or "<module>", inside
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                yield from _scoped(child, (*scope, child.name))
+                yield from _scoped(child, (*scope, child.name), inside)
             else:
-                yield from _scoped(child, scope)
+                yield from _scoped(child, scope, inside)
 
 
-def _handed_on(tree: ast.Module) -> set[int]:
-    """The nodes a reference cannot be: what a call calls, and the owner part of an attribute."""
+def _called_or_owner(tree: ast.Module) -> set[int]:
+    """The nodes a handed-on reference cannot be: what a call calls, and the owner part of an
+    attribute."""
     return {
         id(part)
         for node in ast.walk(tree)
@@ -518,15 +522,16 @@ def _seam_calls_in(source: str, file: str) -> list[SeamCall]:
     callback, an alias) or star-imported — which the walk cannot follow to its call."""
     tree = ast.parse(source)
     names, constants = _bindings(tree, file), _constants(tree)
-    handed_on = _handed_on(tree)
+    called_or_owner = _called_or_owner(tree)
     found = []
-    for node, function in _scoped(tree):
+    for node, function, in_annotation in _scoped(tree):
         if isinstance(node, ast.Call) and (seam := _seam_of(node, names)) is not None:
             found.append(SeamCall(file, node.lineno, function, *_argv(node, seam, constants)))
         elif (
             isinstance(node, (ast.Name, ast.Attribute))
             and isinstance(node.ctx, ast.Load)
-            and id(node) not in handed_on
+            and not in_annotation
+            and id(node) not in called_or_owner
             and _launcher(node, names) is not None
         ) or (isinstance(node, ast.ImportFrom) and _star_launches(node, file)):
             found.append(SeamCall(file, node.lineno, function, None, False))
@@ -534,7 +539,7 @@ def _seam_calls_in(source: str, file: str) -> list[SeamCall]:
 
 
 def seam_calls(root: Path) -> list[SeamCall]:
-    """Every call under `root` that starts a process, and what the walk read of its argv."""
+    """Every launch under `root`, as `SeamCall` counts one, and what the walk read of its argv."""
     return [
         call
         for path in _package_files(root)
@@ -588,8 +593,10 @@ def _local(argv: tuple[str | None, ...], whole: bool) -> bool:
         part is not None and part.startswith(GIT_REMOTE_OPTIONS) for part in argv
     ):
         return False
-    # An argv git was not read whole of is local only when what was not read are paths after
-    # `--`: before it, an element the walk could not read could be an option such as `--remote`.
+    # An argv the walk did not read whole — its reading ended at a spread — is local only when
+    # nothing before `--` went unread, because the spread, or a value it could not read there, can
+    # hold an option such as `--remote`. An argv read whole is not refused here for a value before
+    # `--` the walk could not read: that passes on the prefix it was read to.
     if argv[0] == "git" and not whole and None in argv[: _end_of_options(argv)]:
         return False
     return any(argv[: len(prefix)] == prefix for prefix in LOCAL) or (whole and argv in LOCAL_WHOLE)
@@ -722,6 +729,11 @@ LAUNCH_SHAPES: dict[str, tuple[str, str, tuple[str, ...] | None]] = {
     ),
     "alias": (TOP, "import subprocess\nlaunch = subprocess.run", None),
     "partial": (TOP, "import functools, subprocess\nfunctools.partial(subprocess.run, x)", None),
+    "in-annotation": (
+        TOP,
+        "import subprocess\ndef f(x: subprocess.run(['curl', 'x'])): pass",
+        ("curl", "x"),
+    ),
     "callback": (TOP, "from stayfixed.gitenv import git_run\nretry(git_run, r)", None),
     "runner-handed-on": (TOP, "retry(self._runner.run, argv)", None),
     "star-subprocess": (TOP, "from subprocess import *\ngetoutput('curl x')", None),
@@ -743,8 +755,9 @@ def test_a_launch_of_any_shape_is_a_seam_call(
     # (os-fexec). Mutation (declared): `import a.b` binds only `a.b` again (submodule-import).
     # Mutation (declared): a package function wins over a standard-library launcher of the same
     # name (shadowed-by-def). Mutation (declared): a launcher named without being called is not a
-    # launch (alias, partial, callback, runner-handed-on). Mutation: a star import of a launcher's
-    # module is not a launch (the three star cases).
+    # launch (alias, partial, callback, runner-handed-on). Mutation: annotations are skipped whole
+    # again -> a call evaluated in one goes unwalked (in-annotation). Mutation: a star import of a
+    # launcher's module is not a launch (the three star cases).
     assert [c.argv for c in _seam_calls_in(source, file)] == [argv]
 
 
@@ -752,7 +765,7 @@ def test_a_run_that_is_not_handed_an_argv_is_not_a_launch() -> None:
     # `probe.run(context)`, `gate.run(root, config, base)` and `handler.run(view, config)` are the
     # package's own in-process `.run`s. Mutation: every `.run` is a launch -> all three are found.
     # Nor is a name that only mentions a launcher's module: an annotation, a constant, an
-    # exception. Mutation: annotations are walked -> the `Popen[bytes]` annotation is found.
+    # exception. Mutation: the reference check runs inside annotations -> `Popen[bytes]` is found.
     source = "probe.run(context)\ngate.run(root, config, base)\nhandler.run(view, config)\n"
     source += "import subprocess\nraise subprocess.TimeoutExpired(args, 1)\n"
     source += "def f(p: subprocess.Popen[bytes]) -> None:\n    stdin = subprocess.DEVNULL\n"
