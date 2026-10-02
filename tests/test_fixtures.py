@@ -384,7 +384,6 @@ def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> N
     """
     # Mutations (declared): the budget cut below the projection; the job given an `if:` that can
     # skip it. Both redden this case.
-
     jobs = _ci_jobs()
     # The walk first: an empty reading would make every "exactly one" below come out zero for a
     # reason that is not about the workflow.
