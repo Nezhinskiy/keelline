@@ -16,8 +16,9 @@ spread or whole, that the function never rebinds or mutates. A function that han
 in two calls, a method and a nested function are not launchers: their own launches stay
 findings until declared. A `Runner`'s `.run` is a launcher by a receiver whose name ends in
 `runner`, in any case — a call to a `…Runner` class or a `…runner` factory counts by its name —
-or by an argv list handed to it, positionally or as `argv=`; `misnamed_runners` holds every name
-that holds a runner to that suffix. A name is followed through every import, relative, dotted
+or by an argv list handed to it, positionally or as `argv=`; `misnamed_runners` holds to that
+suffix every name annotated as a runner, assigned from such a call, or a lambda's positional
+parameter that `.run` is called on. A name is followed through every import, relative, dotted
 or a re-export, to the module that defines it.
 
 **What it reads.** Each launch's argv, element by element: a string literal, or a module
@@ -25,11 +26,12 @@ constant holding a string or a list of strings, is read; anything else is `Unrea
 source text. A constant is one name the module binds exactly once and never mutates, so a
 rebinding, an augmented assignment, an `.append` or a parameter of the same name makes it
 `Unread`. A launch whose argv the walk cannot read at all — a shell string, a launcher handed on,
-a starred argument before the argv's position — is one `Unread`. Each launch's `env=` and
-`executable=` are recorded beside it as an `Override`, the one replacing what the launch
-inherits and the other the program it runs. `isinstance` and `issubclass` only compare a class,
-so a launcher named there is not handed on; nor is one named as a type in an annotation, though
-a call there still runs, and is walked, when the annotation is evaluated.
+a starred argument before the argv's position — is one `Unread`. Each launch's `env=`,
+`executable=` and `**` spread are recorded beside it as an `Override`: the first replaces what
+the launch inherits, the second the program it runs, and the third can hand either.
+`isinstance` and `issubclass` only compare a class, so a launcher named there is not handed on;
+nor is one named as a type in an annotation, though a call there still runs, and is walked, when
+the annotation is evaluated.
 
 **What it cannot see.** The walk reads syntax, so a launch whose program, argv, environment or
 receiver is decided by data flow it does not follow is beyond it. Each of these is probed to
@@ -39,8 +41,10 @@ return nothing:
   `sys.modules`, and code run from data by `exec`, `eval` or `pickle`;
 - aliasing: a launcher module bound by assignment (`m = subprocess`), whose calls are seen only
   as a `.run` handed an argv list; a `Runner` reached through a subscript or a container
-  (`RUNNERS["x"].run(argv, root)`) and handed an argv that is not a list; a launcher named as
-  `Annotated` metadata, which code reading the annotation could call;
+  (`RUNNERS["x"].run(argv, root)`), or held under a name `misnamed_runners` does not see bound
+  to one (`go = runner`, `self.go = runner`, a default `go=subprocess_runner()`, a keyword-only
+  lambda parameter), and handed an argv that is not a list; a launcher named as `Annotated`
+  metadata, which code reading the annotation could call;
 - values computed at run time: an argv element held in a variable is `Unread`, and the walk
   does not follow where its value came from, so `sh -c` handed a script the package builds from
   strings (`" ".join(["curl", url])`) is taken for the user's command, the `sh -c` row's;
@@ -112,8 +116,8 @@ class Launch:
 
 @dataclass(frozen=True)
 class Override:
-    """A launch's `env=` or `executable=`, by its source text (`env=env`), and the package
-    function its value is a call to, as `(file, function)`, if it is one."""
+    """A launch's `env=`, `executable=` or `**` spread, by its source text (`env=env`, `**kw`),
+    and the package function its value is a call to, as `(file, function)`, if it is one."""
 
     file: str
     line: int
@@ -163,7 +167,8 @@ OS_MODULES = frozenset({"os", "posix", "nt"})
 LAUNCHER_MODULES = OS_MODULES | {module for module, _ in STDLIB_LAUNCHERS}
 # The calls that only compare a class, by the name they are called through.
 CLASS_CHECKS = frozenset({"isinstance", "issubclass"})
-# The keywords of a launch that replace what it inherits or what it runs.
+# The keywords of a launch that replace what it inherits or what it runs; a `**` spread is read as
+# an override too, since it can hand either.
 OVERRIDING = frozenset({"env", "executable"})
 # The `os` functions that change the process's environment without going through `os.environ`.
 ENVIRONMENT_CALLS = frozenset({"putenv", "unsetenv"})
@@ -769,7 +774,7 @@ def _walk(
             overrides.extend(
                 Override(source.file, node.lineno, scope, ast.unparse(keyword), called)
                 for keyword in node.keywords
-                if keyword.arg in OVERRIDING
+                if keyword.arg is None or keyword.arg in OVERRIDING
                 for called in [
                     _function_of(keyword.value.func, source.names)
                     if isinstance(keyword.value, ast.Call)
