@@ -1087,7 +1087,7 @@ before = '            runner, ["repo", "create", slug, "--public", "--descriptio
 after = '            runner, ["repo", "create", slug, "--private", "--description", DESCRIPTION], cwd'
 reddens = ["tests/overlay/test_publish.py::test_a_missing_repository_is_created_public_and_marked_as_a_template"]
 
-# Five guards that shipped without an entry, and one a review found asserting nothing.
+# Guards that shipped without an entry, and one a review found asserting nothing.
 
 # `doctor files`' own arm for a record that is present and is not a record. `_guarded` reds
 # every non-`OSError` exception, so letting `UnreadableRecord` escape still produces a red row
@@ -1139,7 +1139,7 @@ reddens = [
 ]
 
 # ---------------------------------------------------------------------------------------------
-# Eight guards from a whole-branch review, each one an assertion that review added or changed, and
+# Guards from a whole-branch review, each one an assertion that review added or changed, and
 # each entry's `after` chosen so the test reddens on the sentence or the value only the correct
 # behaviour produces — never on a `NameError` from a deleted name or on a status a surviving arm
 # also produces.

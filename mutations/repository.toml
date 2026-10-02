@@ -1079,8 +1079,8 @@ reddens = [
   "tests/test_fixtures.py::test_every_job_behind_the_pypi_environment_waits_for_the_environment_gate",
 ]
 
-# The group that most qualifies a green smoke run. Six entries, and they are six different ways a
-# row can report on something it never looked at.
+# The group that most qualifies a green smoke run. Each entry is a different way a row can report
+# on something it never looked at.
 #
 # The first is the headline: the row that proves the `PreToolUse` guard denies could not tell a
 # genuine deny from any launcher fault at all. `hooks/run-hook.sh` maps a launcher `rc=1` under

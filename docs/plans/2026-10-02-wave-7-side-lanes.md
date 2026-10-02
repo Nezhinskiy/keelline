@@ -1149,22 +1149,40 @@ for path, size, mode in sorted(e, key=lambda x: -x[1])[:3]: print(size, path, FI
 
 **Task 5 Step 1, `claude plugin validate --strict` (2026-10-02, `claude` 2.1.285).** Run on the
 branch after Task 4, first in the working checkout and then on the tracked tree alone, extracted
-with `git archive HEAD | tar -x -C "$TREE"` into a scratch directory:
+with `git archive HEAD | tar -x -C "$TREE"` into a scratch directory. In the working checkout:
 
 ```text
-$ claude plugin validate --strict .                              # working checkout
-✔ Validation passed                                              # exit 0 (marketplace manifest)
-$ claude plugin validate --strict .claude-plugin/plugin.json     # working checkout
+$ claude plugin validate --strict .
+Validating marketplace manifest: <checkout>/.claude-plugin/marketplace.json
+
+✔ Validation passed
+$ claude plugin validate --strict .claude-plugin/plugin.json
+Validating plugin manifest: <checkout>/.claude-plugin/plugin.json
+
+Validating plugin: <checkout>/CLAUDE.md
+
 ⚠ Found 1 warning:
-  ❯ root: CLAUDE.md at the plugin root is not loaded as project context. To ship context with
-    your plugin, use a skill (skills/<name>/SKILL.md) instead.
-✘ Validation failed (--strict treats warnings as errors)         # exit 1
-$ cd "$TREE" && claude plugin validate --strict .                # tracked tree
-✔ Validation passed                                              # exit 0
-$ cd "$TREE" && claude plugin validate --strict .claude-plugin/plugin.json
-✔ Validation passed                                              # exit 0
+
+  ❯ root: CLAUDE.md at the plugin root is not loaded as project context. To ship context with your plugin, use a skill (skills/<name>/SKILL.md) instead.
+
+✘ Validation failed (--strict treats warnings as errors)
 ```
 
+On the tracked tree, from `"$TREE"`:
+
+```text
+$ claude plugin validate --strict .
+Validating marketplace manifest: <tree>/.claude-plugin/marketplace.json
+
+✔ Validation passed
+$ claude plugin validate --strict .claude-plugin/plugin.json
+Validating plugin manifest: <tree>/.claude-plugin/plugin.json
+
+✔ Validation passed
+```
+
+- In the working checkout (`<checkout>`) the two commands exited 0 and 1; on the tracked tree
+  (`<tree>`, the scratch directory `"$TREE"` names) both exited 0.
 - `validate .` read only the marketplace manifest; the plugin manifest had to be named to be
   validated with the plugin's skills, agents and hooks.
 - The one warning came from a `CLAUDE.md` that is untracked and git-ignored in that checkout:
