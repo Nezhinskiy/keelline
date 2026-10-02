@@ -77,7 +77,7 @@ def _detail(done: Completed) -> str:
 
 
 def _gh(runner: Runner, argv: list[str], cwd: Path) -> Completed:
-    done = runner.run(["gh", *argv], cwd)
+    done = runner.launch(["gh", *argv], cwd)
     if done.code in (NOT_FOUND, TIMED_OUT):
         raise Failure(
             f"`gh {' '.join(argv[:2])} …` could not be run ({_detail(done)}); install and "
@@ -89,7 +89,7 @@ def _gh(runner: Runner, argv: list[str], cwd: Path) -> Completed:
 def _git(runner: Runner, argv: list[str], cwd: Path) -> Completed:
     """`_gh`'s twin for the `git` half, and it exists because the `git` half had no guard.
 
-    The four `git` calls in this module went through `runner.run` directly, and two of them —
+    The four `git` calls in this module went through `runner.launch` directly, and two of them —
     `add -A` and `status --porcelain` — had their exit codes read by nothing. A `git` that is
     absent, hung, blocked by an `index.lock` another process left, or failed by a
     `core.hooksPath` pre-commit hook returns an empty `stdout`, so `changed` came out empty and
@@ -100,7 +100,7 @@ def _git(runner: Runner, argv: list[str], cwd: Path) -> Completed:
     `NOT_FOUND` and `TIMED_OUT` are the two the seam invents rather than `git` reporting, which
     is why they get their own sentence: neither is an answer from `git` at all.
     """
-    done = runner.run(["git", *argv], cwd)
+    done = runner.launch(["git", *argv], cwd)
     if done.code in (NOT_FOUND, TIMED_OUT):
         raise Failure(
             f"`git {' '.join(argv[2:4])} …` could not be run ({_detail(done)}); this command "
@@ -293,7 +293,7 @@ def publish_template(
         # `gh repo clone`, not `git clone git@…`: it uses whichever protocol `gh` is
         # authenticated over, which is the premise the whole command rests on. A full clone,
         # not `--depth 1`: a shallow graft is not a history anyone wants pushed.
-        cloned = runner.run(["gh", "repo", "clone", slug, "clone"], scratch)
+        cloned = runner.launch(["gh", "repo", "clone", slug, "clone"], scratch)
         clone = scratch / "clone"
         if cloned.code != 0 or not clone.is_dir():
             raise Failure(f"`gh repo clone {slug}` exited {cloned.code} ({_detail(cloned)})")

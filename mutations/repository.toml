@@ -2941,19 +2941,25 @@ reddens = [
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[star-posix]",
 ]
 
-# A runner held under a name that does not end in `runner` still shows itself by the argv list it
-# is handed.
+# A runner launches through `.launch`, and the walk knows that call by the method's name alone,
+# whatever holds the runner: a parameter, an attribute, a subscript or a call's result. Known by
+# nothing, every runner launch goes unseen, and with it every `gh`, `git clone` and `sh -c` row.
 [[mutation]]
-name = "the outbound walk knows a run only by its receiver's name"
+name = "the outbound walk stops knowing a runner's launch by its method's name"
 file = "tests/outbound/walk.py"
-before = '    listed = isinstance(given, (ast.List, ast.Tuple, ast.Starred))'
-after = '    listed = False'
+before = '    if expr.attr == RUNNER_METHOD:'
+after = '    if False:'
 reddens = [
-  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[other-receiver]",
-  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[other-receiver-keyword]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-call]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-misnamed]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-subscripted]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-keyword]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-handed-on]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[derived-list]",
 ]
 
-# `subprocess.run(args=[…])` and `runner.run(argv=[…])` hand the argv by keyword, and read only by
+# `subprocess.run(args=[…])` and `runner.launch(argv=[…])` hand the argv by keyword, and read only by
 # position the launch goes unread.
 [[mutation]]
 name = "the outbound walk reads no argv handed by keyword"
@@ -2962,7 +2968,7 @@ before = '    return next((k.value for k in call.keywords if k.arg and k.arg == 
 after = '    return None'
 reddens = [
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[keyword-args]",
-  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[other-receiver-keyword]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-keyword]",
 ]
 
 # `from .gitenv import git_run` names the same launcher as the absolute import; skipped, every
@@ -3126,55 +3132,6 @@ reddens = [
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[constant-mutated]",
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[constant-shadowed]",
 ]
-
-# `_SubprocessRunner(timeout=5).run(argv, root)` is a runner's `.run`, and a parameter `a_Runner`
-# holds one; matched case-sensitively, the first goes unseen and the second is refused.
-[[mutation]]
-name = "the runner suffix is matched case-sensitively"
-file = "tests/outbound/walk.py"
-before = '_RUNNER_NAME = re.compile(r"runner\Z", re.IGNORECASE)'
-after = '_RUNNER_NAME = re.compile(r"runner\Z")'
-reddens = [
-  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-constructor]",
-  "tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[constructor]",
-]
-
-# A parameter annotated with an alias of `Runner` holds a runner as surely as one annotated
-# `Runner`.
-[[mutation]]
-name = "the runner check does not follow an alias of Runner"
-file = "tests/outbound/walk.py"
-before = '        if found == aliases:'
-after = '        if True:'
-reddens = [
-  "tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[alias]",
-  "tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[imported-alias]",
-]
-
-# A runner bound by `:=` is held under that name as surely as one bound by `=`.
-[[mutation]]
-name = "the runner check reads no assignment expression"
-file = "tests/outbound/walk.py"
-before = '        elif isinstance(node, (ast.Assign, ast.NamedExpr)):'
-after = '        elif isinstance(node, ast.Assign):'
-reddens = ["tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[walrus]"]
-
-# `go, x = subprocess_runner(), 1` binds the runner to `go`.
-[[mutation]]
-name = "the runner check does not unpack a tuple assignment"
-file = "tests/outbound/walk.py"
-before = '    if isinstance(target, (ast.Tuple, ast.List)):'
-after = '    if False:'
-reddens = ["tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[tuple]"]
-
-# A lambda's parameter that its body calls `.run` on holds a runner, and a lambda's parameter has no
-# annotation to say so.
-[[mutation]]
-name = "the runner check skips a lambda"
-file = "tests/outbound/walk.py"
-before = '        elif isinstance(node, ast.Lambda):'
-after = '        elif False:'
-reddens = ["tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[lambda]"]
 
 # The `sh -c` row says stayfixed does not choose the command, which holds only for the user's own,
 # unread one; a script the package spells out itself must be a finding.

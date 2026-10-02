@@ -537,7 +537,7 @@ def _secret_scan(binding: Binding, runner: Runner) -> str | None:
         )
     if installed:
         return None
-    done = runner.run(["pre-commit", "install"], binding.overlay)
+    done = runner.launch(["pre-commit", "install"], binding.overlay)
     if done.code == 0:
         return "installed the overlay's commit-time secret scan with `pre-commit install`"
     detail = answered(done)

@@ -22,7 +22,7 @@ class _Stub:
     stdout: str = "## 1.2.3\n\n- a note\n"
     calls: list[tuple[list[str], Path]] = field(default_factory=list)
 
-    def run(self, argv: list[str], cwd: Path) -> Completed:
+    def launch(self, argv: list[str], cwd: Path) -> Completed:
         self.calls.append((argv, cwd))
         return Completed(self.code, self.stdout, "" if self.code == 0 else "boom")
 

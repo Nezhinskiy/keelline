@@ -44,7 +44,7 @@ class Resolution:
 
 
 def released(runner: Runner, *, cwd: Path) -> dict[str, str] | None:
-    done = runner.run(["git", "ls-remote", "--exit-code", REPOSITORY_URL, TAGS], cwd)
+    done = runner.launch(["git", "ls-remote", "--exit-code", REPOSITORY_URL, TAGS], cwd)
     if done.code == NO_MATCH and not done.stdout.strip():
         return {}
     if done.code != 0:

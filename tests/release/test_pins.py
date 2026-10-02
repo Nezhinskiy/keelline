@@ -27,7 +27,7 @@ class _Stub:
     stdout: str = LISTING
     calls: list[list[str]] = field(default_factory=list)
 
-    def run(self, argv: list[str], cwd: Path) -> Completed:
+    def launch(self, argv: list[str], cwd: Path) -> Completed:
         self.calls.append(argv)
         return Completed(self.code, self.stdout, "")
 

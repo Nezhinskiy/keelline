@@ -23,7 +23,7 @@ def build(root: Path, *, version: str, draft: bool, runner: Runner) -> str:
             "assemble the changelog under it"
         )
     argv = ["towncrier", "build", "--version", version, "--yes"] + (["--draft"] if draft else [])
-    done = runner.run(argv, root)
+    done = runner.launch(argv, root)
     if done.code == NOT_FOUND:
         raise Failure(
             "towncrier could not be run; it is a development dependency, and `uv sync` installs it"

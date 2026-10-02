@@ -45,7 +45,7 @@ def test_a_launched_command_gets_no_stdin_and_no_credential_prompt(tmp_path: Pat
     saved = os.dup(0)
     try:
         os.dup2(slave, 0)
-        done = _SubprocessRunner().run(PROBE, tmp_path)
+        done = _SubprocessRunner().launch(PROBE, tmp_path)
     finally:
         os.dup2(saved, 0)
         for descriptor in (master, slave, saved):
@@ -62,7 +62,7 @@ def test_the_variables_that_redirect_git_are_dropped(tmp_path: Path) -> None:
     for name in ("GIT_DIR", "GIT_INDEX_FILE"):
         os.environ[name] = str(tmp_path / name)
     try:
-        done = _SubprocessRunner().run(PROBE, tmp_path)
+        done = _SubprocessRunner().launch(PROBE, tmp_path)
     finally:
         for name in ("GIT_DIR", "GIT_INDEX_FILE"):
             del os.environ[name]
@@ -81,13 +81,13 @@ def test_a_command_that_hangs_is_not_reported_as_one_that_is_missing(tmp_path: P
     before = runner.NETWORK_TIMEOUT_SECONDS
     runner.NETWORK_TIMEOUT_SECONDS = 1
     try:
-        hung = _SubprocessRunner().run(["sh", "-c", "sleep 5"], tmp_path)
+        hung = _SubprocessRunner().launch(["sh", "-c", "sleep 5"], tmp_path)
     finally:
         runner.NETWORK_TIMEOUT_SECONDS = before
     assert hung.code == TIMED_OUT
     # Non-vacuous: a binary that really is missing still answers NOT_FOUND, which is the mapping
     # an optional binary needs — a missing one is a finding, never a traceback.
-    assert _SubprocessRunner().run(["stayfixed-no-such-binary"], tmp_path).code == NOT_FOUND
+    assert _SubprocessRunner().launch(["stayfixed-no-such-binary"], tmp_path).code == NOT_FOUND
 
 
 def test_a_caller_that_asks_for_a_narrower_bound_gets_it(tmp_path: Path) -> None:
@@ -116,7 +116,7 @@ def test_a_caller_that_asks_for_a_narrower_bound_gets_it(tmp_path: Path) -> None
     # The sleep's own output goes to /dev/null, so once the shell is killed nothing holds the
     # runner's pipes open for the rest of it.
     marker = tmp_path / "finished"
-    hung = subprocess_runner(timeout=1).run(
+    hung = subprocess_runner(timeout=1).launch(
         ["sh", "-c", "sleep 5 >/dev/null 2>&1; : > finished"], tmp_path
     )
     assert hung.code == TIMED_OUT
@@ -137,5 +137,7 @@ def test_output_that_is_not_text_is_read_with_replacement_characters_not_raised(
     # quoted a latin-1 filename, measured. A byte the codec cannot read is U+FFFD instead, which
     # every stream and every UTF-8 file stayfixed writes can hold. Mutation (declared): decode
     # strictly again -> this reddens.
-    done = subprocess_runner().run(["sh", "-c", "printf 'caf\\351'; printf 'x\\351' >&2"], tmp_path)
+    done = subprocess_runner().launch(
+        ["sh", "-c", "printf 'caf\\351'; printf 'x\\351' >&2"], tmp_path
+    )
     assert done == Completed(0, "caf\ufffd", "x\ufffd")

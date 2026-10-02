@@ -63,12 +63,12 @@ NATIVE_MODULES = frozenset({"_ctypes", "_posixsubprocess", "_winapi", "ctypes"})
 # them and from the standard library's. Neither of these two can be derived. `git_run` puts
 # `-C <root>` between `git` and its caller's arguments, and the walk does not read `str(root)`;
 # declared, it is taken for what it is, `git` run in the directory `root` names. The real
-# `Runner`'s `.run` is a method, which the walk does not bind by name: calls reach it as
-# `<…runner>.run(argv, cwd)`, which the walk knows as a `Runner`'s, and its own launch is the argv
-# each of those hands it.
+# `Runner`'s `.launch` is a method, which the walk does not bind by name: calls reach it as
+# `<receiver>.launch(argv, cwd)`, which the walk knows as a `Runner`'s by the method's name, and its
+# own launch is the argv each of those hands it.
 ROOT_LAUNCHERS: dict[tuple[str, str], Launcher] = {
     ("src/stayfixed/gitenv.py", "git_run"): Launcher(("git",), at=1, spread=True),
-    ("src/stayfixed/runner.py", "_SubprocessRunner.run"): RUNNER,
+    ("src/stayfixed/runner.py", "_SubprocessRunner.launch"): RUNNER,
 }
 
 # Where each program a launch runs can reach, by the argv prefix that decides it, git's global
@@ -231,7 +231,7 @@ SCRUBBED_ENVIRONMENT = ("src/stayfixed/gitenv.py", "scrubbed_env")
 # program the argv names, and an `env=` can carry `GIT_CONFIG_COUNT` and its keys and values,
 # configuration as strong as `git -c`; either is a finding until it is declared here.
 OVERRIDES: dict[tuple[str, str, str], str] = {
-    ("src/stayfixed/runner.py", "_SubprocessRunner.run", "env=env"): (
+    ("src/stayfixed/runner.py", "_SubprocessRunner.launch", "env=env"): (
         "the owner's own environment, less the variables that point git at another repository: "
         "the `gh`, `git`, `pre-commit` and plugin launches it runs are the owner's own, signed "
         "in as the owner"
