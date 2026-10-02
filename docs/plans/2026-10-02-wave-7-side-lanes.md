@@ -1101,6 +1101,39 @@ The budget: 4 mechanisms × 3 prompts, one M3 hold-back turn, and up to four re-
 
 Written by Tasks 3 and 5.
 
+**Task 3, the payload after `test(payload): hold the plugin folder to the directory's file
+limits` (2026-10-02).** Measured with the guard's own walk:
+
+```bash
+uv run python -c "
+from tests.test_payload import tracked_entries, payload_findings, FILE_MAX_BYTES, FILES_MAX
+e = tracked_entries()
+print(len(e), 'entries;', FILES_MAX - len(e), 'under FILES_MAX; findings:', payload_findings(e))
+for path, size, mode in sorted(e, key=lambda x: -x[1])[:3]: print(size, path, FILE_MAX_BYTES - size)
+"
+```
+
+```text
+468 entries; 44 under FILES_MAX; findings: []
+240184 docs/cli.md 21960
+208935 docs/plans/2026-09-05-agent-harness-p0-spikes.md 53209
+198849 docs/plans/2026-09-19-wave-3-closure.md 63295
+```
+
+- The tree held 468 tracked files, 44 under the 512 at which the directory holds a listing, and
+  the guard reported no finding: no file at or over 256 KiB, no symlink, no `.DS_Store` or
+  `__MACOSX`, no `.gitattributes`.
+- The three largest files were `docs/cli.md` (240,184 bytes), the P0 spikes plan (208,935) and
+  the wave 3 closure plan (198,849). `docs/cli.md` had 21,960 bytes of headroom, unchanged
+  since the Premise measured it: it is the file the size limit reaches first.
+- Projected to wave 10, the count was about 488: the 468 measured, plus the five files this plan
+  still creates (`scripts/bench/bench.py`, `scripts/bench/repos.toml`, `scripts/bench/README.md`,
+  `tests/scripts/test_bench.py`, `tests/fixtures/bench/result.json`), plus one plan file for each
+  of waves 8, 9 and 10, plus twelve changelog fragments on top of the three pending — the last
+  release cycle, 0.1.1 to 0.2.0, consumed fifteen (`git show --diff-filter=D --name-only` on the
+  0.2.0 release commit, counted under `changelog.d/`). That left about 24 files of the 512 at
+  the peak of a release cycle; file count stayed the binding limit.
+
 ## Findings — benchmark
 
 Written by Tasks 6, 9 and 10.
