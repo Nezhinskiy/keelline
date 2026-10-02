@@ -2078,4 +2078,4 @@ name = "a module imports a network-capable library"
 file = "src/stayfixed/runner.py"
 before = "import subprocess"
 after = "import socket, subprocess"
-reddens = ["tests/test_outbound.py::test_no_module_imports_a_network_module"]
+reddens = ["tests/test_outbound.py::test_no_module_imports_a_network_or_native_module"]
