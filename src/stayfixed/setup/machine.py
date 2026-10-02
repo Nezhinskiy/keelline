@@ -132,7 +132,7 @@ def write_machine(
     # There used to be an explicit read-back here -- `root = overlay_root` and, when it was
     # `None`, the existing `[overlay] root` parsed back into a `Path` -- written when this table
     # was still replaced wholesale. Once the spread arrived it was dead code that looked like a
-    # guard: `mutations.toml` disarmed it and every test stayed green.
+    # guard: `mutations/` disarmed it and every test stayed green.
     owned: dict[str, dict[str, object]] = {
         "personal": merged_personal,
         "overlay": {

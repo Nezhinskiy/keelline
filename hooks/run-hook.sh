@@ -189,7 +189,7 @@ list_checkouts() {
 # `git_project` is the list's first member, written here rather than compared separately in
 # `in_project`: whenever `git worktree list` answers at all its output contains this path too,
 # so a second arm for it was a branch no test could redden -- coverage advertised and not held,
-# which is the shape `mutations.toml` exists to catch (it did: the arm survived its own
+# which is the shape `mutations/` exists to catch (it did: the arm survived its own
 # mutation). Kept as a line of its own all the same, because it is the one git anchor that does
 # not depend on `worktree list` answering: a `git` that resolves `--show-toplevel` and cannot
 # list worktrees must not cost the containment its git anchor entirely. The declared mutation is

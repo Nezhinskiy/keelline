@@ -85,7 +85,7 @@ def test_a_directory_that_is_not_an_overlay_is_refused_before_anything_is_writte
     # count is not restated here.) Writing a workflow file into a repository the owner may then
     # commit is the concrete harm.
     #
-    # Mutation (`mutations.toml`, "overlay upgrade stops asking whether --root is an overlay"):
+    # Mutation (`mutations/`, "overlay upgrade stops asking whether --root is an overlay"):
     # the `require_overlay` call is removed → the overlay's files appear and this reddens on
     # both the refusal and the tree.
     project = tmp_path / "project"
@@ -118,7 +118,7 @@ def test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release(tmp_path:
     # README advertises, and attributing to the owner an edit stayfixed itself made. `init` now
     # re-stamps each record with the bytes it wrote.
     #
-    # Mutation (`mutations.toml`, "overlay init writes the manifests behind the scaffold
+    # Mutation (`mutations/`, "overlay init writes the manifests behind the scaffold
     # ledger"): the `with_record(replace(...))` line stops updating the digest → both manifests
     # read as hand-edited and this reddens.
     root = _an_overlay(tmp_path)
@@ -157,7 +157,7 @@ def test_init_does_not_vouch_for_a_manifest_the_owner_edited(tmp_path: Path) -> 
     # `init` rewrites the name and account either way; the record moves only when the bytes it
     # replaced were the ones recorded, so `upgrade` goes on naming the file as hand-edited.
     #
-    # Mutation: `mutations.toml`'s "overlay init vouches for a manifest the owner edited".
+    # Mutation: `mutations/`'s "overlay init vouches for a manifest the owner edited".
     root = _an_overlay(tmp_path)
     plugin = root / ".claude-plugin" / "plugin.json"
     document = json.loads(plugin.read_text(encoding="utf-8"))
@@ -181,7 +181,7 @@ def test_init_reads_every_manifest_before_it_rewrites_any(tmp_path: Path) -> Non
     # hand-edited to every later `upgrade`. Every manifest is read and decided first now, so the
     # failure leaves the tree as it was.
     #
-    # Mutation: `mutations.toml`'s "overlay init rewrites a manifest before reading the next".
+    # Mutation: `mutations/`'s "overlay init rewrites a manifest before reading the next".
     root = _an_overlay(tmp_path)
     (root / ".codex-plugin" / "plugin.json").write_text("{not json", encoding="utf-8")
     before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
@@ -245,7 +245,7 @@ def test_the_memory_readme_a_release_shipped_is_removed(tmp_path: Path, ledger: 
     # records the file; one generated from a template carries none, and there the bytes a
     # release shipped are the only evidence the file is stayfixed's.
     #
-    # Mutations: `mutations.toml`'s "a retired overlay file the ledger records is kept" and "a
+    # Mutations: `mutations/`'s "a retired overlay file the ledger records is kept" and "a
     # retired overlay file holding the shipped bytes is kept".
     root = _an_overlay(tmp_path)
     path = _with_the_shipped_memory_readme(root, ledger=ledger, text=SHIPPED_MEMORY_README)
@@ -267,7 +267,7 @@ def test_an_edited_memory_readme_is_kept_and_the_report_says_what_to_do(
     # them, so it is never removed: the report names it and the way out, since the note reader
     # still reads it as a note.
     #
-    # Mutations: `mutations.toml`'s "a retired overlay file with no ledger is removed whatever it
+    # Mutations: `mutations/`'s "a retired overlay file with no ledger is removed whatever it
     # holds" and "a kept retired overlay file is named without its way out".
     root = _an_overlay(tmp_path)
     edited = SHIPPED_MEMORY_README + "\nMy own line.\n"
@@ -294,7 +294,7 @@ def test_init_removes_the_memory_readme_a_release_shipped(tmp_path: Path, ledger
     # README and no ledger, and nobody is told to run `overlay upgrade` on an overlay just made.
     # `init`, which every such overlay runs, removes it, and drops a record the ledger holds.
     #
-    # Mutation: `mutations.toml`'s "overlay init leaves the memory README a release shipped".
+    # Mutation: `mutations/`'s "overlay init leaves the memory README a release shipped".
     root = _an_overlay(tmp_path)
     path = _with_the_shipped_memory_readme(root, ledger=ledger, text=SHIPPED_MEMORY_README)
     done = init_instance(root, "octo", runner=FakeRunner())
@@ -318,7 +318,7 @@ def test_init_leaves_the_memory_directory_its_readme_under_the_new_name(
     # dangled. `init` writes the shipped `_README.md` in its place, and records it where the tree
     # has a ledger.
     #
-    # Mutation: `mutations.toml`'s "overlay init leaves the memory directory empty".
+    # Mutation: `mutations/`'s "overlay init leaves the memory directory empty".
     root = _an_overlay(tmp_path)
     successor = root / "common" / "memory" / "_README.md"
     shipped = successor.read_text(encoding="utf-8")
@@ -347,7 +347,7 @@ def test_a_memory_readme_init_cannot_remove_keeps_the_manifests_it_renamed_recor
     # records only in memory: the renamed manifests then read as hand-edited to every `upgrade`.
     # The records are written before anything is removed, so the refusal leaves them true.
     #
-    # Mutation: `mutations.toml`'s "overlay init records its renames only after the removal".
+    # Mutation: `mutations/`'s "overlay init records its renames only after the removal".
     root = _an_overlay(tmp_path)
     path = _with_the_shipped_memory_readme(root, ledger=True, text=SHIPPED_MEMORY_README)
     memory = root / "common" / "memory"
@@ -370,7 +370,7 @@ def test_a_memory_readme_init_cannot_remove_keeps_the_manifests_it_renamed_recor
 
 def test_init_keeps_an_edited_memory_readme_and_says_what_to_do(tmp_path: Path) -> None:
     # Bytes that are not the shipped ones may be the owner's own words, so `init` leaves the file
-    # and its note carries the way out. Mutation: `mutations.toml`'s "overlay init leaves the
+    # and its note carries the way out. Mutation: `mutations/`'s "overlay init leaves the
     # memory README a release shipped", which drops the note with the removal; the engine's
     # verdict itself is "a retired overlay file with no ledger is removed whatever it holds",
     # proven through `upgrade`.

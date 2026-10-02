@@ -133,7 +133,7 @@ def test_a_checkout_with_no_origin_hears_the_cause_every_other_surface_says(
     # different remote and sent the reader to `--check` about it. It says the one cause and way
     # out the memory commands, `attach`, `--check` and `doctor` say.
     #
-    # Mutation: `mutations.toml`'s "the session-start line says nothing about a missing origin".
+    # Mutation: `mutations/`'s "the session-start line says nothing about a missing origin".
     from stayfixed.attach.hooks import NO_ORIGIN
     from stayfixed.memory.api import NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT
 
@@ -209,7 +209,7 @@ def test_unpushed_work_is_named_by_its_counts_and_only_when_nothing_else_is_wron
     it. They are mutually exclusive now, and `NO_UPSTREAM` carries the dirty count, which is the
     half that is knowable here.
 
-    Mutation: `mutations.toml`'s "a session with no upstream is told it has 0 unpushed commits".
+    Mutation: `mutations/`'s "a session with no upstream is told it has 0 unpushed commits".
     """
     root, overlay, machine = _recorded(tmp_path, monkeypatch)
     git(overlay, "init", "-q", "-b", "main")
@@ -383,7 +383,7 @@ def test_a_context_that_has_already_been_asked_does_not_re_pay_the_sync(
     The `git` calls are counted rather than timed: a wall-clock assertion in a suite that runs
     beside other work measures the machine, not the gate.
 
-    Mutation: `mutations.toml`'s "a compacted session re-pays the overlay sync".
+    Mutation: `mutations/`'s "a compacted session re-pays the overlay sync".
     """
     from stayfixed.overlay import api as overlay_api
 
@@ -442,7 +442,7 @@ def test_a_failure_with_no_except_of_its_own_is_silence_not_an_exception(
     same repository is told `NOT_ATTACHED` by `test_an_unattached_overlay_project_is_told_to_attach`
     when nothing raises.
 
-    Mutation: `mutations.toml`'s "an open session handler lets an unforeseen failure out".
+    Mutation: `mutations/`'s "an open session handler lets an unforeseen failure out".
     """
     from stayfixed.attach import binding as binding_module
 

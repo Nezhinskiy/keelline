@@ -204,7 +204,7 @@ def test_the_cli_never_picks_the_github_source_for_you() -> None:
     # explicit confirmation, and a non-interactive caller — the usual one in this harness — can
     # express confirmation only by naming the source. Mutation:
     # `source="template"` in that parser's `set_defaults` and this reddens; it is declared in
-    # `mutations.toml`, because the failure creates a repository nobody asked for.
+    # `mutations/`, because the failure creates a repository nobody asked for.
     from stayfixed.cli import build_parser, discover_registrars
     from stayfixed.overlay.commands import run_overlay_create
 
@@ -312,7 +312,7 @@ def test_a_gh_that_cannot_be_run_at_creation_is_named_as_the_cause_and_costs_no_
     # removed between the two calls), because the probe has its own arm and its own test below;
     # this is the one that reaches the creation arm.
     #
-    # Mutation (`mutations.toml`, "overlay create --template asks GitHub about a `gh` that
+    # Mutation (`mutations/`, "overlay create --template asks GitHub about a `gh` that
     # could not run"): the `NOT_FOUND`/`TIMED_OUT` arm becomes `if False:` → two more
     # subprocesses run and the message names `gh auth status` instead of the launch failure.
     absent = FakeRunner(
@@ -374,7 +374,7 @@ def test_a_gh_that_ran_and_declined_quotes_its_own_answer(tmp_path: Path) -> Non
 
 def test_the_owners_own_template_is_used_when_they_have_published_one(tmp_path: Path) -> None:
     # A person who publishes their own template gets their own copy, so an overlay they generate
-    # is exactly the tree their `publish-template` put there. Mutation (`mutations.toml`,
+    # is exactly the tree their `publish-template` put there. Mutation (`mutations/`,
     # "overlay create never asks whose template to use"): the probe is dropped and the publisher's
     # template is always named → this reddens on the argv.
     runner = FakeRunner(answers={THE_OWNERS_PROBE: A_TEMPLATE}, on_call=_populate)
@@ -397,7 +397,7 @@ def test_the_publishers_template_is_used_when_the_owner_has_none(tmp_path: Path)
     # documented contract asked for a repository nobody had told them to publish. The answer to
     # "does <owner>/stayfixed-overlay-template exist" is `gh`'s real not-found shape (see
     # `NO_SUCH_REPOSITORY`), and it falls back to the publisher's own public template.
-    # Mutation (`mutations.toml`, "overlay create has no template to fall back on"): the
+    # Mutation (`mutations/`, "overlay create has no template to fall back on"): the
     # fallback is dropped and the owner's template is always named → this reddens.
     #
     # Named with its host. `gh` resolves an unqualified `OWNER/REPO` on `GH_HOST`, which the runner
@@ -405,7 +405,7 @@ def test_the_publishers_template_is_used_when_the_owner_has_none(tmp_path: Path)
     # the owner's private overlay -- whose hooks run in every session -- was generated from it.
     # `github.com/OWNER/REPO` is looked up on github.com whatever `GH_HOST` says (measured against
     # gh 2.101.0 with `GH_HOST` set to another host). The owner's own probe above stays
-    # host-relative: that repository is on the owner's own host. Mutation (`mutations.toml`, "the
+    # host-relative: that repository is on the owner's own host. Mutation (`mutations/`, "the
     # publisher's template is named on whatever host gh defaults to") → this reddens on the argv.
     runner = FakeRunner(answers={THE_OWNERS_PROBE: NO_SUCH_REPOSITORY}, on_call=_populate)
     created = create("octo", "stayfixed-private", source="template", root=tmp_path, runner=runner)
@@ -501,7 +501,7 @@ def test_what_gh_and_git_print_cannot_drive_a_terminal(
     # followed by `::error::` is a workflow command in a CI log, and an escape drives a terminal.
     # They are all clipped in the one place that reads them, `_detail`.
     #
-    # Mutation: `mutations.toml`'s "a subprocess's answer is quoted raw".
+    # Mutation: `mutations/`'s "a subprocess's answer is quoted raw".
     runner = FakeRunner(answers={**answers, "git clone": HOSTILE})
     with pytest.raises(Failure) as failed:
         create("octo", "stayfixed-private", source="template", root=tmp_path, runner=runner)
@@ -550,7 +550,7 @@ def test_a_local_overlay_is_a_git_repository_on_main_with_no_remote(tmp_path: Pa
     # `create --local` used to leave a bare directory, so the owner's next step (commit it, push
     # it to a private repository) began with a `git init` nobody had told them about. The init
     # is `create`'s `--local` branch and not `_render_locally`, which `publish-template` also
-    # uses for its scratch render. Mutation (`mutations.toml`, "overlay create --local leaves no
+    # uses for its scratch render. Mutation (`mutations/`, "overlay create --local leaves no
     # git repository"): the `git init` call is deleted → this reddens.
     runner = FakeRunner()
     created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=runner)
@@ -598,7 +598,7 @@ def test_a_git_older_than_2_28_still_leaves_a_repository_on_main(tmp_path: Path)
     # `git init` and then `git symbolic-ref HEAD refs/heads/main` name the branch on every
     # version.
     #
-    # Mutation: `mutations.toml`'s "overlay create --local asks git init for its branch".
+    # Mutation: `mutations/`'s "overlay create --local asks git init for its branch".
     runner = FakeRunner(answers={"git init -b": Completed(129, "", "error: unknown switch `b'")})
     created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=runner)
     assert ["git", "init", "-b", "main"] not in runner.calls
@@ -609,7 +609,7 @@ def test_a_git_init_that_ran_and_failed_is_said_to_have_failed(tmp_path: Path) -
     # A `git` that ran and exited non-zero ran: the note says how it ended, not that it did not
     # run.
     #
-    # Mutation: `mutations.toml`'s "a git init that failed is said not to have run".
+    # Mutation: `mutations/`'s "a git init that failed is said not to have run".
     runner = FakeRunner(answers={"git init": Completed(128, "", "fatal: cannot mkdir")})
     created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=runner)
     message = " ".join(created.notes)
@@ -675,7 +675,7 @@ def test_init_keeps_an_author_the_owner_wrote_themselves(tmp_path: Path) -> None
     # Only the placeholder is replaced: a person who put their own name in `author` before
     # running `init`, or who runs it a second time, keeps it.
     #
-    # Mutation: `mutations.toml`'s "overlay init replaces an author the owner wrote".
+    # Mutation: `mutations/`'s "overlay init replaces an author the owner wrote".
     created = create(
         "octo", "stayfixed-private", source="local", root=tmp_path, runner=FakeRunner()
     )
@@ -697,7 +697,7 @@ def test_init_names_the_codex_manifest_after_the_owner_too(tmp_path: Path) -> No
     # half of everything else, but `.codex-plugin/plugin.json` was left unsuffixed, so the
     # collision the suffix exists to prevent still happened on Codex.
     #
-    # Mutation (`mutations.toml`, "overlay init leaves the Codex manifest unsuffixed"):
+    # Mutation (`mutations/`, "overlay init leaves the Codex manifest unsuffixed"):
     # `CODEX_PLUGIN_MANIFEST` is dropped from `MANIFESTS` → this reddens on the third name.
     created = create(
         "octo", "stayfixed-private", source="local", root=tmp_path, runner=FakeRunner()
@@ -738,7 +738,7 @@ def test_a_local_render_over_an_existing_repository_says_what_it_found(tmp_path:
     # said "made it a git repository on main with no remote" anyway -- about a repository on
     # another branch with an `origin` -- and told the owner to add a remote it already had.
     #
-    # Mutation (`mutations.toml`, "overlay create --local reads an existing repository as one it
+    # Mutation (`mutations/`, "overlay create --local reads an existing repository as one it
     # made"): the check for an existing repository is dropped → this reddens.
     import shutil
 

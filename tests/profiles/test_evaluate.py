@@ -29,7 +29,7 @@ def test_detection_reads_root_level_names_and_globs(tmp_path: Path) -> None:
 
 
 def test_present_reports_only_when_no_locator_resolves(tmp_path: Path) -> None:
-    # Advisory output, so the mutation stays here rather than in `mutations.toml`: the
+    # Advisory output, so the mutation stays here rather than in `mutations/`: the
     # `present` arm's `hits = [] if any(...) else locators` -> `hits = []` reddens the first
     # assertion, and `_names` without `dict.fromkeys` reddens it too.
     check = _check(

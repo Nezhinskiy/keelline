@@ -272,7 +272,7 @@ def test_nothing_the_ledger_holds_reaches_detachs_line_or_its_json(
     # this branch removed a marker id **bounded by a grammar** from `doctor`'s output on it. An
     # allow rule is less bounded than that, not more, so counts here or the three disagree.
     #
-    # Mutation: `mutations.toml`'s "detach prints the ledger's own strings".
+    # Mutation: `mutations/`'s "detach prints the ledger's own strings".
     from stayfixed.attach.api import LEDGER as LEDGER_PATH
 
     root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
@@ -411,7 +411,7 @@ def test_a_project_not_in_overlay_mode_is_refused_before_a_byte_is_written(tmp_p
     # refusal belongs beside the others above the first write, and `--check` owes the same
     # answer with the same code, since the real run it previews would refuse.
     #
-    # Mutation: `mutations.toml`'s "attach asks memory.mode only after it has written".
+    # Mutation: `mutations/`'s "attach asks memory.mode only after it has written".
     root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
     _overlay_grants(store, allow=(RULE,), codex="# standing rule\n")
     text = (root / "stayfixed.toml").read_text(encoding="utf-8")

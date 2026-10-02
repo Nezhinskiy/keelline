@@ -103,7 +103,7 @@ step 7's sentence true.
 
    **And the release smoke's tag, which a test holds.** `.github/workflows/smoke-release.yml`
    calls `check.yml@vX.Y.Z`, written out, because `uses:` takes no expression; set it to the
-   new version here, and in the `mutations.toml` entry whose `before` is that line.
+   new version here, and in the entry in `mutations/` whose `before` is that line.
    `tests/test_fixtures.py` fails until it names the version the tree carries, and the release
    workflow runs the suite on the tag.
 

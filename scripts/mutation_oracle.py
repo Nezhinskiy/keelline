@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply each mutation `mutations.toml` declares and check that the named tests go red.
+"""Apply each mutation `mutations/` declares and check that the named tests go red.
 
 The plans ask that "every new assertion ships with the mutation that reddens it, or a sentence
 saying why none exists", and until now those mutations existed only as English sentences inside
@@ -50,9 +50,35 @@ from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-DECLARATION = ROOT / "mutations.toml"
+# The declarations, one TOML file per group of the tree rather than one file: the set grows with
+# every guard, and a single file had passed the 256 KiB at which the plugin directory holds a file
+# for a reviewer. Every `*.toml` here is read; which file an entry belongs in is `GROUP_OF`'s.
+DECLARATIONS = ROOT / "mutations"
+# Which group file an entry belongs in, by the path its `file` names: the first prefix that
+# matches wins, and the empty prefix takes everything outside the package. This table is the one
+# place the groups are spelled: `scripts/check_artifacts.py` globs the directory rather than
+# naming its files, and the tests hold every entry to the file its `file` routes to. A group that
+# outgrows its file is split by its largest area, which is an edit to this table.
+GROUP_OF: tuple[tuple[str, str], ...] = (
+    ("src/stayfixed/assess/", "assess"),
+    ("src/stayfixed/attach/", "attach"),
+    ("src/stayfixed/project/", "project"),
+    ("src/stayfixed/templates/", "project"),
+    ("src/stayfixed/profiles/", "project"),
+    ("src/stayfixed/presets/", "project"),
+    ("src/stayfixed/guards/", "guards"),
+    ("src/stayfixed/setup/", "install"),
+    ("src/stayfixed/overlay/", "install"),
+    ("src/stayfixed/doctor/", "install"),
+    ("src/stayfixed/memory/", "records"),
+    ("src/stayfixed/docs/", "records"),
+    ("src/stayfixed/ledger/", "records"),
+    ("src/stayfixed/", "core"),
+    ("", "repository"),
+)
 # Where scratch checkouts are made and where the sweep looks for leaked ones. A module-level
 # name rather than a `gettempdir()` call at each site, for the reason `ROOT` is one: this
 # module deletes directories, and its own tests have to be able to aim both halves somewhere
@@ -71,8 +97,20 @@ class Mutation:
     reddens: tuple[str, ...]
 
 
+def group_for(file: str) -> str:
+    """The group whose file declares a mutation of `file`, a path from the repository root."""
+    return next(group for prefix, group in GROUP_OF if file.startswith(prefix))
+
+
 def declared() -> list[Mutation]:
-    raw = tomllib.loads(DECLARATION.read_text(encoding="utf-8"))
+    """Every entry of every group file: the files in sorted order, each file's in its own."""
+    found: list[Mutation] = []
+    for path in sorted(DECLARATIONS.glob("*.toml")):
+        found.extend(_entries(tomllib.loads(path.read_text(encoding="utf-8"))))
+    return found
+
+
+def _entries(raw: dict[str, Any]) -> list[Mutation]:
     return [
         Mutation(
             name=str(entry["name"]),
@@ -732,7 +770,7 @@ def _uncommitted(files: set[Path]) -> str | None:
 
     **"Could not ask" is not "clean"**: it
     read any non-zero `git` exit as a clean tree, which is precisely the state an unpacked
-    sdist is in (`scripts/**` and `mutations.toml` ship in it, and it is not a checkout) and
+    sdist is in (`scripts/**` and `mutations/` ship in it, and it is not a checkout) and
     the state a broken `git` installation produces. `git status` exits 128 outside a
     repository, so the one arrangement with no way to recover a clobbered file was the one
     where the guard stood down.
@@ -799,7 +837,7 @@ def _positive(text: str) -> int:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="mutation_oracle.py",
-        description="Apply each mutation mutations.toml declares and check the named tests go red.",
+        description="Apply each mutation mutations/ declares and check the named tests go red.",
     )
     parser.add_argument(
         "pattern", nargs="?", default="", help="only entries whose name or file contains this"

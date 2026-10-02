@@ -292,7 +292,7 @@ def test_a_repository_git_refuses_to_read_is_not_mistaken_for_no_repository(
 def test_the_allocator_reads_the_git_source_with_the_shared_digit_rule(tmp_path: Path) -> None:
     # The `git log` reader used to respell the digit rule inline as `(\d{3,})` instead of
     # taking `DIGITS` from `stayfixed.identifiers`, which owns it. A third spelling is one the
-    # `mutations.toml` entry over that constant cannot reach, so widening the rule would have
+    # entry in `mutations/` over that constant cannot reach, so widening the rule would have
     # left the allocator counting by the old one and handing out a number some ref already
     # holds. Mutation: `DIGITS = r"\d+"` — `BR-42.md` becomes an identifier the reader counts
     # and this reddens (the declared entry over `identifiers.py`).
@@ -388,7 +388,7 @@ def test_renumber_refuses_over_foreign_index_content_without_moving_anything(
     # `renumber` regenerates the index at the end, so it makes `new`'s refusal before its first
     # write — and it is the destructive one: both endpoints and the whole sweep are already on
     # disk by the time the regeneration runs.
-    # Oracle: `mutations.toml`, "renumber regenerates over an index carrying content this tool
+    # Oracle: `mutations/`, "renumber regenerates over an index carrying content this tool
     # did not generate" — measured, and the only test in the suite that reddens under it.
     root, config = project(tmp_path)
     seed(root, config, 1)

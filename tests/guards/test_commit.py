@@ -456,7 +456,7 @@ def test_strip_leaves_a_doubled_blank_in_the_body_alone() -> None:
     The first cut collapsed blank runs across the whole message once anything was removed, so
     a strip silently reflowed a body the author had spaced on purpose — and the docstring
     claimed the opposite. Its mutation is restoring that message-wide collapse: the doubled
-    blank below then comes back single. Hand-measured rather than declared in `mutations.toml`,
+    blank below then comes back single. Hand-measured rather than declared in `mutations/`,
     because the change is a multi-line rewrite rather than one substituted line.
     """
     message = "fix: thing\n\nBody.\n\n\nSigned-off-by: Me <me@example.com>\nGenerated with Codex\n"

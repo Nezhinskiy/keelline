@@ -9,7 +9,7 @@ reader's file and asks for what that reader already answers a broken file with: 
 unreadable file as absent, the same absent answer.
 
 Mutation (by hand, per case): take `UnicodeDecodeError` out of the reader's `except` -> that
-case reddens on the decode error itself. The two readers `mutations.toml` declares are the ones
+case reddens on the decode error itself. The two readers `mutations/` declares are the ones
 a command's first read meets, `stayfixed.toml` and the machine file.
 """
 

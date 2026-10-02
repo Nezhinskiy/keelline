@@ -92,7 +92,7 @@ def test_the_machine_default_is_the_file_every_reader_reads(
     # recorded in the machine configuration; run `stayfixed setup`" — the defect
     # `config.loader.load`'s docstring says it fixed, reintroduced on the write side.
     #
-    # Mutation (`mutations.toml`, "setup's --machine default takes the interactive sniff"):
+    # Mutation (`mutations/`, "setup's --machine default takes the interactive sniff"):
     # `interactive=False` is dropped from the call in `run_setup` → the file lands under
     # `XDG_CONFIG_HOME` and this reddens on both paths below.
     home = tmp_path / "home"
@@ -133,7 +133,7 @@ def test_settings_reaches_setup_as_a_path_and_not_as_the_string_argparse_read(
     # `settings`. Asserted on the keyword's value and not merely on exit 0, because a `run_setup`
     # that parsed the flag and dropped it would exit 0 too.
     #
-    # Mutation: none of its own. `mutations.toml`'s "setup ignores --settings and writes under
+    # Mutation: none of its own. `mutations/`'s "setup ignores --settings and writes under
     # home" reddens the library-level test in `tests/setup/test_setup.py`; this test is about
     # the wiring above it, and the wiring's own failure mode is a `TypeError` at the call.
     seen: dict[str, object] = {}

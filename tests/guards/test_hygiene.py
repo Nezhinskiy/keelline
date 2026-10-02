@@ -98,7 +98,7 @@ def test_stale_bytecode_is_counted(tmp_path: Path) -> None:
     """A `.pyc` is stale when the source mtime recorded in its header (bytes 8-12) no longer
     matches the source's — the condition CPython itself checks. Compile, then move the source
     forward."""
-    # Oracle: `mutations.toml`, "stale bytecode is never counted".
+    # Oracle: `mutations/`, "stale bytecode is never counted".
     root = repo(tmp_path)
     module = root / "src" / "mod.py"
     compile_module(module)
@@ -110,7 +110,7 @@ def test_stale_bytecode_is_counted(tmp_path: Path) -> None:
 @needs_git
 def test_a_normally_compiled_pyc_is_not_stale(tmp_path: Path) -> None:
     """The everyday case, and what a naive `pyc mtime > source mtime` gets backwards."""
-    # Oracle: `mutations.toml`, "fresh bytecode is counted as stale".
+    # Oracle: `mutations/`, "fresh bytecode is counted as stale".
     root = repo(tmp_path)
     # The `.pyc` must actually exist, or `stale == 0` passes by finding nothing to judge.
     assert compile_module(root / "src" / "mod.py").is_file()
@@ -126,7 +126,7 @@ def test_a_hash_based_pyc_is_not_judged(tmp_path: Path) -> None:
     `py_compile` switches to it on its own under `SOURCE_DATE_EPOCH`, and `compileall
     --invalidation-mode checked-hash` produces a tree of them.
     """
-    # Oracle: `mutations.toml`, "a hash-based .pyc is read as if it carried an mtime".
+    # Oracle: `mutations/`, "a hash-based .pyc is read as if it carried an mtime".
     root = repo(tmp_path)
     module = root / "src" / "mod.py"
     cache = module.parent / "__pycache__" / f"{module.stem}.{sys.implementation.cache_tag}.pyc"
@@ -152,7 +152,7 @@ def test_a_source_mtime_past_2106_is_compared_the_way_cpython_compares_it(tmp_pa
     Reddened by dropping `& _PYC_MTIME_MASK` from `_stale_bytecode`'s comparison; measured,
     and it reddened this test alone.
 
-    Not in `mutations.toml`: the skip below is environmental — a filesystem that cannot store
+    Not in `mutations/`: the skip below is environmental — a filesystem that cannot store
     a post-2106 mtime clamps it — and a declared mutation whose named test can SKIP reports
     "caught" while proving nothing.
     """
@@ -176,7 +176,7 @@ def test_a_repeated_or_nested_code_root_is_walked_once(tmp_path: Path) -> None:
     three times and the one under `src` twice — `stale == 5` for two stale files, in a notice
     whose only job is to be believed about a number.
 
-    Oracle: `mutations.toml`, "a code root listed twice is walked twice". Measured both ways —
+    Oracle: `mutations/`, "a code root listed twice is walked twice". Measured both ways —
     deleting BOTH pruning lines gives `stale == 5`, and the declared single-line mutation (the
     `if any(_covers(...))` guard alone) still gives `stale == 3`, because the descendant
     rebuild below it happens to collapse the exact repeat while leaving the nested root. Each
@@ -214,7 +214,7 @@ def test_a_code_root_spelled_with_a_trailing_or_leading_slash_is_still_walked(
     hygiene counts, the audit and the citation roots with nothing saying so. They are folded
     before the question now.
 
-    Oracle: `mutations.toml`, "a code root spelled with a slash is dropped again".
+    Oracle: `mutations/`, "a code root spelled with a slash is dropped again".
     """
     root = repo(tmp_path)
     (root / "tests").mkdir()
@@ -234,7 +234,7 @@ def test_a_pyc_from_another_interpreter_is_not_judged(tmp_path: Path) -> None:
     fresh, matches. Reading past the magic word counted the leftover and the notice then fired
     on every red run of a healthy tree. Measured before the magic check: `stale == 1`.
     """
-    # Oracle: `mutations.toml`, "a .pyc from another interpreter is read as this one's".
+    # Oracle: `mutations/`, "a .pyc from another interpreter is read as this one's".
     root = repo(tmp_path)
     module = root / "src" / "mod.py"
     # The CURRENT tag's bytecode, fresh — so a non-zero count can only come from the leftover.
@@ -270,7 +270,7 @@ def test_only_contained_code_roots_are_scanned(tmp_path: Path) -> None:
     # `contained()` removed, `root/../outside` is a real directory and would be walked, so the
     # assertion below fails. Without the directory the entry would be dropped by `is_dir()`
     # alone and the containment call could be deleted with the test still green.
-    # Oracle: `mutations.toml`, "an escaping code root is followed".
+    # Oracle: `mutations/`, "an escaping code root is followed".
     root = repo(tmp_path)
     (root.parent / "outside").mkdir()
     (root / CONFIG_FILE).write_text(

@@ -206,7 +206,7 @@ def test_a_repository_with_no_origin_remote_is_its_own_state_and_not_a_machine_f
     # repository. It used to be read as a mismatch, whose way out, `--trust-remote`, then refused
     # for the missing `origin`; it is `no-origin`, recorded or not, and every surface says so.
     #
-    # Mutation: `mutations.toml`'s "the binding classifier reads a missing origin as a different
+    # Mutation: `mutations/`'s "the binding classifier reads a missing origin as a different
     # remote".
     assert _read(tmp_path, recorded="u", origin=None).state == NO_ORIGIN
     assert _read(tmp_path, recorded=None, origin=None).state == NO_ORIGIN
@@ -464,7 +464,7 @@ def test_a_group_that_is_not_a_subdirectory_is_refused_by_a_sentence_that_is_tru
     every entry it is raised for. Asserted about the refusal a repository or an owner can
     provoke, and not about a crash.
 
-    Mutation: `mutations.toml`'s "the memory-group refusal describes an escape again".
+    Mutation: `mutations/`'s "the memory-group refusal describes an escape again".
     """
     text = (
         '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'

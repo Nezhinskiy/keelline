@@ -366,8 +366,8 @@ def test_the_gate_reads_the_whole_tree() -> None:
     # The non-vacuity guard for the parametrised walk below. Named files from six different
     # trees, and a floor well under today's count — the one measurement of that count is the
     # sentence further down, taken from this walk rather than restated here. The number that
-    # used to stand in this line was 310, which is `mutations.toml`'s entry count copied into
-    # the wrong comment: two comments in one function, disagreeing, about the same quantity.
+    # used to stand in this line was 310, which was the mutation declarations' entry count copied
+    # into the wrong comment: two comments in one function, disagreeing, about the same quantity.
     files = tracked_files()
     names = {str(p.relative_to(ROOT)) for p in files}
     # No `.github/` name here: that tree is outside `source-include`, and this floor has to
@@ -377,7 +377,7 @@ def test_the_gate_reads_the_whole_tree() -> None:
         "README.md",
         "src/stayfixed/cli.py",
         "docs/cli.md",
-        "mutations.toml",
+        "mutations/core.toml",
         "hooks/run-hook.sh",
         "scripts/stayfixed",
         "tests/test_fsops.py",
@@ -542,14 +542,18 @@ def test_a_token_hit_names_the_offset_of_its_first_window() -> None:
     assert offending("fixed in 1b279648") == ["bare commit id"]
 
 
-def test_mutations_toml_carries_no_source_repository_string() -> None:
-    # `mutations.toml` is walked whole under the public table by the parametrised test below,
-    # like every other tracked document. This is the stricter half the two area-scoped gates
+def test_the_mutation_declarations_carry_no_source_repository_string() -> None:
+    # Every file in `mutations/` is walked whole under the public table by the parametrised test
+    # below, like every other tracked document. This is the stricter half the two area-scoped gates
     # each carried for their own entries: a mutation quotes a line of the file it names, so the
     # entry is held to *that file's* table. Scoping it by the named file rather than by a
     # hand-kept list of path prefixes is what one gate can do that two could not — neither
     # copy could see the other's area, and every area added since was nobody's.
-    entries = tomllib.loads((ROOT / "mutations.toml").read_text(encoding="utf-8"))["mutation"]
+    entries = [
+        entry
+        for path in sorted((ROOT / "mutations").glob("*.toml"))
+        for entry in tomllib.loads(path.read_text(encoding="utf-8"))["mutation"]
+    ]
     assert len(entries) >= 200, len(entries)
     for entry in entries:
         quoted = "\n".join(str(entry[key]) for key in ("name", "file", "before", "after"))

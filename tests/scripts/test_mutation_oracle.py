@@ -18,6 +18,7 @@ import sys
 import tempfile
 import threading
 import time
+import tomllib
 from pathlib import Path
 from types import ModuleType
 
@@ -339,7 +340,7 @@ def test_a_mutation_nothing_notices_is_reported_as_surviving(tmp_path: Path) -> 
 # The guard exists because this script writes source files and restores them from memory; its
 # own comment says "refuse rather than risk it". It read any non-zero `git` exit as a clean
 # tree — and `git status` exits 128 outside a repository, which is exactly what an unpacked
-# sdist is (`scripts/**` and `mutations.toml` ship in it) and what a broken `git` produces.
+# sdist is (`scripts/**` and `mutations/` ship in it) and what a broken `git` produces.
 
 
 @needs_git
@@ -413,7 +414,8 @@ def _repo_with_guard(root: Path) -> None:
         "    assert GUARD\n",
         encoding="utf-8",
     )
-    (root / "mutations.toml").write_text(
+    (root / "mutations").mkdir()
+    (root / "mutations" / "repository.toml").write_text(
         "[[mutation]]\n"
         'name = "the guard is disarmed"\n'
         'file = "src/pkg/guard.py"\n'
@@ -443,7 +445,7 @@ def test_the_working_tree_is_never_written_and_pytest_runs_in_the_scratch_checko
     root.mkdir()
     _repo_with_guard(root)
     module = oracle(root=root)
-    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    module.__dict__["DECLARATIONS"] = root / "mutations"
     probe = tmp_path / "probe.txt"
     monkeypatch.setenv("ORACLE_PROBE", str(probe))
     before = {path: path.read_bytes() for path in root.rglob("*.py")}
@@ -470,7 +472,7 @@ def test_the_scratch_copy_wins_over_a_main_checkout_already_on_the_path(
     root.mkdir()
     _repo_with_guard(root)
     module = oracle(root=root)
-    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    module.__dict__["DECLARATIONS"] = root / "mutations"
     monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
     monkeypatch.setenv("PYTHONPATH", str(root / "src"))
     assert module.main([]) == 0
@@ -502,7 +504,7 @@ def test_a_warm_bytecode_cache_never_stands_in_for_a_mutated_source(
     _recommit(
         root,
         {
-            "mutations.toml": "[[mutation]]\n"
+            "mutations/repository.toml": "[[mutation]]\n"
             'name = "the guard is disarmed, byte for byte as long"\n'
             'file = "src/pkg/guard.py"\n'
             'before = "GUARD = True"\n'
@@ -511,7 +513,7 @@ def test_a_warm_bytecode_cache_never_stands_in_for_a_mutated_source(
         },
     )
     module = oracle(root=root)
-    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    module.__dict__["DECLARATIONS"] = root / "mutations"
     monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
     assert module.main([]) == 0
 
@@ -584,13 +586,13 @@ def test_every_job_proves_its_entries_in_a_scratch_checkout_of_its_own(
             "        probe.write(__file__ + '\\n')\n"
             "    time.sleep(1)\n"
             "    assert GUARD\n",
-            "mutations.toml": entry.format(name="disarmed", after="GUARD = False")
+            "mutations/repository.toml": entry.format(name="disarmed", after="GUARD = False")
             + "\n"
             + entry.format(name="emptied", after="GUARD = 0"),
         },
     )
     module = oracle(root=root)
-    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    module.__dict__["DECLARATIONS"] = root / "mutations"
     probe = tmp_path / "probe.txt"
     monkeypatch.setenv("ORACLE_PROBE", str(probe))
     assert module.main(["--jobs", "2"]) == 0
@@ -752,7 +754,7 @@ def test_a_terminate_mid_run_ends_the_pytest_in_flight_and_leaves_no_checkout(
         },
     )
     module = oracle(root=root)
-    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    module.__dict__["DECLARATIONS"] = root / "mutations"
     monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
     holding, release, finished = _held_run_markers(tmp_path, monkeypatch)
 
@@ -798,7 +800,7 @@ def test_a_scratch_checkout_that_cannot_be_created_is_a_refusal_not_an_in_place_
     root.mkdir()
     _repo_with_guard(root)
     module = oracle(root=root)
-    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    module.__dict__["DECLARATIONS"] = root / "mutations"
     monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
     real_run = module.subprocess.run
 
@@ -829,7 +831,7 @@ def test_an_uncommitted_reddens_test_file_is_refused_like_an_uncommitted_source_
     root.mkdir()
     _repo_with_guard(root)
     module = oracle(root=root)
-    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    module.__dict__["DECLARATIONS"] = root / "mutations"
     (root / "tests" / "test_guard.py").write_text(
         "def test_the_guard_holds() -> None:\n    pass\n", encoding="utf-8"
     )
@@ -868,7 +870,7 @@ def test_a_second_oracle_refuses_rather_than_sweeping_the_first_ones_checkout(
     root.mkdir()
     _repo_with_guard(root)
     module = oracle(root=root)
-    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    module.__dict__["DECLARATIONS"] = root / "mutations"
     monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
     scratch = Path(module.TEMPDIR)
     lock = scratch / module.LOCK_NAME
@@ -900,7 +902,7 @@ def test_a_lock_left_by_a_dead_process_is_taken_over_rather_than_obeyed(
     root.mkdir()
     _repo_with_guard(root)
     module = oracle(root=root)
-    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    module.__dict__["DECLARATIONS"] = root / "mutations"
     monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
     lock = Path(module.TEMPDIR) / module.LOCK_NAME
     lock.write_text(f"{_a_reaped_pid()} a run that is gone", encoding="utf-8")
@@ -1013,7 +1015,7 @@ def test_a_mutation_declared_twice_is_a_finding(tmp_path: Path) -> None:
 
 
 def test_every_declared_entry_is_sound_before_any_run() -> None:
-    """`static_findings` over the real `mutations.toml` finds nothing.
+    """`static_findings` over the real `mutations/` finds nothing.
 
     No entry names this case, and none may: every mutation removes its own `before` line, so
     this case would redden under all of them and prove nothing about any. Its guard is the
@@ -1026,3 +1028,51 @@ def test_every_declared_entry_is_sound_before_any_run() -> None:
     # reason that is not about drift.
     assert len(declared) > 400, len(declared)
     assert module.static_findings(declared) == []
+
+
+# --- the declarations directory, one file per group ------------------------------------------
+#
+# `mutations/` holds the set as one file per group of the tree, because a single file outgrew the
+# plugin directory's per-file limit. Three properties keep the split honest: the oracle reads
+# every file, every entry sits in the file its `file` routes to, and no file grows back to the
+# limit the split exists to stay under.
+
+GROUP_FILE_MAX_BYTES = 192 * 1024
+# A named cap below the payload guard's 256 KiB, kept as early warning: the directory holds a
+# file of 256 KiB or more for a reviewer, and a group file carries an area's whole history, so
+# 64 KiB of headroom is about a hundred entries. When a group crosses it, split that group by its
+# largest area: a deliberate edit to `GROUP_OF`.
+
+
+def test_the_oracle_reads_every_group_file() -> None:
+    # Mutation (declared): `declared()` reads only the first group file (`[:1]` on the sorted
+    # glob) -> the count comes out at the first file's entries and the second assertion reddens.
+    module = oracle()
+    files = sorted(module.DECLARATIONS.glob("*.toml"))
+    expected = sum(len(tomllib.loads(f.read_text("utf-8"))["mutation"]) for f in files)
+    assert {f.stem for f in files} == {group for _, group in module.GROUP_OF}
+    assert len(module.declared()) == expected
+
+
+def test_every_entry_lives_in_its_group_file() -> None:
+    # Mutation: `GROUP_OF` loses its `src/stayfixed/doctor/` row -> every `doctor` entry routes
+    # to `core`, and the first of them in `install.toml` reddens this. Measured by hand rather
+    # than declared: the table holds fourteen other rows, and this walk is what shows any of them
+    # going wrong.
+    module = oracle()
+    files = sorted(module.DECLARATIONS.glob("*.toml"))
+    assert files  # a walk-based assertion states its walk is non-empty
+    for path in files:
+        for entry in tomllib.loads(path.read_text("utf-8"))["mutation"]:
+            assert module.group_for(entry["file"]) == path.stem, (path.name, entry["name"])
+
+
+def test_no_group_file_reaches_the_cap() -> None:
+    # Mutation: none of the code's; the cap is a bound on data. Watched red by lowering
+    # `GROUP_FILE_MAX_BYTES` below the largest group file, which is what a group outgrowing it
+    # looks like from here.
+    module = oracle()
+    files = sorted(module.DECLARATIONS.glob("*.toml"))
+    assert files  # a walk-based assertion states its walk is non-empty
+    for path in files:
+        assert path.stat().st_size < GROUP_FILE_MAX_BYTES, path.name

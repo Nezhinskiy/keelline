@@ -913,7 +913,7 @@ def test_a_withdrawal_leaves_a_symlink_at_a_group_name_that_points_somewhere_els
     # of their own loses it — reported under `revoked`, on a command that promises to remove
     # exactly what `attach` added.
     #
-    # Mutation: `mutations.toml`'s "the main checkout's withdrawal stops checking what it
+    # Mutation: `mutations/`'s "the main checkout's withdrawal stops checking what it
     # removes points at".
     root, overlay, machine, config = an_overlay_to_attach(tmp_path)
     own = overlay / "projects" / "widget" / "memory"

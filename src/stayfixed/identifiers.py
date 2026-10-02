@@ -29,7 +29,7 @@ PREFIX = re.compile(r"\A[A-Z][A-Z0-9]{0,7}\Z")
 # Three digits or more: `renumber` and every reader enforce it. The plan lint's `Fixes` rule
 # and the allocator's `git log` reader build their patterns from this same constant, so none of
 # them can disagree about the minimum. Public for that reason: a reader that respells the rule
-# inline is a spelling the `mutations.toml` entry over this line cannot reach, and a widened
+# inline is a spelling the entry in `mutations/` over this line cannot reach, and a widened
 # rule would leave it counting by the old one.
 DIGITS = r"\d{3,}"
 

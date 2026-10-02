@@ -112,7 +112,7 @@ def test_a_file_where_stayfixed_s_directory_goes_is_a_refusal_and_is_left_as_it_
     tmp_path: Path,
 ) -> None:
     # The other half of the same refusal: `.stayfixed` is a regular file, so the walk cannot open
-    # it as a directory. No `mutations.toml` entry and no line of its own: the `except
+    # it as a directory. No entry in `mutations/` and no line of its own: the `except
     # UnsafePath` that turns it into the refusal also holds the symlink case above, and the
     # walk's `O_DIRECTORY` is `fsops`'s, held by its own tests. Mutation: drop that `except`
     # -> the frame reports an internal error, still exit 2, and the message assertion reddens.

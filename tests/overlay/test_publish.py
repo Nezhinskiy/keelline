@@ -337,7 +337,7 @@ def test_what_gh_prints_cannot_drive_a_terminal() -> None:
     # `gh`'s answer was quoted raw in the failure: a line break followed by `::error::` is a
     # workflow command in a CI log, and an escape sequence drives a terminal.
     #
-    # Mutation: `mutations.toml`'s "a subprocess's answer is quoted raw".
+    # Mutation: `mutations/`'s "a subprocess's answer is quoted raw".
     class _Hostile(_GitHub):
         def run(self, argv: list[str], cwd: Path) -> Completed:
             if argv[:3] == ["gh", "repo", "view"]:

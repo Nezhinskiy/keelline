@@ -348,7 +348,7 @@ def test_a_once_per_context_handler_that_says_nothing_keeps_its_one_delivery() -
     `attach/hooks.py` is the handler that made this worth writing down -- its own docstring said
     the opposite about which path its `git` calls fall on.
 
-    Mutation: `mutations.toml`'s "a silent handler spends its one delivery".
+    Mutation: `mutations/`'s "a silent handler spends its one delivery".
     """
     recorder = Recorder()
     silent = handler("a", Policy.OPEN, HookResult(), once_key="overlay-status")

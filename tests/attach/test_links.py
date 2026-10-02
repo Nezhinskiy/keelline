@@ -102,7 +102,7 @@ def test_a_partial_link_failure_carries_every_link_the_run_already_made(
     # the owning checkout actually holds and requires every one of them to be in `.created`.
     # Nothing has to be restated when the tree grows a group. Mutation: restoring the bare
     # `more = link(tree, store, config, home=home)` in `_link_everywhere` reddens it —
-    # `mutations.toml`, "attach's PartialLink forgets the links made before the failing call".
+    # `mutations/`, "attach's PartialLink forgets the links made before the failing call".
     root, store, machine = _bound(tmp_path)
     side = tmp_path / "side"
     _git(root, "worktree", "add", "-q", str(side), "-b", "side")
@@ -194,7 +194,7 @@ def test_a_second_attach_neither_forgets_the_fallback_nor_lets_it_outlive_its_re
     # harness went on reading the new bytes through a setting nothing recorded and `detach`
     # could no longer remove.
     #
-    # Mutation: `mutations.toml`'s "the settings fallback outlives the gate that allowed it" —
+    # Mutation: `mutations/`'s "the settings fallback outlives the gate that allowed it" —
     # make `_harness_fallback` return early when the link is no longer needed.
     from stayfixed.attach.api import ledger
 
@@ -266,7 +266,7 @@ def test_attaching_from_a_linked_worktree_links_the_main_checkout_too(tmp_path: 
     # worktree's tree and left the owning checkout with none: every session there saw no
     # memory, silently, and the command exited 0.
     #
-    # Mutation: `mutations.toml`'s "attach applies the owning-checkout entry point to --root".
+    # Mutation: `mutations/`'s "attach applies the owning-checkout entry point to --root".
     root, store, machine = _bound(tmp_path)
     side = tmp_path / "side"
     _git(root, "worktree", "add", "-q", str(side), "-b", "side")
@@ -361,7 +361,7 @@ def test_a_worktree_whose_directory_is_gone_is_skipped_rather_than_blamed_on_git
     # links were written, on a machine whose `git` was fine. `detach` in the same state
     # completed, so the two halves disagreed about it.
     #
-    # Mutation (`mutations.toml`, "attach links into a worktree git reports as prunable"): the
+    # Mutation (`mutations/`, "attach links into a worktree git reports as prunable"): the
     # `prunable` skip removed → this raises.
     root, store, machine = _bound(tmp_path)
     side = tmp_path / "side"

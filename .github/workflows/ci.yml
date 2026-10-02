@@ -107,7 +107,7 @@ jobs:
   # The plans ask that "every new assertion ships with the mutation that reddens it", and those
   # mutations existed only as English sentences inside multi-thousand-line plan documents: a
   # contributor could satisfy the rule only by hand-editing source and reverting, and a reviewer
-  # had no way to check they had. `mutations.toml` is that set as data, and this job is the
+  # had no way to check they had. `mutations/` is that set as data, and this job is the
   # check. Not a general mutation tester — coverage is the breadth measure; this proves a
   # curated set of guards is load-bearing rather than merely executed, which is the distinction
   # that let `open_within` be fully covered and contain nothing.
@@ -115,7 +115,7 @@ jobs:
   # **Why it is not a step of `checks` any more.** Measured on the last green run, it was 76% of
   # that job: 657 s of an 869 s job on macOS, 751 s of 879 s on Linux, against a 900 s bound. So
   # every configuration sat inside a minute of the cliff, and the branch that took
-  # `mutations.toml` from 372 to 382 entries — about +20 s on a 751 s step — pushed
+  # `mutations/` from 372 to 382 entries — about +20 s on a 751 s step — pushed
   # `checks (macos-latest, 3.13)` over it at 15m18s. Running it on one configuration instead of
   # four is right and is not sufficient on its own: `timeout-minutes` is a PER-JOB bound, so
   # paying once rather than four times returns 657-751 s to the three configurations that stop
@@ -153,7 +153,7 @@ jobs:
     # 12 minutes is 720 s: less both allowances that leaves 600 s, which at this rate holds
     # roughly **1,900 entries** in all, and at twice the rate — a runner with half the CPUs —
     # about 950. No count of today's entries is written here, because every change that adds one
-    # would falsify it: the budget test counts `mutations.toml` itself, projects exactly this
+    # would falsify it: the budget test counts `mutations/` itself, projects exactly this
     # sum (entries x rate + 60 s + 60 s) and reddens when it passes 720 s. Kept well above the
     # measurement rather than at it, because a bound this job hits is a cancelled check, not a
     # finding; and below the old 25, because a hung pytest should cost twelve minutes, not

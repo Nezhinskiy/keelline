@@ -3,7 +3,7 @@ could not look says so instead of reporting nothing.
 
 Every advisory case names the mutation that reddens it in its own comment; the warnings a person
 would act on (a committed secret, a query that hid one, the workflow nobody owns) are declared
-in `mutations.toml`.
+in `mutations/`.
 """
 
 from __future__ import annotations

@@ -148,7 +148,7 @@ def test_docs_check_says_why_the_graph_had_no_store_to_check(
     # each cause — never the resolver's detail, which carries the store's path or a group's
     # name — and the exit code is the one an advisory check always has.
     #
-    # Mutation: `mutations.toml`'s "a missing store directory is reported with no reason of its
+    # Mutation: `mutations/`'s "a missing store directory is reported with no reason of its
     # own" (the no-directory case).
     root, common = project(tmp_path)
     arrange(root)

@@ -63,8 +63,8 @@ CITATIONS = (
     # module or the command they mean instead: "the foundation lane" told a reader nothing that
     # `stayfixed.hooks.dispatch` does not tell them better. A letter and not a word character is the
     # boundary, because `\b` counts `_` as a word character and a snake_case test name walked past
-    # it. The pattern spells the word `l[a]nes` so that `mutations.toml`, which quotes this line,
-    # is not refused for quoting it; the bookkeeping arm below spells its word the same way.
+    # it. The pattern spells the word `l[a]nes` so that the entry in `mutations/` that quotes this
+    # line is not refused for quoting it; the bookkeeping arm below spells its word the same way.
     ("plan unit", re.compile(r"(?i:(?<![^\W\d_])l[a]nes?(?![^\W\d_]))")),
 )
 
@@ -258,7 +258,7 @@ def test_the_arms_follow_where_a_file_lives() -> None:
         "src/stayfixed/runner.py",
         "tests/test_cli.py",
         "scripts/x.py",
-        "mutations.toml",
+        "mutations/core.toml",
         ".github/workflows/ci.yml",
         "hooks/run-hook.sh",
     ):
@@ -301,7 +301,7 @@ def test_the_citation_walk_reads_every_tracked_file_but_the_exemptions() -> None
         "CHANGELOG.md",
         "SECURITY.md",
         "pyproject.toml",
-        "mutations.toml",
+        "mutations/core.toml",
         ".claude-plugin/plugin.json",
         ".codex-plugin/plugin.json",
         ".github/workflows/ci.yml",

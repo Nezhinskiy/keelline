@@ -153,7 +153,7 @@ def test_every_changelog_fragment_carries_towncriers_orphan_prefix() -> None:
     reference and leaves the slug readable in the repository, and it is per-fragment, so a
     fragment that one day names a real issue still renders its reference.
 
-    No `mutations.toml` entry: the invariant is over a set of file *names* and the oracle
+    No entry in `mutations/`: the invariant is over a set of file *names* and the oracle
     applies a textual change to a file's *contents*, so there is no line for it to mutate.
     The directory is empty right after a release, so the rule is also shown to reject a name
     without the prefix, which keeps the check from passing on nothing.

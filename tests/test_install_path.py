@@ -490,7 +490,7 @@ def test_an_overlay_from_a_template_an_earlier_release_published_passes_the_inde
     # nobody had been told to run put it right. `overlay init`, which every such overlay runs,
     # now removes it where it holds the bytes a release shipped.
     #
-    # Mutation: `mutations.toml`'s "overlay init leaves the memory README a release shipped".
+    # Mutation: `mutations/`'s "overlay init leaves the memory README a release shipped".
     walk = _install_path(tmp_path, earlier_template=True)
     assert not (walk.overlay / "common" / "memory" / "README.md").exists()
     # Non-vacuous: the new name is there, and the tree still has no ledger of its own.
@@ -733,7 +733,7 @@ def test_attach_refuses_machine_from_a_pipe_and_honours_it_from_a_terminal(tmp_p
     # `interactive=` seam: a pipe is refused with exit 2 and the sentence, a pseudo-terminal
     # is honoured. The library-level tests prove the seam; this proves the launcher hands
     # the command a stdin the gate can ask. No mutation of its own — the gate's own entry in
-    # mutations.toml (attach/commands.py) reddens the library test and, through this, the
+    # `mutations/` (attach/commands.py) reddens the library test and, through this, the
     # pipe half here; run it and say so.
     walk = _install_path(tmp_path)
     store = str(walk.overlay / PROJECTS / PROJECT / "memory")

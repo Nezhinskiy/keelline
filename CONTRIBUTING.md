@@ -161,8 +161,8 @@ write the assertion, break the line of source it is about, watch it fail, put th
 Say what you broke, in the test's own comment or in the commit message.
 
 For a guard that is genuinely load-bearing — a containment check, a trust gate, a refusal that
-something downstream reads as permission — add it to `mutations.toml` instead of only describing
-it, and the check becomes reproducible:
+something downstream reads as permission — add it to `mutations/` instead of only describing it,
+and the check becomes reproducible:
 
 ```bash
 uv run python scripts/mutation_oracle.py            # every declared mutation
@@ -172,7 +172,9 @@ uv run python scripts/mutation_oracle.py --jobs 2   # at most two entries at a t
 
 Each entry names one file, one exact line to change, and the tests that must fail when it does.
 The keys are `name`, `file`, `before`, `after` and `reddens` — `reddens`, not `tests`, and
-`name` is required: the oracle raises `KeyError: 'name'` on an entry without one. `before` is an
+`name` is required: the oracle raises `KeyError: 'name'` on an entry without one. `reddens` is an
+any-of list: an entry is caught when at least one named test goes red, so name only tests that do,
+and give a test that must redden on its own an entry of its own. `before` is an
 exact substring of the file and `after` is what replaces it, so an entry whose `before` has
 drifted is a finding rather than a skip. The oracle proves `HEAD`: it applies every
 mutation to a throwaway worktree, so it never writes your working tree, and it refuses when a
@@ -205,6 +207,16 @@ before = "        if part in (_PARENT, _HERE):"
 after = "        if part in (_HERE,):"
 reddens = ["tests/test_fsops.py::test_a_parent_component_never_leaves_the_root"]
 ```
+
+That example lives in `mutations/core.toml`. The set is one file per group of the tree, so that no
+file grows to the 256 KiB at which the plugin directory holds a file for a reviewer, and an entry
+goes in the file its `file` routes to: `GROUP_OF` in `scripts/mutation_oracle.py` maps path
+prefixes to groups, the first match winning and anything outside `src/stayfixed/` falling to
+`repository.toml`. `tests/scripts/test_mutation_oracle.py` reddens on an entry in the wrong file
+and on a file that reaches its cap; a group that does is split by its largest area, which is an
+edit to `GROUP_OF`. A comment that cites an entry names the set and the entry's quoted name —
+`mutations/`'s "the containment walk stops refusing '..'" — and never its group file, so a regroup
+leaves the comment true.
 
 The oracle sweeps before it runs. A killed run — `kill -9`, a CI timeout, a cancelled agent —
 cannot run its own cleanup, and `git worktree prune` does not collect what it leaves: prune only

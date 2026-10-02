@@ -308,7 +308,7 @@ def test_an_unloadable_config_refuses_a_tool_call_in_its_own_words(
     # now names the kind of fault in stayfixed's words and the command that prints the detail,
     # with the verdict an internal error gets on this event: refused, never permission.
     #
-    # Mutation: `mutations.toml`'s "the hook reports an unloadable config as an internal error"
+    # Mutation: `mutations/`'s "the hook reports an unloadable config as an internal error"
     # (the path case) and "the hook prints a refused value's own text as an internal error".
     project = build(tmp_path)
     completed = hook("PreToolUse", json.dumps(TOOL_CALL), project)
@@ -358,7 +358,7 @@ def test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml(tmp_p
     # sent the owner to `stayfixed docs check` about a file that loads. It keeps the generic
     # verdict, which names its own class; the file is the owner's, not the repository's.
     #
-    # Mutation: `mutations.toml`'s "the hook blames a broken machine file on stayfixed.toml".
+    # Mutation: `mutations/`'s "the hook blames a broken machine file on stayfixed.toml".
     project = tmp_path / "project"
     project.mkdir()
     (project / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")

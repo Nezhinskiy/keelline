@@ -37,7 +37,7 @@ skills in the format every harness reads [S4] [S14].
 a sentence saying why no mutation exists. A test that cannot fail is not a test; a test that
 fails for a reason other than the one it names proves nothing about that reason.
 
-**What stayfixed does.** `mutations.toml` declares, for each load-bearing guard, the one line
+**What stayfixed does.** `mutations/` declares, for each load-bearing guard, the one line
 to change and the tests that must go red when it does; `scripts/mutation_oracle.py` applies
 each, runs only the named tests, and fails on a survivor, on a `before` line that no longer
 exists, and on a named test that does not pass on the clean tree first. CI runs the whole

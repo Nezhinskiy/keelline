@@ -267,7 +267,7 @@ def test_the_ci_line_has_no_arm_no_run_can_reach(tmp_path: Path) -> None:
     stripped, because what "unreachable" means here is that the arm is gone and no behaviour
     moved when it went.
 
-    Mutation: `mutations.toml`'s "the init CI line grows an arm no run can reach".
+    Mutation: `mutations/`'s "the init CI line grows an arm no run can reach".
     """
     code = "\n".join(
         line

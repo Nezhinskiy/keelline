@@ -342,7 +342,7 @@ def test_an_enumerated_value_is_refused_without_being_quoted(
     What the reader is owed is in the line either way: the key, and the closed vocabulary it
     may be spelled in, which is stayfixed's own.
 
-    Mutation: `mutations.toml`'s "a configuration enum quotes the value back again".
+    Mutation: `mutations/`'s "a configuration enum quotes the value back again".
     """
     # Written as TOML's own escape, so the *value* the loader sees is a real ESC: a raw one in
     # a basic string is not valid TOML, and the point is a value the parser accepts.
@@ -487,7 +487,7 @@ def test_a_repeated_memory_group_is_one_group(tmp_path: Path) -> None:
     moved, `attach --check` reported `real_directories: 2`, and the session line said two -- for
     one directory, and every one of those is a number a user is asked to act on.
 
-    Mutation: `mutations.toml`'s "a repeated memory group is counted twice again".
+    Mutation: `mutations/`'s "a repeated memory group is counted twice again".
     """
     write(
         tmp_path,
