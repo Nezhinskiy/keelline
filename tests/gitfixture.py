@@ -153,6 +153,22 @@ def git(root: Path, *args: str, home: Path | None = None, **extra: str) -> str:
     return done.stdout
 
 
+def git_bytes(root: Path, *args: str, stdin: bytes = b"", home: Path | None = None) -> bytes:
+    """`git -C root args` in the sealed environment, in bytes both ways; raising on a non-zero exit.
+
+    For a call whose answer is not text: `tests/test_payload.py` reads every blob of a tree
+    through `cat-file --batch`, and a binary blob has no decoding. `stdin` is the whole input
+    rather than an inherited stream, for the reason `run_git` closes it.
+    """
+    return subprocess.run(
+        ["git", "-C", str(root), *args],
+        input=stdin,
+        capture_output=True,
+        check=True,
+        env=env(home if home is not None else root.parent),
+    ).stdout
+
+
 def plant_path(root: Path, raw: bytes, content: str = "planted\n") -> None:
     """Stage a blob at the path `raw`, as bytes, whether or not this disk could hold that name.
 
