@@ -1,8 +1,9 @@
 """The plugin folder held to the file limits the Claude plugin directory checks at submission.
 
 The payload is every file git tracks, because the plugin folder is the repository root: the
-marketplace's one plugin has `source` `./`, and the last test here reddens the day it moves, so
-that this walk changes with the move instead of going on passing over the wrong tree.
+marketplace's one plugin has `source` `./`, and `test_the_plugin_folder_is_the_repository_root`
+reddens the day it moves, so that this walk changes with the move instead of going on passing over
+the wrong tree.
 """
 
 from __future__ import annotations
