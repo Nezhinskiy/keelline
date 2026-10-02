@@ -206,8 +206,8 @@ dynamic dispatch, aliasing, a value computed at run time, a connection the stand
 on the package's behalf — is beyond it; the docstring of
 [`tests/outbound/walk.py`](tests/outbound/walk.py) says what it sees and names each such case.
 The **Run by**, **Talks to** and **When** columns are kept by hand. The hook wrapper,
-`hooks/run-hook.sh`, is not Python and is not walked: it starts `git`, to find the project root
-and its worktrees, `env` and `dirname`, and `python3`, and reaches no network.
+`hooks/run-hook.sh`, is not Python and is not walked: it starts `env`, `dirname`, `python3` and
+`git`, the last to find the project root and its worktrees, and reaches no network.
 
 | Program | Run by | Talks to | When |
 |---|---|---|---|
@@ -260,8 +260,10 @@ and its worktrees, `env` and `dirname`, and `python3`, and reaches no network.
    `.pre-commit-config.yaml` pins, gitleaks 8.30.1, whose hook is written in Go: pre-commit builds
    it, fetching Go modules through Go's module proxy and checking them against Go's checksum
    database, `sum.golang.org`, and may first download a Go toolchain from Go's own download
-   service where none is installed. Go honours `GOPROXY`, `GOSUMDB` and `GOTOOLCHAIN` from your
-   environment, which pre-commit passes on, so those can send each request elsewhere.
+   service where none is installed. Go honours `GOPROXY` and `GOSUMDB` from your environment,
+   which pre-commit passes on, so those can send each request elsewhere; it honours your
+   `GOTOOLCHAIN` only when Go was already installed, since pre-commit sets it to `local` for a Go
+   it downloaded.
 6. **`stayfixed.yml`** calls stayfixed's reusable workflow at the commit it pins, which checks out
    your repository and stayfixed, may download a Python, on a pull request that moves `[ci] ref`
    lists stayfixed's release tags, and, once the configuration and built-in gates pass, runs the

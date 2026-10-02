@@ -3192,7 +3192,7 @@ reddens = [
 [[mutation]]
 name = "the outbound walk stops reading a launch's overrides"
 file = "tests/outbound/walk.py"
-before = '                if keyword.arg in OVERRIDING'
+before = '                if keyword.arg is None or keyword.arg in OVERRIDING'
 after = '                if False'
 reddens = [
   "tests/test_outbound.py::test_a_launch_that_overrides_its_program_or_environment_is_a_finding[executable]",
@@ -3246,4 +3246,15 @@ before = '    if unread and unread[0].stable and (key := _key(launch, unread[0])
 after = '    if unread and (key := _key(launch, unread[0])) in PASS_THROUGH:'
 reddens = [
   "tests/test_outbound.py::test_a_declaration_covers_only_the_launch_it_names[the-same-expression-rebound]",
+]
+
+# `subprocess.run(argv, **keywords)` can hand `env=` or `executable=` through the spread, so the
+# spread is an override like either; not read, a launch read as a local `git status` passes.
+[[mutation]]
+name = "the outbound walk stops taking a keyword spread for an override"
+file = "tests/outbound/walk.py"
+before = '                if keyword.arg is None or keyword.arg in OVERRIDING'
+after = '                if keyword.arg in OVERRIDING'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_that_overrides_its_program_or_environment_is_a_finding[keywords-spread]",
 ]

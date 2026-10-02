@@ -629,6 +629,7 @@ OVERRIDE_SHAPES = {
     "environment": (
         "import subprocess\nsubprocess.run(['git', 'status'], env={'GIT_CONFIG_COUNT': '1'})"
     ),
+    "keywords-spread": "import subprocess\nsubprocess.run(['git', 'status'], **keywords)",
     "environment-handed-on": (
         "import subprocess\ndef f(argv, env):\n    return subprocess.run(argv, env=env)\n"
         "f(['git', 'status'], {})"
@@ -640,7 +641,8 @@ OVERRIDE_SHAPES = {
 def test_a_launch_that_overrides_its_program_or_environment_is_a_finding(source: str) -> None:
     # `executable=` replaces the program the argv names, and an `env=` can set git's
     # configuration through `GIT_CONFIG_COUNT`, so a launch read as a local `git status` could
-    # run or reach anything; the handing on itself is read too, since every caller inherits it.
+    # run or reach anything; a `**` spread can hand either, and the handing on itself is read
+    # too, since every caller inherits it.
     # The entry in `mutations/` that names this test stops reading overrides.
     overrides = WALK.walk_in(source, TOP)[1]
     assert overrides and undeclared_overrides(overrides) == overrides
