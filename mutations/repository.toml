@@ -2710,73 +2710,9 @@ reddens = [
 [[mutation]]
 name = "the README drops the git fetch row"
 file = "README.md"
-before = "| `git fetch` | `stayfixed bugs new` | the project's own `origin`, for identifiers filed on branches this checkout has not fetched, and, in a checkout with submodules, the remotes of the submodules whose recorded commits the fetch brings in (git's `fetch.recurseSubmodules` is `on-demand` unless configured). stayfixed passes git only `PATH`, `HOME`, `LANG`, `LC_ALL` and `SYSTEMROOT` from your environment, so ssh finds no agent through `SSH_AUTH_SOCK`; it still uses its key files under `~/.ssh` and any `IdentityFile` or `IdentityAgent` your `~/.ssh/config` names, and git the credential helpers your git configuration names | unless `--no-fetch` |"
-after = ""
+before = "| `git fetch` | `stayfixed bugs new` | the project's `origin`, and the remotes of submodules the fetch brings in (note 1) | unless `--no-fetch` |"
+after = ''
 reddens = ["tests/test_outbound.py::test_the_readme_declares_every_program_that_reaches_a_network"]
-
-# A launch whose argv the seam walk cannot read is allowed only as a declared pass-through; one that
-# loses its declaration must be a finding, or a new such launch would be too.
-[[mutation]]
-name = "a launch the seam walk cannot read loses its declaration"
-file = "tests/test_outbound.py"
-before = '    ("src/stayfixed/release/notes.py", "build"): NO_ROWS,'
-after = ''
-reddens = ["tests/test_outbound.py::test_every_seam_call_resolves_or_is_declared"]
-
-# Every program a seam call runs is classified as reaching a network or not; one in neither table
-# must be a finding, because "not listed as outbound" is not "local".
-[[mutation]]
-name = "a local git subcommand leaves the seam walk's classification"
-file = "tests/test_outbound.py"
-before = '        ("git", "grep"),'
-after = ''
-reddens = ["tests/test_outbound.py::test_every_program_a_seam_call_runs_is_classified"]
-
-# A `subprocess` function the seam walk does not read (`getoutput`, `getstatusoutput`, one a later
-# Python adds) is still a launch, and a finding until declared; dropping the rule lets a shell
-# string reach a network unseen.
-[[mutation]]
-name = "the seam walk stops counting an unlisted subprocess function as a launch"
-file = "tests/test_outbound.py"
-before = '    if module == "subprocess" and function not in SUBPROCESS_INERT:'
-after = '    if False:'
-reddens = [
-  "tests/test_outbound.py::test_a_launch_of_any_shape_is_a_seam_call[getoutput]",
-  "tests/test_outbound.py::test_a_launch_of_any_shape_is_a_seam_call[getstatusoutput]",
-]
-
-# A runner held under a name that does not end in `runner` still shows itself by the argv literal
-# it is handed.
-[[mutation]]
-name = "the seam walk knows a run only by its receiver's name"
-file = "tests/test_outbound.py"
-before = '    literal = bool(call.args) and isinstance('
-after = '    literal = False and isinstance('
-reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_a_seam_call[other-receiver]"]
-
-# `from .gitenv import git_run` names the same seam as the absolute import; skipped, every launch
-# through it goes unseen.
-[[mutation]]
-name = "the seam walk skips relative imports"
-file = "tests/test_outbound.py"
-before = '    if not node.level:'
-after = '    if True:'
-reddens = [
-  "tests/test_outbound.py::test_a_launch_of_any_shape_is_a_seam_call[relative]",
-  "tests/test_outbound.py::test_a_launch_of_any_shape_is_a_seam_call[relative-up]",
-]
-
-# `git archive --remote=<url>` asks a remote; a local subcommand carrying such an option must not
-# pass as local.
-[[mutation]]
-name = "a remote option no longer takes a git call out of the local table"
-file = "tests/test_outbound.py"
-before = 'GIT_REMOTE_OPTIONS = ("--remote", "--upload-pack", "--receive-pack", "--exec")'
-after = 'GIT_REMOTE_OPTIONS: tuple[str, ...] = ()'
-reddens = [
-  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[archive-remote]",
-  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[archive-remote-late]",
-]
 
 # Every file the templates write under `.github/` is something GitHub runs, so each is a README row;
 # a template workflow added without one must redden.
@@ -2787,57 +2723,246 @@ before = '    return shipped | {CI_WORKFLOW}'
 after = '    return {CI_WORKFLOW}'
 reddens = ["tests/test_outbound.py::test_the_readme_declares_every_program_that_reaches_a_network"]
 
+# A launch whose program the outbound walk cannot read is allowed only as a declared pass-through;
+# one that loses its declaration must be a finding, or a new such launch would be too.
+[[mutation]]
+name = "a launch the outbound walk cannot read loses its declaration"
+file = "tests/outbound/declarations.py"
+before = '    ("src/stayfixed/release/notes.py", "build", "argv"): NO_ROWS,'
+after = ''
+reddens = ["tests/test_outbound.py::test_every_launch_is_classified"]
+
+# A declaration names one value handed to one launch; keyed on its function alone, it would exempt
+# every other unread launch a later change adds there.
+[[mutation]]
+name = "a declaration covers every launch in its function again"
+file = "tests/test_outbound.py"
+before = '    return launch.file, launch.function, element.text'
+after = '    return launch.file, launch.function, next((k[2] for k in (*PASS_THROUGH, *OPERANDS) if k[:2] == (launch.file, launch.function)), element.text)'
+reddens = ["tests/test_outbound.py::test_a_declaration_covers_only_the_launch_it_names"]
+
+# A declaration no launch relies on any more is ready to excuse the next launch that hands its
+# value.
+[[mutation]]
+name = "an operand declaration names a value no launch hands"
+file = "tests/outbound/declarations.py"
+before = '    ("src/stayfixed/ledger/check.py", "_base_ledger", "fork"): "a merge base git printed",'
+after = '''    ("src/stayfixed/ledger/check.py", "_base_ledger", "fork"): "a merge base git printed",
+    ("src/stayfixed/ledger/check.py", "_base_ledger", "base"): "a merge base git printed",'''
+reddens = [
+  "tests/test_outbound.py::test_the_declarations_name_exactly_what_the_classification_rests_on",
+]
+
+# Every program a launch runs is classified as reaching a network or not; one in neither table
+# must be a finding, because "not listed as outbound" is not "local".
+[[mutation]]
+name = "a local git subcommand leaves the outbound walk's classification"
+file = "tests/outbound/declarations.py"
+before = '        ("git", "grep"),'
+after = ''
+reddens = ["tests/test_outbound.py::test_every_launch_is_classified"]
+
+# A classification no launch uses is a promise about nothing, and an entry to excuse the next launch
+# that matches it.
+[[mutation]]
+name = "a dead row comes back to the outbound walk's network table"
+file = "tests/outbound/declarations.py"
+before = '    ("git", "push"): "git push",'
+after = '''    ("git", "push"): "git push",
+    ("git", "pull"): "git pull",'''
+reddens = ["tests/test_outbound.py::test_every_table_entry_names_a_live_launch"]
+
+# A launch is local only when nothing before its options end is unread: an unread element there can
+# hold `--remote`, or a `-c` value that runs a program.
+[[mutation]]
+name = "a git argv with unread options passes as local"
+file = "tests/test_outbound.py"
+before = '    if _local(command, options) and relied <= OPERANDS.keys():'
+after = '    if _local(command, options):'
+reddens = [
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[spread-options]",
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[spread-before-paths]",
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[unread-operand]",
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[unread-configuration]",
+]
+
+# `git archive --remote=<url>` asks a remote; a local subcommand carrying such an option must not
+# pass as local.
+[[mutation]]
+name = "a remote option no longer takes a git call out of the local table"
+file = "tests/outbound/declarations.py"
+before = 'GIT_REMOTE_OPTIONS = ("--remote", "--upload-pack", "--receive-pack", "--exec")'
+after = 'GIT_REMOTE_OPTIONS: tuple[str, ...] = ()'
+reddens = [
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[archive-remote]",
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[archive-remote-late]",
+]
+
+# `git -c core.sshCommand=…` or `-c core.fsmonitor=…` runs a program of its own, so a setting
+# outside the listed keys must take a launch out of every table.
+[[mutation]]
+name = "a git -c setting is not held to the listed configuration keys"
+file = "tests/test_outbound.py"
+before = '        if configures and str(value).partition("=")[0] not in GIT_CONFIG_KEYS:'
+after = '        if False:'
+reddens = [
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[configuration-not-listed]",
+]
+
+# A `subprocess` function the outbound walk does not read (`getoutput`, `getstatusoutput`, one a
+# later Python adds) is still a launch, and a finding until declared; dropping the rule lets a
+# shell string reach a network unseen.
+[[mutation]]
+name = "the outbound walk stops counting an unlisted subprocess function as a launch"
+file = "tests/outbound/walk.py"
+before = '    if module == "subprocess" and function not in SUBPROCESS_INERT:'
+after = '    if False:'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[getoutput]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[getstatusoutput]",
+]
+
+# `posix` and `nt` hold the process functions `os` re-exports, so a call through either is a launch.
+[[mutation]]
+name = "posix and nt stop counting as os in the outbound walk"
+file = "tests/outbound/walk.py"
+before = 'OS_MODULES = frozenset({"os", "posix", "nt"})'
+after = 'OS_MODULES = frozenset({"os"})'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[posix]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[nt]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[star-posix]",
+]
+
+# A runner held under a name that does not end in `runner` still shows itself by the argv list it
+# is handed.
+[[mutation]]
+name = "the outbound walk knows a run only by its receiver's name"
+file = "tests/outbound/walk.py"
+before = '    listed = isinstance(given, (ast.List, ast.Tuple, ast.Starred))'
+after = '    listed = False'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[other-receiver]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[other-receiver-keyword]",
+]
+
+# `subprocess.run(args=[…])` and `runner.run(argv=[…])` hand the argv by keyword, and read only by
+# position the launch goes unread.
+[[mutation]]
+name = "the outbound walk reads no argv handed by keyword"
+file = "tests/outbound/walk.py"
+before = '    return next((k.value for k in call.keywords if k.arg and k.arg == launcher.keyword), None)'
+after = '    return None'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[keyword-args]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[other-receiver-keyword]",
+]
+
+# `from .gitenv import git_run` names the same launcher as the absolute import; skipped, every
+# launch through it goes unseen.
+[[mutation]]
+name = "the outbound walk skips relative imports"
+file = "tests/outbound/walk.py"
+before = '    if not node.level:'
+after = '    if True:'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[relative]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[relative-up]",
+]
+
+# `from stayfixed.memory.store import git_run` is `gitenv`'s `git_run`, which `store` imports; not
+# followed there, an undisclosed `git push` through the re-export passes.
+[[mutation]]
+name = "the outbound walk stops following a re-export"
+file = "tests/outbound/walk.py"
+before = '    if target[0] != names.file and target not in seen:'
+after = '    if False:'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[re-export]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[re-export-module]",
+]
+
 # `import os.path` binds `os` too, so `os.system` after it is a call through `os`; bound as
 # `os.path` alone, that launch goes unseen.
 [[mutation]]
-name = "the seam walk binds a dotted import only under its full name"
-file = "tests/test_outbound.py"
+name = "the outbound walk binds a dotted import only under its full name"
+file = "tests/outbound/walk.py"
 before = '                    {".".join(parts[:i]): ".".join(parts[:i]) for i in range(1, len(parts) + 1)}'
 after = '                    {alias.name: alias.name}'
-reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_a_seam_call[submodule-import]"]
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[submodule-import]"]
 
 # A name bound both to a package function and to a standard-library launcher is read as the launch;
 # read as the package function, a `def run` beside `from subprocess import run` hides the launch.
 [[mutation]]
-name = "the seam walk lets a package function shadow a standard-library launcher"
-file = "tests/test_outbound.py"
-before = '        return launch or (SEAMS.get(package) if package else None)'
-after = '        return SEAMS.get(package) if package else launch'
-reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_a_seam_call[shadowed-by-def]"]
+name = "the outbound walk lets a package function shadow a standard-library launcher"
+file = "tests/outbound/walk.py"
+before = '    return launcher or (launchers.get(package) if package else None)'
+after = '    return launchers.get(package) if package else launcher'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[shadowed-by-def]"]
 
-# A launcher named without being called — an alias, a `partial`, a callback — is handed on to a call
-# the walk cannot follow, so the reference itself is the finding.
+# A launcher named without being called — an alias, a `partial`, a callback, the owner of
+# `subprocess.run.__call__` — is handed on to a call the walk cannot follow, so the reference
+# itself is the finding.
 [[mutation]]
-name = "the seam walk stops flagging a launcher handed on uncalled"
-file = "tests/test_outbound.py"
-before = '            and _launcher(node, names) is not None'
-after = '            and False'
+name = "the outbound walk stops flagging a launcher handed on uncalled"
+file = "tests/outbound/walk.py"
+before = '                and _launcher(node, source.names, launchers) is not None'
+after = '                and False'
 reddens = [
-  "tests/test_outbound.py::test_a_launch_of_any_shape_is_a_seam_call[alias]",
-  "tests/test_outbound.py::test_a_launch_of_any_shape_is_a_seam_call[partial]",
-  "tests/test_outbound.py::test_a_launch_of_any_shape_is_a_seam_call[callback]",
-  "tests/test_outbound.py::test_a_launch_of_any_shape_is_a_seam_call[runner-handed-on]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[alias]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[partial]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[dunder-call]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[callback]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-handed-on]",
 ]
 
-# A git argv the walk did not read whole is local only when what it did not read are paths after
-# `--`; a spread before it could hold `--remote`.
+# A call inside an annotation runs when the annotation is evaluated, and a launcher handed to it is
+# handed on like any other.
 [[mutation]]
-name = "a git argv with unread options passes as local"
-file = "tests/test_outbound.py"
-before = '    if argv[0] == "git" and not whole and None in argv[: _end_of_options(argv)]:'
-after = '    if False:'
-reddens = [
-  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[spread-options]",
-  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[spread-before-paths]",
-]
+name = "the outbound walk skips a call's arguments inside an annotation"
+file = "tests/outbound/walk.py"
+before = '        arguments = isinstance(node, ast.Call) and field in ("args", "keywords")'
+after = '        arguments = False'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[in-annotation-argument]"]
+
+# A method that hands its argv on is called through names the walk does not bind; taken for a
+# launcher, its own launch is exempt and its callers are never read.
+[[mutation]]
+name = "a method that hands its argv on is taken for a launcher"
+file = "tests/outbound/walk.py"
+before = '            and "." not in scope'
+after = '            and True'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[method-forwarder]"]
+
+# A package module can re-export a launcher, so a star import of any of them binds names the walk
+# cannot follow.
+[[mutation]]
+name = "a star import is a launch only from a launcher module"
+file = "tests/outbound/walk.py"
+before = '        module in LAUNCHER_MODULES or _module_file(module) is not None'
+after = '        module in LAUNCHER_MODULES'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[star-re-export]"]
 
 # A listed network module reaches a network through its submodules too: `import asyncio.streams`
 # is `asyncio`'s.
 [[mutation]]
 name = "a network module's submodule passes as local"
 file = "tests/test_outbound.py"
-before = '    return any(module == listed or module.startswith(f"{listed}.") for listed in NETWORK_MODULES)'
-after = '    return module in NETWORK_MODULES'
+before = '    return any(module == entry or module.startswith(f"{entry}.") for entry in listed)'
+after = '    return module in listed'
 reddens = [
-  "tests/test_outbound.py::test_a_listed_module_reaches_a_network_with_its_submodules[asyncio.streams-True]",
+  "tests/test_outbound.py::test_a_listed_module_is_forbidden_with_its_submodules[asyncio.streams-True]",
+  "tests/test_outbound.py::test_a_listed_module_is_forbidden_with_its_submodules[ctypes.util-True]",
+]
+
+# `ctypes`, `_posixsubprocess` and `_winapi` start a process through no launcher the walk knows, so
+# importing one must be a finding beside the network modules.
+[[mutation]]
+name = "the forbidden imports are the network modules alone"
+file = "tests/test_outbound.py"
+before = 'FORBIDDEN_MODULES = NETWORK_MODULES | NATIVE_MODULES'
+after = 'FORBIDDEN_MODULES = NETWORK_MODULES'
+reddens = [
+  "tests/test_outbound.py::test_a_listed_module_is_forbidden_with_its_submodules[ctypes.util-True]",
+  "tests/test_outbound.py::test_a_listed_module_is_forbidden_with_its_submodules[_posixsubprocess-True]",
 ]
