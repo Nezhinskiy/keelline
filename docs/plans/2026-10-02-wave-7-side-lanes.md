@@ -190,9 +190,9 @@ names the test or step that covers it, or "—" when the change cannot reach the
 
 | Command \ change | re-run, nothing changed | entry or file added | a group or file outgrows its cap | killed part-way | ref or pin moved |
 |---|---|---|---|---|---|
-| `scripts/mutation_oracle.py` | Task 1 Step 6 (full run) | Task 1 `test_every_entry_lives_in_its_group_file` | Task 1 `test_no_group_file_reaches_the_cap` | existing sweep (`stayfixed-oracle-*`) | — |
+| `scripts/mutation_oracle.py` | Task 1 Step 6 (full run) | Task 1 `test_every_entry_lives_in_its_group_file`; under a name already declared: `test_an_entry_name_declared_twice_is_a_finding` | Task 1 `test_no_group_file_reaches_the_cap` | existing sweep (`stayfixed-oracle-*`) | — |
 | payload guard (`tests/test_payload.py`, (create)) | Task 3 Step 4 | Task 3 `test_the_tree_is_inside_the_directory_limits` | Task 3 `test_a_file_at_the_limit_is_a_finding` | — | Task 3 `test_the_plugin_folder_is_the_repository_root` |
-| outbound guard (`tests/test_outbound.py`, (create)) | Task 4 Step 4 | Task 4 `test_every_seam_call_resolves_or_is_declared` | — | — | — |
+| outbound guard (`tests/test_outbound.py`, `tests/outbound/` (create)) | Task 4 Step 4 | Task 4 `test_every_launch_is_classified`; a row or a `.github/` file: `test_the_readme_declares_every_program_that_reaches_a_network` | — | — | — |
 | `bench.py validate` | Task 9 Step 3 | Task 7 `test_load_repos_refuses_a_duplicate_id` | — | Task 7 `test_a_leftover_stage_is_swept_at_start` | Task 7 `test_load_repos_refuses_a_sha_that_is_not_forty_hex` |
 | `bench.py run` | Task 10 (staged, two calls) | Task 8 `test_every_case_template_renders_with_the_values_run_supplies` | — | Task 7 `test_a_leftover_stage_is_swept_at_start`; an exception: `test_a_failed_stage_leaves_no_staged_tree`; the ceiling hit: `test_exit_two_is_reported_as_partial` | Task 7 `test_the_plugin_is_built_from_the_resolved_commit` |
 
@@ -272,10 +272,14 @@ file's own Findings sections, which sit far apart so the appends do not touch th
 | Path | Lane | Responsibility |
 |---|---|---|
 | `mutations/` (create) | directory-prep | the mutation declarations, one TOML file per group, each under the cap |
-| `scripts/mutation_oracle.py` | directory-prep | reads every group file in sorted order |
-| `tests/test_payload.py` (create) | directory-prep | the plugin payload inside the directory's limits |
+| `scripts/mutation_oracle.py` | directory-prep | reads every group file in sorted order, routes an entry to its group by the longest prefix, refuses a name two entries carry |
+| `tests/scripts/test_mutation_oracle.py` | directory-prep | every entry in its group file, every group file under the cap, every cited entry name declared |
+| `docs/plans/README.md` | directory-prep | the `-part-N` rule for a plan over the file limit |
+| `tests/test_payload.py` (create) | directory-prep | every path in `HEAD`'s tree inside the directory's file rules |
 | `README.md` | directory-prep | new section "What stayfixed sends where" |
-| `tests/test_outbound.py` (create) | directory-prep | the section matches the process seams |
+| `tests/outbound/walk.py` (create) | directory-prep | the walk: every launch in the package's syntax, and what it cannot see |
+| `tests/outbound/declarations.py` (create) | directory-prep | the policy: forbidden modules, root launchers, what each argv reaches, the declarations |
+| `tests/test_outbound.py` (create) | directory-prep | every launch classified, and the section's Program column equal to what the launches reach |
 | `scripts/bench/bench.py` (create) | benchmark | `validate`, `run`, `report`, and the case and scaffold templates as strings; stdlib only |
 | `scripts/bench/repos.toml` (create) | benchmark | three public repositories, pinned by the owner, each with a bug and a plan |
 | `scripts/bench/README.md` (create) | benchmark | how to re-run, what each case measures, what it costs |
@@ -303,13 +307,20 @@ file's own Findings sections, which sit far apart so the appends do not touch th
 - Test: `tests/scripts/test_mutation_oracle.py`
 
 **Interfaces:**
-- Produces: `scripts/mutation_oracle.py` constants `DECLARATIONS: Path` (the `mutations/`
-  directory) and `GROUP_OF: tuple[tuple[str, str], ...]` (ordered `(path prefix, group)` pairs;
-  first match wins; the empty prefix maps to `repository`), function `group_for(file: str) ->
-  str`; `declared()` keeps its signature and returns every entry of every group file in sorted
-  file order, entries in file order. Duplicate names stay as permitted as they are today: the
-  split changes where entries live, not what the oracle accepts.
+- Produces, in `scripts/mutation_oracle.py`: constants `DECLARATIONS: Path` (the `mutations/`
+  directory) and `GROUP_OF: tuple[tuple[str, str], ...]` (`(path prefix, group)` pairs; the
+  longest prefix that matches wins, so the order of the rows decides nothing; the empty prefix
+  maps to `repository`); `group_for(file: str) -> str`; `group_files() -> list[Path]`, every
+  `*.toml` under `DECLARATIONS` in sorted order, the one place the directory is globbed;
+  `declared() -> list[Mutation]`, its signature kept, every entry of every group file in
+  `group_files()` order, entries in file order.
+- Produces: an entry's `name` is a reference. `static_findings` refuses a name another entry
+  carries ("another entry is declared under this name"), and
+  `tests/scripts/test_mutation_oracle.py::test_every_cited_entry_name_is_declared` resolves every
+  citation of an entry by name, in a tracked file outside `docs/plans/`, to a declared entry.
+  This supersedes the sentence this block first carried, that duplicate names stay permitted.
 - Consumes: nothing from other tasks.
+- Shipped differently from the text below in places; "Findings — directory-prep" lists each.
 
 `GROUP_OF`, in match order, every prefix spelled in full (sizes in the Premise; every group lands
 under 125 KiB):
@@ -441,7 +452,12 @@ Expected: every entry, 1,153 in all, reported caught; the new entry among them.
 - Create: `docs/plans/2026-09-19-wave-3-closure-part-2.md`
 
 **Interfaces:**
-- Produces: two `-part-2.md` files; the payload guard (Task 3) holds them to the cap.
+- Produces: two `-part-2.md` files, the wave 3 closure plan's cut at its `## Wave E` heading so
+  that the wave sits in one file; the payload guard (Task 3) holds them to the cap.
+  `docs/plans/README.md` states the `-part-N` rule (`-part-2.md`, `-part-3.md`, …; part 1's
+  `Scope:` line governs) and that `stayfixed plan check` reports a path declared in one part and
+  cited in another as dead.
+- Shipped differently from the text below in places; "Findings — directory-prep" lists each.
 
 - [ ] **Step 1: Choose each cut.** The last `### Task` heading (or, failing one, the last `## `
   heading) whose byte offset is at or below 200,000. Record both offsets in the commit message.
@@ -471,11 +487,27 @@ Expected: every entry, 1,153 in all, reported caught; the new entry among them.
 - Modify: `mutations/repository.toml` (created by Task 1, (create))
 
 **Interfaces:**
-- Produces: `payload_findings(entries: Iterable[tuple[str, int, str]]) -> list[str]` (path,
-  size in bytes, git mode) and the named caps `FILE_MAX_BYTES = 256 * 1024`, `FILES_MAX = 512`,
-  `EXEMPT_SUFFIXES` (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`, `.ico`, `.woff`,
-  `.woff2`, `.ttf`, `.otf`), inside the test module.
+- Produces, inside `tests/test_payload.py`: `Entry = tuple[str, int, str]` (path, size in
+  bytes, git mode); `payload_findings(entries: Iterable[Entry], *, read: Callable[[str], bytes])
+  -> list[str]`, `read` required and keyword-only, returning a regular file's bytes for the
+  content checks; `tracked_payload(root: Path = ROOT) -> tuple[list[Entry], dict[str, bytes]]`,
+  every path in `root`'s `HEAD` tree from `git ls-tree -r -l -z HEAD` and each regular file's
+  bytes from one `git cat-file --batch`.
+- Produces, the named caps and tables, each with the result the checklist page gives it (read
+  2026-10-02): `FILE_MAX_BYTES = 256 * 1024` and `FILES_MAX = 512` (Held); `IMAGE_SUFFIXES`
+  (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`) and `FONT_SUFFIXES` (`.woff`, `.woff2`,
+  `.ttf`, `.otf`), whose sum `EXEMPT_SUFFIXES` is exempt from the size rule and from the binary
+  rule, `.ico` not among them; `BINARY_PROBE_BYTES = 8000`, git's own window for a NUL byte
+  (Held); `SYMLINK_MODE`, `GITLINK_MODE` and `LFS_POINTER` (Blocks where loaded, Warning
+  elsewhere); `REGULAR_MODES`, the modes whose content is read; `SYSTEM_FILES` (`.DS_Store`,
+  `Thumbs.db`, `desktop.ini`, `__MACOSX`, at any depth; Blocks); `INVALID_CHARACTERS`,
+  `DEVICE_NAMES`, a trailing dot or space, and names differing only by capitalization
+  (Validation stops); `EXPORT_ATTRIBUTES` (`export-ignore`, `export-subst`) and
+  `REWRITING_ATTRIBUTES` (`filter`, `ident`, `working-tree-encoding`), whose sum
+  `REFUSED_ATTRIBUTES` is refused on any line of any `.gitattributes` (Validation stops);
+  `PLUGIN_MANIFEST`, the path whose presence proves the walk read this plugin.
 - Consumes: Tasks 1–2 (the tree is green only after both).
+- Shipped differently from the text below in places; "Findings — directory-prep" lists each.
 
 The checks, each a finding string naming the path: a non-exempt file of `FILE_MAX_BYTES` or
 more; more than `FILES_MAX` files; a tracked symlink (mode `120000`); a path component equal to
@@ -553,15 +585,50 @@ Expected: caught.
 - Modify: `mutations/repository.toml` (created by Task 1, (create))
 
 **Interfaces:**
-- Produces, in `tests/test_outbound.py` (create): `NETWORK_MODULES`, the standard-library modules
-  that open a connection, each matched with its submodules; `seam_calls(root: Path) ->
-  list[SeamCall]` (file, line, enclosing function, the argv as read with `None` for an element not
-  read, or `None` when the program is not read, and whether it was read whole);
-  `outbound_programs(root: Path) -> set[str]` (row keys such as `gh`, `git fetch`, `claude
-  plugin`, and every file the templates write under `.github/`); `PASS_THROUGH: dict[tuple[str,
-  str], frozenset[str]]` mapping `(file, enclosing function)` of each launch whose argv the walk
-  does not read to the README row keys it can reach, empty for one that reaches nothing, with the
-  reason in a comment.
+- Produces, in `tests/outbound/walk.py` (create), the mechanism, whose docstring is the one
+  description of what the walk sees and what it cannot: `Launcher` (`program`, `at`, `spread`,
+  `keyword`, `reads`: how a launcher takes its argv); `Unread(text, spread)`, an argv element the
+  walk cannot read, by its source text; `Element = str | Unread`; `Launch(file, line, function,
+  argv: tuple[Element, ...])`; `STDLIB_LAUNCHERS`, the standard library's launchers whose argv
+  the walk reads; `Walk(roots)`, whose `launchers` are the roots and every module-level function
+  derived from them to a fixed point, `launches(root: Path = SRC) -> list[Launch]` and
+  `launches_in(text: str, file: str) -> list[Launch]`; `imported_modules(tree: ast.Module) ->
+  set[str]`, `imports(root: Path) -> list[tuple[str, str]]`, `package_files(root: Path) ->
+  list[Path]`; `misnamed_runners(source: str) -> list[tuple[int, str]]`; `ROOT`, `SRC`.
+- Produces, in `tests/outbound/declarations.py` (create), the policy: `NETWORK_MODULES`, the
+  standard-library modules that open a connection, each matched with its submodules;
+  `NATIVE_MODULES` (`ctypes`, `_ctypes`, `_posixsubprocess`, `_winapi`), which start a process
+  through no launcher the walk knows; `ROOT_LAUNCHERS: dict[tuple[str, str], Launcher]`, the two
+  package launchers that cannot be derived (`gitenv.git_run`, `_SubprocessRunner.run`);
+  `NETWORK: dict[tuple[str, ...], str]`, an argv prefix to its README row key; `LOCAL` and
+  `LOCAL_WHOLE`, the prefixes and whole argvs that reach nothing past this machine;
+  `GIT_GLOBAL_OPTIONS: dict[str, bool]` (whether each takes a value), `GIT_CONFIG_KEYS` (what
+  `git -c` may set) and `GIT_REMOTE_OPTIONS`; `NO_ROWS`; `PASS_THROUGH: dict[tuple[str, str, str],
+  frozenset[str]]`, each launch whose program the walk cannot read, keyed by `(file, function,
+  source text of its first unread element)`, to the row keys it can reach, with the reason in a
+  comment; `OPERANDS: dict[tuple[str, str, str], str]`, each unread element before an options end,
+  keyed alike, to why it cannot be an option that changes what the launch reaches.
+- Produces, in `tests/test_outbound.py` (create), the assertions: `classify(launch: Launch) ->
+  tuple[frozenset[str] | None, set[Key]]`, the rows a launch can reach (`None` when unclassified)
+  and the declarations that answer rests on; `unclassified(launches: list[Launch]) ->
+  list[Launch]`; `github_files() -> set[str]`, every file the templates write under `.github/`
+  and `init`'s `CI_WORKFLOW`; `outbound_programs(launches: list[Launch]) -> set[str]`;
+  `readme_outbound_rows() -> set[str]`, the first code span of each Program cell;
+  `forbidden_imports(root: Path) -> list[tuple[str, str]]`. Its tests, as shipped:
+  `test_no_module_imports_a_network_or_native_module`,
+  `test_both_import_forms_name_the_module_they_reach`,
+  `test_a_listed_module_is_forbidden_with_its_submodules`, `test_a_launch_of_any_shape_is_found`
+  (one case per entry of `LAUNCH_SHAPES`), `test_what_only_names_a_launcher_is_not_a_launch`,
+  `test_every_launch_is_classified`,
+  `test_the_declarations_name_exactly_what_the_classification_rests_on`,
+  `test_a_declaration_covers_only_the_launch_it_names`,
+  `test_every_table_entry_names_a_live_launch`,
+  `test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified`,
+  `test_an_argv_read_up_to_its_options_end_is_still_local`, `test_every_runner_is_named_as_one`,
+  `test_the_plugin_installs_reach_the_rows_their_entries_name` and
+  `test_the_readme_declares_every_program_that_reaches_a_network`, which holds the section's
+  Program column, and only that column, to the launches in both directions.
+- Shipped differently from the text below in places; "Findings — directory-prep" lists each.
 
 **The walk starts from the seams, not from argv shapes,** so a new call shape fails closed:
 
@@ -1101,40 +1168,46 @@ The budget: 4 mechanisms × 3 prompts, one M3 hold-back turn, and up to four re-
 
 ## Findings — directory-prep
 
-Written by Tasks 3 and 5.
+Written by Tasks 3 and 5, and by the review round of the directory-prep pull request.
 
-**Task 3, the payload after `test(payload): hold the plugin folder to the directory's file
-limits` (2026-10-02).** Measured with the guard's own walk:
+**Task 3, the payload, re-measured in the review round (2026-10-03, at `6361b25`) with the
+shipped guard's walk,** which reads `HEAD`'s tree. It replaces the first measurement, 468 files,
+which `tracked_entries()` read from the working tree before `tracked_payload` replaced it:
 
 ```bash
 uv run python -c "
-from tests.test_payload import tracked_entries, payload_findings, FILE_MAX_BYTES, FILES_MAX
-e = tracked_entries()
-print(len(e), 'entries;', FILES_MAX - len(e), 'under FILES_MAX; findings:', payload_findings(e))
+from tests.test_payload import tracked_payload, payload_findings, FILE_MAX_BYTES, FILES_MAX
+e, b = tracked_payload()
+print(len(e), 'entries;', FILES_MAX - len(e), 'under FILES_MAX; findings:', payload_findings(e, read=b.__getitem__))
 for path, size, mode in sorted(e, key=lambda x: -x[1])[:3]: print(size, path, FILE_MAX_BYTES - size)
 "
 ```
 
 ```text
-468 entries; 44 under FILES_MAX; findings: []
-240184 docs/cli.md 21960
+473 entries; 39 under FILES_MAX; findings: []
+240235 docs/cli.md 21909
 208935 docs/plans/2026-09-05-agent-harness-p0-spikes.md 53209
-198849 docs/plans/2026-09-19-wave-3-closure.md 63295
+185186 docs/plans/2026-09-16-wave-2-closure-ledger-docs-skills.md 76958
 ```
 
-- The tree held 468 tracked files, 44 under the 512 at which the directory holds a listing, and
-  the guard reported no finding: no file at or over 256 KiB, no symlink, no `.DS_Store` or
-  `__MACOSX`, no `.gitattributes`. The three names and the symlinks were also counted directly,
-  after the next commit, which added no file:
+- The tree held 473 tracked files, 39 under the 512 at which the directory holds a listing, and
+  the guard reported no finding under every rule it holds: size, count, binaries, symlinks,
+  submodules, Git LFS pointers, system files, names, and `.gitattributes` attributes.
+- The three largest files were `docs/cli.md` (240,235 bytes), the P0 spikes plan (208,935) and
+  part 1 of the wave 2 closure plan (185,186); part 1 of the wave 3 closure plan fell to 173,689
+  bytes when the review round re-cut it at its `## Wave E` heading. `docs/cli.md` had 21,909 bytes
+  (21.4 KiB) of headroom, and it is the file the size limit reaches first.
+- `docs/cli.md` grew 22,531 bytes in one release, more than its headroom now:
 
   ```bash
-  git ls-files | grep -cE '(^|/)(\.gitattributes|\.DS_Store|__MACOSX)(/|$)'   # printed 0
-  git ls-files -s | awk '$1 == "120000"' | wc -l                             # printed 0
+  git show v0.1.1:docs/cli.md | wc -c   # printed 217653
+  git show v0.2.0:docs/cli.md | wc -c   # printed 240184
   ```
-- The three largest files were `docs/cli.md` (240,184 bytes), the P0 spikes plan (208,935) and
-  the wave 3 closure plan (198,849). `docs/cli.md` had 21,960 bytes of headroom, unchanged
-  since the Premise measured it: it is the file the size limit reaches first.
-- Projected to wave 10, the count was about 488: the 468 measured, plus the five files this plan
+
+  One more release that grows it as much takes it past 256 KiB, and splitting it then moves the
+  anchors 13 links in 9 tracked files point at (`git grep -o "cli\.md#[a-z0-9-]*" | wc -l`
+  printed 13). File count and `docs/cli.md`'s size are co-binding, not file count alone.
+- Projected to wave 10, the count was about 493: the 473 measured, plus the five files this plan
   still creates (`scripts/bench/bench.py`, `scripts/bench/repos.toml`, `scripts/bench/README.md`,
   `tests/scripts/test_bench.py`, `tests/fixtures/bench/result.json`), plus one plan file for each
   of waves 8, 9 and 10, plus twelve changelog fragments on top of the three pending — the last
@@ -1142,10 +1215,21 @@ for path, size, mode in sorted(e, key=lambda x: -x[1])[:3]: print(size, path, FI
 
   ```bash
   git show --diff-filter=D --name-only --format= v0.2.0 -- changelog.d | wc -l   # printed 15
+  ls changelog.d | wc -l                                                         # printed 3
   ```
 
-  That left about 24 files of the 512 at the peak of a release cycle; file count stayed the
-  binding limit.
+  That left about 19 files of the 512 at the peak of a release cycle.
+
+**The root cause of the size and count workarounds, as an observation (review round).** The
+plan splits, the coarse mutation groups and the file-count arithmetic above all follow from one
+fact: the plugin folder is the repository root, so every test, plan and mutation file is in the
+payload. The checklist (claude.com/docs/plugins/pre-submission-checklist, fetched 2026-10-02)
+says the directory scans "the branch or tag that it follows", so a distribution ref that CI
+builds, holding at its root only what the plugin loads, would make every one of those
+workarounds unnecessary while keeping the root layout. Its cost is a second artifact to build, a
+marketplace `source` pointing at that ref, and a smoke run against it. Not built here; the
+trigger to build it is 500 tracked files, or `docs/cli.md` under 8 KiB of headroom, whichever
+comes first.
 
 **Task 5 Step 1, `claude plugin validate --strict` (2026-10-02, `claude` 2.1.285).** Run on the
 branch after Task 4, first in the working checkout and then on the tracked tree alone, extracted
@@ -1191,6 +1275,60 @@ Validating plugin manifest: <tree>/.claude-plugin/plugin.json
   directory; it does reach anyone who keeps a local `CLAUDE.md` at the root and validates there.
 - Step 2, the portal's Validate run, needs the owner at the portal with this branch pushed; it
   had not run when this was written.
+
+**Shipped differently from the task text (review round).** Each task's `**Interfaces:**` block
+above was brought current; its steps and code blocks stayed as planned. Where they differed from
+what shipped:
+
+- Task 1: `GROUP_OF` shipped matched by the longest prefix, not the first in order, because a
+  row appended after `src/stayfixed/` was dead; the text block above still says "in match order".
+- Task 1: a name two entries carried became a static finding, and every name cited outside
+  `docs/plans/` had to be declared; the Interfaces had said duplicate names stay permitted.
+- Task 1: the directory was globbed once, in `group_files()`, which `declared()` and the group
+  tests call; Steps 1 and 4 glob `DECLARATIONS` at each site.
+- Task 1 Step 1: `GROUP_FILE_MAX_BYTES` shipped as `FILE_MAX_BYTES * 3 // 4`, imported from
+  `tests/test_payload.py`, not as the literal `192 * 1024`.
+- Task 1 Step 4: the oracle's test loader redirected `DECLARATIONS` once for every fixture,
+  instead of nine fixtures each assigning it.
+- Task 1 Step 5: of the 114 entries the split separated from the comment heading their block,
+  the 83 that belonged to it in meaning got a pointer to the block's lead entry by quoted name.
+- Task 2 Step 1: the review round re-cut the wave 3 closure plan at `## Wave E` (byte 173,629 of
+  the original), not at its last `### Task` heading under 200,000 (`### Task 15`, byte 198,789),
+  so that Wave E sits in one file.
+- Task 2 Step 4: the split added findings rather than none. `stayfixed plan check` reported 80 on
+  the two originals and 82 on the four files at the first cut, and 72 on the wave 3 original
+  against 73 on its two parts after the re-cut. Each added finding was a path cited in one part
+  and declared under `- Create:` in the other: the lint reads a file's declarations only there.
+- Task 2 Step 5: `docs/plans/README.md` gained a `-part-N` rule, not `-part-2.md` alone.
+- Task 3: `payload_findings` took a required keyword `read` for the content checks, and
+  `tracked_payload(root)` replaced `tracked_entries()`: it lists `HEAD`'s tree with
+  `git ls-tree -r -l -z`, not the index and `Path.stat()`, because the directory reads a commit.
+- Task 3: `.ico` left the exempt suffixes, since the checklist names it as a held binary, and the
+  guard came to hold every file rule the checklist states, not the five the text lists.
+- Task 3 Step 1: the image case shipped as `test_an_image_or_a_font_is_exempt_from_the_size_limit`
+  over four paths, and the tree test asserts the walk listed `.claude-plugin/plugin.json`.
+- Task 4 Files and Steps 2 and 4: the guard shipped in `tests/test_outbound.py`, the walk in
+  `tests/outbound/walk.py` and the policy in `tests/outbound/declarations.py`, not in
+  `tests/test_documents.py`; the entries' `reddens` name `tests/test_outbound.py`.
+- Task 4 Step 4: "a module imports a network-capable library" landed in `mutations/core.toml`,
+  where its `file`, `src/stayfixed/runner.py`, routes it, and reddens
+  `test_no_module_imports_a_network_or_native_module`.
+- Task 4: the walk found every launch shape, not seam calls with literal argvs: every
+  `subprocess` name but the inert ones, the `os`, `posix` and `nt` process functions, `pty`,
+  `asyncio` and an event loop's, a launcher handed on, a star import, and a re-export.
+- Task 4: the git launchers were derived to a fixed point from two roots, `git_run` and
+  `_SubprocessRunner.run`, not listed by hand as three `_git` helpers.
+- Task 4: `LOCAL` listed only the forms in use (`git remote get-url`, `git worktree list`, bare
+  `git remote` whole), not "every other git subcommand"; an unread element before the options end
+  had to be declared in `OPERANDS`; `git -c` was held to `GIT_CONFIG_KEYS`.
+- Task 4: `NETWORK` dropped `git pull`, which nothing runs, and gained `sh -c`; `ctypes`,
+  `_ctypes`, `_posixsubprocess` and `_winapi` became forbidden imports.
+- Task 4 Step 3: a declaration was keyed by its launch's first unread element, `(file, function,
+  element)`, not one per function, so a second launch in a declared function is a finding.
+- Task 4: the CI workflow row came from `init`'s `CI_WORKFLOW`, added unconditionally, not when
+  the template names the reusable workflow; every template file under `.github/` became a row.
+- Task 4: the test held only the section's Program column to the launches; the Run by, Talks to
+  and When columns are kept by hand.
 
 ## Findings — benchmark
 
