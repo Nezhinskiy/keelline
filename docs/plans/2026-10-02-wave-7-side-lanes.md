@@ -1122,7 +1122,13 @@ for path, size, mode in sorted(e, key=lambda x: -x[1])[:3]: print(size, path, FI
 
 - The tree held 468 tracked files, 44 under the 512 at which the directory holds a listing, and
   the guard reported no finding: no file at or over 256 KiB, no symlink, no `.DS_Store` or
-  `__MACOSX`, no `.gitattributes`.
+  `__MACOSX`, no `.gitattributes`. The three names and the symlinks were also counted directly,
+  after the next commit, which added no file:
+
+  ```bash
+  git ls-files | grep -cE '(^|/)(\.gitattributes|\.DS_Store|__MACOSX)(/|$)'   # printed 0
+  git ls-files -s | awk '$1 == "120000"' | wc -l                             # printed 0
+  ```
 - The three largest files were `docs/cli.md` (240,184 bytes), the P0 spikes plan (208,935) and
   the wave 3 closure plan (198,849). `docs/cli.md` had 21,960 bytes of headroom, unchanged
   since the Premise measured it: it is the file the size limit reaches first.
@@ -1130,9 +1136,14 @@ for path, size, mode in sorted(e, key=lambda x: -x[1])[:3]: print(size, path, FI
   still creates (`scripts/bench/bench.py`, `scripts/bench/repos.toml`, `scripts/bench/README.md`,
   `tests/scripts/test_bench.py`, `tests/fixtures/bench/result.json`), plus one plan file for each
   of waves 8, 9 and 10, plus twelve changelog fragments on top of the three pending — the last
-  release cycle, 0.1.1 to 0.2.0, consumed fifteen (`git show --diff-filter=D --name-only` on the
-  0.2.0 release commit, counted under `changelog.d/`). That left about 24 files of the 512 at
-  the peak of a release cycle; file count stayed the binding limit.
+  release cycle, 0.1.1 to 0.2.0, consumed fifteen:
+
+  ```bash
+  git show --diff-filter=D --name-only --format= v0.2.0 -- changelog.d | wc -l   # printed 15
+  ```
+
+  That left about 24 files of the 512 at the peak of a release cycle; file count stayed the
+  binding limit.
 
 ## Findings — benchmark
 
