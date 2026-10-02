@@ -344,7 +344,7 @@ def test_a_dangling_test_symlink_is_skipped_rather_than_aborting_the_scan(tmp_pa
     and the command exited `2`, the code this CLI reserves for "could not answer" and tells
     callers never to read as permission -- on a command that exits `0` by design.
 
-    Oracle: `mutations.toml`, "an unreadable test file aborts the scan".
+    Oracle: `mutations/`, "an unreadable test file aborts the scan".
 
     The real file beside it is what keeps the assertion from passing vacuously: the scan has
     to get PAST the broken link and still report the finding the other file carries.
@@ -369,7 +369,7 @@ def test_a_code_root_that_cannot_be_read_yields_no_import_names(tmp_path: Path) 
     Reddened by narrowing `import_roots`' `except OSError` to `except ValueError`, which
     nothing on that path raises; measured.
 
-    Not in `mutations.toml`, deliberately: the skip below makes this test environment-
+    Not in `mutations/`, deliberately: the skip below makes this test environment-
     dependent -- a run as root reads a `0o000` directory regardless -- and a declared mutation
     whose named test can SKIP reports "caught" while proving nothing, which is the vacuity the
     oracle exists to rule out.

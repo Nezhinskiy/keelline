@@ -466,7 +466,7 @@ def test_test_audit_entrypoints_scans_the_configured_roots(
     # The JSON keys are a documented contract (`docs/cli.md`), and they used to be produced by
     # `f.__dict__` — so renaming a dataclass attribute changed the wire format silently and
     # nothing here noticed. Against fixed literals, not against anything `Finding` produced.
-    # No `mutations.toml` entry: this is a wire contract, not a guard something reads as
+    # No entry in `mutations/`: this is a wire contract, not a guard something reads as
     # permission. Measured by hand — renaming the emitted `shape` key to `shapes` reddens this
     # test and nothing else in the file.
     assert sorted(out) == ["files", "findings", "import_roots", "summary"]

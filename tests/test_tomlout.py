@@ -54,7 +54,7 @@ def test_every_value_a_toml_document_can_hold_round_trips() -> None:
     # dict inside a list becomes an inline table, the one spelling that survives being nested.
     #
     # Mutation: drop any one arm of `_scalar` (the float, the date/time) or the `children`
-    # branch of `_emit`, and this reddens on that value. No `mutations.toml` entry: value
+    # branch of `_emit`, and this reddens on that value. No entry in `mutations/`: value
     # coverage in a serialiser is not a guard something downstream reads as permission.
     document: dict[str, dict[str, object]] = {
         "personal": {
@@ -77,7 +77,7 @@ def test_a_table_nested_inside_an_array_of_tables_round_trips_too() -> None:
     # `tomllib` can parse" has to mean at any depth or it means very little.
     #
     # Mutation: `_inline` calls `_value` instead of `_element` for its values and this reddens
-    # with the refusal. No `mutations.toml` entry, for the reason the test above gives.
+    # with the refusal. No entry in `mutations/`, for the reason the test above gives.
     document: dict[str, dict[str, object]] = {
         "trust": {"rows": [{"host": "a", "opts": {"deep": True, "tags": ["x"]}}]},
         "personal": {"editor": {"options": {"deep": {"deeper": 1}}}},

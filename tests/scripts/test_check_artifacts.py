@@ -104,7 +104,7 @@ def test_a_wrapper_that_lost_its_executable_bit_in_the_sdist_is_named(tmp_path: 
 def test_a_member_missing_from_the_sdist_is_named(tmp_path: Path) -> None:
     # `_sdist`'s `without=` parameter existed and was passed by nothing, so the packager-facing
     # half of the gate — that `tests/`, `CHANGELOG.md`, `skills/`, `hooks/hashes.json` and
-    # `mutations.toml` actually ship — was checked by no test. Measured: the whole
+    # `mutations/` actually ship — was checked by no test. Measured: the whole
     # missing-member comprehension replaced by `findings: list[str] = []`, mode check kept,
     # 5 passed.
     #
@@ -118,6 +118,22 @@ def test_a_member_missing_from_the_sdist_is_named(tmp_path: Path) -> None:
         _sdist(tmp_path / "k.tar.gz", module, without="hooks/hashes.json")
     )
     assert findings == ["sdist: missing hooks/hashes.json"], findings
+
+
+def test_the_sdist_must_carry_every_mutation_group_file() -> None:
+    # The group files are globbed rather than spelled, and a glob that matches nothing — a moved
+    # directory, a mistyped pattern — drops the requirement without a sound: the sdist check stays
+    # green over an artifact a packager cannot run the oracle from. So the checkout's own set is
+    # the floor, and it is stated non-empty before it is compared.
+    #
+    # Mutation: the checker's pattern becomes `*.tom` -> no group file is required and the
+    # comparison reddens.
+    module = checker()
+    required = {name for name in module.SDIST_MUST if name.startswith("mutations/")}
+    declarations = SCRIPT.parents[1] / "mutations"
+    carried = {f"mutations/{path.name}" for path in declarations.glob("*.toml")}
+    assert carried  # a walk-based assertion states its walk is non-empty
+    assert required == carried
 
 
 def _rendered(root: Path, *, repository: bool = True) -> Path:
@@ -183,7 +199,7 @@ def test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main(
     # `--local` makes. `HEAD` naming `refs/heads/main` says both that it is a repository and that
     # it is on the branch the contract names, with no subprocess.
     #
-    # Mutation: `mutations.toml`'s "the rendered-artifact check takes any directory named .git".
+    # Mutation: `mutations/`'s "the rendered-artifact check takes any directory named .git".
     module = checker()
     root = _rendered(tmp_path / "rendered", repository=False)
     (root / ".git").mkdir()

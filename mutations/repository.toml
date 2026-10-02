@@ -1,0 +1,3260 @@
+# The repository group: everything outside the package — tests, scripts, hooks, workflows, docs.
+# Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
+# CONTRIBUTING.md, "Tests".
+
+# The oracle's own two guards, declared here like any other. Self-mutation works because
+# `_check` rewrites the file on disk and the run it then launches is a subprocess that loads
+# this script fresh from that path — the parent's already-imported copy decides nothing.
+[[mutation]]
+name = "the oracle stops proving the named tests pass before it mutates"
+file = "scripts/mutation_oracle.py"
+before = '    if not clean.passed:'
+after = '    if False:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_test_id_that_does_not_exist_is_a_finding_not_a_catch",
+  "tests/scripts/test_mutation_oracle.py::test_a_run_where_every_named_test_skipped_proves_nothing",
+]
+
+[[mutation]]
+name = "the oracle reads a git that could not answer as a clean tree again"
+file = "scripts/mutation_oracle.py"
+before = '    if status.returncode != 0:'
+after = '    if False:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_tree_git_cannot_answer_about_is_refused_not_assumed_clean",
+]
+
+# The neutrality gate stores its denylist as digests so the file that hides a name does not publish
+# it, which means the match is a windowed hash comparison rather than a substring test — an
+# invisible mechanism whose failure mode is silence. Empty the per-width digest set and every scan
+# comes back clean: the whole-tree walk goes green over a tree that could name anything.
+[[mutation]]
+name = "the hashed neutrality denylist stops matching a planted token"
+file = "tests/test_neutral.py"
+before = '        wanted = {digest for length, digest in forbidden if length == width}'
+after = '        wanted = set()'
+reddens = [
+  "tests/test_neutral.py::test_the_gate_discriminates",
+]
+
+# The public-document half of the same gate, which had no entry in `mutations/` until two rounds of
+# review found two holes in it. `PUBLIC_FORBIDDEN` is the full table minus the digests of the paths
+# the preset itself ships, so that a README may say where the note store lives by default. Written
+# by hand as the full table instead, the exemption disappears and every public document that names a
+# default path reddens; written as the full table is also the shape a well-meaning "simplification"
+# takes, and the derivation fails silently either way.
+[[mutation]]
+name = "the public document table is written by hand instead of derived from the preset"
+file = "tests/test_neutral.py"
+before = 'PUBLIC_FORBIDDEN = tuple(entry for entry in FORBIDDEN if entry not in _preset_paths())'
+after = 'PUBLIC_FORBIDDEN = FORBIDDEN'
+reddens = [
+  "tests/test_neutral.py::test_the_exemption_is_exactly_the_presets_default_paths",
+  "tests/test_neutral.py::test_the_public_table_still_discriminates",
+]
+
+# The vendor-branch arm, whose failure mode is silence and whose history is a hole per round of
+# review: first a bare name only, then a bare name plus three hardcoded remote names. The
+# replacement accepts any path or remote prefix; drop that and every prefixed form — a remote
+# nobody listed, a `refs/` ref, this repository's own branch prefix, a worktree path — walks
+# straight through a gate that reports nothing.
+[[mutation]]
+name = "the vendor-branch arm stops seeing a prefixed branch name"
+file = "tests/test_neutral.py"
+before = '        re.compile(r"(?<![.\w])(?:[\w.-]+/)*(?:codex|claude|cursor)/[a-z0-9][\w-]*[-_][\w-]*"),'
+after = '        re.compile(r"(?<![.\w/])(?:codex|claude|cursor)/[a-z0-9][\w-]*"),'
+reddens = [
+  "tests/test_neutral.py::test_the_gate_discriminates",
+]
+
+# The other half of the replacement `mutations/`'s "the vendor-branch arm stops seeing a prefixed
+# branch name" makes, and it cuts both ways, so it is two entries. The vendor arm reads the text
+# with its URLs blanked out, which is the only thing between the gate and a documentation URL whose
+# path segment after a vendor name happens to be dashed — the commonest shape one has. Without it
+# the gate cries wolf on every public document that cites one, which is how an arm gets loosened in
+# the first place.
+[[mutation]]
+name = "the vendor arm reads a URL as if it were prose"
+file = "tests/test_neutral.py"
+before = '        name for name, shape in SHAPES if shape.search(blanked if name in URL_BLIND else lowered)'
+after = '        name for name, shape in SHAPES if shape.search(lowered)'
+reddens = [
+  "tests/test_neutral.py::test_the_public_table_still_discriminates",
+]
+
+# And the other direction, which is the one that shipped for three commits: blanking for *every*
+# arm takes the personal address and the commit id out of every URL in the tree — a `mailto:`, a
+# profile link, a `?sha=` parameter — which is the gate's whole subject matter. Only the vendor
+# arm has a legitimate reason to meet its own shape inside a URL path.
+[[mutation]]
+name = "every arm goes blind inside a URL"
+file = "tests/test_neutral.py"
+before = '        name for name, shape in SHAPES if shape.search(blanked if name in URL_BLIND else lowered)'
+after = '        name for name, shape in SHAPES if shape.search(blanked)'
+reddens = [
+  "tests/test_neutral.py::test_the_gate_discriminates",
+]
+
+# The `bare commit id` arm already required one digit, so an eight-letter hex word is a word and
+# not an id. The whole-tree walk bought the other half of that argument: one hex LETTER, so a
+# plain decimal number is a number and not an id. Take the second lookahead away and `uv.lock`
+# alone reddens on fifty-five byte counts the resolver rewrites at every lock — a gate whose
+# only answer is to exempt a file from itself, which is how an arm gets deleted instead.
+# The whole-tree walk skips a file it cannot decode, which is the right answer for a binary and
+# the wrong answer for every file at once. `_text` answering `None` turns all 334 parametrised
+# cases into skips, and a run of 334 skips and no failures is what a green gate looks like from
+# the outside. The floor is therefore on the files that were READ, not on the files that were
+# listed, and the count of skips is pinned at the measured zero.
+[[mutation]]
+name = "the whole-tree gate reads nothing and skips every file"
+file = "tests/test_neutral.py"
+before = '        return path.read_text(encoding="utf-8")'
+after = "        return None"
+reddens = [
+  "tests/test_neutral.py::test_the_gate_reads_the_whole_tree",
+]
+
+[[mutation]]
+name = "the bare commit id arm reads a decimal number as an id"
+file = "tests/test_neutral.py"
+before = '        re.compile(r"(?<![\w/])(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{8,10}(?![\w/])"),'
+after = '        re.compile(r"(?<![\w/])(?=[0-9a-f]*\d)[0-9a-f]{8,10}(?![\w/])"),'
+reddens = [
+  "tests/test_neutral.py::test_the_gate_discriminates",
+]
+
+# The public-anchor gate: no tracked file outside the plans cites the private design by section
+# number or decision id, because a reader here cannot open what either points at. Its failure
+# mode is the neutrality gate's — silence — so each arm, the whole-text reading, the loop and the
+# walk's reach are declared.
+[[mutation]]
+name = "the public-anchor gate stops seeing a design section number"
+file = "tests/test_public_anchors.py"
+before = '    ("design section", re.compile(r"§\s*\d+(?:\.\d+)*")),'
+after = '    ("design section", re.compile(r"§\s*\d+(?:\.\d+)*(?!)")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# Most of the ids were written bare, a one-letter prefix and a number at the head of a clause,
+# and only the bracketed arm would be left to catch them. Narrowed to the two-letter prefixes,
+# the gate goes on refusing a bracketed id and lets the commoner spelling back in.
+[[mutation]]
+name = "the public-anchor gate sees only the two-letter decision ids"
+file = "tests/test_public_anchors.py"
+before = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b(?!\s+control)"),'
+after = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b"),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# No other arm reaches a two-letter prefix written bare — the one-letter arm needs a word
+# boundary before its letter and the bracketed arm needs brackets — so each prefix is spelled in
+# the arm or not refused at all. `RD` stands for the four: drop it and that spelling is back.
+[[mutation]]
+name = "the public-anchor gate forgets the RD prefix"
+file = "tests/test_public_anchors.py"
+before = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b(?!\s+control)"),'
+after = '        re.compile(r"\b(?:DC|DP|OD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b(?!\s+control)"),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# And the other direction: "C0 control" and "C1 control" are the Unicode names of the classes
+# `tomlout` and the probes escape, so an arm widened to every `C<digit>`, or one that forgets the carve-out
+# before "control", refuses a correct sentence — which is how a gate earns an exemption and then
+# loses its point.
+[[mutation]]
+name = "the public-anchor gate refuses the C0 control class"
+file = "tests/test_public_anchors.py"
+before = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b(?!\s+control)"),'
+after = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC\d\b"),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+[[mutation]]
+name = "the public-anchor gate refuses the C1 control class"
+file = "tests/test_public_anchors.py"
+before = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b(?!\s+control)"),'
+after = '        re.compile(r"\b(?:DC|DP|OD|RD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b"),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# A bracketed list whose members are none of them decision ids is caught by the list's tail
+# alone; without it only the single-id brackets and the ids the decision arm spells survive.
+[[mutation]]
+name = "the public-anchor gate stops reading a bracketed list"
+file = "tests/test_public_anchors.py"
+before = '    ("bracketed id", re.compile(r"\([A-Z]{1,2}\d{1,2}(?:,\s*[A-Z]{1,2}\d{1,2})*\)")),'
+after = '    ("bracketed id", re.compile(r"\([A-Z]{1,2}\d{1,2}\)")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# The plan headings in either case and across a re-wrap: three shipped modules named the plans'
+# list of constraints in lower case and one split its two words over two lines, and the
+# case-sensitive, single-space arm that preceded this one saw none of them.
+[[mutation]]
+name = "the public-anchor gate reads the plan headings case-sensitively again"
+file = "tests/test_public_anchors.py"
+before = '    ("plan section", re.compile(r"\bPremise\s+\d+|(?i:\bglobal\s+constraint)")),'
+after = '    ("plan section", re.compile(r"\bPremise \d+|G[l]obal Constraint")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# The plans' word for a unit of work, in every file and either case: nearly three hundred lines
+# said it before this arm, and a reader here could not tell which area any of them meant.
+[[mutation]]
+name = "the public-anchor gate stops seeing the plans' unit of work"
+file = "tests/test_public_anchors.py"
+before = '    ("plan unit", re.compile(r"(?i:(?<![^\W\d_])l[a]nes?(?![^\W\d_]))")),'
+after = '    ("plan unit", re.compile(r"(?i:(?<![^\W\d_])l[a]nes?(?![^\W\d_]))(?!)")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# A letter, not a word character, is the boundary: `\b` counts `_` as part of a word, so a
+# test named for "every downstream" unit of work, snake_case, walked past an arm written with it.
+[[mutation]]
+name = "the public-anchor gate lets a snake_case name carry the plans' unit of work"
+file = "tests/test_public_anchors.py"
+before = '    ("plan unit", re.compile(r"(?i:(?<![^\W\d_])l[a]nes?(?![^\W\d_]))")),'
+after = '    ("plan unit", re.compile(r"(?i:\bl[a]nes?\b)")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# The code-only arms, a spelling at a time: every planted line carries one, so none covers for
+# another. Gone quiet, the plan bookkeeping this change took out of the code comes back unremarked.
+[[mutation]]
+name = "the public-anchor gate stops seeing the unit a plan shipped in"
+file = "tests/test_public_anchors.py"
+before = '            r"(?i:(?<![^\W\d_])w[a]ve(?![^\W\d_]))|\bTask\s+\d+|(?i:\bfix\s+round)|(?i:\bround\s+\d+)"'
+after = '            r"\bTask\s+\d+|(?i:\bfix\s+round)|(?i:\bround\s+\d+)"'
+reddens = [
+  "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
+]
+
+[[mutation]]
+name = "the public-anchor gate stops seeing a numbered item or finding"
+file = "tests/test_public_anchors.py"
+before = '            r"|(?i:\bitem\s+\d+)|(?i:\bfinding\s+\d+)"'
+after = '            r""'
+reddens = [
+  "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
+]
+
+# A spike's or a review's `S<n>` — and not the public source list's bracketed `[S12]`, which the
+# arm must go on leaving alone.
+[[mutation]]
+name = "the public-anchor gate stops seeing a spike id"
+file = "tests/test_public_anchors.py"
+before = '    ("spike id", re.compile(r"(?<!\[)\bS\d{1,2}\b(?!\])")),'
+after = '    ("spike id", re.compile(r"(?<!\[)\bS\d{1,2}\b(?!\])(?!)")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
+]
+
+[[mutation]]
+name = "the public-anchor gate refuses a bracketed public source"
+file = "tests/test_public_anchors.py"
+before = '    ("spike id", re.compile(r"(?<!\[)\bS\d{1,2}\b(?!\])")),'
+after = '    ("spike id", re.compile(r"\bS\d{1,2}\b")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
+]
+
+# The whole-text reading. A comment's `#` left in place splits a wrapped phrase in two; the
+# overlap rule gone reports a bracketed decision id twice; a line number computed from nothing points at line 1.
+[[mutation]]
+name = "the public-anchor gate lets a comment leader split a phrase"
+file = "tests/test_public_anchors.py"
+before = '    text = COMMENT_LEADER.sub(lambda m: m.group(1) + " " * len(m.group(2)), text)'
+after = '    text = text'
+reddens = [
+  "tests/test_public_anchors.py::test_the_scan_reports_what_it_read_by_path_and_line",
+]
+
+[[mutation]]
+name = "the public-anchor gate reports one span once per arm"
+file = "tests/test_public_anchors.py"
+before = '        if start < covered:'
+after = '        if False:'
+reddens = [
+  "tests/test_public_anchors.py::test_a_citation_reports_its_whole_text_once_on_its_own_line",
+]
+
+[[mutation]]
+name = "the public-anchor gate reports every hit on the first line"
+file = "tests/test_public_anchors.py"
+before = '        found.append((text.count("\n", 0, start) + 1, name, " ".join(matched.split())))'
+after = '        found.append((1, name, " ".join(matched.split())))'
+reddens = [
+  "tests/test_public_anchors.py::test_a_citation_reports_its_whole_text_once_on_its_own_line",
+]
+
+# Where the code-only arms apply, all three ways: nowhere and they read nothing; everywhere and
+# a document talking about a task in its own sense is refused; a fixture read as code and the
+# smoke project's own plans are held to bookkeeping rules they are data for.
+[[mutation]]
+name = "the public-anchor walk never applies the code-only arms"
+file = "tests/test_public_anchors.py"
+before = '    return CITATIONS if is_document(relative) else CITATIONS + CODE_ONLY'
+after = '    return CITATIONS'
+reddens = [
+  "tests/test_public_anchors.py::test_the_arms_follow_where_a_file_lives",
+]
+
+[[mutation]]
+name = "the public-anchor walk applies the code-only arms to every file"
+file = "tests/test_public_anchors.py"
+before = '    return CITATIONS if is_document(relative) else CITATIONS + CODE_ONLY'
+after = '    return CITATIONS + CODE_ONLY'
+reddens = [
+  "tests/test_public_anchors.py::test_the_arms_follow_where_a_file_lives",
+]
+
+[[mutation]]
+name = "the public-anchor walk reads a fixture as code"
+file = "tests/test_public_anchors.py"
+before = '    return relative.endswith(DOCUMENT_SUFFIX) or relative.startswith(FIXTURES + "/")'
+after = '    return relative.endswith(DOCUMENT_SUFFIX)'
+reddens = [
+  "tests/test_public_anchors.py::test_the_arms_follow_where_a_file_lives",
+]
+
+# The walk's reach is every tracked file minus a named exemption, so the two ways to break it are
+# the exemption widened — here over the package, where almost every citation lived — and the
+# exemption lost, which reads the guard's own planted examples and is red for ever.
+[[mutation]]
+name = "the public-anchor walk's exemption swallows the package"
+file = "tests/test_public_anchors.py"
+before = 'EXEMPT = ("docs/plans", "tests/test_public_anchors.py")'
+after = 'EXEMPT = ("docs/plans", "tests/test_public_anchors.py", "src")'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_walk_reads_every_tracked_file_but_the_exemptions",
+]
+
+[[mutation]]
+name = "the public-anchor walk reads its own planted examples"
+file = "tests/test_public_anchors.py"
+before = 'EXEMPT = ("docs/plans", "tests/test_public_anchors.py")'
+after = 'EXEMPT = ("docs/plans",)'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_walk_reads_every_tracked_file_but_the_exemptions",
+]
+
+# The loop the gate runs. Read nothing, or read and keep nothing, and the gate is green over any
+# tree while every arm test still passes — which is what the arm tests alone could not show.
+[[mutation]]
+name = "the public-anchor scan reads nothing"
+file = "tests/test_public_anchors.py"
+before = '        text = path.read_text(encoding="utf-8")'
+after = '        text = ""'
+reddens = [
+  "tests/test_public_anchors.py::test_the_scan_reports_what_it_read_by_path_and_line",
+]
+
+[[mutation]]
+name = "the public-anchor scan keeps nothing it read"
+file = "tests/test_public_anchors.py"
+before = '        hits.extend('
+after = '        [].extend('
+reddens = [
+  "tests/test_public_anchors.py::test_the_scan_reports_what_it_read_by_path_and_line",
+]
+
+# The sdist fallback walk leaves bytecode out at any depth: one pytest run leaves a `__pycache__`
+# beside every module, and the public-anchor gate reads every file it is given.
+[[mutation]]
+name = "the fallback walk reads bytecode below the root"
+file = "tests/test_neutral.py"
+before = '        and "__pycache__" not in parts'
+after = '        and True'
+reddens = [
+  "tests/test_neutral.py::test_the_fallback_walk_skips_bytecode_at_any_depth",
+]
+
+# Every spawner that strips the developer's `STAYFIXED_*` variables goes through one predicate,
+# and the floor is the name it keeps; strip it too and a spawned `stayfixed` runs under the bare
+# bounds again.
+[[mutation]]
+name = "the suite's developer strip drops the floor"
+file = "tests/floor.py"
+before = "    return name.startswith(DEVELOPERS) and name != gitenv.FLOOR_VARIABLE"
+after = "    return name.startswith(DEVELOPERS)"
+reddens = [
+  "tests/test_floor.py::test_a_spawner_strips_the_developers_variables_and_keeps_the_floor",
+  "tests/test_floor.py::test_a_stayfixed_the_suite_starts_runs_its_git_under_the_floor",
+]
+
+# Both smoke scripts build a session on one base environment that strips every `STAYFIXED_*`
+# variable; the suite's floor is the one it keeps, or their entries run under the bare bounds the
+# floor exists to lift.
+[[mutation]]
+name = "the hook smoke strips the suite's floor"
+file = "scripts/smoke_hooks.py"
+before = """        if k == FLOOR_VARIABLE or not k.startswith(("STAYFIXED_", "XDG_", "CLAUDE_", "PLUGIN_"))"""
+after = """        if not k.startswith(("STAYFIXED_", "XDG_", "CLAUDE_", "PLUGIN_"))"""
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_a_hook_entry_keeps_the_suite_floor_and_no_other_stayfixed_variable",
+]
+
+# The wrapper is the whole of the hooks' fail-closed guarantee: Claude Code reads every exit that is
+# not 2 as a non-blocking error, so a `closed` entry that stops refusing is a guard that permits.
+[[mutation]]
+name = "the wrapper stops refusing under a closed policy"
+file = "hooks/run-hook.sh"
+before = '  if [ "$policy" = closed ]; then refuse "$1"; fi'
+after = '  :'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_interpreter_of_the_floor_version_refuses_under_closed_only",
+  "tests/hooks/test_wrapper.py::test_any_other_exit_code_becomes_a_refusal_under_closed",
+]
+
+# The one failure the wrapper can cause itself. `set -u` alone exits 1 with the shell's own
+# message and no token, which reads as permission -- so the disarmed guard would be silent.
+[[mutation]]
+name = "the wrapper stops noticing that it has no policy argument"
+file = "hooks/run-hook.sh"
+before = '[ $# -ge 1 ] || refuse "SF_ARGV no policy argument"'
+after = 'policy=open'
+reddens = ["tests/hooks/test_wrapper.py::test_no_policy_argument_refuses_with_a_token"]
+
+# The launcher is chosen by the wrapper's own path and never by a variable in its environment. A
+# committed `.claude/settings.json` `env` block reaches a hook process -- `config/machine.py` gates
+# two other variables on exactly that -- and this one would pick the Python program that runs before
+# any stayfixed guard does.
+[[mutation]]
+name = "the wrapper takes its launcher from the environment again"
+file = "hooks/run-hook.sh"
+before = 'launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/stayfixed"'
+after = 'launcher="${CLAUDE_PLUGIN_ROOT:-}/scripts/stayfixed"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_plugin_root_in_the_environment_does_not_choose_the_launcher",
+  "tests/hooks/test_wrapper.py::test_a_missing_launcher_refuses_although_the_environment_names_one",
+]
+
+# The other half of the same line. A derived launcher that is not there must still refuse with a
+# token: without the check the file reaches Python as a missing script and exits 2 by CPython
+# accident, which is the unattributed exit the wrapper exists to make impossible.
+[[mutation]]
+name = "the wrapper stops noticing that its launcher is missing"
+file = "hooks/run-hook.sh"
+before = '[ -f "$launcher" ] && [ -r "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
+after = ':'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_missing_launcher_refuses_although_the_environment_names_one",
+]
+
+# The same rule, one line down. The headline hardening closed WHICH FILE the wrapper hands Python
+# and left WHICH PYTHON one line below it: the probe asks a candidate only to exit 0 for a trivial
+# `-c`, so a repository-planted `evil-python` ran `<plugin>/scripts/stayfixed hook PreToolUse` on
+# every PreToolUse, before any stayfixed guard. `config/machine.py`'s ruling -- "gating one of a pair
+# of equivalent inputs is not a partial defence, it is a redirect with a longer name" -- is followed
+# by putting that module's own gate on it: an interactive terminal, which a hook's stdin (the
+# harness's payload, on a pipe) never is.
+[[mutation]]
+name = "the wrapper lets the environment choose its interpreter off a terminal"
+file = "hooks/run-hook.sh"
+before = 'if [ -t 0 ] && [ -n "${STAYFIXED_PYTHON_CANDIDATES:-}" ]; then candidates="$STAYFIXED_PYTHON_CANDIDATES"; fi'
+after = 'if [ -n "${STAYFIXED_PYTHON_CANDIDATES:-}" ]; then candidates="$STAYFIXED_PYTHON_CANDIDATES"; fi'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_an_interpreter_the_environment_names_is_ignored_off_a_terminal",
+]
+
+# The interpreter's other chooser, and the one the tty gate moved rather than closed: with
+# `STAYFIXED_PYTHON_CANDIDATES` gated, the hook path always uses the built-in list, whose last entry
+# is a `PATH` lookup -- and `PATH` reaches this process from the same committed `env` block.
+# Dropping the entry is not available (it is the fall-through for an interpreter that is only on
+# `PATH`, and a pyenv, nix or asdf machine has nothing at the four absolute paths), so what a clone
+# can actually stage is refused instead: an interpreter inside its own tree. Measured with the entry
+# disabled -- a shipped `python3` plus a `PATH` entry naming the tree ran `<plugin>/scripts/stayfixed
+# hook PreToolUse`.
+[[mutation]]
+name = "the wrapper runs an interpreter the project itself ships"
+file = "hooks/run-hook.sh"
+before = '  if in_project "$resolved"; then'
+after = '  if false; then'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_an_interpreter_inside_the_project_root_is_never_used",
+  "tests/hooks/test_wrapper.py::test_an_interpreter_reached_through_path_is_judged_by_its_resolved_path[a PATH entry naming the tree]",
+  "tests/hooks/test_wrapper.py::test_an_interpreter_reached_through_path_is_judged_by_its_resolved_path[a . in PATH]",
+]
+
+# Both sides resolved, or the comparison is a string game. `command -v` answers a `PATH` entry's
+# own spelling, so a symlinked entry names a directory outside the tree that IS the tree.
+[[mutation]]
+name = "the interpreter containment compares a candidate's spelling instead of its resolved path"
+file = "hooks/run-hook.sh"
+before = '  dir=$(CDPATH= cd -- "$(dirname -- "$1")" 2>/dev/null && pwd -P) || return 1'
+after = '  dir=$(dirname -- "$1") || return 1'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_an_interpreter_reached_through_path_is_judged_by_its_resolved_path[a symlinked PATH entry]",
+]
+
+# The same, for the other side. A project reached through a symlink is one spelling in
+# `CLAUDE_PROJECT_DIR` and another on disk, and the containment then reads "outside" for every
+# candidate in the tree.
+[[mutation]]
+name = "the interpreter containment compares against the project root's spelling"
+file = "hooks/run-hook.sh"
+before = '  project=$(pwd -P)'
+after = '  project="$root"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_an_interpreter_reached_through_path_is_judged_by_its_resolved_path[a symlinked project root]",
+]
+
+# The half a blunt containment gets wrong. No `CLAUDE_PROJECT_DIR` and no `git` answer is not a
+# project this process can name, and refusing every candidate on a question it could not ask
+# would turn an unresolvable root -- the ordinary state outside a repository -- into no hooks.
+[[mutation]]
+name = "an unresolvable project root refuses every interpreter instead of none"
+file = "hooks/run-hook.sh"
+before = '  [ -n "$2" ] || return 1'
+after = '  [ -n "$2" ] || return 0'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_candidate_stands_when_there_is_no_project_root_to_compare_it_against",
+]
+
+# The wrapper's other half. `hooks/dispatch._git_toplevel` scrubs this identical call one layer
+# down and names the failure verbatim; the wrapper inherited whatever the session had, so
+# `GIT_DIR`/`GIT_WORK_TREE` chose the project -- and every entry but the dispatcher's relies on
+# `--root` defaulting to `.`, so the whole hook then read another repository's configuration,
+# budgets and note store. The Codex hot path, where `CLAUDE_PROJECT_DIR` is unset.
+[[mutation]]
+name = "the wrapper's git inherits the session's GIT_DIR again"
+file = "hooks/run-hook.sh"
+before = 'git_root=$(env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+after = 'git_root=$("$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_project_root_is_never_taken_from_an_inherited_git_environment",
+]
+
+# `-f` tests existence, not readability. Measured with `chmod 000`: CPython printed its own
+# "Permission denied" and exited 2 with no SF_ token, passed through by `case "$rc" in 0|2)` -- the
+# unattributed exit 2 the wrapper exists to make impossible, and a state `doctor`'s wrapper row
+# called green because it keys on finding a token.
+[[mutation]]
+name = "the wrapper stops noticing that its launcher cannot be read"
+file = "hooks/run-hook.sh"
+before = '[ -f "$launcher" ] && [ -r "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
+after = '[ -f "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_launcher_that_cannot_be_read_refuses_with_a_token",
+]
+
+# A root that cannot be RESOLVED is a correct silent degradation; a root that was named and
+# cannot be entered is not. The process stayed in the harness's working directory, and if that
+# happened to be another stayfixed project every `--root`-defaulting entry read its
+# configuration -- with no token, and nothing in the sink.
+[[mutation]]
+name = "an unenterable project root leaves the hook in the harness's directory in silence"
+file = "hooks/run-hook.sh"
+before = '  CDPATH= cd -- "$root" 2>/dev/null || fail "SF_NO_ROOT the project root this entry was given cannot be entered"'
+after = '  CDPATH= cd -- "$root" 2>/dev/null || true'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_project_root_that_cannot_be_entered_says_so[closed-2]",
+  "tests/hooks/test_wrapper.py::test_a_project_root_that_cannot_be_entered_says_so[open-0]",
+]
+
+# Both anchors name a single checkout, and a clone's committed bytes reach every checkout of
+# it. Launched inside a linked worktree, the main checkout's committed `python3` was "outside
+# the project root" and ran the launcher -- code execution from a clone, on the machines the
+# bare-`python3` fall-through exists for. This arm measures the candidate against every
+# checkout `git worktree list` names, the git root among them; disarmed, git's answer leaves the
+# containment altogether and `CLAUDE_PROJECT_DIR` is the only anchor left -- which is why the
+# git-root case reddens here too.
+[[mutation]]
+name = "the wrapper measures a candidate against one checkout only"
+file = "hooks/run-hook.sh"
+before = '    if under_root "$dir" "$tree"; then'
+after = '    if false; then'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_an_interpreter_in_another_checkout_of_the_same_repository_is_refused",
+  "tests/hooks/test_wrapper.py::test_an_interpreter_in_the_git_root_is_refused_although_the_environment_names_another_root",
+]
+
+# `_snapshot` (`tests/test_install_path.py`) used to walk the whole of `.git`, and a CI job's
+# own background maintenance (`gc.auto`/`maintenance.auto` at their defaults, because the
+# fixtures pin only `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`) could drop `objects/maintenance.lock`
+# between two snapshots and redden a passing test for a reason that had nothing to do with the
+# code under test. Restoring the full walk over `.git` is exactly that regression.
+[[mutation]]
+name = "the install-path snapshot stops pruning .git from the ordinary walk"
+file = "tests/snapshot.py"
+before = '            dirnames[:] = [name for name in dirnames if name != ".git"]'
+after = "            pass"
+reddens = [
+  "tests/test_snapshot.py::test_the_narrowed_git_walk_ignores_gits_own_background_bookkeeping",
+]
+
+# The narrowing keeps its teeth only if the allowlist still names every path a defect could
+# land in. Losing `.git/config` from it is the failure mode a denylist doesn't have and an
+# allowlist does: a write nobody added a line for.
+[[mutation]]
+name = "the stable-.git allowlist stops watching .git/config"
+file = "tests/snapshot.py"
+before = '_STABLE_GIT_FILES = (Path("config"), Path("info") / "exclude")'
+after = '_STABLE_GIT_FILES = (Path("info") / "exclude",)'
+reddens = [
+  "tests/test_snapshot.py::test_the_narrowed_git_walk_still_catches_a_write_to_each_stable_path",
+]
+
+# And the other stable path outside the tuple: a hook dropped into `.git/hooks/` is the other defect
+# this guard exists to catch (a write that lands through a hook), on the branch that walks a
+# directory rather than probing named files.
+[[mutation]]
+name = "the stable-.git allowlist stops watching .git/hooks"
+file = "tests/snapshot.py"
+before = '''    hooks = git_dir / "hooks"
+    if hooks.is_dir():'''
+after = '''    hooks = git_dir / "hooks"
+    if False:'''
+reddens = [
+  "tests/test_snapshot.py::test_the_narrowed_git_walk_still_catches_a_write_to_each_stable_path",
+]
+
+# The anchor half of the interpreter containment. `git` is a program this file CHOOSES, resolved
+# through the same `PATH` a committed `.claude/settings.json` `env` block sets -- so on the Codex
+# hot path, where `CLAUDE_PROJECT_DIR` is unset and `git` is the only anchor, a clone that ships a
+# `git` had that binary EXECUTED on every hook invocation, before any guard of ours, and its stdout
+# became the root. Gating `STAYFIXED_PYTHON_CANDIDATES` and containing the interpreter while the
+# anchor was itself environment-chosen is "a redirect with a longer name" for the third time in one
+# file.
+[[mutation]]
+name = "the wrapper resolves git through PATH again"
+file = "hooks/run-hook.sh"
+before = 'git_root=$(env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+after = 'git_root=$(env -i PATH="${PATH:-}" HOME="${HOME:-}" git rev-parse --show-toplevel 2>/dev/null || true)'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_wrapper_never_runs_a_git_the_environment_put_on_path",
+]
+
+# A machine with no git at any absolute path has no anchor this process can trust. Degrading in
+# silence would keep the shape of the containment and none of its strength -- and `doctor`'s
+# wrapper row keys on a token, so a silent loss is a green row over a guard that is not there.
+[[mutation]]
+name = "no trustworthy git degrades in silence instead of printing a token"
+file = "hooks/run-hook.sh"
+before = '[ -n "$git_bin" ] || fail "SF_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"'
+after = ':'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_git_at_any_absolute_path_is_a_token_rather_than_a_silent_run[closed-2]",
+  "tests/hooks/test_wrapper.py::test_no_git_at_any_absolute_path_is_a_token_rather_than_a_silent_run[open-0]",
+]
+
+# The other half of the interpreter containment: it was measured against `CLAUDE_PROJECT_DIR` alone,
+# which reaches this process from the very `env` block it exists to defeat. Measured on the shipped
+# wrapper: `PATH=<clone>` with `CLAUDE_PROJECT_DIR=<outside the clone>` made the clone's own
+# `python3` "outside the project root" and it ran the launcher. Git's answer enters the containment
+# as the checkout list, so this asks the wrapper to stop asking `git` where the other checkouts are
+# and keep only the root it is standing in -- which a run from a linked worktree can tell apart, and
+# a run in the main checkout cannot.
+#
+# This entry used to name the separate `under_root "$dir" "$git_project"` arm in `in_project`,
+# and it SURVIVED: the checkout list contains the git root, so the arm was a duplicate and no
+# test could redden it. The arm is gone; the line the guard actually needs is declared here.
+[[mutation]]
+name = "the wrapper stops asking git for the repository's other checkouts"
+file = "hooks/run-hook.sh"
+before = "  list_checkouts"
+after = "  :"
+reddens = [
+  "tests/hooks/test_wrapper.py::test_an_interpreter_in_another_checkout_of_the_same_repository_is_refused",
+]
+
+# The one `cd` in the file that was neither `CDPATH=`-cleared nor `--`-terminated, while the two
+# others took both cares. With `CDPATH` set and a relative root, `cd` writes the destination it
+# chose to STDOUT -- ahead of anything the launcher prints, and a hook's stdout is a contract --
+# and lands in a `CDPATH`-chosen directory, so the `pwd -P` that anchors the containment then
+# measures the wrong tree.
+[[mutation]]
+name = "the project-root cd consults CDPATH again"
+file = "hooks/run-hook.sh"
+before = '  CDPATH= cd -- "$root" 2>/dev/null || fail "SF_NO_ROOT the project root this entry was given cannot be entered"'
+after = '  cd -- "$root" 2>/dev/null || fail "SF_NO_ROOT the project root this entry was given cannot be entered"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_cdpath_never_chooses_the_directory_the_hook_runs_in",
+]
+
+# The same line's other care. Without the `--`, a root whose name begins with `-` is parsed as
+# options and the entry refuses a directory that is on disk and perfectly enterable.
+[[mutation]]
+name = "the project-root cd parses a root beginning with a dash as options"
+file = "hooks/run-hook.sh"
+before = '  CDPATH= cd -- "$root" 2>/dev/null || fail "SF_NO_ROOT the project root this entry was given cannot be entered"'
+after = '  CDPATH= cd "$root" 2>/dev/null || fail "SF_NO_ROOT the project root this entry was given cannot be entered"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_project_root_whose_name_begins_with_a_dash_is_a_destination_and_not_an_option",
+]
+
+# Not a containment, but the message a containment leaves behind, and the only one a vendored
+# in-tree toolchain ever sees. It was byte-identical for "a candidate was found inside the tree
+# and skipped" and "there was no candidate at all" while the comment beside it claimed it "says
+# what happened rather than only that nothing was found". Break the record of WHY nothing was
+# found and both states print the second sentence again -- which is false in the first case, and
+# names no remedy in the one case where a remedy exists.
+[[mutation]]
+name = "the two no-interpreter states print one message again"
+file = "hooks/run-hook.sh"
+before = '    skipped_in_project=1'
+after = '    :'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_two_states_with_no_interpreter_are_told_apart",
+  "tests/hooks/test_wrapper.py::test_an_interpreter_in_the_git_root_is_refused_although_the_environment_names_another_root",
+]
+
+# `matcher` is a case-sensitive regular expression, and `"bash"` matches no tool either harness
+# reports -- so this one letter retires `bg-cleanup`, the plugin's only `Policy.CLOSED` handler,
+# permanently and with no diagnostic anywhere, because a hook that is never invoked emits nothing.
+# The walk this file's tests are built on used to discard `matcher`, so no assertion could be
+# asked about it and all ten passed.
+[[mutation]]
+name = "the bash guard's matcher stops matching the tool it guards"
+file = "hooks/hooks.json"
+before = '''    "PreToolUse": [
+      {
+        "matcher": "Bash",'''
+after = '''    "PreToolUse": [
+      {
+        "matcher": "bash",'''
+reddens = [
+  "tests/hooks/test_hooks_json.py::test_every_tool_matched_entry_matches_the_name_both_handlers_filter_on",
+]
+
+# `type` is what tells the harness the entry is a command to run at all, and nothing read it:
+# `"commandd"` shipped green. An entry the harness cannot classify is a guard that silently never
+# fires, which is the same failure as a mistyped event one field over.
+[[mutation]]
+name = "a hook entry declares a type the harness cannot classify"
+file = "hooks/hooks.json"
+before = '''            "type": "command",
+            "timeout": 10,
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" closed hook PreToolUse"'''
+after = '''            "type": "commandd",
+            "timeout": 10,
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" closed hook PreToolUse"'''
+reddens = [
+  "tests/hooks/test_hooks_json.py::test_every_entry_is_a_command_entry",
+]
+
+# The harness dispatches on the JSON key. Both event tests in that file read the event out of the
+# *argv* instead, so a mis-keyed group passed them: the command still said `hook PostToolUse` and
+# still named a registered handler, while the event it was filed under never fired again. This
+# mutation is a valid event rather than a misspelling, so what reddens is the key disagreeing with
+# the argv -- the arm a `PostToolUSe` would never have reached.
+[[mutation]]
+name = "a hook group is filed under an event the harness never emits"
+file = "hooks/hooks.json"
+before = '''    "PostToolUse": ['''
+after = '''    "UserPromptSubmit": ['''
+reddens = [
+  "tests/hooks/test_hooks_json.py::test_every_entry_is_filed_under_the_event_its_command_dispatches",
+]
+
+# The other failure mode of the guard `mutations/`'s "an area reaches past another area's api.py
+# again" proves, the one a walk-based guard has and a hand-written assertion does not: a walk that
+# stops walking reports no offences for the same reason a clean tree does. Narrowed to the ten
+# `commands.py` files, the walk still finds files, still finds crossings, and still finds no offence
+# — so the floor is what has to catch it, and the floor is asserted before anything is asserted
+# about the crossings.
+[[mutation]]
+name = "the cross-area import guard walks ten files instead of the package"
+file = "tests/test_areas.py"
+before = '    files = sorted(source.rglob("*.py"))'
+after = '    files = sorted(source.rglob("commands.py"))'
+reddens = [
+  "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
+]
+
+# The cross-area import guard (`mutations/`'s "the cross-area import guard walks ten files instead
+# of the package") walks `src/stayfixed/`, and `src/stayfixed/` contains no relative import — so the
+# spelling `from ..hooks.sink import DIRECTORY` could not be exercised by the walk, and the first
+# version of the rule dropped it on the floor (`and not node.level`) with every test green. Nothing
+# bans a relative import here: ruff's `TID` rules are not selected. The rule is therefore tested
+# against a synthetic module, and this mutation stops it resolving one: the relative module name
+# then reads as `hooks.sink`, which is not `stayfixed.*`, and the violation walks past exactly as it
+# used to. What reddens is the offence list, not a missing name.
+[[mutation]]
+name = "the boundary rule ignores a relative import again"
+file = "tests/test_areas.py"
+before = '            if node.level:'
+after = '            if False:'
+reddens = [
+  "tests/test_areas.py::test_the_boundary_rule_resolves_a_relative_import_before_judging_it",
+]
+
+# The oracle proves HEAD in a detached worktree. Three entries are on the run itself — this one,
+# `mutations/`'s "the scratch checkout's src no longer precedes the editable install" and "the
+# dirty-tree sweep forgets the tests every entry names" — so a regression to in-place mutation, or a
+# scratch `src` that does not precede the editable install on sys.path, or a dirty-tree sweep that
+# forgets the named tests, is a finding rather than a quiet wrong answer.
+[[mutation]]
+name = "the oracle collects pytest from the working tree again"
+file = "scripts/mutation_oracle.py"
+before = "            cwd=cwd,"
+after = "            cwd=ROOT,"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_the_working_tree_is_never_written_and_pytest_runs_in_the_scratch_checkout",
+]
+
+# The oracle's own pytest run captured stdout with a strict decode that nothing needed: a
+# failing test whose diff carried a latin-1 byte killed the run on a mutation it had caught.
+[[mutation]]
+name = "the oracle decodes pytest's output strictly again"
+file = "scripts/mutation_oracle.py"
+before = """                # reads — a strict decode then killed the run on a mutation it had caught.
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,"""
+after = """                # reads — a strict decode then killed the run on a mutation it had caught.
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,"""
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_red_test_that_prints_an_undecodable_byte_is_still_reported_caught",
+]
+
+# The same strict decode in the other pytest the oracle launches: the collection that warms the
+# bytecode cache forgives only a timeout, so a byte no codec reads there ended the run.
+[[mutation]]
+name = "the oracle decodes its warming collection's output strictly again"
+file = "scripts/mutation_oracle.py"
+before = """            # cache, and a byte no codec reads in the collection's output killed the oracle.
+            capture_output=True,"""
+after = """            # cache, and a byte no codec reads in the collection's output killed the oracle.
+            capture_output=True,
+            text=True,"""
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_collection_that_prints_an_undecodable_byte_still_warms_the_cache",
+]
+
+# Two more on the run itself, beside `mutations/`'s "the oracle collects pytest from the working
+# tree again": the scratch checkout's `src` precedes the editable install, and an uncommitted test a
+# `reddens` names stops the run.
+[[mutation]]
+name = "the scratch checkout's src no longer precedes the editable install"
+file = "scripts/mutation_oracle.py"
+before = '    pythonpath = str(cwd / "src") + (os.pathsep + inherited if inherited else "")'
+after = "    pythonpath = inherited"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_the_scratch_copy_wins_over_a_main_checkout_already_on_the_path",
+]
+
+[[mutation]]
+name = "the dirty-tree sweep forgets the tests every entry names"
+file = "scripts/mutation_oracle.py"
+before = "    watched = {m.file for m in mutations} | {path for path in named_tests if path.is_file()}"
+after = "    watched = {m.file for m in mutations}"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_an_uncommitted_reddens_test_file_is_refused_like_an_uncommitted_source_file",
+]
+
+# The `## Shared flags` tables are the constants, held row by row. The mutation is in the document
+# rather than in the source, because the document is what drifted.
+[[mutation]]
+name = "a shared flag's sentence is spelled a second time in docs/cli.md"
+file = "docs/cli.md"
+before = "| `--machine` | machine configuration file to read |"
+after = "| `--machine` | machine file |"
+reddens = [
+  "tests/test_documents.py::test_the_shared_flag_tables_are_the_constants_and_not_a_second_spelling",
+]
+
+# The built artifact's modes. `tar` preserves the mode and a downstream packager unpacks it: a
+# wrapper at 0644 exits 126 for every hook entry, which Claude Code reports as a permission error
+# rather than as a broken install. Nothing in `tests/` can see this — only the built artifact can.
+[[mutation]]
+name = "the sdist check stops reading the wrapper's mode"
+file = "scripts/check_artifacts.py"
+before = "        if member is not None and member.mode & 0o111 == 0:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_wrapper_that_lost_its_executable_bit_in_the_sdist_is_named",
+]
+
+# `overlay create --local` leaves a git repository, and the rendered check asks for it rather than
+# stepping over it: a tree that is exact but has no `.git/` is a `--local` that stopped initialising.
+[[mutation]]
+name = "the rendered check stops asking for the repository"
+file = "scripts/check_artifacts.py"
+before = '        ([] if inside else ["rendered: missing .git"])'
+after = "        []"
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_rendered_overlay_is_a_repository_and_a_tree_without_one_fails",
+]
+
+# And the walk sets aside the repository directory only, not everything that shares its prefix.
+[[mutation]]
+name = "the rendered walk skips every path that starts with .git"
+file = "scripts/check_artifacts.py"
+before = "        if p.is_file() and not (inside and p.is_relative_to(repository))"
+after = '        if p.is_file() and not p.relative_to(root).parts[0].startswith(".git")'
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_the_repository_directory_does_not_hide_an_unexpected_file_beside_it",
+]
+
+# `rendered` with the directory omitted used to be reinterpreted as a dist path: the length check
+# was part of the arm's condition, so a bare `rendered` fell through and was globbed as a directory
+# name.
+[[mutation]]
+name = "a rendered with no directory is globbed as a dist path again"
+file = "scripts/check_artifacts.py"
+before = '    if argv[:1] == ["rendered"]:'
+after = '    if argv[:1] == ["rendered"] and len(argv) == 2:'
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_rendered_without_a_directory_is_the_usage_message_and_not_a_dist_walk",
+]
+
+# A `${{ }}` inside a workflow's `run:` is interpolated by the platform before the shell sees
+# the script, so a branch name or a pull-request title carrying shell metacharacters runs as the
+# workflow's own code. Every value in these files reaches a shell through `env:` instead, and
+# that is a rule nothing but this scan can hold: the repository carries no YAML parser, so a
+# workflow is otherwise proven only by the run that first executes it.
+[[mutation]]
+name = "a workflow splices an expression into a shell"
+file = ".github/workflows/check.yml"
+before = '          actual="$(git -C stayfixed rev-parse HEAD)"'
+after = '          actual="$(git -C stayfixed rev-parse ${{ github.ref }})"'
+reddens = [
+  "tests/test_fixtures.py::test_no_workflow_splices_an_expression_into_a_shell",
+]
+
+# The checkout step peels the ref the platform names to its commit before comparing it with the
+# commit the gates are handed.
+[[mutation]]
+name = "the checkout step compares the platform's workflow sha without peeling it"
+file = ".github/workflows/check.yml"
+before = """expected="$(git -C stayfixed rev-parse --verify --quiet "$EXPECTED^{commit}")""""
+after = """expected="$EXPECTED" && [ -n "$expected" ]"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_checkout_step_peels_an_annotated_tag_to_the_commit_the_gates_are_handed",
+]
+
+# The hook smoke is the only thing that feeds the INSTALLED plugin a real event, and every one
+# of its rows is an exit-code comparison. Drop the comparison and the closed `PreToolUse` entry
+# reports `ok` while exiting 0 — a plugin whose refusal has stopped refusing, reported green.
+[[mutation]]
+name = "the hook smoke stops comparing exit codes"
+file = "scripts/smoke_hooks.py"
+before = "    if done.returncode != sample.expected_code:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_a_wrapper_that_answers_wrongly_is_reported",
+]
+
+# And the same question asked of the other script. Every row but the first in the exfiltration
+# scenario asserts an ABSENCE, and a scenario whose pipeline is broken prints the same
+# absences — so the first row is a positive control, and a control nothing holds to its own
+# result is decoration. This mutation blinds THAT ROW and nothing else: the control stops being
+# able to notice that the note never arrived, so the scenario reports success over a store that
+# emitted nothing while the four absence rows stay green, which is exactly the shape the control
+# exists to catch. (An earlier form pinned `Report.failures` to zero, which made every row
+# unfailable and so claimed more than the control's own argument needed.)
+[[mutation]]
+name = "the exfiltration scenario's positive control cannot fail"
+file = "scripts/smoke_exfiltration.py"
+before = "        and CANARY in emitted.stdout"
+after = "        and True"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_reports_a_row_that_went_the_wrong_way",
+]
+
+# `inputs.path` is appended to `$GITHUB_OUTPUT`, which the runner parses line by line, so a
+# `path:` carrying a newline writes further `key=value` lines — and the key the gate steps read
+# is `base_sha`, the commit whose configuration governs the gates. Disable the character check
+# and a caller's `path:` forges that commit, and with it what a pull request is judged against.
+[[mutation]]
+name = "the reusable workflow lets `path:` write its own outputs"
+file = ".github/workflows/check.yml"
+before = "            *[!A-Za-z0-9._/-]*)"
+after = "            unmatchable-pattern-that-is-never-a-path)"
+reddens = [
+  "tests/test_fixtures.py::test_a_path_input_cannot_write_the_steps_own_outputs",
+]
+
+# The whole-tree gate's other silence, one step along from reading nothing: `_text` answering the
+# empty string for every file keeps the file count full and the undecodable count at zero, every
+# parametrised case scans `""` and passes, and the run looks identical to a clean tree. The
+# character floor is what tells those two apart.
+[[mutation]]
+name = "the whole-tree gate reads every file as empty"
+file = "tests/test_neutral.py"
+before = '        return path.read_text(encoding="utf-8")'
+after = '        return ""'
+reddens = [
+  "tests/test_neutral.py::test_the_gate_reads_the_whole_tree",
+]
+
+# The whole-tree neutrality gate's only diagnostic. The denylist is digests by construction, so
+# without the offset a contributor who trips one of the two four-character entries has nothing
+# to work from. Reporting the LAST window instead of the first satisfies "an offset is printed"
+# and points at the wrong line in any file that carries the token twice, which is the ordinary
+# case for a name — so the assertion is on the value.
+[[mutation]]
+name = "the neutrality gate reports the last matching window instead of the first"
+file = "tests/test_neutral.py"
+before = "            if digest in wanted and digest not in first:"
+after = "            if digest in wanted:"
+reddens = ["tests/test_neutral.py::test_a_token_hit_names_the_offset_of_its_first_window"]
+
+# The hook smoke's guard held one direction: it caught `hooks.json` gaining an event with no
+# sample, and not `hooks.json` losing one — which shrinks the walk, runs fewer rows and prints a
+# green summary. With this mutation every remaining row still passes and `main` returns 0, so
+# the exit code and the sentence are both the claim.
+[[mutation]]
+name = "the hook smoke stops noticing an event that lost its entry"
+file = "scripts/smoke_hooks.py"
+before = "    unentered = SAMPLES.keys() - events"
+after = "    unentered = SAMPLES.keys() - SAMPLES.keys()"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_hooks_json_losing_an_event_fails_instead_of_running_fewer_rows",
+]
+
+# The storefront — PyPI's page, the Claude Code plugin card, the marketplace row and the Codex
+# listing — is what a stranger reads before the README, and all four of its strings advertised
+# "an adoption state machine" while `stayfixed assess` did not exist and the README listed it
+# under **Not yet**. `stayfixed release check` reads versions, never descriptions, so nothing
+# looked. This put that claim back into the widest-reach of the four until the state machine
+# shipped and left the README's list; it now puts in the memory MCP server, which has not.
+[[mutation]]
+name = "the PyPI description advertises the unshipped memory MCP server"
+file = "pyproject.toml"
+before = 'description = "A methodology harness for coding agents: a bug ledger that lives in the repository, curated working memory behind a trust gate, and fail-closed guards, packaged as one plugin for Claude Code and Codex."'
+after = 'description = "A methodology harness for coding agents: a bug ledger, curated working memory, guards, and a memory MCP server, packaged as one plugin for Claude Code and Codex."'
+reddens = [
+  "tests/test_manifests.py::test_no_storefront_string_advertises_what_the_readme_says_is_not_yet",
+]
+
+# The test that `mutations/`'s "the PyPI description advertises the unshipped memory MCP server"
+# reddens reads its expectation out of the README's own roadmap sentence, which is what keeps the
+# rule in one place — and is also what makes it vacuous the moment that sentence stops yielding
+# items. Shorten the list to one and the storefront may advertise anything the other names cover.
+#
+# Re-pointed when `init` and the project templates shipped and left that sentence holding exactly
+# the four items the test's floor requires. The entry quotes two lines of prose verbatim, so it is
+# the kind that drifts whenever the sentence is reworded: the check that caught it is reading every
+# entry's `before` back out of its file and counting. Re-pointed again when the profile adapters
+# rewrote the sentence to eight items that each leave it in the change that ships them, and again as
+# `upgrade` and then `uninstall` shipped and left it, and again as `assess` shipped, and again as
+# the state machine shipped; the mutation cuts it back to one.
+[[mutation]]
+name = "the README's not-yet sentence stops naming what has not shipped"
+file = "README.md"
+before = "> discipline. **Not yet:** the memory MCP server, a hold-the-line baseline, the `uvx` form\n> of the gate, and adapters for Cursor or Hermes \u2014 each leaves this"
+after = "> discipline. **Not yet:** the memory MCP server \u2014 each leaves this"
+reddens = [
+  "tests/test_manifests.py::test_the_readme_still_declares_what_has_not_shipped",
+]
+
+# `environment: pypi` is a human gate only if the environment has protection rules, and GitHub
+# auto-creates an environment a job names and the repository lacks with none on it.
+# `environment-gate` is the check; these three are what make it one.
+[[mutation]]
+name = "the release gate stops failing an environment with zero protection rules"
+file = ".github/workflows/release.yml"
+before = '          if [ "$rules" -eq 0 ]; then'
+after = '          if false; then'
+reddens = [
+  "tests/test_fixtures.py::test_the_gate_admits_a_release_only_where_the_environment_is_one[no-rules]",
+  "tests/test_fixtures.py::test_the_gate_admits_a_release_only_where_the_environment_is_one[no-rules-declared]",
+]
+
+# The fallback exists because the environments endpoint is not open to every default token, and
+# it may answer one question only: whether the READ failed. Consulted without that condition it
+# would let a repository variable an administrator once set stand in for the gate itself.
+[[mutation]]
+name = "the release gate's repository-variable fallback answers for the read it did get"
+file = ".github/workflows/release.yml"
+before = '              if [ "$DECLARED" = "true" ]; then'
+after = '              if true; then'
+reddens = [
+  "tests/test_fixtures.py::test_the_gate_admits_a_release_only_where_the_environment_is_one[unreadable]",
+  "tests/test_fixtures.py::test_the_gate_admits_a_release_only_where_the_environment_is_one[denied]",
+]
+
+# A gate that asks about an environment no job names is a gate about nothing, and the two
+# spellings are seven lines apart in one file. The equality is what ties them together.
+[[mutation]]
+name = "the release gate checks an environment no job names"
+file = ".github/workflows/release.yml"
+before = "          ENVIRONMENT: pypi"
+after = "          ENVIRONMENT: production"
+reddens = [
+  "tests/test_fixtures.py::test_every_job_behind_the_pypi_environment_waits_for_the_environment_gate",
+]
+
+# The group that most qualifies a green smoke run. Each entry is a different way a row can report
+# on something it never looked at.
+#
+# The first is the headline: the row that proves the `PreToolUse` guard denies could not tell a
+# genuine deny from any launcher fault at all. `hooks/run-hook.sh` maps a launcher `rc=1` under
+# the `closed` policy to exit 2 with a `SF_` token on stderr, which is byte-for-byte what
+# `expected_code=2` and `stderr_required=True` ask for — measured against a three-line
+# `scripts/stayfixed`: thirteen of the fourteen rows green, that one among them.
+[[mutation]]
+name = "the hook smoke stops reading the refusal it was handed"
+file = "scripts/smoke_hooks.py"
+before = "    for phrase in sample.stderr_says:"
+after = "    for phrase in ():"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_a_launcher_fault_is_not_mistaken_for_a_refusal",
+]
+
+# Ten of the thirteen entries are `memory session-context` — the ones that carry repository
+# bytes toward the model — and they ran against a fixture with no memory store at all. Measured
+# on that fixture: ten rows, 0 bytes of stdout, every one green; they would have been
+# identically green if `session-context` were `/bin/false`.
+[[mutation]]
+name = "the hook smoke stops reading what an injection entry injected"
+file = "scripts/smoke_hooks.py"
+before = "    wanted = INJECTED.get(tail_of(command))"
+after = "    wanted = None"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_a_launcher_fault_is_not_mistaken_for_a_refusal",
+]
+
+# The registry's converse, which is the direction that fails silently: `SAMPLES` is keyed by
+# EVENT, so dropping one of the eleven `SessionStart` entries leaves every event sampled, runs
+# one row fewer and prints a green summary.
+[[mutation]]
+name = "the hook smoke stops noticing a bundle that lost its entry"
+file = "scripts/smoke_hooks.py"
+before = "    ungathered = INJECTED.keys() - injecting"
+after = "    ungathered = INJECTED.keys() - INJECTED.keys()"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_hooks_json_losing_a_bundle_fails_instead_of_injecting_one_fewer",
+]
+
+# And the count itself, which neither event set nor bundle registry can see: a duplicated entry
+# changes no event and no bundle and runs a fifteenth row.
+[[mutation]]
+name = "the hook smoke stops counting its own entries and rows"
+file = "scripts/smoke_hooks.py"
+before = "    if (len(found), rows) != (EXPECTED_ENTRIES, EXPECTED_ROWS):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_hooks_json_gaining_an_entry_is_reported_rather_than_quietly_run",
+]
+
+# The owner's own act, without which the injection rows are back to proving nothing: the store
+# is repository data and emits only once somebody has said so. `inventory` is a command that
+# does not take the store flags, so the run reports the failure instead of proceeding — which
+# is the behaviour under test, because a smoke run that could not trust the fixture must say so
+# rather than print ten green rows over empty output.
+[[mutation]]
+name = "the hook smoke stops recording the owner's trust"
+file = "scripts/smoke_hooks.py"
+before = """
+            "memory",
+            "trust",
+            "--in-repo-memory",
+"""
+after = """
+            "memory",
+            "inventory",
+            "--in-repo-memory",
+"""
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_every_hook_entry_answers_its_sample_event_through_the_checkout",
+]
+
+# The other script's floor. Six of its eight rows assert an ABSENCE, and a report holding one
+# row satisfies `failures == 0` identically — measured, with `report.rows[:1]` before the
+# summary and the whole test module still green. Banking only the failures is the same shape
+# said the other way round.
+[[mutation]]
+name = "the exfiltration scenario stops recording the rows that passed"
+file = "scripts/smoke_exfiltration.py"
+before = "        self.rows.append((ok, label, evidence))"
+after = "        self.rows.append((ok, label, evidence)) if not ok else None"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_holds_against_the_checkout",
+]
+
+# Row 4 of the scenario — "with no record at all the note is never injected" — was row 2's
+# result read a second time: row 2 changed `canary.md` and never restored it, so the record had
+# already lapsed and the unlink could not change anything. Measured: pointing `trust_record()`
+# at a path that does not exist made the unlink a no-op, left `trust.json` 240 bytes on disk,
+# and the row still reported ok. It now restores the note, re-records, and asserts the record's
+# presence before and absence after.
+[[mutation]]
+name = "the exfiltration scenario deletes a trust record that was never there"
+file = "scripts/smoke_exfiltration.py"
+before = '    return planted.home / ".config" / "stayfixed" / "trust.json"'
+after = '    return planted.home / ".config" / "stayfixed" / "absent.json"'
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_holds_against_the_checkout",
+]
+
+# The whole-tree neutrality gate's floors — 200 files and 2,000,000 characters against a
+# measured 347 and 4,806,797 — let four top-level trees disappear from the walk. Measured on
+# this tree: dropping every path under `.github/`, `skills/`, `agents/` and `changelog.d/`
+# (58 files) took `tests/test_neutral.py` from 358 passed to 300 passed, 0 failed. The 58
+# parametrised cases stopped existing and no assertion said so. The fix is not a higher floor.
+[[mutation]]
+name = "the whole-tree gate loses four top-level trees and stays green"
+file = "tests/test_neutral.py"
+before = "        return sorted(ROOT / n for n in names if (ROOT / n).is_file())"
+after = """
+        dropped = {".github", "skills", "agents", "changelog.d"}
+        return sorted(
+            ROOT / n
+            for n in names
+            if (ROOT / n).is_file() and n.split("/")[0] not in dropped
+        )"""
+reddens = ["tests/test_neutral.py::test_the_gate_reads_the_whole_tree"]
+
+# The snapshot helper's two unheld claims. Its own guard file built an empty working tree in
+# both tests, so `assert before` was satisfied by `.git/config` alone and the ordinary walk was
+# untested where it is defined — measured, the walk deleted outright: 2 passed. And no consumer
+# anywhere plants a same-length content change, so the helper's content capture was held by
+# nothing: `read_bytes()` replaced by the file's SIZE left `tests/test_snapshot.py`,
+# `tests/test_install_path.py` and all of `tests/attach/` at 113 passed. A `detach` that
+# rewrote a settings file in place was invisible to every one of them.
+[[mutation]]
+name = "the snapshot walks the ordinary tree and finds nothing in it"
+file = "tests/snapshot.py"
+before = "    for dirpath, dirnames, filenames in os.walk(root):"
+after = "    for dirpath, dirnames, filenames in ():"
+reddens = [
+  "tests/test_snapshot.py::test_the_ordinary_walk_holds_a_files_bytes_and_not_only_its_name",
+]
+
+[[mutation]]
+name = "the snapshot records each file's size instead of its bytes"
+file = "tests/snapshot.py"
+before = "                files[str(path.relative_to(root))] = path.read_bytes()"
+after = "                files[str(path.relative_to(root))] = str(path.stat().st_size).encode()"
+reddens = [
+  "tests/test_snapshot.py::test_the_ordinary_walk_holds_a_files_bytes_and_not_only_its_name",
+]
+
+# Three of the built-artifact gate's four claims were unheld, each removable with the module's five
+# tests still passing. The executable case compared `check_sdist`'s output against a list recomputed
+# from the same tuple the fixture builds the archive from; `_sdist`'s `without=` parameter was
+# passed by nothing; and `main`'s `dist` arm — the one CI runs — was reached by no test at all, so
+# both CI steps would have reported success while printing findings.
+[[mutation]]
+name = "the sdist executable claim covers no file"
+file = "scripts/check_artifacts.py"
+before = 'SDIST_EXECUTABLE = ("hooks/run-hook.sh", "scripts/stayfixed")'
+after = "SDIST_EXECUTABLE = ()"
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_wrapper_that_lost_its_executable_bit_in_the_sdist_is_named",
+]
+
+[[mutation]]
+name = "the sdist stops reporting a member it does not carry"
+file = "scripts/check_artifacts.py"
+before = '    findings = [f"sdist: missing {name}" for name in SDIST_MUST if name not in members]'
+after = "    findings: list[str] = []"
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_member_missing_from_the_sdist_is_named",
+]
+
+[[mutation]]
+name = "the artifact checker reports success whatever it found"
+file = "scripts/check_artifacts.py"
+before = "    return 1 if findings else 0"
+after = "    return 0"
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_the_dist_arm_reports_a_finding_and_is_clean_when_there_is_none",
+]
+
+# The neutrality gate's only diagnostic was a BYTE offset and `CONTRIBUTING.md` told the
+# contributor to slice CHARACTERS at it. Every fixture in the offset case was pure ASCII, so
+# the one property it names was asserted only on the input class where it cannot fail. On an
+# ordinary line in this repository's house style — two em dashes, three bytes each — the gate
+# said `at 53` for a token at character 49, and following the instruction gave 'nstone her'.
+[[mutation]]
+name = "the neutrality gate reports a byte offset into a file of characters"
+file = "tests/test_neutral.py"
+before = "            f\"token {digest} at {len(raw[: first[digest]].decode('utf-8', 'ignore'))}\""
+after = '            f"token {digest} at {first[digest]}"'
+reddens = [
+  "tests/test_neutral.py::test_a_token_hit_names_the_offset_of_its_first_window",
+]
+
+# Three more assertions that were never made in the direction that can fail, each one line.
+#
+# Every use of the skills tool-name lint is a NEGATIVE assertion, so a pattern matching the empty
+# set satisfies all of them. Measured: `tests/skills/` 83 passed with the pattern replaced by one
+# that matches nothing, and the rule that a skill names the capability rather than the product
+# checked against no skill at all.
+[[mutation]]
+name = "the skill tool-name lint stops matching a tool name"
+file = "tests/skills/test_skills.py"
+before = '_TOOL = re.compile(r"\b(?:" + "|".join(TOOL_NAMES) + r")\b")'
+after = '_TOOL = re.compile("ZZZNEVER")'
+reddens = ["tests/skills/test_skills.py::test_the_tool_name_lint_matches_a_tool_name"]
+
+# The area-boundary guard's exemption list is emphatic about exemptions nobody can see and
+# nothing held its size. Measured: the historical violation this repository actually merged —
+# `memory/commands.py` importing `stayfixed.hooks.dispatch` — added to the set, 6 passed. The
+# crossing is still counted, so the `>= 60` floor does not move; only the offence is silenced.
+[[mutation]]
+name = "a second live crossing joins the area-boundary exemption"
+file = "tests/test_areas.py"
+before = 'SURFACE_EXEMPT = frozenset({("cli.py", "stayfixed.hooks.policy")})'
+after = 'SURFACE_EXEMPT = frozenset({("cli.py", "stayfixed.hooks.policy"), ("memory/commands.py", "stayfixed.hooks.dispatch")})'
+reddens = ["tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module"]
+
+# The README's `--json` paragraph named four commands where five emit the key, so a reader scripting
+# against it would have read a `memory refs` findings list as "this command does not report
+# findings". The mutation is in the document, because the document is what drifted.
+[[mutation]]
+name = "the README's --json paragraph drops a command that really emits `findings`"
+file = "README.md"
+before = "`memory refs`, "
+after = ""
+reddens = [
+  "tests/test_documents.py::test_the_readme_names_every_command_whose_json_carries_findings",
+]
+
+# The configuration block showed six of the nine sections the loader accepts, while the loader
+# *refuses* an unknown one — so the block read as a closed grammar three sections narrower than the
+# real thing.
+[[mutation]]
+name = "docs/cli.md's configuration block loses a section the loader accepts"
+file = "docs/cli.md"
+before = """
+[ci]
+mode = "reusable\""""
+after = """
+mode = "reusable\""""
+reddens = [
+  "tests/test_documents.py::test_the_configuration_block_shows_every_section_the_loader_accepts",
+]
+
+# The sentence announced four rules and then enumerated five, in one breath.
+[[mutation]]
+name = "docs/cli.md counts `plan check`'s rules wrong again"
+file = "docs/cli.md"
+before = "Five rules, each from a"
+after = "Four rules, each from a"
+reddens = [
+  "tests/test_documents.py::test_the_plan_rule_count_is_the_number_of_rules_plan_check_emits",
+]
+
+# The one block a contributor copies before pushing left out the mutation oracle and the coverage
+# floor, both of which fail the pull request CI runs.
+[[mutation]]
+name = "CONTRIBUTING's short version drops the mutation oracle again"
+file = "CONTRIBUTING.md"
+before = "uv run python scripts/mutation_oracle.py          # every declared mutation still reddens\n"
+after = ""
+reddens = [
+  "tests/test_fixtures.py::test_the_block_a_contributor_copies_is_the_one_ci_runs",
+]
+
+# The suite runs across workers: 95 s against 335 s one test at a time, same tests, same
+# coverage. CI going back to one process is the side that goes quiet — every check stays green,
+# only slower — so it is the side that is measured.
+[[mutation]]
+name = "CI runs the suite one test at a time again"
+file = ".github/workflows/ci.yml"
+before = "        run: uv run pytest -n auto --cov --cov-report=term-missing --cov-fail-under=92"
+after = "        run: uv run pytest --cov --cov-report=term-missing --cov-fail-under=92"
+reddens = [
+  "tests/test_fixtures.py::test_the_block_a_contributor_copies_is_the_one_ci_runs",
+]
+
+# Across workers, coverage leaves one data file per worker in the root until it combines them,
+# and the neutrality gate walks untracked files too. Unignored, they reached its whole-tree count
+# as undecodable files on whichever run a worker finished first.
+[[mutation]]
+name = "coverage's per-worker data files reach the neutrality gate again"
+file = ".gitignore"
+before = ".coverage.*\n"
+after = ""
+reddens = [
+  "tests/test_neutral.py::test_a_coverage_worker_file_is_not_a_file_the_gate_walks",
+]
+
+# The same files in an unpacked sdist, where no `.gitignore` applies and the fallback walk reads
+# the root directly: each is its own first component, so only a name test keeps it out.
+[[mutation]]
+name = "the fallback walk counts coverage's data files again"
+file = "tests/test_neutral.py"
+before = '        and not (len(parts) == 1 and (p.name == ".coverage" or p.name.startswith(".coverage.")))'
+after = "        and True"
+reddens = [
+  "tests/test_neutral.py::test_the_fallback_walk_skips_coverage_data_in_the_root",
+]
+
+# CI writes the old interpreter's path from a step output, so a failed lookup arrives as an
+# empty value rather than as no value. Read as "not named", it sent the launcher's version guard
+# to a PATH search that finds nothing on Linux, and the guard skipped green.
+[[mutation]]
+name = "an empty old-interpreter path is searched past instead of failing"
+file = "tests/test_launcher.py"
+before = "    if named is not None:"
+after = "    if named:"
+reddens = [
+  "tests/test_launcher.py::test_a_named_but_empty_old_interpreter_is_a_failure_not_a_search",
+]
+
+# `scripts/check_artifacts.py` imported `stayfixed.overlay.layout` for the very constant
+# `overlay/api.py` said had been trimmed *because* nothing outside the area imported it. The
+# boundary walk stopped at `src/`, so the false docstring and the violation merged green together.
+# This is that import put back, against the widened walk.
+[[mutation]]
+name = "a script reaches past an area's api.py again"
+file = "scripts/check_artifacts.py"
+before = "from stayfixed.overlay.api import OVERLAY_FILES"
+after = "from stayfixed.overlay.layout import OVERLAY_FILES"
+reddens = [
+  "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
+]
+
+# And the walk's own floor: a guard that silently stops walking reports no offences for exactly
+# the same reason a guard with nothing to report does. This is the `scripts/` half of the walk
+# narrowed to nothing, which is the state that hid the violation above.
+[[mutation]]
+name = "the boundary walk stops looking at scripts/"
+file = "tests/test_areas.py"
+before = 'scripts = sorted((ROOT / "scripts").glob("*.py"))'
+after = "scripts = []"
+reddens = [
+  "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
+]
+
+# The `doctor` check table in `docs/cli.md` is a seventeenth spelling of the check names that
+# `tests/doctor/test_checks.py` cannot see, in the branch that built this binding for two other
+# tables.
+[[mutation]]
+name = "docs/cli.md's doctor table is a second spelling of CHECKS"
+file = "docs/cli.md"
+before = "| `store-debris` | files in the note store"
+after = "| `store-junk` | files in the note store"
+reddens = [
+  "tests/test_documents.py::test_the_doctor_table_is_the_registry_and_not_a_second_spelling",
+]
+
+# A false sentence — that the test tree could not be imported across, and that CONTRIBUTING forbade
+# it — was the stated cause of 26 copies of one helper, six already drifted. In a tree whose
+# discipline is that a comment is evidence, a false comment that authorises a practice is the
+# finding.
+[[mutation]]
+name = "a test module claims again that the test tree cannot share a helper"
+file = "tests/setup/test_setup.py"
+before = "because the test tree was not importable"
+after = "because `tests/` is not a package and"
+reddens = [
+  "tests/test_documents.py::test_no_module_claims_the_test_tree_cannot_share_a_helper",
+]
+
+# The step whose exit status is the verdict. `stayfixed gate` already exits 0 for an advisory
+# gate's findings, so `continue-on-error` there could only turn a refusal or an enforced gate's
+# failure green — and the job with it, for every caller.
+[[mutation]]
+name = "a judging step that may fail turns an enforced gate green"
+file = ".github/workflows/check.yml"
+before = """
+      - name: The configuration and the built-in gates
+"""
+after = """
+      - name: The configuration and the built-in gates
+        continue-on-error: true
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
+]
+
+# On a `pull_request` the caller workflow comes from the merge commit, so `with: base:` is the
+# author's. A `base:` naming a branch the author pushed would choose the configuration the change
+# is judged against, without the tree's own `stayfixed.toml` being touched.
+[[mutation]]
+name = "a pull request's base: input is preferred over the platform's own answer again"
+file = ".github/workflows/check.yml"
+before = '          if [ -n "$PR_BASE" ] && [ -n "$INPUT_BASE" ] && [ "$INPUT_BASE" != "$PR_BASE" ]; then'
+after = '          if false; then'
+reddens = [
+  "tests/test_fixtures.py::test_a_base_input_that_disagrees_with_the_pull_requests_own_base_is_refused",
+]
+
+# The clean run is gated on `Outcome.passed` with a long paragraph about why an exit code alone
+# cannot tell a green assertion from an absent one; the mutated run was then judged by
+# `mutated.code` alone, with `mutated.executed` computed and discarded. A mutation that breaks the
+# import exits 2 from a collection error, which is not zero, which read as `caught`.
+[[mutation]]
+name = "the mutated run is judged on its exit code alone again"
+file = "scripts/mutation_oracle.py"
+before = "    if mutated.executed == 0:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_mutation_that_breaks_collection_is_a_finding_and_not_a_catch",
+]
+
+# An interrupted run left a `git worktree` registration that `git worktree prune` will not take,
+# because prune only drops entries whose directory is gone and the `mkdtemp` tree is still standing.
+# One was live in the development repository at review time, 6.5 MB.
+#
+# The mutation is the `rmtree` and not the `worktree remove` beside it, and the unfiltered run
+# is what said so: with the directory gone, the `prune` at the end of the sweep collects the
+# registration by itself, so removing `worktree remove` changed no outcome this test can see
+# and the entry survived. `rmtree` is the line the leak is really about — the tree on disk.
+[[mutation]]
+name = "the scratch sweep leaves the leaked tree on disk"
+file = "scripts/mutation_oracle.py"
+before = """
+        _git("worktree", "remove", "--force", str(tree))
+        shutil.rmtree(tree.parent, ignore_errors=True)"""
+after = """
+        _git("worktree", "remove", "--force", str(tree))"""
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_leaked_scratch_checkout_is_swept_where_git_worktree_prune_will_not_take_it",
+]
+
+# The README's Install section is what an adopter copies. Before 0.1.0 it carried the untagged
+# install forms; from the release on it names the tagged release and PyPI, and an untagged `git+`
+# install beside them would be a second command naming a different tree.
+[[mutation]]
+name = "the README's Install section offers an untagged install again"
+file = "README.md"
+before = "uv tool install stayfixed\n```"
+after = "uv tool install git+https://github.com/stayfixed/stayfixed\n```"
+reddens = [
+  "tests/test_documents.py::test_the_readme_installs_the_release_the_tree_carries",
+]
+
+# `doctor` warns whenever `[stayfixed] version` is not the running version, so an example block
+# that kept the last release's number makes a copy-pasted project warn from its first run. Neither
+# document's block is one of `release check`'s six sources. The `before` stops short of the number
+# on purpose: an entry that quoted `"0.2.0"` would go stale at the next release, and a mutation
+# that fails to apply is an error rather than a caught regression.
+[[mutation]]
+name = "the README's example configuration keeps a release that is not the running one"
+file = "README.md"
+before = "[stayfixed]\nversion = \""
+after = "[stayfixed]\nversion = \"0.0.1-"
+reddens = [
+  "tests/test_documents.py::test_the_example_configurations_carry_the_running_version[README.md]",
+]
+
+[[mutation]]
+name = "docs/cli.md's example configuration keeps a release that is not the running one"
+file = "docs/cli.md"
+before = "[stayfixed]\nversion = \""
+after = "[stayfixed]\nversion = \"0.0.1-"
+reddens = [
+  "tests/test_documents.py::test_the_example_configurations_carry_the_running_version[cli.md]",
+]
+
+# The harness guard for the sweep. `main` deletes every `stayfixed-oracle-*` directory under
+# `TEMPDIR`, so a test module that loads this script without redirecting it swept the
+# developer's own temporary directory — measured with a canary, which the suite removed — and
+# would have destroyed a concurrently running oracle's checkout.
+[[mutation]]
+name = "the oracle's test loader stops aiming TEMPDIR at its own scratch"
+file = "tests/scripts/test_mutation_oracle.py"
+before = '        module.__dict__["TEMPDIR"] = scratch'
+after = "        pass"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_the_loader_aims_every_deletion_this_module_drives_at_its_own_scratch",
+]
+
+# --- The one fixture `git` -------------------------------------------------------------------
+# Twenty-three test modules each carried a copy of this helper, protected by five different
+# subsets of the same precaution. The collapse moves the precaution to one place, which is only
+# worth doing if that one place is proven load-bearing: restoring the inheriting environment is
+# what thirteen of the twenty-three were doing, and it is the shape that lets `git init` land in
+# whatever repository an exported `GIT_DIR` names.
+[[mutation]]
+name = "a fixture git inherits the environment again"
+file = "tests/gitfixture.py"
+before = '    sealed = {key: os.environ[key] for key in ENV_KEEP if key in os.environ}'
+after = "    sealed = dict(os.environ)"
+reddens = [
+  "tests/test_gitfixture.py::test_a_fixture_repository_is_built_where_it_was_asked_although_git_dir_names_another",
+  "tests/test_gitfixture.py::test_the_sealed_environment_carries_nothing_that_could_redirect_git",
+]
+
+# Apple's git reads a gitconfig inside Xcode that `GIT_CONFIG_SYSTEM` does not replace, and it
+# names `main` as the default branch: a test whose `init` had no `-b` passed on a Mac and failed
+# on every CI runner. The behavioural test reddens only where that file exists, so this entry
+# names the key set, which reddens on every git the oracle runs.
+[[mutation]]
+name = "a fixture git reads the machine's unreplaceable system configuration again"
+file = "tests/gitfixture.py"
+before = '            "GIT_CONFIG_NOSYSTEM": "1",'
+after = "            # (not sealed)"
+reddens = [
+  "tests/test_gitfixture.py::test_the_sealed_environment_carries_nothing_that_could_redirect_git",
+]
+
+# The durable half. A guard that stopped walking reports no offences for the same reason a clean
+# tree does, so the walk's own floor is what this proves — narrowed to the one file the walk
+# already excludes, `modules` comes back empty and the floor is the assertion that goes red.
+[[mutation]]
+name = "the walk for a hand-rolled fixture git stops walking"
+file = "tests/test_gitfixture.py"
+before = '    modules = sorted(p for p in TESTS.rglob("*.py") if p.name != "gitfixture.py")'
+after = '    modules = sorted(p for p in TESTS.rglob("gitfixture.py") if p.name != "gitfixture.py")'
+reddens = [
+  "tests/test_gitfixture.py::test_no_test_module_runs_a_git_of_its_own",
+]
+
+# The document half of `mutations/`'s "one --check spells its own help string again".
+# `docs/cli.md`'s shared-flag table is held to the constants row by row; the new row has to be
+# load-bearing too, or a sentence could be spelled by hand there.
+[[mutation]]
+name = "the --check row in docs/cli.md drifts from its constant"
+file = "docs/cli.md"
+before = '| `--check` | report drift instead of writing, and fail if there is any |'
+after = '| `--check` | report drift and write nothing |'
+reddens = [
+  "tests/test_documents.py::test_the_shared_flag_tables_are_the_constants_and_not_a_second_spelling",
+]
+
+# No third entry for `attach --check`'s named exception. The mutation would be
+# `help=ATTACH_CHECK_HELP` -> `help=CHECK_HELP` in `attach/commands.py`, and `CHECK_HELP` is not
+# imported there — so the mutant raises `NameError` at import and the test errors rather than fails.
+# A mutation caught for an accidental reason reads as coverage and is worse than none. The exception
+# is held by `tests/test_command.py`'s `EXCEPTIONS` table, which `mutations/`'s "one --check spells
+# its own help string again" already proves load-bearing.
+
+# The oracle's own job, from the two sides that go quiet rather than loud. A budget that no
+# longer fits the set it has to prove is the failure this shape exists to end, and it is worth
+# catching in a test run rather than fifteen minutes into a cancelled job. A job that can be
+# skipped is worse: GitHub reports a skipped job as a green check, so the whole set switches off
+# and says nothing. `before` carries two lines in a basic string, because a literal string would
+# make `\n` two characters and the entry would match nothing.
+[[mutation]]
+name = "the oracle's job keeps a budget that no longer fits its own set"
+file = ".github/workflows/ci.yml"
+before = "    timeout-minutes: 12"
+after = "    timeout-minutes: 1"
+reddens = [
+  "tests/test_fixtures.py::test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits",
+]
+
+[[mutation]]
+name = "the oracle's job becomes one a condition can skip"
+file = ".github/workflows/ci.yml"
+before = "  oracle:\n    runs-on: ubuntu-latest"
+after = "  oracle:\n    if: github.event_name == 'push'\n    runs-on: ubuntu-latest"
+reddens = [
+  "tests/test_fixtures.py::test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits",
+]
+
+# --- One oracle at a time --------------------------------------------------------------------
+# `sweep_stale_scratch` has always assumed a single writer and said so in its own docstring, and
+# nothing enforced it. Once, a filtered run started beside an unfiltered one removed its scratch
+# checkout, and every mutation after that point reported FINDING — 138 of them, all false, on a
+# clean tree. `O_EXCL` is the whole mechanism: the create either wins or raises, with no window
+# between the test and the write.
+[[mutation]]
+name = "a second oracle takes the lock instead of refusing"
+file = "scripts/mutation_oracle.py"
+before = '            handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)'
+after = '            handle = os.open(lock, os.O_CREAT | os.O_WRONLY, 0o600)'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_second_oracle_refuses_rather_than_sweeping_the_first_ones_checkout",
+]
+
+# And the other direction, which has to hold or the cure is worse than the disease: a `SIGKILL`
+# runs no `finally`, so a lock outliving its writer is the ordinary aftermath of an interrupted
+# run. One that refused for ever would need a person with a shell before the oracle ran again.
+[[mutation]]
+name = "a lock left by a dead process refuses for ever"
+file = "scripts/mutation_oracle.py"
+before = '''    except ProcessLookupError:
+        return None'''
+after = '''    except ProcessLookupError:
+        return "a process that has gone"'''
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_lock_left_by_a_dead_process_is_taken_over_rather_than_obeyed",
+]
+
+# The lock shares the scratch prefix, so the sweep's glob finds it and only the `is_dir()` arm
+# spares it. That is an invariant between two functions and nothing stated it: a sweep that took the
+# lock with it would let the next run in while the first was still working, which is the hazard of
+# `mutations/`'s "a second oracle takes the lock instead of refusing" with one more step in it.
+[[mutation]]
+name = "the housekeeping sweep takes the lock with it"
+file = "scripts/mutation_oracle.py"
+before = '        if str(stale) in dropped or not stale.is_dir():'
+after = '        if str(stale) in dropped:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_the_housekeeping_sweep_leaves_the_lock_alone",
+]
+
+# A committed record's digest is what `upgrade` compares the bytes on disk with before it refreshes
+# a file. The rename rewrote four of the smoke fixture's scaffold files and kept their digests, so
+# after any template change `upgrade` would have skipped them as hand-edited. The mutation puts one
+# of those digests back.
+[[mutation]]
+name = "a fixture record keeps a digest from before its file changed"
+file = "tests/fixtures/smoke-project/.stayfixed/manifest.json"
+before = '"sha256": "0865f7f6103a8c0f6c439aa4a622697dfce8313090f17a99aff6d335e0cc6cf6"'
+after = '"sha256": "f779bb0afc2767eb685323322262c83af0db6f81a218a212efc46bf69bcaf164"'
+reddens = [
+  "tests/project/test_fixture.py::test_every_recorded_footprint_artifact_follows_a_template_change",
+]
+
+# The hermetic default the helper's own docstring promises. `machine=None` is not "no machine
+# file" to the code under test: it resolves to `Path.home()/.config/stayfixed/config.toml`, the
+# process `HOME`, which the `env` dict this helper passes cannot reach. Every case that omitted
+# `machine` read the developer's real overlay on any machine that has run `stayfixed setup
+# --overlay`, and passed only because neither this machine nor CI has one.
+[[mutation]]
+name = "the doctor test helper defaults machine back to the process home"
+file = "tests/doctor/test_checks.py"
+before = '        machine=tmp_path / "no-machine.toml" if machine is None else machine,'
+after = "        machine=machine,"
+reddens = [
+  "tests/doctor/test_checks.py::test_no_case_here_can_read_the_developers_own_machine_configuration",
+]
+
+# The oracle's own declaration check, run before any mutation and by the suite.
+
+[[mutation]]
+name = 'a duplicated before line is accepted as an anchor'
+file = "scripts/mutation_oracle.py"
+before = '    if occurrences > 1:'
+after = '    if occurrences > 99:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_before_line_must_occur_exactly_once",
+]
+
+[[mutation]]
+name = 'a reddens id naming a function its file lacks passes the static check'
+file = "scripts/mutation_oracle.py"
+before = '                    and node.name == name'
+after = '                    and bool(name)'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_reddens_id_must_name_a_test_its_file_defines",
+]
+
+[[mutation]]
+name = 'a parametrized reddens id the collection lacks passes the static check'
+file = "scripts/mutation_oracle.py"
+before = '        if scope is None or not names or ("[" in node_id and node_id not in (collected or ())):'
+after = '        if scope is None or not names:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_reddens_id_must_name_a_test_its_file_defines",
+]
+
+[[mutation]]
+name = 'a mutation declared twice passes the static check'
+file = "scripts/mutation_oracle.py"
+before = '        if key in seen:'
+after = '        if False:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_mutation_declared_twice_is_a_finding",
+]
+
+# The planning seam's checker has to see a planner however a module spells its way to it: from
+# the seam module's own top-level binding, and at the end of a dotted chain rooted at an imported
+# package. Both guard the test module that holds the seam, which is what a later command's
+# bypass would have to get past.
+[[mutation]]
+name = "the planning seam's checker stops knowing the seam module binds the planner"
+file = "tests/project/test_planning_seam.py"
+before = '    "stayfixed.project.footprint": {"plan", "left_copies", "local_copies", "refuse_ignored"},'
+after = ""
+reddens = [
+  "tests/project/test_planning_seam.py::test_the_checker_sees_a_planner_reached_through_the_seam_module",
+  "tests/project/test_planning_seam.py::test_the_checker_sees_a_planner_imported_relatively",
+]
+
+[[mutation]]
+name = "the planning seam's checker stops resolving a dotted chain"
+file = "tests/project/test_planning_seam.py"
+before = "                    found.add(node.attr)"
+after = "                    pass"
+reddens = [
+  "tests/project/test_planning_seam.py::test_the_checker_sees_a_fully_dotted_planner",
+  "tests/project/test_planning_seam.py::test_the_checker_sees_a_planner_imported_relatively",
+]
+
+# The rest of the planning seam: a relative import resolved like an absolute one, the private
+# planner called only by the seam, and `replan` opened only by a `predict` the guard passed.
+[[mutation]]
+name = "the planning seam's checker reads a relative import as a top-level module"
+file = "tests/project/test_planning_seam.py"
+before = "    if not node.level:"
+after = "    if True:"
+reddens = ["tests/project/test_planning_seam.py::test_the_checker_sees_a_planner_imported_relatively"]
+
+# The Contents of `docs/cli.md` lists every section of the reference, in order.
+[[mutation]]
+name = "a docs/cli.md section drops out of the Contents"
+file = "docs/cli.md"
+before = "- [`stayfixed memory fit`](#stayfixed-memory-fit)"
+after = ""
+reddens = ["tests/test_documents.py::test_the_cli_reference_contents_lists_every_section_in_order"]
+
+# The oracle's runs share a bytecode cache warmed from HEAD, and a `.pyc` is trusted on
+# mtime-in-whole-seconds and size. A mutated write that kept HEAD's mtime and HEAD's length
+# would run HEAD's bytecode and read as surviving; the stamp is what keeps them apart.
+[[mutation]]
+name = "a mutated write keeps HEAD's mtime, so warm bytecode stands in for it"
+file = "scripts/mutation_oracle.py"
+before = "    stamp = _next_stamp()"
+after = "    stamp = 0"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_warm_bytecode_cache_never_stands_in_for_a_mutated_source",
+]
+
+# The stamp is read back, because a filesystem with coarser timestamps would round two stamps
+# into one without a sound.
+[[mutation]]
+name = "a mutated file's stamp is assumed rather than read back"
+file = "scripts/mutation_oracle.py"
+before = "        if subject.stat().st_mtime_ns // _SECOND != head.st_mtime_ns // _SECOND + stamp:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_mutated_file_that_does_not_keep_its_stamp_is_a_finding",
+]
+
+# Jobs prove entries at once, and two of them in one checkout would interleave their mutations
+# over one file. One checkout per job is what the queue hands out.
+[[mutation]]
+name = "every job shares one scratch checkout"
+file = "scripts/mutation_oracle.py"
+before = "            trees = [stack.enter_context(scratch_checkout()) for _ in range(jobs)]"
+after = "            trees = [stack.enter_context(scratch_checkout()) for _ in range(1)]"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_every_job_proves_its_entries_in_a_scratch_checkout_of_its_own",
+]
+
+# A job's pytest runs in a worker thread, where no signal reaches it; a stop terminates the
+# runs in flight and refuses to start another, so a terminate is not a wait for every entry.
+[[mutation]]
+name = "a stop leaves the pytest runs in flight going"
+file = "scripts/mutation_oracle.py"
+before = "            child.terminate()"
+after = "            pass"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_stop_ends_the_pytest_in_flight_and_starts_no_other",
+]
+
+[[mutation]]
+name = "a stopped run still starts pytest"
+file = "scripts/mutation_oracle.py"
+before = "            if _stopping.is_set():"
+after = "            if False:"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_stop_ends_the_pytest_in_flight_and_starts_no_other",
+]
+
+# The same stop, reached the way it really is: a terminate in the middle of a run. The test that
+# `mutations/`'s "a stopped run still starts pytest" reddens calls `_stop_runs` itself, so without
+# this `_prove`'s arm could stop calling it.
+[[mutation]]
+name = "a terminate mid-run waits out the pytest runs in flight again"
+file = "scripts/mutation_oracle.py"
+before = "                    _stop_runs()\n"
+after = "                    pass\n"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_terminate_mid_run_ends_the_pytest_in_flight_and_leaves_no_checkout",
+]
+
+# Jobs run pytest side by side, and pytest's default base directory is shared by all of them and
+# pruned by each on exit; a run of its own base is what keeps a neighbour from removing a test's
+# `tmp_path` mid-run.
+[[mutation]]
+name = "the jobs' pytest runs share pytest's default base directory again"
+file = "scripts/mutation_oracle.py"
+before = "                    f\"--basetemp={Path(scratch) / 'basetemp'}\",\n"
+after = ""
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_every_run_keeps_its_temporary_files_to_itself",
+]
+
+# The custom gates execute files the pull request can change. Under the default `if: success()`
+# they run only once the judging step passed; `if: always()` would run them after a refusal, in
+# a job whose verdict is already failing, and a step that may run whatever came before it is a
+# step nothing orders.
+[[mutation]]
+name = "the custom step runs after a refusal"
+file = ".github/workflows/check.yml"
+before = """
+      - name: The project's own gates
+"""
+after = """
+      - name: The project's own gates
+        if: always()
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
+]
+
+# `--builtin` is what keeps every command from `[gates.custom]` out of the process that decides
+# the verdict. Drop it and the judging step runs the pull request's own test suite, `Makefile`
+# or script, with the runner's privileges, before its exit status is read.
+[[mutation]]
+name = "the judging step runs the repository's own gate commands"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -s -m stayfixed gate --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_runs_no_custom_gate_and_the_next_step_runs_them",
+]
+
+# The base step resolves the base once to a commit, and the judging step must judge against
+# that commit. Judged against the tree's own HEAD, every change to `stayfixed.toml` compares
+# equal to itself, and a pull request that stops enforcing a gate passes the configuration check.
+[[mutation]]
+name = "the judging step judges the tree against itself"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$(git -C "$ROOT" rev-parse HEAD)" \'
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces",
+]
+
+# A refused key and an enforcing gate's findings reach the pull request's page as annotations.
+# Without `--annotate` the job fails with no line saying which key or which finding, and the
+# author reads the raw log to find out.
+[[mutation]]
+name = "the judging step stops annotating"
+file = ".github/workflows/check.yml"
+before = '''
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
+after = '''
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+            --workflow-sha "$WORKFLOW_SHA" --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces",
+]
+
+# The job summary is the one place every gate's mode and outcome and every changed key's verdict
+# are listed together, uncapped by the platform's ten annotations per level.
+[[mutation]]
+name = "the judging step writes no job summary"
+file = ".github/workflows/check.yml"
+before = '''
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
+after = '''
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+            --workflow-sha "$WORKFLOW_SHA" --annotate "${only[@]}"'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces",
+]
+
+# An upgrade's moved `[ci] ref` is admitted only at the commit the platform says is running.
+# Without `--workflow-sha` nothing names that commit, so every upgrade pull request that moves
+# the pin is refused and lands only by a direct push.
+[[mutation]]
+name = "the judging step drops the running workflow's commit"
+file = ".github/workflows/check.yml"
+before = '''
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
+after = '''
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+            --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_passes_the_platform_s_workflow_sha_through_env",
+]
+
+# `python3 -m` puts the working directory first on `sys.path`. The gate steps run from the
+# workspace, which the pull request writes nothing into; `-P` is the second layer, and the one
+# that keeps a module the checkout carries from standing in for stayfixed's own if a gate step
+# ever runs from the caller's checkout, as the base step it replaced once did.
+[[mutation]]
+name = "the judging step imports from its working directory"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# `only:` is how a matrix caller gives each gate its own check row. Drop the loop and every leg
+# runs every gate, so each row reports the whole job's verdict under one gate's name.
+[[mutation]]
+name = "only: runs every gate whatever it names"
+file = ".github/workflows/check.yml"
+before = '''
+          for name in $ONLY; do only+=("--only=$name"); done
+          set +f
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+'''
+after = '''
+          :
+          set +f
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_only_runs_the_names_it_is_given_and_nothing_else",
+]
+
+# `$ONLY` is split unquoted, which is also where the shell globs: a name like `d*` would be
+# expanded against the workspace and reach `stayfixed gate` as whatever files matched.
+[[mutation]]
+name = "only: names are expanded as file patterns"
+file = ".github/workflows/check.yml"
+before = '''
+          set -f
+          only=()
+          for name in $ONLY; do only+=("--only=$name"); done
+          set +f
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+'''
+after = '''
+          :
+          only=()
+          for name in $ONLY; do only+=("--only=$name"); done
+          set +f
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_an_only_name_is_never_expanded_as_a_file_pattern",
+]
+
+# git resolves a short `origin/<base>` through `refs/tags/` before `refs/remotes/`, and
+# `fetch-depth: 0` fetches every tag. So whoever may push a tag named `origin/main` would choose
+# the commit whose configuration every pull request is judged against. The anchor is the fully
+# qualified remote-tracking ref, which `actions/checkout` writes from the platform.
+[[mutation]]
+name = "a tag named like the tracking branch chooses the base"
+file = ".github/workflows/check.yml"
+before = '          base_sha="$(git rev-parse --verify --quiet "refs/remotes/origin/$base^{commit}")" ||'
+after = '          base_sha="$(git rev-parse --verify --quiet "origin/$base^{commit}")" ||'
+reddens = [
+  "tests/test_fixtures.py::test_a_tag_named_like_the_tracking_branch_does_not_choose_the_base",
+]
+
+# `-P` keeps the working directory off `sys.path` and nothing else: a `PYTHONPATH` entry inside
+# the caller's checkout puts every module the pull request adds ahead of the standard library in
+# the process that decides the verdict. Measured when the case was written: a planted
+# `tomllib.py` ran and the step still exited 0.
+[[mutation]]
+name = "the judging step's PYTHONPATH reaches into the checkout"
+file = ".github/workflows/check.yml"
+before = '''
+      - name: The configuration and the built-in gates
+        env:
+          PYTHONPATH: stayfixed/src
+'''
+after = '''
+      - name: The configuration and the built-in gates
+        env:
+          PYTHONPATH: stayfixed/src:project
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_no_module_the_checkout_carries_is_imported_by_a_gate_step[judging]",
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# And in the custom step, where a planted module in stayfixed's own process could report an
+# enforcing custom gate as passing whatever its command exited with.
+[[mutation]]
+name = "the custom step's PYTHONPATH reaches into the checkout"
+file = ".github/workflows/check.yml"
+before = '''
+      - name: The project's own gates
+        env:
+          PYTHONPATH: stayfixed/src
+'''
+after = '''
+      - name: The project's own gates
+        env:
+          PYTHONPATH: stayfixed/src:project
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_no_module_the_checkout_carries_is_imported_by_a_gate_step[custom]",
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# The judging step runs from the workspace, which the pull request writes nothing into. From the
+# caller's checkout, `-P` would be the only thing between a module the pull request adds and the
+# verdict, and a relative `PYTHONPATH` would resolve inside the checkout.
+[[mutation]]
+name = "the judging step runs from the caller's checkout"
+file = ".github/workflows/check.yml"
+before = '''
+      - name: The configuration and the built-in gates
+        env:
+'''
+after = '''
+      - name: The configuration and the built-in gates
+        working-directory: project
+        env:
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# An `if:` on the job skips it, and a skipped job is a required check the platform reports as
+# passing: every step's own guard would hold while the verdict never ran.
+[[mutation]]
+name = "the gates job gains a condition of its own"
+file = ".github/workflows/check.yml"
+before = """
+    runs-on: ubuntu-latest
+"""
+after = """
+    if: false
+    runs-on: ubuntu-latest
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
+]
+
+# A program handed to an interpreter with `-c` runs with its working directory first on
+# `sys.path` unless a flag says otherwise, and a spelling check for `python3 -c` alone missed
+# `python3 -P -c`, `python -I -c` and every other spelling in between.
+[[mutation]]
+name = "a step hands the interpreter a program on the command line again"
+file = ".github/workflows/check.yml"
+before = "        run: python3 -m stayfixed --version"
+after = "        run: python3 -P -c 'import stayfixed'"
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# The custom step reads `only:` the way the judging step does, so a matrix leg named for one
+# gate runs that gate. Drop its loop and every leg runs every custom gate's command, each one
+# reported under the leg's name.
+[[mutation]]
+name = "the custom step runs every custom gate whatever only: names"
+file = ".github/workflows/check.yml"
+before = '''
+          for name in $ONLY; do only+=("--only=$name"); done
+          set +f
+          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \
+'''
+after = '''
+          :
+          set +f
+          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_the_custom_step_runs_only_the_custom_gates_only_names",
+]
+
+# The custom step's process reports whether an enforcing custom gate passed, so a module the
+# checkout carries must not load in it either.
+[[mutation]]
+name = "the custom step imports from its working directory"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# A step spelled `- run:` has no `- name:` line, and the step walk read it as more lines of the
+# step above: eight steps counted over nine, and a script the pull request supplied running
+# before the judging step, unseen.
+[[mutation]]
+name = "a step with no name hides inside the step above it"
+file = ".github/workflows/check.yml"
+before = """
+      - name: stayfixed runs at all
+"""
+after = """
+      - run: bash project/setup.sh
+      - name: stayfixed runs at all
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
+]
+
+# `-c` with its flags joined, `-Pc`, is the same program on the command line, and it slipped a
+# pattern written for `-c` alone.
+[[mutation]]
+name = "a step runs a program with joined short flags"
+file = ".github/workflows/check.yml"
+before = "        run: python3 -m stayfixed --version"
+after = "        run: python3 -Pc 'import stayfixed'"
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# A program on standard input puts the working directory first on `sys.path` just as `-c` does.
+[[mutation]]
+name = "a step runs a program from standard input"
+file = ".github/workflows/check.yml"
+before = "        run: python3 -m stayfixed --version"
+after = "        run: echo 'import stayfixed' | python3 -"
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# The strict reader every workflow test reads through. YAML never ends a block at a comment, and
+# the `env:` reader it replaced did: a key written after a comment at seven or eight spaces was
+# in no assertion. Count a comment as content and a comment line ends a block, or is refused as
+# a line nothing owns.
+[[mutation]]
+name = "the workflow reader counts a comment line as content"
+file = "tests/workflow_yaml.py"
+before = '        return bool(self.text) and not self.text.startswith("#")'
+after = "        return bool(self.text)"
+reddens = [
+  "tests/test_workflow_yaml.py::test_a_comment_or_a_blank_line_never_ends_a_block",
+]
+
+# A reader that keeps one of two values for one key lets the other pass unseen: a `PYTHONPATH`
+# into the checkout first and the good one last read as the good one.
+[[mutation]]
+name = "the workflow reader keeps the last of a key written twice"
+file = "tests/workflow_yaml.py"
+before = "            if key in mapping:"
+after = "            if False:"
+reddens = [
+  "tests/test_workflow_yaml.py::test_a_key_written_twice_in_one_mapping_is_refused",
+]
+
+# A plain scalar that continues on the next line is refused by name. Without this refusal it is
+# still refused, as a line nothing owns, because the mapping's own walk meets the continuation
+# first; so the mutation proves the refusal names the shape, not that the reader would read the
+# value as its first line.
+[[mutation]]
+name = "the workflow reader names a continued plain scalar only as a line nothing owns"
+file = "tests/workflow_yaml.py"
+before = """
+                mapping[key] = _scalar(value, line)
+                following = self._next_content()
+                if following is not None and following.indent > indent:
+"""
+after = """
+                mapping[key] = _scalar(value, line)
+                following = self._next_content()
+                if False:
+"""
+reddens = [
+  "tests/test_workflow_yaml.py::test_a_shape_outside_the_subset_is_refused_naming_its_line[plain-continued]",
+]
+
+# A line indented between a block's key and its children belongs to nothing; read on, it would be
+# a key of whichever mapping the reader happened to be in.
+[[mutation]]
+name = "the workflow reader passes over a line nothing owns"
+file = "tests/workflow_yaml.py"
+before = """
+                if line.indent > indent:
+                    raise _refuse(line, "a line indented where nothing can own it")
+"""
+after = """
+                if False:
+                    raise _refuse(line, "a line indented where nothing can own it")
+"""
+reddens = [
+  "tests/test_workflow_yaml.py::test_a_shape_outside_the_subset_is_refused_naming_its_line[orphan-indentation]",
+]
+
+# A literal block ends at the first non-blank line indented less than its first line. Read past
+# it, and a step's script swallows the step's own `env:`, and the next step's.
+[[mutation]]
+name = "the workflow reader runs a literal block past its end"
+file = "tests/workflow_yaml.py"
+before = "                elif line.indent < body_indent:"
+after = "                elif False:"
+reddens = [
+  "tests/test_workflow_yaml.py::test_a_literal_block_ends_at_a_line_indented_less_even_a_comment",
+]
+
+# An earlier step's environment reaches the judging step through `$GITHUB_ENV` and `$GITHUB_PATH`
+# the moment that step runs anything the pull request wrote: `BASH_ENV` on the proof step
+# sources a file from the checkout before `python3 -m stayfixed --version`.
+[[mutation]]
+name = "the proof step's shell sources a file from the checkout"
+file = ".github/workflows/check.yml"
+before = """
+        env:
+          PYTHONPATH: stayfixed/src
+        run: python3 -m stayfixed --version
+"""
+after = """
+        env:
+          PYTHONPATH: stayfixed/src
+          BASH_ENV: project/.ci-env
+        run: python3 -m stayfixed --version
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# And the base step, which runs from the caller's checkout, so a relative `BASH_ENV` names a file
+# the pull request wrote.
+[[mutation]]
+name = "the base step's shell sources a file from the checkout"
+file = ".github/workflows/check.yml"
+before = "          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}"
+after = """          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BASH_ENV: .ci-env"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# A script that writes `$GITHUB_ENV` or `$GITHUB_PATH` chooses every later step's environment or
+# interpreter, outside any step's `env:` block, where no equality over the blocks can see it.
+[[mutation]]
+name = "the base step sets the environment of every later step"
+file = ".github/workflows/check.yml"
+before = """          } >> "$GITHUB_OUTPUT\""""
+after = """          } >> "$GITHUB_OUTPUT"
+          echo "PYTHONPATH=project" >> "$GITHUB_ENV\""""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# The whitelist read only what followed `python`: an assignment in front of the command, such as
+# `PYTHONUSERBASE=…`, passed it, and an assignment of another name reaches the interpreter too.
+[[mutation]]
+name = "the judging step's command gains an assignment in front of it"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          PYTHONUSERBASE=project/.local python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# A script line that changes the verdict's process without being an invocation: an exported
+# variable reaches the interpreter, and a sourced file runs whatever it says. Every script is held
+# line for line.
+[[mutation]]
+name = "the judging step exports a user base inside the caller's checkout"
+file = ".github/workflows/check.yml"
+before = '''
+          set +f
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+'''
+after = '''
+          set +f
+          export PYTHONUSERBASE=project/.local
+          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
+]
+
+[[mutation]]
+name = "the custom step sources a file from the caller's checkout"
+file = ".github/workflows/check.yml"
+before = '''
+          set +f
+          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \
+'''
+after = '''
+          set +f
+          [ -f project/.ci-env ] && . project/.ci-env || true
+          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
+]
+
+# The same class in an earlier step: the gate steps' `PYTHONPATH` is `stayfixed/src`, and the
+# interpreter imports a `sitecustomize.py` it finds there at start-up, so a copy into stayfixed's
+# own checkout is code in the verdict's process.
+[[mutation]]
+name = "the base step copies a file into stayfixed's own checkout"
+file = ".github/workflows/check.yml"
+before = """
+          git check-ref-format --branch "$base" >/dev/null
+"""
+after = """
+          git check-ref-format --branch "$base" >/dev/null
+          cp .ci/sitecustomize.py ../stayfixed/src/ 2>/dev/null || true
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
+]
+
+# An invocation matched as a prefix admitted a line that runs something else after it.
+[[mutation]]
+name = "the judging step's command line runs a second command before the gate"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -s -m stayfixed gate --help >/dev/null; PYTHONUSERBASE=project/.local python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+  "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
+]
+
+# The token's grant, held by value and not only by key: the project's own gates run with it in
+# reach, and the caller's grant is the ceiling for every step of the reusable workflow.
+[[mutation]]
+name = "the reusable workflow's token may write the repository"
+file = ".github/workflows/check.yml"
+before = "  contents: read"
+after = "  contents: write"
+reddens = [
+  "tests/test_check_workflow.py::test_the_job_s_token_can_read_the_repository_and_nothing_more",
+]
+
+# `-P` leaves the user site directory on, and a `.pth` file in it runs at the interpreter's
+# start-up; `-s` is what keeps one the pull request commits out of the gate steps' processes if
+# anything ever points the user base into the checkout.
+[[mutation]]
+name = "the judging step reads the user site directory again"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_no_pth_file_under_a_user_base_in_the_checkout_runs_in_a_gate_step[judging]",
+]
+
+[[mutation]]
+name = "the custom step reads the user site directory again"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_no_pth_file_under_a_user_base_in_the_checkout_runs_in_a_gate_step[custom]",
+]
+
+# The skills README maps every harness tool name a skill body may not use, for both harnesses;
+# Codex's ask tool is one of them, and a README that stops naming it leaves the lint's list with
+# a name the mapping no longer explains.
+[[mutation]]
+name = "the skills README drops Codex's name for its ask tool"
+file = "skills/README.md"
+before = "`request_user_input` in the modes that offer it"
+after = "the ask tool in the modes that offer it"
+reddens = ["tests/skills/test_skills.py::test_the_readme_maps_every_tool_name_for_both_harnesses"]
+
+# In the block led by `mutations/`'s "adopt promote --builtin still runs the custom gates": a no to
+# running a clone's own commands holds through `--builtin`.
+[[mutation]]
+name = "the init skill hands over adopt promote without --builtin after a no"
+file = "skills/init/references/adoption.md"
+before = "     step 1 it is `stayfixed adopt promote --builtin`: without the flag it runs the commands the"
+after = "     step 1 it is `stayfixed adopt promote`: without the flag it runs the commands the"
+reddens = [
+  "tests/skills/test_skills.py::test_the_init_skill_keeps_a_no_to_the_clone_s_commands_through_the_whole_adoption",
+]
+
+# The expression check is only as good as what it reads: the strict reader's step scripts, in
+# every spelling it takes. Reading none would report every workflow clean.
+[[mutation]]
+name = "the expression check reads no script"
+file = "tests/test_fixtures.py"
+before = '    return [script for script in scripts(text) if "${{" in script]'
+after = "    return []"
+reddens = [
+  "tests/test_fixtures.py::test_an_expression_is_found_in_every_spelling_of_a_script",
+]
+
+# A step spelled as a flow mapping puts its script inside braces on one line; the reader refuses
+# the brace rather than read the step as the string it spells. The cases are spelled as JSON,
+# `{"run":"…"}`, which nothing but the brace refuses: `{run: "…"}` is refused a second time as a
+# plain scalar that reads as a mapping, and would redden only on the refusal's wording.
+[[mutation]]
+name = "the workflow reader reads a flow mapping as a plain scalar"
+file = "tests/workflow_yaml.py"
+before = '_REFUSED_START = tuple("{&*!%@`>?")'
+after = '_REFUSED_START = tuple("&*!%@`>?")'
+reddens = [
+  "tests/test_workflow_yaml.py::test_a_step_spelled_as_a_flow_mapping_is_refused_rather_than_read",
+  "tests/test_workflow_yaml.py::test_a_shape_outside_the_subset_is_refused_naming_its_line[flow-mapping]",
+]
+
+# The reusable workflow's time limit is the caller's to move, and the caller is pull-request
+# content: the expression reads the caller's value only inside 5 to 60, so the input cannot give
+# one run of this job more than an hour.
+[[mutation]]
+name = "the reusable workflow's time limit reaches ten hours"
+file = ".github/workflows/check.yml"
+before = "    timeout-minutes: ${{ inputs.timeout-minutes >= 5 && inputs.timeout-minutes <= 60 && inputs.timeout-minutes || 15 }}"
+after = "    timeout-minutes: ${{ inputs.timeout-minutes >= 5 && inputs.timeout-minutes <= 600 && inputs.timeout-minutes || 15 }}"
+reddens = [
+  "tests/test_check_workflow.py::test_the_job_s_time_limit_is_an_input_the_expression_holds_inside_its_bounds",
+]
+
+# A value outside the range would otherwise run silently under the default the expression stands
+# in for it: the caller asked for a bound it did not get. The first step refuses it.
+[[mutation]]
+name = "the time limit's bound step admits any value"
+file = ".github/workflows/check.yml"
+before = "            [5-9]|[1-5][0-9]|60) ;;"
+after = "            *) ;;"
+reddens = [
+  "tests/test_check_workflow.py::test_a_time_limit_outside_its_bounds_fails_the_job_before_anything_runs[4]",
+  "tests/test_check_workflow.py::test_a_time_limit_outside_its_bounds_fails_the_job_before_anything_runs[61]",
+  "tests/test_check_workflow.py::test_a_time_limit_outside_its_bounds_fails_the_job_before_anything_runs[7.5]",
+]
+
+[[mutation]]
+name = "the time limit's refusal stops failing the job"
+file = ".github/workflows/check.yml"
+before = """
+              echo "::error::timeout-minutes: must be a whole number of minutes from 5 to 60"
+              exit 1
+"""
+after = """
+              echo "::error::timeout-minutes: must be a whole number of minutes from 5 to 60"
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_a_time_limit_outside_its_bounds_fails_the_job_before_anything_runs[61]",
+]
+
+# RELEASING.md's last step dispatches the release smoke at every release, and a job naming a tag
+# that does not exist fails the whole dispatch before any job runs: during `0.x` that is `v1`.
+[[mutation]]
+name = "the release smoke calls the alias a 0.x release does not have"
+file = ".github/workflows/smoke-release.yml"
+before = "    uses: stayfixed/stayfixed/.github/workflows/check.yml@v0.2.0"
+after = "    uses: stayfixed/stayfixed/.github/workflows/check.yml@v1"
+reddens = [
+  "tests/test_fixtures.py::test_the_release_smoke_calls_the_release_this_tree_carries",
+]
+
+# Every caller `init` writes passes no time limit, so only the smoke's own call of the reusable
+# workflow shows the platform taking a caller's value, through the expression, as the job's bound.
+[[mutation]]
+name = "no real run passes the reusable workflow a time limit of its own"
+file = ".github/workflows/smoke.yml"
+before = "      timeout-minutes: 25"
+after = "      timeout-minutes: 15"
+reddens = [
+  "tests/test_check_workflow.py::test_a_real_run_passes_the_time_limit_a_value_of_its_own",
+]
+
+# CI's rendered-artifact check accepted any directory named `.git`, so an empty `mkdir .git` stood
+# in for the repository `overlay create --local` makes on `main`.
+[[mutation]]
+name = "the rendered-artifact check takes any directory named .git"
+file = "scripts/check_artifacts.py"
+before = "    on_main = inside and head.is_file() and head.read_bytes() == MAIN_HEAD"
+after = "    on_main = inside"
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main[no-head]",
+  "tests/scripts/test_check_artifacts.py::test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main[another-branch]",
+  "tests/scripts/test_check_artifacts.py::test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main[detached]",
+  "tests/scripts/test_check_artifacts.py::test_a_directory_named_git_is_not_enough_it_is_a_repository_on_main[not-utf8]",
+]
+
+# The declarations are a directory of group files, and a reader that stops after one proves one
+# group's entries and reports the run as the whole set.
+[[mutation]]
+name = "the oracle reads only the first group file"
+file = "scripts/mutation_oracle.py"
+before = '    for path in group_files():'
+after = '    for path in group_files()[:1]:'
+reddens = ["tests/scripts/test_mutation_oracle.py::test_the_oracle_reads_every_group_file"]
+
+# Every entry sits in the group file `GROUP_OF` routes its `file` to; a table that lost a row
+# would file the next entry for that area in the wrong group, and nothing else would notice.
+[[mutation]]
+name = "the group table loses a row and its entries route to the catch-all"
+file = "scripts/mutation_oracle.py"
+before = '    ("src/stayfixed/doctor/", "install"),'
+after = ''
+reddens = ["tests/scripts/test_mutation_oracle.py::test_every_entry_lives_in_its_group_file"]
+
+# `GROUP_OF` routes by the longest prefix, so a row appended after `src/stayfixed/` is not dead;
+# taken first-match, that catch-all row would take the new row's files without a sound.
+[[mutation]]
+name = "the group table routes a file by its first matching row again"
+file = "scripts/mutation_oracle.py"
+before = "        key=lambda row: len(row[0]),"
+after = "        key=lambda row: 0,"
+reddens = ["tests/scripts/test_mutation_oracle.py::test_a_row_routes_its_files_wherever_it_stands_in_the_table"]
+
+# A comment cites an entry by its name and nothing else, so a name two entries share points every
+# such citation at two guards at once.
+[[mutation]]
+name = "the oracle lets two entries share a name"
+file = "scripts/mutation_oracle.py"
+before = "        if mutation.name in named:"
+after = "        if False:"
+reddens = ["tests/scripts/test_mutation_oracle.py::test_an_entry_name_declared_twice_is_a_finding"]
+
+# And the name must reach an entry: renamed, the entry CONTRIBUTING's own example cites leaves that
+# citation, and any other, naming nothing.
+[[mutation]]
+name = "an entry a comment cites by name is renamed"
+file = "mutations/core.toml"
+before = "name = \"the containment walk stops refusing '..'\""
+after = "name = \"the containment walk stops refusing a parent component\""
+reddens = ["tests/scripts/test_mutation_oracle.py::test_every_cited_entry_name_is_declared"]
+
+# The resolver is only as good as its reading of a citation: a name that wraps onto the next comment
+# line, a name that wraps after the set's own name, and the names a list carries after the first.
+[[mutation]]
+name = "the citation parser keeps a wrapped name's comment marker"
+file = "tests/declarations.py"
+before = '_WRAP = re.compile(r"\s*\n\s*(?:#\s*)?")'
+after = '_WRAP = re.compile(r"(?!)")'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_citation_is_read_across_comment_lines_and_through_a_list",
+  "tests/scripts/test_mutation_oracle.py::test_every_cited_entry_name_is_declared",
+]
+
+[[mutation]]
+name = "the citation parser loses a name that wraps after the set's name"
+file = "tests/declarations.py"
+before = '_GAP = r"[\s#]*"'
+after = '_GAP = r"\s*"'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_citation_is_read_across_comment_lines_and_through_a_list",
+]
+
+[[mutation]]
+name = "the citation parser loses the names a list carries after the first"
+file = "tests/declarations.py"
+before = "            quoted = _FURTHER.match(text, quoted.end())"
+after = "            quoted = None"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_citation_is_read_across_comment_lines_and_through_a_list",
+]
+
+# The plugin directory holds the version for a reviewer when a file other than an image or a font
+# is 256 KiB or more; a guard that admits the boundary passes the one size the directory holds.
+[[mutation]]
+name = "a file at the directory's size limit stops being a finding"
+file = "tests/test_payload.py"
+before = "        if size >= FILE_MAX_BYTES and not exempt:"
+after = "        if size > FILE_MAX_BYTES and not exempt:"
+reddens = ["tests/test_payload.py::test_a_file_at_the_limit_is_a_finding"]
+
+# File count, not bytes, is the limit the tree is closest to; a boundary moved by one is a listing
+# held for a reviewer the guard said was inside it.
+[[mutation]]
+name = "the payload's file count is a finding one file early"
+file = "tests/test_payload.py"
+before = "    if len(listed) > FILES_MAX:"
+after = "    if len(listed) >= FILES_MAX:"
+reddens = ["tests/test_payload.py::test_one_file_past_the_count_is_a_finding"]
+
+# A tracked symlink blocks the listing wherever the plugin loads it, and every path of a plugin at
+# the repository root is one it may load, so the payload guard must name one.
+[[mutation]]
+name = "a tracked symlink stops being a payload finding"
+file = "tests/test_payload.py"
+before = "        if mode == SYMLINK_MODE:"
+after = "        if mode != SYMLINK_MODE:"
+reddens = ["tests/test_payload.py::test_a_symlink_is_a_finding"]
+
+# A Git submodule is the symlink's sibling on the directory's checklist, and a gitlink row is how
+# the tree carries one.
+[[mutation]]
+name = "a submodule stops being a payload finding"
+file = "tests/test_payload.py"
+before = "        if mode == GITLINK_MODE:"
+after = "        if mode != GITLINK_MODE:"
+reddens = ["tests/test_payload.py::test_a_submodule_is_a_finding"]
+
+# A Git LFS pointer is the symlink's other sibling there, and it is text: the binary rule passes it,
+# and what the plugin would load in the file's place is three lines of metadata.
+[[mutation]]
+name = "a Git LFS pointer stops being a payload finding"
+file = "tests/test_payload.py"
+before = "        if content.startswith(LFS_POINTER):"
+after = "        if False:"
+reddens = ["tests/test_payload.py::test_a_git_lfs_pointer_is_a_finding"]
+
+# The directory admits text, SVG, PNG, JPEG, GIF and WebP images and fonts, and holds the version
+# for any other binary: a guard that never looks for one passes a `.pdf`, a `.zip` or an executable.
+[[mutation]]
+name = "a binary that is not an image or a font stops being a payload finding"
+file = "tests/test_payload.py"
+before = "        elif binary and not exempt:"
+after = "        elif False:"
+reddens = [
+  "tests/test_payload.py::test_a_binary_that_is_not_an_image_or_a_font_is_a_finding[database]",
+  "tests/test_payload.py::test_a_binary_that_is_not_an_image_or_a_font_is_a_finding[executable]",
+  "tests/test_payload.py::test_a_binary_that_is_not_an_image_or_a_font_is_a_finding[wasm]",
+]
+
+# The page admits "complete PNG, JPEG, GIF, and WebP images" and fonts, not their suffixes: a file
+# named like one and not opening with its format's signature is a finding, and it is not exempt.
+[[mutation]]
+name = "an image or font is exempted by its suffix alone"
+file = "tests/test_payload.py"
+before = "        elif signature is not None and not signed:"
+after = "        elif False:"
+reddens = [
+  "tests/test_payload.py::test_a_file_that_is_not_the_image_or_font_its_suffix_names_is_a_finding[executable-as-png]",
+  "tests/test_payload.py::test_a_file_that_is_not_the_image_or_font_its_suffix_names_is_a_finding[gif-as-jpeg]",
+]
+
+# A `.ttf` and an `.otf` are one container, sfnt, whatever their outlines: split by suffix, a valid
+# TrueType-outline `.otf` read as "named .otf and not one".
+[[mutation]]
+name = "an .otf is read as CFF outlines only"
+file = "tests/test_payload.py"
+before = '    ".otf": _SFNT,'
+after = '    ".otf": re.compile(rb"OTTO"),'
+reddens = [
+  "tests/test_payload.py::test_a_font_is_read_as_sfnt_whatever_its_suffix_says_of_its_outlines[truetype-.otf]",
+]
+
+# The checklist names an `.ico`, a `.pdf` and a `.zip` file as binaries it holds, whatever their
+# bytes: a text-only PDF has no NUL for the binary rule to find.
+[[mutation]]
+name = "the payload guard stops holding an .ico, a .pdf or a .zip by its kind"
+file = "tests/test_payload.py"
+before = 'HELD_SUFFIXES = (".ico", ".pdf", ".zip")'
+after = "HELD_SUFFIXES = ()"
+reddens = [
+  "tests/test_payload.py::test_a_binary_kind_the_page_names_is_a_finding_whatever_its_bytes[ico]",
+  "tests/test_payload.py::test_a_binary_kind_the_page_names_is_a_finding_whatever_its_bytes[text-only-pdf]",
+]
+
+# `.DS_Store`, `Thumbs.db`, `desktop.ini` and `__MACOSX` are macOS and Windows system files, which
+# block the listing wherever they sit, and a commit adds them below the root at least as often as at
+# it.
+[[mutation]]
+name = "a macOS or Windows system file is a payload finding only at the root"
+file = "tests/test_payload.py"
+before = "        if SYSTEM_FILES.intersection(_folded(component) for component in components):"
+after = "        if SYSTEM_FILES.intersection(_folded(component) for component in components[:1]):"
+reddens = [
+  "tests/test_payload.py::test_a_system_file_is_a_finding_at_any_depth[docs/.DS_Store]",
+  "tests/test_payload.py::test_a_system_file_is_a_finding_at_any_depth[a/__MACOSX/b]",
+  "tests/test_payload.py::test_a_system_file_is_a_finding_at_any_depth[docs/img/Thumbs.db]",
+  "tests/test_payload.py::test_a_system_file_is_a_finding_at_any_depth[skills/desktop.ini]",
+]
+
+# Both systems fold case by default, so `thumbs.db` is the very file Explorer writes.
+[[mutation]]
+name = "a system file is a payload finding only in its usual capitalization"
+file = "tests/test_payload.py"
+before = "        if SYSTEM_FILES.intersection(_folded(component) for component in components):"
+after = "        if SYSTEM_FILES.intersection(component for component in components):"
+reddens = [
+  "tests/test_payload.py::test_a_system_file_is_a_finding_in_any_capitalization[thumbs.db]",
+  "tests/test_payload.py::test_a_system_file_is_a_finding_in_any_capitalization[docs/Desktop.ini]",
+]
+
+# A name Windows or macOS cannot hold stops validation. The directory's examples are a device name,
+# a trailing dot or space, and two names that differ only by capitalization: an entry each.
+[[mutation]]
+name = "a Windows device name stops being a payload finding"
+file = "tests/test_payload.py"
+before = '    return component.split(".", 1)[0].upper() not in DEVICE_NAMES'
+after = "    return True"
+reddens = [
+  "tests/test_payload.py::test_a_name_windows_or_macos_cannot_hold_is_a_finding[con.md]",
+  "tests/test_payload.py::test_a_name_windows_or_macos_cannot_hold_is_a_finding[nul.tar.gz]",
+]
+
+[[mutation]]
+name = "the console's device names stop being payload findings"
+file = "tests/test_payload.py"
+before = '    {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}'
+after = '    {"CON", "PRN", "AUX", "NUL"}'
+reddens = [
+  "tests/test_payload.py::test_a_name_windows_or_macos_cannot_hold_is_a_finding[CONIN$]",
+  "tests/test_payload.py::test_a_name_windows_or_macos_cannot_hold_is_a_finding[docs/conout$.txt]",
+]
+
+[[mutation]]
+name = "the superscript COM and LPT ports stop being payload findings"
+file = "tests/test_payload.py"
+before = 'for digit in "123456789\u00b9\u00b2\u00b3"}'
+after = 'for digit in "123456789"}'
+reddens = [
+  "tests/test_payload.py::test_a_name_windows_or_macos_cannot_hold_is_a_finding[COM\\xb9]",
+  "tests/test_payload.py::test_a_name_windows_or_macos_cannot_hold_is_a_finding[lpt\\xb3.log]",
+]
+
+[[mutation]]
+name = "a name ending in a dot or a space stops being a payload finding"
+file = "tests/test_payload.py"
+before = '    if component.endswith((".", " ")):'
+after = "    if False:"
+reddens = [
+  "tests/test_payload.py::test_a_name_windows_or_macos_cannot_hold_is_a_finding[notes.]",
+  "tests/test_payload.py::test_a_name_windows_or_macos_cannot_hold_is_a_finding[a /b.md]",
+]
+
+[[mutation]]
+name = "names that differ only by capitalization stop being a payload finding"
+file = "tests/test_payload.py"
+before = "    return name.casefold()"
+after = "    return name"
+reddens = [
+  "tests/test_payload.py::test_names_that_differ_only_by_capitalization_are_a_finding[files]",
+  "tests/test_payload.py::test_names_that_differ_only_by_capitalization_are_a_finding[directories]",
+]
+
+# A `filter` attribute, Git LFS's included, rewrites what git hands out and stops validation like an
+# export attribute does.
+[[mutation]]
+name = "the payload guard stops reading a filter attribute"
+file = "tests/test_payload.py"
+before = 'REWRITING_ATTRIBUTES = ("filter", "ident", "working-tree-encoding", "text", "eol", "crlf")'
+after = 'REWRITING_ATTRIBUTES = ("ident", "working-tree-encoding", "text", "eol", "crlf")'
+reddens = [
+  "tests/test_payload.py::test_a_gitattributes_line_rewriting_content_is_a_finding[lfs]",
+  "tests/test_payload.py::test_a_gitattributes_line_rewriting_content_is_a_finding[filter-unset]",
+]
+
+# So does `text`, which converts line endings on the way out of git: the page names "other
+# content-rewriting attributes" without listing them, and this guard fails closed on them.
+[[mutation]]
+name = "the payload guard stops reading a text attribute"
+file = "tests/test_payload.py"
+before = '"working-tree-encoding", "text", "eol", "crlf")'
+after = '"working-tree-encoding", "eol", "crlf")'
+reddens = [
+  "tests/test_payload.py::test_a_gitattributes_line_rewriting_content_is_a_finding[text-auto]",
+  "tests/test_payload.py::test_a_gitattributes_line_rewriting_content_is_a_finding[line-endings]",
+]
+
+# `export-ignore` and `export-subst` in any `.gitattributes` stop validation; a guard that never
+# reads the file cannot see either.
+[[mutation]]
+name = "the payload guard stops reading .gitattributes"
+file = "tests/test_payload.py"
+before = '        if components[-1] == ".gitattributes":'
+after = '        if components[-1] == ".gitattribute":'
+reddens = [
+  "tests/test_payload.py::test_a_gitattributes_line_carrying_an_export_attribute_is_a_finding[export-ignore]",
+  "tests/test_payload.py::test_a_gitattributes_line_carrying_an_export_attribute_is_a_finding[export-subst]",
+]
+
+# README.md declares every program stayfixed runs that can reach a network, which is what the
+# directory's security scan reads; a row gone is a destination no longer disclosed.
+[[mutation]]
+name = "the README drops the git fetch row"
+file = "README.md"
+before = "| `git fetch` | `stayfixed bugs new` | the project's `origin`, and the remotes of submodules the fetch brings in (note 1) | unless `--no-fetch` |"
+after = ''
+reddens = ["tests/test_outbound.py::test_the_readme_declares_every_program_that_reaches_a_network"]
+
+# Every file the templates write under `.github/` is something GitHub runs, so each is a README row;
+# a template workflow added without one must redden.
+[[mutation]]
+name = "the template GitHub files stop being README rows"
+file = "tests/test_outbound.py"
+before = '    return shipped | {CI_WORKFLOW}'
+after = '    return {CI_WORKFLOW}'
+reddens = ["tests/test_outbound.py::test_the_readme_declares_every_program_that_reaches_a_network"]
+
+# A launch whose program the outbound walk cannot read is allowed only as a declared pass-through;
+# one that loses its declaration must be a finding, or a new such launch would be too.
+[[mutation]]
+name = "a launch the outbound walk cannot read loses its declaration"
+file = "tests/outbound/policy.py"
+before = '    ("src/stayfixed/release/notes.py", "build", "argv"): NO_ROWS,'
+after = ''
+reddens = ["tests/test_outbound.py::test_every_launch_is_classified"]
+
+# A declaration names one value handed to one launch; keyed on its function alone, it would exempt
+# every other unread launch a later change adds there.
+[[mutation]]
+name = "a declaration covers every launch in its function again"
+file = "tests/test_outbound.py"
+before = '    return launch.file, launch.function, element.text'
+after = '    return launch.file, launch.function, next((k[2] for k in (*PASS_THROUGH, *VOUCHED_ELEMENTS) if k[:2] == (launch.file, launch.function)), element.text)'
+reddens = [
+  "tests/test_outbound.py::test_a_declaration_covers_only_the_launch_it_names[another-expression]",
+]
+
+# A declaration no launch relies on any more is ready to excuse the next launch that hands its
+# value.
+[[mutation]]
+name = "a vouched element names a value no launch hands"
+file = "tests/outbound/policy.py"
+before = '    ("src/stayfixed/ledger/check.py", "_base_ledger", "fork"): "a merge base git printed",'
+after = '''    ("src/stayfixed/ledger/check.py", "_base_ledger", "fork"): "a merge base git printed",
+    ("src/stayfixed/ledger/check.py", "_base_ledger", "base"): "a merge base git printed",'''
+reddens = [
+  "tests/test_outbound.py::test_the_declarations_name_exactly_what_the_classification_rests_on",
+]
+
+# Every program a launch runs is classified as reaching a network or not; one in neither table
+# must be a finding, because "not listed as outbound" is not "local".
+[[mutation]]
+name = "a local git subcommand leaves the outbound walk's classification"
+file = "tests/outbound/policy.py"
+before = '        ("git", "grep"),'
+after = ''
+reddens = ["tests/test_outbound.py::test_every_launch_is_classified"]
+
+# A classification no launch uses is a promise about nothing, and an entry to excuse the next launch
+# that matches it.
+[[mutation]]
+name = "a dead row comes back to the outbound walk's network table"
+file = "tests/outbound/policy.py"
+before = '    ("git", "push"): "git push",'
+after = '''    ("git", "push"): "git push",
+    ("git", "pull"): "git pull",'''
+reddens = ["tests/test_outbound.py::test_every_table_entry_names_a_live_launch"]
+
+# A launch is local only when nothing before its options end is unread: an unread element there can
+# hold `--remote`, or a `-c` value that runs a program.
+[[mutation]]
+name = "a git argv with unread options passes as local"
+file = "tests/test_outbound.py"
+before = '    return keys if stable and keys <= VOUCHED_ELEMENTS.keys() else None'
+after = '    return keys'
+reddens = [
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[spread-options]",
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[spread-before-paths]",
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[unread-operand]",
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[unread-configuration]",
+]
+
+# `git archive --remote=<url>` asks a remote; a local subcommand carrying such an option must not
+# pass as local.
+[[mutation]]
+name = "a remote option no longer takes a git call out of the local table"
+file = "tests/outbound/policy.py"
+before = 'GIT_REMOTE_OPTIONS = ("--remote", "--upload-pack", "--receive-pack", "--exec")'
+after = 'GIT_REMOTE_OPTIONS: tuple[str, ...] = ()'
+reddens = [
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[archive-remote]",
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[archive-remote-late]",
+]
+
+# `git -c core.sshCommand=…` or `-c core.fsmonitor=…` runs a program of its own, so a setting
+# outside the listed keys must take a launch out of every table.
+[[mutation]]
+name = "a git -c setting is not held to the listed configuration keys"
+file = "tests/test_outbound.py"
+before = '        if configures and str(value).partition("=")[0] not in GIT_CONFIG_KEYS:'
+after = '        if False:'
+reddens = [
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[configuration-not-listed]",
+]
+
+# A `subprocess` function the outbound walk does not read (`getoutput`, `getstatusoutput`, one a
+# later Python adds) is still a launch, and a finding until declared; dropping the rule lets a
+# shell string reach a network unseen.
+[[mutation]]
+name = "the outbound walk stops counting an unlisted subprocess function as a launch"
+file = "tests/outbound/walk.py"
+before = '    if module == "subprocess" and function not in SUBPROCESS_INERT:'
+after = '    if False:'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[getoutput]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[getstatusoutput]",
+]
+
+# `posix` and `nt` hold the process functions `os` re-exports, so a call through either is a launch.
+[[mutation]]
+name = "posix and nt stop counting as os in the outbound walk"
+file = "tests/outbound/walk.py"
+before = 'OS_MODULES = frozenset({"os", "posix", "nt"})'
+after = 'OS_MODULES = frozenset({"os"})'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[posix]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[nt]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[star-posix]",
+]
+
+# A runner held under a name that does not end in `runner` still shows itself by the argv list it
+# is handed.
+[[mutation]]
+name = "the outbound walk knows a run only by its receiver's name"
+file = "tests/outbound/walk.py"
+before = '    listed = isinstance(given, (ast.List, ast.Tuple, ast.Starred))'
+after = '    listed = False'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[other-receiver]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[other-receiver-keyword]",
+]
+
+# `subprocess.run(args=[…])` and `runner.run(argv=[…])` hand the argv by keyword, and read only by
+# position the launch goes unread.
+[[mutation]]
+name = "the outbound walk reads no argv handed by keyword"
+file = "tests/outbound/walk.py"
+before = '    return next((k.value for k in call.keywords if k.arg and k.arg == launcher.keyword), None)'
+after = '    return None'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[keyword-args]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[other-receiver-keyword]",
+]
+
+# `from .gitenv import git_run` names the same launcher as the absolute import; skipped, every
+# launch through it goes unseen.
+[[mutation]]
+name = "the outbound walk skips relative imports"
+file = "tests/outbound/walk.py"
+before = '    if not node.level:'
+after = '    if True:'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[relative]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[relative-up]",
+]
+
+# `from stayfixed.memory.store import git_run` is `gitenv`'s `git_run`, which `store` imports; not
+# followed there, an undisclosed `git push` through the re-export passes.
+[[mutation]]
+name = "the outbound walk stops following a re-export"
+file = "tests/outbound/walk.py"
+before = '    if target[0] != names.file and target not in seen:'
+after = '    if False:'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[re-export]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[re-export-module]",
+]
+
+# `import os.path` binds `os` too, so `os.system` after it is a call through `os`; bound as
+# `os.path` alone, that launch goes unseen.
+[[mutation]]
+name = "the outbound walk binds a dotted import only under its full name"
+file = "tests/outbound/walk.py"
+before = '                    {".".join(parts[:i]): ".".join(parts[:i]) for i in range(1, len(parts) + 1)}'
+after = '                    {alias.name: alias.name}'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[submodule-import]"]
+
+# A name bound both to a package function and to a standard-library launcher is read as the launch;
+# read as the package function, a `def run` beside `from subprocess import run` hides the launch.
+[[mutation]]
+name = "the outbound walk lets a package function shadow a standard-library launcher"
+file = "tests/outbound/walk.py"
+before = '    return launcher or (launchers.get(package) if package else None)'
+after = '    return launchers.get(package) if package else launcher'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[shadowed-by-def]"]
+
+# A launcher named without being called — an alias, a `partial`, a callback, the owner of
+# `subprocess.run.__call__` — is handed on to a call the walk cannot follow, so the reference
+# itself is the finding.
+[[mutation]]
+name = "the outbound walk stops flagging a launcher handed on uncalled"
+file = "tests/outbound/walk.py"
+before = '                and _launcher(node, source.names, launchers) is not None'
+after = '                and False'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[alias]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[partial]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[dunder-call]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[callback]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-handed-on]",
+]
+
+# A call inside an annotation runs when the annotation is evaluated, and a launcher handed to it is
+# handed on like any other.
+[[mutation]]
+name = "the outbound walk skips a call's arguments inside an annotation"
+file = "tests/outbound/walk.py"
+before = '        arguments = isinstance(node, ast.Call) and field in ("args", "keywords")'
+after = '        arguments = False'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[in-annotation-argument]"]
+
+# A method that hands its argv on is called through names the walk does not bind; taken for a
+# launcher, its own launch is exempt and its callers are never read.
+[[mutation]]
+name = "a method that hands its argv on is taken for a launcher"
+file = "tests/outbound/walk.py"
+before = '            if id(function) not in source.module_level and key not in launchers:'
+after = '            if False:'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[method-forwarder]"]
+
+# A package module can re-export a launcher, so a star import of any of them binds names the walk
+# cannot follow.
+[[mutation]]
+name = "a star import is a launch only from a launcher module"
+file = "tests/outbound/walk.py"
+before = '        module in LAUNCHER_MODULES or _module_file(module) is not None'
+after = '        module in LAUNCHER_MODULES'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[star-re-export]"]
+
+# A listed network module reaches a network through its submodules too: `import asyncio.streams`
+# is `asyncio`'s.
+[[mutation]]
+name = "a network module's submodule passes as local"
+file = "tests/test_outbound.py"
+before = '    return any(module == entry or module.startswith(f"{entry}.") for entry in listed)'
+after = '    return module in listed'
+reddens = [
+  "tests/test_outbound.py::test_a_listed_module_is_forbidden_with_its_submodules[asyncio.streams-True]",
+  "tests/test_outbound.py::test_a_listed_module_is_forbidden_with_its_submodules[ctypes.util-True]",
+]
+
+# `ctypes`, `_posixsubprocess` and `_winapi` start a process through no launcher the walk knows, so
+# importing one must be a finding beside the network modules.
+[[mutation]]
+name = "the forbidden imports are the network modules alone"
+file = "tests/test_outbound.py"
+before = 'FORBIDDEN_MODULES = NETWORK_MODULES | NATIVE_MODULES'
+after = 'FORBIDDEN_MODULES = NETWORK_MODULES'
+reddens = [
+  "tests/test_outbound.py::test_a_listed_module_is_forbidden_with_its_submodules[ctypes.util-True]",
+  "tests/test_outbound.py::test_a_listed_module_is_forbidden_with_its_submodules[_posixsubprocess-True]",
+]
+
+# A function that hands its argv on in two calls is no launcher: derived from one, it exempts that
+# launch and the other is read as if the function's callers chose it.
+[[mutation]]
+name = "a function that hands its argv on twice is derived from the first"
+file = "tests/outbound/walk.py"
+before = '        twice = {key for key, found in handing.items() if len(found) > 1} - roots.keys()'
+after = '        twice: set[tuple[str, str]] = set()'
+reddens = [
+  "tests/test_outbound.py::test_a_function_that_hands_its_argv_on_twice_is_no_launcher[two-launchers]",
+  "tests/test_outbound.py::test_a_function_that_hands_its_argv_on_twice_is_no_launcher[fetch-then-merge-base]",
+  "tests/test_outbound.py::test_a_function_that_hands_its_argv_on_twice_is_no_launcher[a-second-configured]",
+  "tests/test_outbound.py::test_a_function_that_hands_its_argv_on_twice_is_no_launcher[one-per-branch]",
+]
+
+# A forwarder defined under a module-level `try` is derived, so its callers must be bound to it;
+# read from the top of the module alone, they are not, and its launches go unseen.
+[[mutation]]
+name = "the bindings and the derivation disagree on what is module-level"
+file = "tests/outbound/walk.py"
+before = '    functions = {node.name: (file, node.name) for node in module_level(tree)}'
+after = '    functions = {n.name: (file, n.name) for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[derived-under-try]"]
+
+# A function that rebinds its argv parameter before handing it on hands on something else.
+[[mutation]]
+name = "a parameter rebound before it is handed on is derived"
+file = "tests/outbound/walk.py"
+before = '    if parameter is None or not _stable(parameter, function):'
+after = '    if parameter is None:'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[parameter-rebound]"]
+
+# A starred argument before the argv's position moves the argv by a length the walk cannot know.
+[[mutation]]
+name = "a starred argument before the argv is skipped"
+file = "tests/outbound/walk.py"
+before = '    if not launcher.reads or any(isinstance(a, ast.Starred) for a in call.args[: launcher.at]):'
+after = '    if not launcher.reads:'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[star-before-the-argv]"]
+
+# A module constant rebound, augmented, mutated or shadowed does not hold its first value where it
+# is read.
+[[mutation]]
+name = "a module constant is read whatever rebinds or mutates it"
+file = "tests/outbound/walk.py"
+before = '        if not isinstance(target, ast.Name) or not _stable(target.id, tree):'
+after = '        if not isinstance(target, ast.Name):'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[constant-rebound]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[constant-augmented]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[constant-mutated]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[constant-shadowed]",
+]
+
+# `_SubprocessRunner(timeout=5).run(argv, root)` is a runner's `.run`, and a parameter `a_Runner`
+# holds one; matched case-sensitively, the first goes unseen and the second is refused.
+[[mutation]]
+name = "the runner suffix is matched case-sensitively"
+file = "tests/outbound/walk.py"
+before = '_RUNNER_NAME = re.compile(r"runner\Z", re.IGNORECASE)'
+after = '_RUNNER_NAME = re.compile(r"runner\Z")'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-constructor]",
+  "tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[constructor]",
+]
+
+# A parameter annotated with an alias of `Runner` holds a runner as surely as one annotated
+# `Runner`.
+[[mutation]]
+name = "the runner check does not follow an alias of Runner"
+file = "tests/outbound/walk.py"
+before = '        if found == aliases:'
+after = '        if True:'
+reddens = [
+  "tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[alias]",
+  "tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[imported-alias]",
+]
+
+# A runner bound by `:=` is held under that name as surely as one bound by `=`.
+[[mutation]]
+name = "the runner check reads no assignment expression"
+file = "tests/outbound/walk.py"
+before = '        elif isinstance(node, (ast.Assign, ast.NamedExpr)):'
+after = '        elif isinstance(node, ast.Assign):'
+reddens = ["tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[walrus]"]
+
+# `go, x = subprocess_runner(), 1` binds the runner to `go`.
+[[mutation]]
+name = "the runner check does not unpack a tuple assignment"
+file = "tests/outbound/walk.py"
+before = '    if isinstance(target, (ast.Tuple, ast.List)):'
+after = '    if False:'
+reddens = ["tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[tuple]"]
+
+# A lambda's parameter that its body calls `.run` on holds a runner, and a lambda's parameter has no
+# annotation to say so.
+[[mutation]]
+name = "the runner check skips a lambda"
+file = "tests/outbound/walk.py"
+before = '        elif isinstance(node, ast.Lambda):'
+after = '        elif False:'
+reddens = ["tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[lambda]"]
+
+# The `sh -c` row says stayfixed does not choose the command, which holds only for the user's own,
+# unread one; a script the package spells out itself must be a finding.
+[[mutation]]
+name = "every sh -c is its row again"
+file = "tests/test_outbound.py"
+before = '        if prefix not in USER_COMMANDS or (users and isinstance(users[0], Unread)):'
+after = '        if True:'
+reddens = [
+  "tests/test_outbound.py::test_sh_c_is_its_row_only_for_the_users_command[a-script-stayfixed-spells-out]",
+]
+
+# `executable=` replaces the program and `env=` can carry git's configuration, so a launch read as
+# a local `git status` could run or reach anything; not read, neither is seen.
+[[mutation]]
+name = "the outbound walk stops reading a launch's overrides"
+file = "tests/outbound/walk.py"
+before = '                if keyword.arg is None or keyword.arg in OVERRIDING'
+after = '                if False'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_that_overrides_its_program_or_environment_is_a_finding[executable]",
+  "tests/test_outbound.py::test_a_launch_that_overrides_its_program_or_environment_is_a_finding[environment]",
+  "tests/test_outbound.py::test_a_launch_that_overrides_its_program_or_environment_is_a_finding[environment-handed-on]",
+]
+
+# Only an `env=` that calls `scrubbed_env()` needs no declaration; every other must be declared.
+[[mutation]]
+name = "an env= is taken for scrubbed without calling scrubbed_env"
+file = "tests/test_outbound.py"
+before = '    if override.text.startswith("env=") and override.calls == SCRUBBED_ENVIRONMENT:'
+after = '    if override.text.startswith("env="):'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_that_overrides_its_program_or_environment_is_a_finding[environment]",
+  "tests/test_outbound.py::test_a_launch_that_overrides_its_program_or_environment_is_a_finding[environment-handed-on]",
+]
+
+# A write to `os.environ` changes what every launch that inherits the environment reaches.
+[[mutation]]
+name = "the outbound walk stops recognising os.environ"
+file = "tests/outbound/walk.py"
+before = "    \"\"\"Whether `expr` is the process's environment, `os.environ` however it is reached.\"\"\""
+after = '''    """Whether `expr` is the process's environment, `os.environ` however it is reached."""
+    return False'''
+reddens = [
+  "tests/test_outbound.py::test_a_change_to_the_environment_every_launch_inherits_is_found[item]",
+  "tests/test_outbound.py::test_a_change_to_the_environment_every_launch_inherits_is_found[update]",
+  "tests/test_outbound.py::test_a_change_to_the_environment_every_launch_inherits_is_found[augmented]",
+  "tests/test_outbound.py::test_a_change_to_the_environment_every_launch_inherits_is_found[delete]",
+]
+
+# `git grep -O`, `cat-file --filters` and `diff --ext-diff` run a program of their own, which can
+# reach a network as Git LFS's filter does.
+[[mutation]]
+name = "a program-running option no longer takes a git call out of the local table"
+file = "tests/test_outbound.py"
+before = '        reaching = GIT_REMOTE_OPTIONS + GIT_PROGRAM_OPTIONS.get(subcommand, ())'
+after = '        reaching = GIT_REMOTE_OPTIONS'
+reddens = [
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[grep-pager]",
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[cat-file-filters]",
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[diff-external]",
+]
+
+# A declaration vouches for one value; after its name is bound again the same text names another.
+[[mutation]]
+name = "a pass-through declaration covers an element its function binds again"
+file = "tests/test_outbound.py"
+before = '    if unread and unread[0].stable and (key := _key(launch, unread[0])) in PASS_THROUGH:'
+after = '    if unread and (key := _key(launch, unread[0])) in PASS_THROUGH:'
+reddens = [
+  "tests/test_outbound.py::test_a_declaration_covers_only_the_launch_it_names[the-same-expression-rebound]",
+]
+
+# `subprocess.run(argv, **keywords)` can hand `env=` or `executable=` through the spread, so the
+# spread is an override like either; not read, a launch read as a local `git status` passes.
+[[mutation]]
+name = "the outbound walk stops taking a keyword spread for an override"
+file = "tests/outbound/walk.py"
+before = '                if keyword.arg is None or keyword.arg in OVERRIDING'
+after = '                if keyword.arg in OVERRIDING'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_that_overrides_its_program_or_environment_is_a_finding[keywords-spread]",
+]

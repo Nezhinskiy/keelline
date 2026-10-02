@@ -479,14 +479,15 @@ def test_the_ignore_region_is_written_before_the_ledger_and_not_merely_written(
     # question from the one `attach`'s own comment states: the ledger holds the owner's personal
     # allow rules and lives under a path the repository has no `.gitignore` line for, so a ledger
     # written first is a ledger `git add -A` publishes to every collaborator in the window before
-    # the region lands. `mutations.toml`'s entry for it replaced the call with `pass`, so both
-    # named tests reddened against absence and nothing anywhere reddened against order.
+    # the region lands. The one entry it had replaced the call with `pass`, which is what
+    # `mutations/`'s "the ignore region is never written at all" still does, so both named tests
+    # reddened against absence and nothing anywhere reddened against order.
     #
     # The order of the writes themselves, recorded at `fsops.write_within` — the one primitive
     # every write in this module goes through — rather than inferred from the tree afterwards,
     # because the tree afterwards is identical either way.
     #
-    # Mutation: `mutations.toml`'s "the ignore region is written after the ledger it untracks".
+    # Mutation: `mutations/`'s "the ignore region is written after the ledger it untracks".
     root, store, machine = _attachable(tmp_path)
     written: list[str] = []
     real = fsops.write_within
@@ -571,7 +572,7 @@ def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
     # purpose: the binding record lives there, and asserting on the repository is what the
     # separate assertion below the snapshot is for.
     #
-    # Mutation: `mutations.toml`'s "the memory.groups containment is asked at write time only".
+    # Mutation: `mutations/`'s "the memory.groups containment is asked at write time only".
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
     _with_groups(root, '["../../escape"]')
     before = snapshot(root)
@@ -1024,7 +1025,7 @@ def test_a_ledger_no_attach_could_have_written_is_refused_before_the_first_write
     # boundary being crossed. What it is, is `docs/cli.md` asserting that every cause of exit 2
     # happens before the first write while one of them did not.
     #
-    # Mutation: `mutations.toml`'s "the ledger is read after attach has already written".
+    # Mutation: `mutations/`'s "the ledger is read after attach has already written".
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
     _committed_ledger(root, store, rules=[".github/workflows/ci.yml"])
     before = snapshot(root)
@@ -1084,7 +1085,7 @@ def test_an_overlay_store_the_walk_cannot_enter_is_refused_at_write_time(tmp_pat
     # This is the one remaining way this refusal can arrive after a write, and it is a fact
     # about the overlay — the owner's own tree — rather than about a repository-authored entry.
     #
-    # Mutation: `mutations.toml`'s "the write-time containment on the overlay's store directory
+    # Mutation: `mutations/`'s "the write-time containment on the overlay's store directory
     # is swallowed".
     root, store, machine = _attachable(tmp_path)
     shutil.rmtree(store)
@@ -1116,7 +1117,7 @@ def test_a_group_that_never_moved_refuses_the_attach_above_every_write(tmp_path:
     Both snapshots, because a refusal that leaves the *overlay* carrying a binding record is
     just as much "looking attached" as one that leaves the repository carrying a ledger.
 
-    Mutation: `mutations.toml`'s "attach links over notes that never moved again".
+    Mutation: `mutations/`'s "attach links over notes that never moved again".
     """
     root, store, machine = _attachable(tmp_path)
     note = root / DEFAULT_MEMORY / "project-stable" / "kept.md"
@@ -1265,7 +1266,7 @@ def test_a_checkout_that_already_hides_everything_is_not_touched(tmp_path: Path)
     # footprint out of git through `info/exclude` already. `attach` asks git which of its paths
     # are ignored before it writes, so neither file changes and `git status` stays empty.
     #
-    # Mutation: `mutations.toml`'s "attach treats an ignored path as not ignored".
+    # Mutation: `mutations/`'s "attach treats an ignored path as not ignored".
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
     _committed(root)
     exclude = _exclude(root)
@@ -1316,7 +1317,7 @@ def test_a_global_excludes_file_named_by_a_relative_path_still_stands_in_for_the
     # the owner's own excludes is asked over an empty work tree, where that path names no file,
     # so the owner's lines stood in for nothing and every path they hide got a line of its own.
     #
-    # Mutation: `mutations.toml`'s "the owner's relative excludes file is read from the empty work
+    # Mutation: `mutations/`'s "the owner's relative excludes file is read from the empty work
     # tree".
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
     _committed(root)
@@ -1346,7 +1347,7 @@ def test_a_committed_gitignore_does_not_stand_in_for_the_exclude_block(tmp_path:
     # `git status` until the next attach. Only the owner's own excludes -- `info/exclude` and the
     # global excludes file -- stand in for the block.
     #
-    # Mutation: `mutations.toml`'s "the owner's exclude question reads the checkout's .gitignore".
+    # Mutation: `mutations/`'s "the owner's exclude question reads the checkout's .gitignore".
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
     (root / ".gitignore").write_text(f"{DEFAULT_MEMORY}/\n.claude/\n.codex/\n", encoding="utf-8")
     _committed(root)
@@ -1379,7 +1380,7 @@ def test_a_path_the_owners_global_excludes_hide_gets_no_line_whatever_the_gitign
     # outranks the owner's file, and that answer gave the settings file a redundant line of its
     # own: the owner's line keeps it hidden whatever a pull does to the `.gitignore`.
     #
-    # Mutation: `mutations.toml`'s "the exclude block ignores what the owner's excludes hide".
+    # Mutation: `mutations/`'s "the exclude block ignores what the owner's excludes hide".
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
     (root / ".gitignore").write_text(f"{SETTINGS}\n", encoding="utf-8")
     _committed(root)
@@ -1404,7 +1405,7 @@ def test_a_gitignore_a_sparse_checkout_leaves_out_does_not_stand_in_for_the_bloc
     # `.gitignore` is on disk: read with the index, it took the repository's line for the
     # owner's again and left the link tree out of the block.
     #
-    # Mutation: `mutations.toml`'s "the owner's exclude question reads the index".
+    # Mutation: `mutations/`'s "the owner's exclude question reads the index".
     root, store, machine = _attachable(tmp_path)
     (root / ".gitignore").write_text(f"{DEFAULT_MEMORY}/\n", encoding="utf-8")
     _committed(root)
@@ -1444,7 +1445,7 @@ def test_the_block_keeps_what_an_earlier_attach_hid_when_the_grant_changes(
     # block dropped it: attach with an overlay granting nothing, grant a rule, attach again, and
     # the block held only the settings file while `git status` listed the whole link tree.
     #
-    # Mutation: `mutations.toml`'s "the exclude block forgets what an earlier attach hid".
+    # Mutation: `mutations/`'s "the exclude block forgets what an earlier attach hid".
     root, store, machine = _attachable(tmp_path)
     _committed(root)
     home = tmp_path / "home"
@@ -1545,7 +1546,7 @@ def test_a_symlinked_claude_directory_the_run_never_writes_into_is_not_refused(
     # nothing gives `attach` nothing to write there. The exclude block's candidates are what this
     # run writes, so the settings file is neither a reason to refuse nor a line in the block.
     #
-    # Mutation: `mutations.toml`'s "attach hides the settings file on a run that never writes it".
+    # Mutation: `mutations/`'s "attach hides the settings file on a run that never writes it".
     root, store, machine = _attachable(tmp_path)
     _committed(root)
     (tmp_path / "dotfiles-claude").mkdir()
@@ -1571,7 +1572,7 @@ def test_a_run_that_would_write_through_a_symlinked_claude_directory_still_refus
     with pytest.raises(Refusal) as refused:
         _attach_confirmed(root, store, machine, tmp_path / "home")
     # Refused for the reason it has: the containment asked of each placed path names the link.
-    # Mutation: `mutations.toml`'s "the exclude block stops holding placed paths to the project".
+    # Mutation: `mutations/`'s "the exclude block stops holding placed paths to the project".
     assert "symlink" in str(refused.value)
     assert_snapshot_unchanged(root, before)
 
@@ -1584,7 +1585,7 @@ def test_a_symlinked_stayfixed_directory_is_refused_before_anything_is_written(
     # only because `git check-ignore` will not answer about a path beyond a symlink, with a
     # message blaming git. Held to the project first, so the refusal says what is wrong.
     #
-    # Mutation: `mutations.toml`'s "attach stops holding the ledger's path to the project".
+    # Mutation: `mutations/`'s "attach stops holding the ledger's path to the project".
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
     (tmp_path / "elsewhere").mkdir()
     (root / ".stayfixed").symlink_to(tmp_path / "elsewhere", target_is_directory=True)
@@ -1660,7 +1661,7 @@ def test_a_group_name_with_a_line_separator_unhides_nothing_on_a_later_attach(
     # `b` -- so the owner's `.env` showed in `git status` and every file named `b` stopped
     # showing. The repository adding a group is the ordinary reason for a second attach.
     #
-    # Mutation: `mutations.toml`'s "the exclude line refuses only a newline".
+    # Mutation: `mutations/`'s "the exclude line refuses only a newline".
     root, store, machine = _attachable(tmp_path)
     _with_groups(root, f'["developer", "project-stable", "{_INJECTED}"]')
     _committed(root)
@@ -1686,7 +1687,7 @@ def test_an_earlier_blocks_line_is_kept_whole_whatever_it_holds(tmp_path: Path) 
     # holding U+2028 came back as three, and a `!.env` among them un-hid the owner's `.env`. git
     # ends a line at `\n` alone, so the block is read the same way.
     #
-    # Mutation: `mutations.toml`'s "the exclude block is re-read at every line separator".
+    # Mutation: `mutations/`'s "the exclude block is re-read at every line separator".
     root, store, machine = _attachable(tmp_path)
     _committed(root)
     _owner_hides_dotenv(root, tmp_path)
@@ -1741,7 +1742,9 @@ def test_each_pattern_character_in_a_group_name_is_escaped(name: str, line: str)
     # under `paths.memory`, and `\` would escape whatever follows it. Only the space escape was
     # asserted, so any one of these could leave `_SPECIAL` unnoticed.
     #
-    # Mutations: `mutations.toml`'s four "the exclude line leaves ... unescaped" entries.
+    # Mutations: `mutations/`'s "the exclude line leaves a star unescaped", "the exclude line
+    # leaves a question mark unescaped", "the exclude line leaves a bracket unescaped" and "the
+    # exclude line leaves a backslash unescaped".
     from stayfixed.attach.exclude import pattern
 
     assert pattern(name) == line
@@ -1781,7 +1784,7 @@ def test_an_overlay_rule_that_is_not_utf8_stops_attach_before_it_writes(tmp_path
     # the exclude block so `git status` no longer showed it, and no ledger for `detach` to
     # remove it by. Every source is read while the run is planned now.
     #
-    # Mutations: `mutations.toml`'s "attach copies past an overlay rule that is not UTF-8", which
+    # Mutations: `mutations/`'s "attach copies past an overlay rule that is not UTF-8", which
     # drops the refusal, and "attach reads the overlay's rule sources after its first write",
     # which keeps it and moves it below a write, so the snapshot is what reddens.
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
@@ -1799,7 +1802,7 @@ def test_a_trust_record_that_does_not_parse_stops_attach_before_it_writes(tmp_pa
     # `trust.json` that did not parse exited 2 there, with the index link dangling. It is read
     # while the run is planned now, so the refusal leaves everything as it was.
     #
-    # Mutation: `mutations.toml`'s "attach reads the trust record only after it has written".
+    # Mutation: `mutations/`'s "attach reads the trust record only after it has written".
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
     (machine.parent / "trust.json").write_text("{not json", encoding="utf-8")
     before = _everything(tmp_path)
@@ -1816,7 +1819,7 @@ def test_an_exclude_file_that_cannot_be_written_is_refused_by_name_before_the_fi
     # `.gitignore` had its region. The directory is asked whether it can be written while the run
     # is planned, and the refusal names the file.
     #
-    # Mutation: `mutations.toml`'s "attach finds out the exclude file cannot be written by
+    # Mutation: `mutations/`'s "attach finds out the exclude file cannot be written by
     # writing it".
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
     info = root / ".git" / "info"
@@ -1837,7 +1840,7 @@ def test_a_doubled_exclude_block_is_refused_naming_the_exclude_file(tmp_path: Pa
     # "region 'attach' is opened or closed twice" said which region and never which file, and the
     # file is not one a person opens often: `.git/info/exclude`.
     #
-    # Mutation: `mutations.toml`'s "a doubled exclude block is refused without its file".
+    # Mutation: `mutations/`'s "a doubled exclude block is refused without its file".
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
     begin = "# stayfixed:attach:begin\n"
     _exclude(root).parent.mkdir(exist_ok=True)
@@ -1854,7 +1857,7 @@ def test_an_exclude_file_whose_write_fails_is_a_refusal_naming_it(tmp_path: Path
     # The check made while planning cannot rule out a write that fails anyway, and that write used
     # to end as `internal error: PermissionError`. It is a refusal naming the file.
     #
-    # Mutation: `mutations.toml`'s "a failed exclude write is an internal error".
+    # Mutation: `mutations/`'s "a failed exclude write is an internal error".
     from stayfixed.attach.exclude import ExcludeWrite, write
 
     shut = tmp_path / "info"
@@ -1877,7 +1880,7 @@ def test_a_trusted_store_keeps_its_approval_when_attach_renders_its_missing_inde
     # re-attach revoked the owner's approval and withheld the harness link with "has no approval
     # yet".
     #
-    # Mutation: `mutations.toml`'s "attach's index render drops the store's approval".
+    # Mutation: `mutations/`'s "attach's index render drops the store's approval".
     from stayfixed.config.loader import load
     from stayfixed.memory.api import harness_memory_path, resolve
     from stayfixed.memory.trust import record
@@ -1904,7 +1907,7 @@ def test_a_settings_file_an_earlier_attach_wrote_is_hidden_by_the_next_one(
     # to merge, writes no settings, and it is the earlier ledger that says the file is
     # stayfixed's to hide; asked only of this run's writes, the file stayed in `git status`.
     #
-    # Mutation: `mutations.toml`'s "attach forgets the settings file an earlier attach wrote".
+    # Mutation: `mutations/`'s "attach forgets the settings file an earlier attach wrote".
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     _committed(root)
     home = tmp_path / "home"
@@ -1937,7 +1940,7 @@ def test_the_exclude_block_hides_what_git_hid_and_gives_every_file_back(tmp_path
     # holding `\r\n` whose last line ended `/a1\r` used to get `\r\n` appended, and git read
     # `/a1\r`, a pattern for another name.
     #
-    # Mutations: `mutations.toml`'s "a hash region ends a line after a lone carriage return with
+    # Mutations: `mutations/`'s "a hash region ends a line after a lone carriage return with
     # the file's own ending", "detach leaves the newline it added after a lone carriage return"
     # and "detach takes back half the CRLF attach added".
     from stayfixed.attach import exclude
@@ -1975,7 +1978,7 @@ def test_the_exclude_block_hides_what_git_hid_and_gives_every_file_back(tmp_path
 def test_a_doubled_gitignore_region_is_refused_naming_the_file(tmp_path: Path) -> None:
     # "region 'ignore' is opened or closed twice" named the region and not the file it is in.
     #
-    # Mutation: `mutations.toml`'s "a doubled .gitignore region is refused without its file".
+    # Mutation: `mutations/`'s "a doubled .gitignore region is refused without its file".
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     begin = "# stayfixed:ignore:begin\n"
     (root / ".gitignore").write_text(begin + begin + "# stayfixed:ignore:end\n", encoding="utf-8")
@@ -1989,7 +1992,7 @@ def test_a_doubled_gitignore_region_is_refused_naming_the_file(tmp_path: Path) -
 def test_what_pre_commit_prints_cannot_drive_a_terminal(tmp_path: Path) -> None:
     # `pre-commit install`'s answer was quoted raw in the note.
     #
-    # Mutation: `mutations.toml`'s "a subprocess's answer is quoted raw".
+    # Mutation: `mutations/`'s "a subprocess's answer is quoted raw".
     root, store, machine = _attachable(tmp_path)
     _overlay_repository(store.parents[2])
     (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")

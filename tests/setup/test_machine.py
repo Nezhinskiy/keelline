@@ -111,7 +111,7 @@ def test_the_preset_denies_reading_env_files_by_value() -> None:
     # By value and not `any(".env" in rule)`, which the case above already does: `["Read(.env)"]`
     # satisfies a substring test and leaves `.env.local` and every nested `.env` readable.
     #
-    # Mutation: `mutations.toml`'s "the preset stops denying the env files".
+    # Mutation: `mutations/`'s "the preset stops denying the env files".
     assert load_preset("recommended")["deny"]["global"] == [
         "Read(.env*)",
         "Read(**/.env*)",
@@ -129,7 +129,7 @@ def test_a_table_this_writer_does_not_know_survives_a_rewrite(tmp_path: Path) ->
     # "Written by: **you**, or `stayfixed setup`", which makes a hand-written table the ordinary
     # case rather than the exotic one.
     #
-    # Mutation (`mutations.toml`, "a table the machine writer does not own is dropped on a
+    # Mutation (`mutations/`, "a table the machine writer does not own is dropped on a
     # rewrite"): the carry-through arm stops copying the table → `[trust]` disappears and this
     # reddens.
     path = tmp_path / "config.toml"
@@ -162,7 +162,7 @@ def test_a_hand_written_key_in_a_table_this_writer_owns_survives_a_rewrite(
     # and `[machine]` were spread over what the file held; `[overlay]` was replaced outright,
     # so `[overlay] note` was gone after every `setup`, silently, on the owner's own file.
     #
-    # Mutation (`mutations.toml`, "write_machine replaces the overlay table instead of merging
+    # Mutation (`mutations/`, "write_machine replaces the overlay table instead of merging
     # over it"): the `**_table(existing, "overlay")` spread is dropped → `note` disappears.
     path = tmp_path / "config.toml"
     path.write_text(
@@ -193,8 +193,8 @@ def test_a_hand_written_float_or_sub_table_does_not_wedge_every_future_run(
     # for a value they were invited to write. Twice, because the wedge is about *every future*
     # run: the file is read back at the top of each one.
     #
-    # Mutation: `tomlout._scalar`'s float arm removed → the first call below raises again. Not a
-    # `mutations.toml` entry: this is value coverage in a serialiser, not a guard something
+    # Mutation: `tomlout._scalar`'s float arm removed → the first call below raises again. Not an
+    # entry in `mutations/`: this is value coverage in a serialiser, not a guard something
     # downstream reads as permission; the entry there is on the table carry-through above.
     path = tmp_path / "config.toml"
     path.write_text(

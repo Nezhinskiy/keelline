@@ -1015,7 +1015,7 @@ def test_a_harness_link_pointing_at_an_unrelated_directory_is_never_green(tmp_pa
     # the one channel attached notes take to reach the model, so a false sentence about where
     # that memory comes from is the most expensive thing this check could say.
     #
-    # Mutation: `mutations.toml`'s "doctor stops asking what the harness memory path points at".
+    # Mutation: `mutations/`'s "doctor stops asking what the harness memory path points at".
     root = _attached(tmp_path)
     elsewhere = tmp_path / "somebody-elses-notes"
     elsewhere.mkdir()
@@ -1196,7 +1196,7 @@ def test_a_cli_that_does_not_resolve_is_a_warning_that_names_the_install_command
     # has stopped agreeing. Asserted against the source and not only against the text, because
     # an identical literal satisfies the text.
     #
-    # Mutation: `mutations.toml`'s "the cli-path remedy spells the repository URL again".
+    # Mutation: `mutations/`'s "the cli-path remedy spells the repository URL again".
     assert f"git+{REPOSITORY_URL}" in check.remedy
     assert REPOSITORY_URL not in inspect.getsource(checks._cli_path)
 
@@ -1318,7 +1318,7 @@ def test_a_committed_attach_ledger_cannot_force_a_red_row(tmp_path: Path) -> Non
     # than computed against an empty record, because computing it would report every entry
     # `attach` installed as one it did not.
     #
-    # Mutation: `mutations.toml`'s "doctor reports an unreadable attach ledger as an empty one".
+    # Mutation: `mutations/`'s "doctor reports an unreadable attach ledger as an empty one".
     root = _attached(tmp_path)
     (root / LEDGER).write_text("this is not json", encoding="utf-8")
     checks = _checks(tmp_path, root, machine=_machine(tmp_path))
@@ -1352,7 +1352,7 @@ def test_a_harness_data_root_this_process_cannot_read_is_a_warning(tmp_path: Pat
     # installation. Unguarded, `iterdir()` raised straight into `_guarded` and produced
     # `diagnostics: red` and exit 1 with nothing wrong anywhere.
     #
-    # Mutation: `mutations.toml`'s "doctor renders an unreadable harness data root as a red row".
+    # Mutation: `mutations/`'s "doctor renders an unreadable harness data root as a red row".
     root = _attached(tmp_path)
     data = tmp_path / "data"
     markers = data / DIRECTORY / MARKERS
@@ -1384,7 +1384,7 @@ def test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_
     # for every row at once. An `OSError` is the machine; anything else is a defect in this
     # module and keeps the red the row exists for.
     #
-    # Mutation: `mutations.toml`'s "doctor renders an unreadable file as a broken check".
+    # Mutation: `mutations/`'s "doctor renders an unreadable file as a broken check".
     context = checks.Context(
         tmp_path, None, None, _stub(), {}, load(_initialised(tmp_path), machine=_machine(tmp_path))
     )
@@ -1426,7 +1426,7 @@ def test_the_two_plugin_root_skips_both_carry_a_remedy(tmp_path: Path) -> None:
     # the remedy being non-empty and on it being the shared constant, not on its wording: the
     # wording is prose, the presence is the guarantee.
     #
-    # Mutation: `mutations.toml`'s "the plugin-root skips go back to an empty remedy".
+    # Mutation: `mutations/`'s "the plugin-root skips go back to an empty remedy".
     context = checks.Context(
         tmp_path, None, None, _stub(), {}, load(_initialised(tmp_path), machine=_machine(tmp_path))
     )
@@ -1459,7 +1459,7 @@ def test_a_committed_ledger_cannot_vouch_for_a_committed_hook_entry(tmp_path: Pa
     # names is one the overlay currently grants, and the overlay is trusted by construction
     # because its root comes from the machine configuration.
     #
-    # Mutation: `mutations.toml`'s "the attach ledger vouches for a hook entry on its own".
+    # Mutation: `mutations/`'s "the attach ledger vouches for a hook entry on its own".
     root = _attached(tmp_path)
     _with_extra_entry(root, LAUNDERED)
     recorded = json.loads((root / LEDGER).read_text(encoding="utf-8"))
@@ -1504,7 +1504,7 @@ def test_an_overlay_that_cannot_be_asked_vouches_for_nothing_and_says_so(tmp_pat
     # file to a shape `apply_entries` refuses, which is the state an owner's own mistake
     # produces and the one a silent fallback to "trust the ledger" would hide.
     #
-    # Mutation: `mutations.toml`'s "an unreadable overlay falls back to trusting the ledger".
+    # Mutation: `mutations/`'s "an unreadable overlay falls back to trusting the ledger".
     root = _attached(tmp_path)
     (tmp_path / "overlay" / COMMON_CLAUDE / "hooks.json").write_text(
         json.dumps({"hooks": {"PreToolUse": "not a list"}}), encoding="utf-8"
@@ -1582,7 +1582,7 @@ def test_the_wrapper_probe_never_inherits_this_process_stdin(
     # reopen — so this flag's job is to be the *second*, independent guard: a later edit that
     # narrows the strip, or a second variable gated on a terminal the way the wrapper gates
     # `STAYFIXED_PYTHON_CANDIDATES`, still meets a closed stdin. It was the only guard in its
-    # commit with no entry in `mutations.toml`, which is how it stayed a claim rather than a
+    # commit with no entry in `mutations/`, which is how it stayed a claim rather than a
     # fact. It also bounds the row: a wrapper that reads stdin cannot hold the report open.
     saw = tmp_path / "wrapper-saw-stdin"
     planted = tmp_path / "plugin-root"
@@ -2480,7 +2480,7 @@ def test_an_overlay_that_moved_is_not_reported_as_one_never_recorded(tmp_path: P
     `PLUGIN_ROOT_REMEDY`'s rule, "one constant because both rows must say the same thing", is the
     one being read onto this pair.
 
-    Mutation: `mutations.toml`'s "the two overlay rows call a moved overlay an unrecorded one".
+    Mutation: `mutations/`'s "the two overlay rows call a moved overlay an unrecorded one".
     """
     machine = tmp_path / "machine.toml"
     machine.write_text(f'[overlay]\nroot = "{tmp_path / "moved-away"}"\n', encoding="utf-8")

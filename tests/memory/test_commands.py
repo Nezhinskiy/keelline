@@ -1031,7 +1031,7 @@ def test_the_store_named_by_its_overlay_path_is_the_store_the_link_tree_names(
     # notes and `--check` then called that index current. One store, however it is named: the
     # same groups and the same bytes either way.
     #
-    # Mutation: `mutations.toml`'s "an override naming this project's share resolves a smaller
+    # Mutation: `mutations/`'s "an override naming this project's share resolves a smaller
     # store".
     overlay = overlay_project.parent / "overlay"
     share = overlay / "projects" / "widget" / "memory"
@@ -1053,7 +1053,7 @@ def test_the_share_named_outside_overlay_mode_is_the_store_it_names(overlay_proj
     # repository in any other mode has no link tree, so `--store` naming the same directory is an
     # override like any other and resolves to that directory, not to `paths.memory`.
     #
-    # Mutation: `mutations.toml`'s "an override naming the share is dropped in every mode".
+    # Mutation: `mutations/`'s "an override naming the share is dropped in every mode".
     from stayfixed.config.loader import load
     from stayfixed.memory.store import resolved
 
@@ -1122,7 +1122,7 @@ def test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it(
     # cause now says itself, in stayfixed's own words before the region that holds the
     # repository's; only the mismatch names `--trust-remote`.
     #
-    # Mutation: `mutations.toml`'s "the binding check answers a missing record with the
+    # Mutation: `mutations/`'s "the binding check answers a missing record with the
     # mismatch's way out".
     from stayfixed.memory.trust import DELIMITER
     from tests.cli import cli
@@ -1149,6 +1149,6 @@ def test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it(
         assert "setup" in lead and "--overlay" in lead
         # The root is the owner's own machine configuration, not the repository's: it prints as
         # stayfixed's own words, quoted, and never inside the region that marks repository text.
-        # Mutation: `mutations.toml`'s "the recorded overlay root is printed as repository text".
+        # Mutation: `mutations/`'s "the recorded overlay root is printed as repository text".
         assert "moved-away" in lead
         assert DELIMITER not in said

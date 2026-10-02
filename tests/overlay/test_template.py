@@ -92,7 +92,7 @@ def test_the_template_pins_gitleaks_at_a_revision() -> None:
     # possible pre-commit configuration, including one pinned at `main`, which is exactly the
     # state it is named for refusing.
     #
-    # Mutations: `mutations.toml`'s "the overlay template follows gitleaks' default branch" and
+    # Mutations: `mutations/`'s "the overlay template follows gitleaks' default branch" and
     # "the overlay template's hook goes back to naming gitleaks by its tag".
     config = (template_root() / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     assert "gitleaks" in config
@@ -118,7 +118,7 @@ def test_the_template_ships_permissions_that_are_neither_granted_nor_pretended()
     # `tests/setup/test_setup.py::test_setup_writes_the_machine_file_and_the_deny_rules`.
     # What is left here is the shape: a `permissions` table with no rule of any kind in it.
     #
-    # Mutation: `mutations.toml`'s "the overlay template starts granting a permission".
+    # Mutation: `mutations/`'s "the overlay template starts granting a permission".
     payload = json.loads(
         (template_root() / "common" / "claude" / "permissions.json").read_text(encoding="utf-8")
     )
@@ -189,7 +189,7 @@ def test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_toke
     # workflow-level block is exactly those two scopes, and that no job replaces it, is asserted
     # below.
     #
-    # Mutations: `mutations.toml`'s "the overlay's secret scan runs a fork's head" and "the
+    # Mutations: `mutations/`'s "the overlay's secret scan runs a fork's head" and "the
     # overlay's secret scan is given a write token".
     text = _scan_workflow()
     triggers = _block(text, "on")
@@ -209,7 +209,7 @@ def test_the_scan_workflow_can_read_a_pull_requests_commits_in_a_private_reposit
     # `permissions: read-all`, or with `contents: read` alone, would leave this block looking
     # right above a token that is not the one it describes.
     #
-    # Mutations: `mutations.toml`'s "the overlay's secret scan cannot list a pull request's
+    # Mutations: `mutations/`'s "the overlay's secret scan cannot list a pull request's
     # commits" and "the overlay's secret scan sets its own permissions on the job".
     text = _scan_workflow()
     assert re.search(
@@ -225,7 +225,7 @@ def test_the_scan_workflow_checkout_leaves_no_token_behind() -> None:
     # for every later step, the third-party action among them. `fetch-depth: 0` sits in the same
     # `with:` block, so the key is looked for by value and not by name.
     #
-    # Mutation: `mutations.toml`'s "the overlay's secret scan checks out with a persisted token".
+    # Mutation: `mutations/`'s "the overlay's secret scan checks out with a persisted token".
     assert re.search(r"^ +persist-credentials: false$", _scan_workflow(), re.MULTILINE)
 
 
@@ -237,7 +237,7 @@ def test_the_scan_workflow_skips_a_repository_marked_as_a_template_and_scans_the
     # inverse, `is_template` without the `!`, would scan the template and skip every overlay,
     # which is the worst of both.
     #
-    # Mutations: `mutations.toml`'s "the overlay's secret scan runs on the template repository"
+    # Mutations: `mutations/`'s "the overlay's secret scan runs on the template repository"
     # and "the overlay's secret scan skips every repository made from the template".
     lines = _top_level_lines(_scan_workflow(), "jobs")
     assert "    if: ${{ !github.event.repository.is_template }}" in lines, lines
@@ -249,7 +249,7 @@ def test_the_scan_workflow_runs_the_gitleaks_the_pre_commit_hook_pins() -> None:
     # The workflow is the scan that cannot be skipped and the hook is the one that can; the two
     # name one release, and the hook's `rev:` is a sha whose release is its `# frozen:` comment.
     #
-    # Mutations: `mutations.toml`'s "the overlay's secret scan runs the action's older default
+    # Mutations: `mutations/`'s "the overlay's secret scan runs the action's older default
     # gitleaks", "the overlay's secret scan runs a different gitleaks than the hook" and "the
     # overlay template's hook goes back to naming gitleaks by its tag".
     config = (template_root() / ".pre-commit-config.yaml").read_text(encoding="utf-8")
@@ -269,7 +269,7 @@ def test_the_scan_workflow_pins_every_action_at_an_immutable_revision() -> None:
     # at length that an unpinned revision "lets somebody else choose what runs on your machine".
     # A full-length commit sha is the only immutable reference Actions has.
     #
-    # Mutations: `mutations.toml`'s "the overlay's secret scan follows a moveable action tag" and
+    # Mutations: `mutations/`'s "the overlay's secret scan follows a moveable action tag" and
     # "the overlay's secret scan follows a moveable gitleaks-action tag".
     steps = [
         stripped.removeprefix("- uses:").strip()
@@ -379,7 +379,7 @@ def test_the_overlay_readme_counts_the_files_a_create_actually_leaves() -> None:
     # against `OVERLAY_FILES` and nothing read the document, which is how a file the scaffold
     # engine adds slips past a sentence that counts them.
     #
-    # Mutation: `mutations.toml`'s "the overlay README stops counting the manifest".
+    # Mutation: `mutations/`'s "the overlay README stops counting the manifest".
     expected = _rendered_paths()
     assert expected, "no overlay files at all — every assertion below is vacuous"
     text = (template_root() / "README.md").read_text(encoding="utf-8")
@@ -437,7 +437,7 @@ def test_the_overlay_readme_accounts_for_every_file_a_create_leaves() -> None:
     # this README says which fires where. An accounting rule that cannot see that rename is not
     # an accounting rule.
     #
-    # Mutation: `mutations.toml`'s "the overlay README stops naming the hooks file".
+    # Mutation: `mutations/`'s "the overlay README stops naming the hooks file".
     text = (template_root() / "README.md").read_text(encoding="utf-8")
     assert text.strip(), "an empty README accounts for nothing"
     missing = []

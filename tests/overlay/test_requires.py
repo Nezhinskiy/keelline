@@ -62,7 +62,7 @@ def test_the_floor_is_compared_as_numbers_not_as_text() -> None:
     # line reddens on `>=9.0.0` against `10.0.0`.
     #
     # And the boundary itself, which is the classic off-by-one site: a floor a running version
-    # meets exactly is met. Mutation: `mutations.toml`'s "the declared floor stops being met by
+    # meets exactly is met. Mutation: `mutations/`'s "the declared floor stops being met by
     # the version that equals it".
     assert satisfies(">=9.0.0", "10.0.0") is True
     assert satisfies(">=0.1.0", "0.1.0") is True
@@ -84,7 +84,7 @@ def test_a_component_too_long_to_convert_is_unreadable_and_not_an_exception() ->
     backstop that then dropped `NOT_ATTACHED` and every other line of the same result. The
     value is asserted rather than the crash, because the crash is the thing being removed.
 
-    Mutation: `mutations.toml`'s "the version grammar stops bounding its components".
+    Mutation: `mutations/`'s "the version grammar stops bounding its components".
     """
     long = "9" * 5000
     assert satisfies(f">={long}.0.0", "0.1.0") is None

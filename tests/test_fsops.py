@@ -203,7 +203,8 @@ def test_an_absolute_path_is_refused(tmp_path: Path) -> None:
     # `match=` and not a bare `raises`: with the explicit check deleted an absolute path is
     # still refused, by the empty-first-component rule — `"/etc".split("/")` starts with `""`.
     # So the assertion has to be about the *reason*, or a later edit to that other rule takes
-    # the absolute case with it silently. `mutations.toml` records this; the oracle found it.
+    # the absolute case with it silently. `mutations/`'s "the containment walk stops refusing an
+    # absolute path by name" records this; the oracle found it.
     with pytest.raises(UnsafePath, match="absolute"), open_within(tmp_path, "/etc/passwd"):
         pass
 

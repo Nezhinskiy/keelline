@@ -95,8 +95,8 @@ What went is the claim that another area reads it.
   was a fourth, and came back when `attach` began hiding the tree it names.)
 
 `PartialLink` stays: `attach` imports it, which is what the paragraph that argued for it
-predicted. `Links` stays for the same reason and is the one name on this list a
-`mutations.toml` entry names.
+predicted. `Links` stays for the same reason and is the one name on this list an entry names:
+`mutations/`'s "a type the surface names in a signature drops off the surface".
 """
 
 from stayfixed.memory.bundles import SLOTS, Bundle, Fit, fit, render

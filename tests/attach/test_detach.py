@@ -222,7 +222,7 @@ def test_a_ledger_naming_a_file_attach_could_not_have_written_removes_nothing(
     # ever writes `.codex/rules/<file>`, so anything else in `rules` is a repository asking for
     # a deletion no attach could have earned.
     #
-    # Mutation: `mutations.toml`'s "detach deletes whatever file the ledger names" — make
+    # Mutation: `mutations/`'s "detach deletes whatever file the ledger names" — make
     # `_rule_is_writable` answer True unconditionally and the workflow file goes.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
@@ -320,7 +320,7 @@ def test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn(
     # exit 1 with `.claude/settings.local.json` and `.codex/rules/common.rules` already removed
     # and every link, the ignore region and the ledger still in place. Both are pure reads.
     #
-    # Mutation: `mutations.toml`'s "detach asks git where the checkouts are after it has already
+    # Mutation: `mutations/`'s "detach asks git where the checkouts are after it has already
     # withdrawn".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
@@ -377,7 +377,7 @@ def test_detach_removes_the_directories_the_attach_created(tmp_path: Path) -> No
     # leaves the tree changed. `.claude/` is on the list too — the overlay here grants a rule,
     # so the attach creates it.
     #
-    # Mutation: `mutations.toml`'s "detach leaves behind the directories the attach created".
+    # Mutation: `mutations/`'s "detach leaves behind the directories the attach created".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
@@ -519,7 +519,7 @@ def test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything
     # failing at the same line. The region is now read beside the ledger and `_checkouts`, so a
     # broken one refuses above the first withdrawal.
     #
-    # Mutation (`mutations.toml`, "detach reads the ignore region after it has already
+    # Mutation (`mutations/`, "detach reads the ignore region after it has already
     # withdrawn"): the remainder computed where the write happens → the snapshot below changes.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
@@ -531,7 +531,7 @@ def test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything
     before = snapshot(root)
     with pytest.raises(RegionError) as refused:
         _detach(root, machine, home)
-    # The refusal names the file, as the exclude block's does. Mutation: `mutations.toml`'s "a
+    # The refusal names the file, as the exclude block's does. Mutation: `mutations/`'s "a
     # doubled .gitignore region is refused without its file".
     assert GITIGNORE in str(refused.value)
     assert_snapshot_unchanged(root, before)
@@ -568,7 +568,7 @@ def test_a_region_init_recorded_survives_a_detach(tmp_path: Path) -> None:
     per-checkout and untracked, and the question "whose region is this" is answered for every
     clone by the committed manifest.
 
-    Mutation: `mutations.toml`'s "detach withdraws a region the footprint owns".
+    Mutation: `mutations/`'s "detach withdraws a region the footprint owns".
     """
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
@@ -643,7 +643,7 @@ def test_a_manifest_a_clone_committed_cannot_block_the_withdrawal(
     committed as a symlink out of the root (`PathEscape`, raised before any byte is read). Each
     one made the detach exit 2 exactly as `{"format": 99}` had.
 
-    Mutations: `mutations.toml`'s "an unreadable manifest blocks the detach again" and "the
+    Mutations: `mutations/`'s "an unreadable manifest blocks the detach again" and "the
     manifest reader lets undecodable bytes out as a crash again".
     """
     root, store, machine = _bound(tmp_path)
@@ -701,7 +701,7 @@ def test_the_settings_fallback_written_after_the_links_is_hidden_too(tmp_path: P
     # the fallback key is written after the links. Whether it will be is decided before the
     # first write (`write._fallback_possible`), so the run hides the file in its one block.
     #
-    # Mutation: `mutations.toml`'s "attach decides the settings fallback only once it has
+    # Mutation: `mutations/`'s "attach decides the settings fallback only once it has
     # written" reddens this through `check-ignore`.
     from tests.attach.test_write import _check_ignore
 
@@ -748,7 +748,7 @@ def test_a_fallback_that_would_write_through_a_symlinked_claude_is_skipped_with_
     # missing and how to get it. Before, the write failed with an `OSError` after every earlier
     # write; then, a refusal took the whole attach away from an ordinary layout.
     #
-    # Mutation: `mutations.toml`'s "attach takes the fallback through a linked-in .claude".
+    # Mutation: `mutations/`'s "attach takes the fallback through a linked-in .claude".
     from stayfixed.attach.write import FALLBACK_UNAVAILABLE
 
     root, store, machine, home = _fallback_forced(tmp_path)
@@ -798,7 +798,7 @@ def test_a_first_attach_with_a_symlinked_exclude_that_hides_everything_attaches(
     # cannot open and no settings file is written. A symlinked exclude file that already hides
     # every path the run places is therefore never written, and never refused.
     #
-    # Mutation: `mutations.toml`'s "a first attach treats the unapproved gate as possibly open":
+    # Mutation: `mutations/`'s "a first attach treats the unapproved gate as possibly open":
     # the settings file becomes a candidate, the exclude file must take a line, and its symlink
     # is refused. (The linked-`.claude` case in `test_write.py` cannot see this guard: the
     # fallback is off the table there for the link alone.)
@@ -837,7 +837,7 @@ def test_a_tracked_settings_file_the_owners_symlinked_exclude_hides_does_not_ref
     # symlinked file written, which is refused: an attach nothing had to write into the exclude
     # file exited 2. Only what the owner's own two files leave visible gets a line.
     #
-    # Mutation: `mutations.toml`'s "the exclude block also lists what git shows in spite of the
+    # Mutation: `mutations/`'s "the exclude block also lists what git shows in spite of the
     # owner's excludes".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
@@ -877,7 +877,7 @@ def test_detaching_one_checkout_keeps_the_block_another_attached_checkout_needs(
     # block away while a worktree was still attached, and `git status` there listed that
     # worktree's settings file and rule copy.
     #
-    # Mutation: `mutations.toml`'s "detach takes the shared block while another checkout is
+    # Mutation: `mutations/`'s "detach takes the shared block while another checkout is
     # attached".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
@@ -907,7 +907,7 @@ def test_an_exclude_file_attach_created_is_removed_by_detach(tmp_path: Path) -> 
     # from `attach`, and `detach` left it behind empty, against "a file left holding nothing is
     # removed rather than left empty".
     #
-    # Mutation: `mutations.toml`'s "detach leaves the exclude file attach created".
+    # Mutation: `mutations/`'s "detach leaves the exclude file attach created".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
@@ -939,7 +939,7 @@ def test_an_exclude_file_with_no_final_line_ending_comes_back_without_one(
     # `detach` left that line ending behind. The block records that it added one, and `detach`
     # takes it back when nothing follows the block.
     #
-    # Mutation: `mutations.toml`'s "detach keeps the line ending attach added".
+    # Mutation: `mutations/`'s "detach keeps the line ending attach added".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
@@ -980,7 +980,7 @@ def test_an_exclude_file_that_is_not_utf8_neither_blocks_attach_nor_detach(
     # outside it -- a comment in Latin-1, say -- refused `attach` and `detach` both. Its bytes are
     # kept exactly, in the attach and in the round trip.
     #
-    # Mutation: `mutations.toml`'s "the exclude file is read as UTF-8 text".
+    # Mutation: `mutations/`'s "the exclude file is read as UTF-8 text".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
@@ -1001,7 +1001,7 @@ def test_the_exclude_file_refusals_print_the_path_through_the_quoting_rule(
     # is printed through `printed.quoted`, which escapes a line break or an escape sequence in
     # it, as the store's refusals already print theirs.
     #
-    # Mutation: `mutations.toml`'s "the exclude file's symlink refusal prints its path raw".
+    # Mutation: `mutations/`'s "the exclude file's symlink refusal prints its path raw".
     from stayfixed.attach.exclude import planned_block
 
     root = tmp_path / "clone\n::error::x"
@@ -1024,7 +1024,7 @@ def test_an_empty_docs_directory_the_owner_had_survives_the_round_trip(tmp_path:
     # only those: an empty `docs/` the owner already had is not the attach's. Nothing tested that
     # half, so dropping the record check left every test green.
     #
-    # Mutation: `mutations.toml`'s "detach removes a directory above paths.memory it never made".
+    # Mutation: `mutations/`'s "detach removes a directory above paths.memory it never made".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
@@ -1043,7 +1043,7 @@ def test_an_empty_memory_directory_the_owner_had_survives_the_round_trip(tmp_pat
     # owner had made before the attach, against a round trip documented as byte for byte. The
     # ledger now records whether the attach created it.
     #
-    # Mutation: `mutations.toml`'s "detach removes a paths.memory it never made".
+    # Mutation: `mutations/`'s "detach removes a paths.memory it never made".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
@@ -1077,7 +1077,7 @@ def test_a_codex_directory_linked_in_after_attach_refuses_before_anything_is_wit
     # the settings gone, the links and the ledger in place, and every later run failing at the
     # same line. Each recorded rule copy is held to the project while the run is planned now.
     #
-    # Mutation: `mutations.toml`'s "detach finds a linked .codex by removing through it".
+    # Mutation: `mutations/`'s "detach finds a linked .codex by removing through it".
     root, _store, machine, home = _withdrawable(tmp_path)
     elsewhere = tmp_path / "codex-elsewhere"
     shutil.move(root / ".codex", elsewhere)
@@ -1099,7 +1099,7 @@ def test_a_group_added_since_the_attach_refuses_before_anything_is_withdrawn(
     # link tree while the run is planned now, and the refusal counts it rather than quoting it:
     # the entry is the repository's.
     #
-    # Mutation: `mutations.toml`'s "detach finds an escaping group by withdrawing the tree".
+    # Mutation: `mutations/`'s "detach finds an escaping group by withdrawing the tree".
     root, _store, machine, home = _withdrawable(tmp_path)
     text = (root / "stayfixed.toml").read_text(encoding="utf-8")
     (root / "stayfixed.toml").write_text(
@@ -1116,7 +1116,7 @@ def test_a_group_added_since_the_attach_refuses_before_anything_is_withdrawn(
 def test_a_doubled_exclude_block_refuses_detach_naming_the_exclude_file(tmp_path: Path) -> None:
     # The same refusal `attach` makes, and the same missing file name.
     #
-    # Mutation: `mutations.toml`'s "a doubled exclude block is refused without its file".
+    # Mutation: `mutations/`'s "a doubled exclude block is refused without its file".
     root, _store, machine, home = _withdrawable(tmp_path)
     path = _exclude_file(root)
     begin = "# stayfixed:attach:begin\n"
@@ -1135,7 +1135,7 @@ def test_detach_writes_nothing_through_an_exclude_file_that_became_a_symlink(
     # put there, and `detach` leaves the link and the file it points at alone rather than reading
     # the block through it and replacing the link with a regular file.
     #
-    # Mutation: `mutations.toml`'s "detach reads the block through a symlinked exclude file".
+    # Mutation: `mutations/`'s "detach reads the block through a symlinked exclude file".
     root, _store, machine, home = _withdrawable(tmp_path)
     path = _exclude_file(root)
     elsewhere = tmp_path / "dotfiles-exclude"
@@ -1157,9 +1157,9 @@ def test_an_exclude_file_ending_in_a_lone_carriage_return_keeps_its_last_pattern
     # marker was glued onto that line and `zz` showed in `git status` while the repository was
     # attached. The file comes back byte for byte on detach.
     #
-    # Mutations: `mutations.toml`'s "a hash region reads a lone carriage return as a line end",
-    # "the exclude block reads a lone carriage return as a line end" and "detach takes back a
-    # line ending attach never added".
+    # Mutations: `mutations/`'s "a hash region reads a lone carriage return as a line end",
+    # "the exclude block reads a lone carriage return as a line end" and "detach leaves the
+    # newline it added after a lone carriage return".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
@@ -1182,7 +1182,7 @@ def test_a_ledger_no_attach_of_that_checkout_wrote_does_not_keep_the_block(
     # worktree, and one that will not parse records no attach, so the block was kept for good.
     # Only an untracked ledger that reads as one counts now.
     #
-    # Mutations: `mutations.toml`'s "detach counts a committed ledger as another attach" and
+    # Mutations: `mutations/`'s "detach counts a committed ledger as another attach" and
     # "detach counts an unreadable ledger as another attach".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
@@ -1210,7 +1210,7 @@ def test_an_info_directory_attach_created_is_removed_by_detach(tmp_path: Path) -
     # records that its directory was created for it, and `detach` takes the directory back when
     # it is empty.
     #
-    # Mutation: `mutations.toml`'s "detach leaves the info directory attach created".
+    # Mutation: `mutations/`'s "detach leaves the info directory attach created".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
@@ -1252,7 +1252,7 @@ def test_a_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn
     # as `internal error: UnsafePath` with the settings file already withdrawn. Every removal
     # target is walked first now, and the refusal says which one.
     #
-    # Mutations: `mutations.toml`'s "detach walks to the ledger only when it removes it", "detach
+    # Mutations: `mutations/`'s "detach walks to the ledger only when it removes it", "detach
     # walks to the settings file only when it rewrites it" and "detach walks to a link-tree name
     # only when it removes it".
     root, _store, machine, home = _withdrawable(tmp_path)
@@ -1272,7 +1272,7 @@ def test_a_rule_copy_that_is_itself_a_symlink_is_withdrawn(tmp_path: Path) -> No
     # name and follows nothing, as it did before the check above existed, which refused this
     # with a sentence that blamed `.codex`.
     #
-    # Mutation: `mutations.toml`'s "detach refuses a rule copy that is itself a symlink".
+    # Mutation: `mutations/`'s "detach refuses a rule copy that is itself a symlink".
     root, _store, machine, home = _withdrawable(tmp_path)
     rule = root / ".codex" / "rules" / "common.rules"
     mine = tmp_path / "mine.rules"
@@ -1293,7 +1293,7 @@ def test_a_linked_claude_directory_attach_never_wrote_into_does_not_stop_detach(
     # not it held anything of stayfixed's, so the same layout that attached cleanly could not be
     # detached. A file with nothing to withdraw is not written at all.
     #
-    # Mutation: `mutations.toml`'s "detach rewrites a settings file it withdraws nothing from".
+    # Mutation: `mutations/`'s "detach rewrites a settings file it withdraws nothing from".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
     home = tmp_path / "home"

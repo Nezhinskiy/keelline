@@ -92,8 +92,9 @@ def test_the_hook_is_installed_into_the_repositorys_own_hooks_path(tmp_path: Pat
 def test_a_foreign_hook_is_kept_and_chained_to(tmp_path: Path) -> None:
     # The reason this is not a plain overwrite: a developer's own prepare-commit-msg is theirs, and
     # silently replacing it is data loss. Mutation: none of this test's own — the preserve-and-chain
-    # guard is `guards.githooks.install`'s, already load-bearing in `mutations.toml`; this test is
-    # about the CLI reporting the same outcome, not a new guard.
+    # guard is `guards.githooks.install`'s, already load-bearing as `mutations/`'s "the hook stops
+    # chaining to the hook it displaced"; this test is about the CLI reporting the same outcome, not
+    # a new guard.
     root = _repo(tmp_path)
     directory = hooks_dir(root)
     directory.mkdir(parents=True, exist_ok=True)

@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
+from tests.declarations import declared
 from tests.gitfixture import git
 from tests.workflow_yaml import load, runs
 
@@ -308,7 +309,7 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
 
 ORACLE_COMMAND = "scripts/mutation_oracle.py"
 ORACLE_JOB = "oracle"
-# Measured on the `oracle` job's own run: 173 s for the 566 entries `mutations.toml` held that
+# Measured on the `oracle` job's own run: 173 s for the 566 entries `mutations/` held that
 # day, four jobs on `ubuntu-latest` against a warm bytecode cache. It was 751 s for 372 while the
 # oracle ran one entry at a time and compiled from source on every run. Re-measure it from that
 # job's runs; it is here as a number rather than as prose so that the budget below is checked
@@ -358,7 +359,7 @@ def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> N
 
     It used to be a step of `checks`, where it was 76% of the job: 751 s of 879 s on Linux
     against a 900 s bound, on all four configurations at once, and the branch that took
-    `mutations.toml` past 380 entries took `checks (macos-latest, 3.13)` over the bound. Running
+    `mutations/` past 380 entries took `checks (macos-latest, 3.13)` over the bound. Running
     it on one configuration was necessary and not sufficient — `timeout-minutes` is a per-job
     bound, so paying once instead of four times gave 751 s back to the three configurations that
     stopped running it and nothing to the one that still did.
@@ -383,8 +384,6 @@ def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> N
     """
     # Mutations (declared): the budget cut below the projection; the job given an `if:` that can
     # skip it. Both redden this case.
-    import tomllib
-
     jobs = _ci_jobs()
     # The walk first: an empty reading would make every "exactly one" below come out zero for a
     # reason that is not about the workflow.
@@ -407,8 +406,8 @@ def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> N
     bounds = [x for x in body if x.strip().startswith("timeout-minutes:")]
     assert len(bounds) == 1, bounds
     budget = int(bounds[0].split(":", 1)[1].strip()) * 60
-    entries = len(tomllib.loads((ROOT / "mutations.toml").read_text(encoding="utf-8"))["mutation"])
-    assert entries > 0, "mutations.toml declares nothing, so this projects no cost at all"
+    entries = len(declared())
+    assert entries > 0, "mutations/ declares nothing, so this projects no cost at all"
     projected = entries * ORACLE_SECONDS_PER_ENTRY + ORACLE_SETUP_SECONDS + ORACLE_VARIANCE_SECONDS
     assert budget >= projected, (
         f"{entries} mutation entries project ~{projected:.0f} s against a {budget} s bound — "

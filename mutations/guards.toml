@@ -1,0 +1,1074 @@
+# The guards group: the checks that judge a command, a commit or a test run.
+# Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
+# CONTRIBUTING.md, "Tests".
+
+# A `#` opens a comment only at the start of a word. `shlex`'s own `commenters` ends a token
+# at ANY unquoted `#`, which truncated `echo a#b && cat secrets/.env` to `['echo', 'a']` and
+# dropped a real command on the floor.
+[[mutation]]
+name = "a mid-word hash opens a comment again"
+file = "src/stayfixed/guards/bashscan.py"
+before = '        elif character == "#" and _starts_a_word(previous):'
+after = '        elif character == "#":'
+reddens = [
+  "tests/guards/test_bashscan.py::test_a_mid_word_hash_does_not_truncate_the_command",
+  "tests/guards/test_bashscan.py::test_a_hash_inside_a_path_argument_survives",
+]
+
+# The newline's separator is space-padded so it can never weld onto a typed `;` and become a
+# `;;` token that `segments` does not split on. `operator_pieces` decomposes such a run as
+# well, so the segment split survives the unpadded form — what reddens is the token-level
+# assertion, which is the one that pins the padding itself rather than the second guard.
+[[mutation]]
+name = "the newline separator welds onto a typed semicolon again"
+file = "src/stayfixed/guards/bashscan.py"
+before = '            out.append(" ; ")'
+after = '            out.append(";")'
+reddens = [
+  "tests/guards/test_bashscan.py::test_a_newline_after_a_separator_arrives_as_its_own_token",
+]
+
+# `uv run pytest` is an exact two-token wrapper pair, and stripping it is what lets an
+# argv0-keyed caller see the program instead of the launcher. Dropping the branch reddens the
+# unwrapped case and the documented under-report alike: the latter's expected value is what
+# the pair-strip leaves behind, so it pins that the pair IS stripped and that nothing past it
+# is.
+[[mutation]]
+name = "the two-token wrapper pair stops being stripped off a segment"
+file = "src/stayfixed/guards/bashscan.py"
+before = '            name == _DOUBLE_WRAPPER[0]'
+after = '            False'
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_strips_the_two_token_uv_run_prefix",
+  "tests/guards/test_bashscan.py::test_command_words_does_not_unwrap_a_launcher_it_does_not_recognise",
+]
+
+# The other two branches `command_words` implements, one entry each: a single mutation cannot pin
+# both, since each branch strips a different prefix and `mutations/`'s "the two-token wrapper pair
+# stops being stripped off a segment" pins only the `uv run` pair. Leaving the assignment on the
+# front is what made an argv0 test read `FOO=1` as the program.
+[[mutation]]
+name = "a leading environment assignment stops being stripped off a segment"
+file = "src/stayfixed/guards/bashscan.py"
+before = '        if _ASSIGNMENT.match(token):'
+after = '        if False:'
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_strips_a_leading_assignment_and_wrapper",
+]
+
+# The `env` half of the same resolution: a bare wrapper token left on the front makes an
+# argv0 test judge the launcher instead of the program it launches.
+[[mutation]]
+name = "a bare wrapper token stops being stripped off a segment"
+file = "src/stayfixed/guards/bashscan.py"
+before = '        if name in _SINGLE_WRAPPERS:'
+after = '        if False:'
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_strips_a_leading_assignment_and_wrapper",
+]
+
+# `|&`, `;&` and `;;&` decompose to single characters by design, and each `&` there belongs to
+# a pipe or a case fall-through, never to the async operator.
+[[mutation]]
+name = "a pipe-both operator reads as backgrounding again"
+file = "src/stayfixed/guards/bgcleanup.py"
+before = '            if index and pieces[index - 1] in _COMMAND_ENDING_PIECES:'
+after = '            if False:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_the_pipe_both_operator_is_not_backgrounding",
+  "tests/guards/test_bgcleanup.py::test_a_case_fallthrough_terminator_is_not_backgrounding",
+]
+
+# `(cmd &)` arrives as `['(', 'cmd', '&)']` — no bare `&` anywhere — and the deliberate-detach
+# idiom was allowed until the welded run was decomposed. The measured note on the tests named:
+# the idiom's own `(sleep 300 &)` can no longer prove this, because the ported `_begins_with_sleep`
+# skips a leading `(` and refuses that command on the `sleep` rule before the `&` scan runs. A
+# non-sleep weld is what reddens, so that is what is named here.
+[[mutation]]
+name = "a background welded to a closing paren is invisible again"
+file = "src/stayfixed/guards/bgcleanup.py"
+before = '        pieces = bashscan.operator_pieces(token)'
+after = '        pieces = [token]'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_non_sleep_background_welded_to_a_closing_paren_is_denied",
+  "tests/guards/test_bgcleanup.py::test_the_incident_command_denies_without_the_space_before_the_ampersand",
+]
+
+# The named size cap on the same judge. Above it the command is not read at all, because tokenizing
+# is quadratic in token length and every Bash call pays it; removing the cap makes the over-cap half
+# of the test judge a 64 KiB command and refuse it.
+[[mutation]]
+name = "the background judge reads a command past its size cap again"
+file = "src/stayfixed/guards/bgcleanup.py"
+before = '    if len(command) > MAX_COMMAND_CHARS:'
+after = '    if False:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_command_past_the_size_cap_is_allowed_unread",
+]
+
+# The leading-`(` skip must drop a leading RUN, not every `(` in the segment: filtering the
+# whole segment pulls a `sleep` out of a command substitution and refuses `X=$(sleep 5) pytest`,
+# a false refusal of ordinary work from the one handler that fails closed.
+[[mutation]]
+name = "a sleep inside a command substitution reads as a leading sleep again"
+file = "src/stayfixed/guards/bgcleanup.py"
+before = '    words = bashscan.command_words(list(dropwhile(lambda t: t == "(", commands[0])))'
+after = '    words = bashscan.command_words([t for t in commands[0] if t != "("])'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_sleep_inside_a_command_substitution_is_not_a_leading_sleep",
+]
+
+# The one CLOSED handler. Under OPEN an exception inside the judge is swallowed and the call
+# proceeds — "could not judge" read as "permitted", which is exactly what the fail-closed policy
+# forbids.
+[[mutation]]
+name = "the background guard fails open again"
+file = "src/stayfixed/guards/hooks.py"
+before = '        Handler(name="bg-cleanup", event="PreToolUse", policy=Policy.CLOSED, run=_bg_cleanup),'
+after = '        Handler(name="bg-cleanup", event="PreToolUse", policy=Policy.OPEN, run=_bg_cleanup),'
+reddens = [
+  "tests/guards/test_hooks.py::test_the_background_guard_is_the_closed_pre_tool_use_handler",
+  "tests/guards/test_hooks.py::test_a_guard_that_cannot_judge_refuses_rather_than_permits",
+]
+
+[[mutation]]
+name = "a verdict's refusal never becomes a deny"
+file = "src/stayfixed/guards/hooks.py"
+before = '    if verdict.deny is not None:'
+after = '    if False:'
+reddens = [
+  "tests/guards/test_hooks.py::test_a_leaking_background_call_is_denied",
+  "tests/guards/test_hooks.py::test_a_leaking_background_call_is_denied_through_the_real_dispatcher",
+]
+
+# A value that reaches a subprocess is untrusted. Without the check a range shaped like an option is
+# handed to `git log`, where `--output=FILE` writes wherever the caller pointed it.
+[[mutation]]
+name = "a range shaped like an option reaches git"
+file = "src/stayfixed/guards/commit.py"
+before = '    if rev_range.startswith("-"):'
+after = '    if False:'
+reddens = [
+  "tests/guards/test_commit.py::test_a_range_shaped_like_an_option_is_refused_before_git_sees_it",
+]
+
+# The name rule: a product phrase as the WHOLE name. Measured, not predicted: `search` instead of
+# `fullmatch` reddens exactly one negative, the `Helped-by:` line naming a person after a
+# single-word product. A second was predicted; that one survives either way, because `_PRODUCTS`
+# carries no bare vendor word, only whole product phrases.
+[[mutation]]
+name = "a person whose name contains a product word is a bot again"
+file = "src/stayfixed/guards/commit.py"
+before = '    return _PRODUCTS.fullmatch(name.strip()) is not None'
+after = '    return _PRODUCTS.search(name.strip()) is not None'
+reddens = ["tests/guards/test_commit.py::test_negative_samples_are_untouched"]
+
+# The paragraph rule: only the final paragraph is judged, so a strip can never amputate a body
+# sentence.
+[[mutation]]
+name = "the whole message is judged again, body included"
+file = "src/stayfixed/guards/commit.py"
+before = '            return index + 1'
+after = '            return 0'
+reddens = [
+  "tests/guards/test_commit.py::test_only_the_final_paragraph_is_judged",
+  "tests/guards/test_commit.py::test_strip_never_touches_the_body",
+]
+
+# The bypass review found in the first cut of this module, and the reason it is declared rather than
+# merely covered: with the scan starting at the last line instead of the last non-blank one, a
+# message ending in a single space has an empty final paragraph and NOTHING is ever flagged. A gate
+# whose whole argument is that it cannot be bypassed was bypassable by one invisible character, and
+# no assertion in the file noticed. Re-measured after the attribution-block walk was added: the same
+# substitution now also reddens `test_strip_removes_a_whole_two_paragraph_attribution_block`,
+# `test_trailer_shaped_prose_above_the_block_is_not_swallowed_by_the_walk` and
+# `test_the_hook_leaves_nothing_for_the_range_check_to_find`, because the walk asks
+# `_final_paragraph_start` about the text above a paragraph and without the trim it answers with the
+# blank separator's own index, so the walk never steps. Collateral recorded rather than declared:
+# `mutations/`'s "only the final paragraph of an attribution block is judged again" and "the
+# attribution walk starts above a body paragraph" own that behaviour, and this one still says what
+# it was written to say.
+[[mutation]]
+name = "a trailing blank line empties the final paragraph again"
+file = "src/stayfixed/guards/commit.py"
+before = '    while end > 0 and not lines[end - 1].strip():'
+after = '    while False:'
+reddens = [
+  "tests/guards/test_commit.py::test_a_blank_tail_neither_hides_an_offence_nor_moves_its_line_number",
+  "tests/guards/test_commit.py::test_positive_samples_are_flagged",
+]
+
+# `commit strip` is the local half of the trailer gate (`commit check` is the CI half, already
+# covered): without this guard a `COMMIT_EDITMSG` reached through a symlink would be rewritten
+# through it rather than refused. No mutation is declared for the `-`-prefixed-path guard: it is a
+# one-line refusal identical in shape to `commits_in`'s own leading-`-` refusal, `mutations/`'s "a
+# range shaped like an option reaches git". The area's other refusals — the two in `_tool_input`,
+# `run_test_hygiene`'s `_NO_GIT`, `run_test_audit`'s self-test raise and the unreadable-file
+# `Failure` — were left undeclared on the same "one entry per task" reasoning and were declared
+# later instead: review pointed out that the word `Refusal` occurred nowhere in the declarations,
+# and a fail-closed row whose refusals are undeclared is exactly what CONTRIBUTING names as
+# belonging in `mutations/`.
+[[mutation]]
+name = "commit strip writes through a symlink"
+file = "src/stayfixed/guards/commands.py"
+before = '    if path.is_symlink():'
+after = '    if False:'
+reddens = ["tests/guards/test_commands.py::test_commit_strip_never_writes_through_a_symlink"]
+
+# The chain. Without it, installing this hook silently disables whatever husky, pre-commit or
+# the repository had under the same name — the one failure mode the whole `.local` dance
+# exists to prevent, and the one nothing about the installed hook's own behaviour would show.
+[[mutation]]
+name = "the hook stops chaining to the hook it displaced"
+file = "src/stayfixed/guards/githooks.py"
+before = '    exec "$previous" "$@"'
+after = '    :'
+reddens = [
+  "tests/guards/test_githooks.py::test_a_pre_existing_hook_is_preserved_and_still_runs",
+  # And from a linked worktree, where `$0.local` is a sibling of the *common* directory's copy
+  # — the reason the chain is spelled off `$0` rather than computed from `--git-common-dir`.
+  "tests/guards/test_githooks.py::test_a_worktree_shares_the_main_checkouts_hook",
+]
+
+# The quiet outcome, declared rather than only covered because the first cut of this hook got
+# it backwards and nothing about the code looked wrong. `grep -v` exits 1 when it selects no
+# lines, which is exactly the "nothing to strip" case, so hanging the failure report off the
+# pipe's status announced a broken strip on every clean commit. `after` below is that exact
+# spelling: a false alarm on the ordinary path, on a tool whose whole job is to be trusted
+# about what it rewrote.
+[[mutation]]
+name = "a clean commit is told the strip failed"
+file = "src/stayfixed/guards/githooks.py"
+before = '| grep -v "$quiet" >&2 || true'
+after = '| grep -v "$quiet" >&2 || echo "$failed" >&2'
+reddens = [
+  "tests/guards/test_githooks.py::test_the_hook_says_nothing_when_there_was_nothing_to_strip",
+]
+
+# The stale-bytecode predicate, both directions: `!=` against the header's recorded mtime is
+# the comparison CPython makes; a naive `pyc mtime > source mtime` reported the healthy case
+# as stale and missed the real one.
+[[mutation]]
+name = "stale bytecode is never counted"
+file = "src/stayfixed/guards/hygiene.py"
+before = '                if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:'
+after = '                if False:'
+reddens = ["tests/guards/test_hygiene.py::test_stale_bytecode_is_counted"]
+
+[[mutation]]
+name = "fresh bytecode is counted as stale"
+file = "src/stayfixed/guards/hygiene.py"
+before = '                if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:'
+after = '                if True:'
+reddens = ["tests/guards/test_hygiene.py::test_a_normally_compiled_pyc_is_not_stale"]
+
+# The containment check on `ledger.code_roots`. `config.paths` guards `[paths]` and leaves this
+# field to whoever consumes it, so this call is the only thing between a committed
+# `code_roots = ["../.."]` and a walk of the tree above the project root. Declared rather than
+# only covered because the fixture had to be built for it: an escaping entry that names nothing
+# on disk is dropped by the `is_dir()` filter, and the containment call could then be deleted
+# with every test still green — the test creates the escaping directory so it cannot.
+[[mutation]]
+name = "an escaping code root is followed"
+file = "src/stayfixed/guards/roots.py"
+before = '''            candidate = contained(
+                root, PurePosixPath(entry).as_posix(), resolved_root=resolved_root
+            )'''
+after = '            candidate = root / entry'
+reddens = ["tests/guards/test_hygiene.py::test_only_contained_code_roots_are_scanned"]
+
+# The other half of the stale-bytecode predicate, and the direction that costs a person time
+# rather than only missing a warning. PEP 552 bytes 8-12 hold the source mtime only while bit 0
+# of the flags word is clear; in a hash-based `.pyc` they hold half the source hash, and
+# comparing that fragment to an mtime reports a perfectly current cache as stale on every run.
+# `SOURCE_DATE_EPOCH` alone flips `py_compile` into that mode, so a reproducible build turns the
+# notice into a permanent false alarm and `test hygiene` into a permanent exit 1.
+[[mutation]]
+name = "a hash-based .pyc is read as if it carried an mtime"
+file = "src/stayfixed/guards/hygiene.py"
+before = '    if int(struct.unpack("<I", header[_PYC_FLAGS])[0]) & _PYC_HASH_BASED:'
+after = '    if False:'
+reddens = ["tests/guards/test_hygiene.py::test_a_hash_based_pyc_is_not_judged"]
+
+# Counting every imported entry point as reached marks the whole suite exercised, and the
+# scanner reports a clean suite whatever the tests do. (An earlier draft mutated
+# `_referenced_names` to count `ImportFrom` nodes; that walk covers a *test function*, where
+# no import sits, so the mutation was inert -- measured byte-identical output.) Measured here:
+# it also reddens `test_self_test_proves_the_scanner_still_discriminates` and the CLI test,
+# because the module's known-bad corpus carries this shape and the command refuses on a
+# self-test problem. The two named below are the ones that say what was lost.
+[[mutation]]
+name = "an imported entry point counts as invoked"
+file = "src/stayfixed/guards/audit.py"
+before = '        reached = _reachable_names(node, facts)'
+after = '        reached = _reachable_names(node, facts) | facts.root_symbols'
+reddens = [
+  "tests/guards/test_audit.py::test_an_import_alone_does_not_count_as_invoking_the_entry_point",
+  "tests/guards/test_audit.py::test_flags_a_test_that_names_an_entry_point_it_never_invokes",
+]
+
+# Module-level doubles collected by walking the whole file: a double bound inside one test made
+# the name a double in every sibling. The sibling in the named test takes the name as a fixture,
+# because a sibling that binds it replaces what it held either way, and against that shape this
+# mutation survived. Measured here: it also reddens the self-test, whose known-good corpus
+# carries the shape, and the CLI test, because the command refuses on a self-test problem.
+[[mutation]]
+name = "a double bound in one test is a double in every test of the file"
+file = "src/stayfixed/guards/audit.py"
+before = '        for node in _module_scope_statements(tree):'
+after = '        for node in ast.walk(tree):'
+reddens = [
+  "tests/guards/test_audit.py::test_a_double_bound_in_one_test_does_not_leak_into_its_siblings",
+]
+
+# No module scope at all. Measured here: it reddens both module-level tests, the self-test
+# (its known-bad corpus asserts on a module-level double, and the per-test expectations are
+# what make that loss visible: graded per shape, a second assert-on-double test hid it) and
+# the CLI test.
+[[mutation]]
+name = "a module-level double is not a double"
+file = "src/stayfixed/guards/audit.py"
+before = '    pending: list[ast.AST] = list(tree.body)'
+after = '    pending: list[ast.AST] = []'
+reddens = [
+  "tests/guards/test_audit.py::test_a_module_level_double_is_a_double_in_every_test",
+]
+
+# The obvious fix for the leak, narrowing to the top-level statements, drops a global bound
+# under a top-level `try` or `if`. Measured here: it reddens the one test below and nothing else.
+[[mutation]]
+name = "a double bound under a top-level compound statement is not module-level"
+file = "src/stayfixed/guards/audit.py"
+before = '            if isinstance(child, ast.stmt | ast.excepthandler | ast.match_case)'
+after = '            if False'
+reddens = [
+  "tests/guards/test_audit.py::test_a_double_bound_under_a_top_level_compound_statement_is_module_level",
+]
+
+# A shape with no known-bad test expected to produce it is graded by nothing, and the self-test
+# passes over it. Measured here: deleting `names-but-never-invokes`'s only expectation leaves the
+# self-test green and reddens the test below alone.
+[[mutation]]
+name = "a shape loses its only known-bad expectation"
+file = "src/stayfixed/guards/audit.py"
+before = '        ("test_boot_demo_builds_fixtures_in_resolved_locale", "names-but-never-invokes"),'
+after = ''
+reddens = [
+  "tests/guards/test_audit.py::test_every_shape_has_a_known_bad_test_the_self_test_expects_it_from",
+]
+
+# The visitor only ever added names to its set of doubles, so a test that bound a name to its
+# real subject after it had been a double, its own or the module's, had every assertion on that
+# subject flagged. Measured here: the three cases that rebind a double redden, the derived-value
+# case does not.
+[[mutation]]
+name = "rebinding a double's name to the real subject keeps it a double"
+file = "src/stayfixed/guards/audit.py"
+before = '        self.doubles.difference_update(names)'
+after = '        pass'
+reddens = [
+  "tests/guards/test_audit.py::test_a_binding_replaces_what_the_name_held[a module-level double shadowed by the test]",
+  "tests/guards/test_audit.py::test_a_binding_replaces_what_the_name_held[a double rebound to the real subject]",
+  "tests/guards/test_audit.py::test_a_binding_replaces_what_the_name_held[a module-level double rebound by `with ... as`]",
+]
+
+# The same for a value derived from a double. Measured here: it reddens that case alone.
+[[mutation]]
+name = "rebinding a double-derived value to the subject's keeps it derived"
+file = "src/stayfixed/guards/audit.py"
+before = '        self.tainted.difference_update(names)'
+after = '        pass'
+reddens = [
+  "tests/guards/test_audit.py::test_a_binding_replaces_what_the_name_held[a value from a double rebound to one from the subject]",
+]
+
+# `with ... as` restored to its old shape, adding a double and never replacing one. Measured
+# here: it reddens the `with` case alone.
+[[mutation]]
+name = "a with-binding only ever adds a double"
+file = "src/stayfixed/guards/audit.py"
+before = '                self._rebind([item.optional_vars.id], double=double)'
+after = '                self.doubles.update([item.optional_vars.id] if double else [])'
+reddens = [
+  "tests/guards/test_audit.py::test_a_binding_replaces_what_the_name_held[a module-level double rebound by `with ... as`]",
+]
+
+# Discarding the targets before the value is classified reads `client = client.session` as a
+# binding to something that is not a double. The `before` is the comment that states the order,
+# replaced by the discard it warns against. Measured here: it reddens the test below alone.
+[[mutation]]
+name = "the targets are discarded before the value is classified"
+file = "src/stayfixed/guards/audit.py"
+before = '        # Classified before the rebinding, so `client = client.session` keeps `client` a double.'
+after = '        self.doubles.difference_update(targets)'
+reddens = [
+  "tests/guards/test_audit.py::test_a_double_rebound_to_its_own_attribute_is_still_a_double",
+]
+
+# The two-paragraph attribution block, and the reason the paragraph rule needed a walk rather
+# than a wider net. The canonical harness attribution is a `Generated with` footer, a blank
+# line, then a `Co-Authored-By:` trailer; judging the final paragraph alone removed the trailer
+# and left the footer, so the hook reported a successful strip and `commit check` failed the
+# same commit in CI. This mutation stops the walk after one paragraph, which is exactly that
+# defect. Measured over `tests/guards`: exactly these three redden and nothing else does -- the
+# unit answer, the same block through the real installed hook (which is the pair the defect was
+# reported as: the hook claimed success, the range check then failed the commit), and the test
+# that pins what the walk costs, which asserts the block is removed whole.
+[[mutation]]
+name = "only the final paragraph of an attribution block is judged again"
+file = "src/stayfixed/guards/commit.py"
+before = '        if not _paragraph_is_all_attribution(lines, earlier, start):'
+after = '        if True:'
+reddens = [
+  "tests/guards/test_commit.py::test_strip_removes_a_whole_two_paragraph_attribution_block",
+  "tests/guards/test_commit.py::test_trailer_shaped_prose_above_the_block_is_not_swallowed_by_the_walk",
+  "tests/guards/test_githooks.py::test_the_hook_leaves_nothing_for_the_range_check_to_find",
+]
+
+# The other half of the same walk, and the one that protects the paragraph rule: the walk starts
+# only when the LAST paragraph is attribution to the last line. Without that test it steps over a
+# body paragraph into whatever attribution sits above it, and `strip` rewrites the body around it --
+# the failure the paragraph rule exists to prevent. Its target carries a fixture written for it:
+# once a trailer value had to end at its address, the test's original body sentence stopped being an
+# attribution and this mutation SURVIVED, green everywhere. The assertion was redesigned rather than
+# the entry reworded, and the shape that discriminates is an attribution-only paragraph standing
+# above a body one.
+[[mutation]]
+name = "the attribution walk starts above a body paragraph"
+file = "src/stayfixed/guards/commit.py"
+before = '    if not _paragraph_is_all_attribution(lines, start, len(lines)):'
+after = '    if False:'
+reddens = ["tests/guards/test_commit.py::test_only_the_final_paragraph_is_judged"]
+
+# A trailer's value ends at its address; a value that continues INTO A WORD past it is a sentence.
+# Without that test everything past the `>` is discarded as part of the address, so `Reviewed-by:
+# Copilot <x@y.z> said nothing useful.` reads as a bare `Copilot` trailer -- and under the
+# attribution walk, one standing alone over the harness block was STRIPPED with it. Four entries,
+# because three tempting spellings of this rule each MISS A REAL TRAILER and each was measured doing
+# so; this class of mistake has now been made twice and the entries are what stop a third.
+[[mutation]]
+name = "a trailer value may run on past its address again"
+file = "src/stayfixed/guards/commit.py"
+before = '    if bracket and _WORD.search(tail):'
+after = '    if False:'
+reddens = [
+  "tests/guards/test_commit.py::test_negative_samples_are_untouched",
+  "tests/guards/test_commit.py::test_trailer_shaped_prose_above_the_block_is_not_swallowed_by_the_walk",
+]
+
+# Spelling 1: "the value must END at `>`". An unterminated trailer (`<noreply@anthropic.com`,
+# closing bracket knocked off) carries no `>` at all, so dropping the `bracket and` guard reads
+# its whole address as a prose tail and a real attribution walks through the gate.
+[[mutation]]
+name = "a trailer with no closing bracket stops being read"
+file = "src/stayfixed/guards/commit.py"
+before = '    if bracket and _WORD.search(tail):'
+after = '    if _WORD.search(tail):'
+reddens = [
+  "tests/guards/test_commit.py::test_a_trailer_whose_closing_bracket_is_missing_is_still_caught",
+]
+
+# Spelling 2: "anything after `>` is prose". THIS ONE SHIPPED FOR A ROUND and was caught in
+# review, not by a test: it silently missed the canonical harness trailer with a full stop typed
+# after it -- `Co-Authored-By: Claude <noreply@anthropic.com>.` -- on the domain rule and the
+# product-name rule alike. A gate that one keystroke bypasses is not a gate. Punctuation is not
+# a word; that is the whole distinction, and this entry is the one that holds it.
+[[mutation]]
+name = "trailing punctuation after the address reads as prose again"
+file = "src/stayfixed/guards/commit.py"
+before = '    if bracket and _WORD.search(tail):'
+after = '    if bracket and tail:'
+reddens = [
+  "tests/guards/test_commit.py::test_punctuation_after_the_address_does_not_disarm_the_trailer_rule",
+]
+
+# Spelling 3: split at the FIRST `>` rather than the last. A display name carrying brackets of
+# its own (`Claude <bot> <noreply@anthropic.com>`) then puts the real address after an inner
+# `>`, and the trailer reads as prose -- missed. The last `>` is the address's own closing
+# bracket in every shape measured.
+[[mutation]]
+name = "the prose tail is taken from the first closing bracket, not the last"
+file = "src/stayfixed/guards/commit.py"
+before = '    _, bracket, tail = address.rpartition(">")'
+after = '    _, bracket, tail = address.partition(">")'
+reddens = [
+  "tests/guards/test_commit.py::test_punctuation_after_the_address_does_not_disarm_the_trailer_rule",
+]
+
+# The heredoc body read as GRAMMAR rather than as the data it is. `prepare` re-inserts an
+# unquoted body into the scanned text -- right for a caller matching paths, because the shell
+# expands such a body, and wrong for the one question this guard asks. Both directions were
+# measured through `judge(..., background=True)` before the flag was keyed off: a
+# `cat > README.md <<EOF` whose body carried `a=1&b=2` was DENIED by the plugin's only
+# `Policy.CLOSED` handler, and an apostrophe in a body ("don't") left `tokenize` returning
+# `None`, which degrades to ALLOW and let a real `sleep 5 &` after the heredoc through.
+[[mutation]]
+name = "a heredoc body is read as shell grammar again"
+file = "src/stayfixed/guards/bgcleanup.py"
+before = '    tokens = bashscan.tokenize(command, keep_unquoted_bodies=False)'
+after = '    tokens = bashscan.tokenize(command)'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_heredoc_written_to_a_file_is_data_not_a_program",
+  "tests/guards/test_bgcleanup.py::test_an_apostrophe_in_a_heredoc_body_does_not_hide_a_real_leak",
+]
+
+# The third half of the stale-bytecode header read, and the same class as `mutations/`'s "a
+# hash-based .pyc is read as if it carried an mtime": PEP 552 bytes 8-12 are this interpreter's
+# recorded source mtime only when bytes 0-4 are this interpreter's magic. A `__pycache__` keeps one
+# `.pyc` per interpreter tag and nothing removes the old ones, so a `mod.cpython-311.pyc` records
+# the mtime as of a run whose bytecode will never be imported again -- and any edit since makes it
+# mismatch. Measured on a tree whose current bytecode had just been compiled and was fresh:
+# `_stale_bytecode` -> 1, so the notice fires on every red run of a healthy tree and `test hygiene`
+# exits 1 forever.
+[[mutation]]
+name = "a .pyc from another interpreter is read as this one's"
+file = "src/stayfixed/guards/hygiene.py"
+before = '    if header[_PYC_MAGIC] != importlib.util.MAGIC_NUMBER:'
+after = '    if False:'
+reddens = ["tests/guards/test_hygiene.py::test_a_pyc_from_another_interpreter_is_not_judged"]
+
+# `contained_roots` is what every consumer of `ledger.code_roots` walks, one `rglob` per entry
+# with the results added up, so a repeated or nested entry multiplies a count rather than
+# widening a scan. Measured with `code_roots = ["src", "src", "src/pkg"]` over two stale `.pyc`
+# files: `stale == 5` with no pruning at all, `stale == 3` with the mutation below, `2` as
+# shipped. A wrong number in a notice whose entire purpose is to be believed about a number.
+[[mutation]]
+name = "a code root listed twice is walked twice"
+file = "src/stayfixed/guards/roots.py"
+before = '        if any(_covers(kept, candidate) for kept in found):'
+after = '        if False:'
+reddens = [
+  "tests/guards/test_hygiene.py::test_a_repeated_or_nested_code_root_is_walked_once",
+]
+
+# An advisory command's exit code is part of its contract. `suite_files` lists a `test_*.py`
+# symlink by name without following it, so a dangling one -- routine after a bad merge -- raised
+# `FileNotFoundError` out of `scan_file` and turned `test audit-entrypoints`, which exits 0 by
+# design, into `internal error: FileNotFoundError` and exit 2 -- the code callers are told never
+# to read as permission. Skipping the file under-reports, which is the direction the two parse
+# errors beside it already chose.
+[[mutation]]
+name = "an unreadable test file aborts the scan"
+file = "src/stayfixed/guards/audit.py"
+before = '    except (OSError, SyntaxError, UnicodeDecodeError):'
+after = '    except (SyntaxError, UnicodeDecodeError):'
+reddens = [
+  "tests/guards/test_audit.py::test_a_dangling_test_symlink_is_skipped_rather_than_aborting_the_scan",
+]
+
+# ---------------------------------------------------------------------------------------------
+# The guards review. The first six are defects review measured on the shipped modules; the last four
+# are the area's fail-closed refusals, which were described in comments and in tests but declared
+# nowhere — the word `Refusal` did not occur in the declarations at all.
+
+# A footer had no bounded tail, so ANY line beginning with the words was one whatever followed:
+# `Generated with Claude Code and then reviewed by a human.` was an offence, and `commit strip`
+# deleted that sentence from the message before the commit existed, reporting only a count. The
+# worse of the two failure directions by the module's own docstring — the range check still
+# catches a trailer the hook left behind, and nothing puts a deleted sentence back. The
+# replacement is the pre-fix pattern exactly: an empty tail is "the line may go on forever".
+[[mutation]]
+name = "a generated-with footer may run on into a sentence again"
+file = "src/stayfixed/guards/commit.py"
+before = '_FOOTER_TAIL = r"(?:[ \t]+(?:(?-i:[A-Z0-9])[\w.]*|\S*[\d/]\S*))*(?:\]\([^)\s]*\))?\]?[^\w]*$"'
+after = '_FOOTER_TAIL = r""'
+reddens = [
+  "tests/guards/test_commit.py::test_negative_samples_are_untouched",
+  "tests/guards/test_commit.py::test_strip_does_not_amputate_a_body_sentence_that_begins_with_the_footer_words",
+]
+
+# The record separator was `%x01`, chosen for "neither can occur in a commit message". NUL
+# cannot; `\x01` can, and git stores it. One such byte in a body split one commit into two
+# records, sent the rest of the message into the field read as a `sha`, inflated the count 1 -> 2
+# and left the trailer in a record nothing judged — the CI gate voided for that commit by one
+# byte, the same class as the trailing-space bypass this branch already fixed once.
+[[mutation]]
+name = "the commit stream is split on a byte a message can carry"
+file = "src/stayfixed/guards/commit.py"
+before = '    fields = text.split("\x00")'
+after = '    fields = text.split("\x01")'
+reddens = [
+  "tests/guards/test_commit.py::test_a_control_byte_in_a_body_does_not_split_the_commit_into_two_records",
+]
+
+# The other half of the same guard, and the reason NUL can be the only delimiter: `-z` is what
+# terminates each record with NUL instead of a newline. Without it the records run together and the
+# pairing reads one commit where there are two. Declared separately because the `\x01` fixture of
+# `mutations/`'s "the commit stream is split on a byte a message can carry" does NOT redden on this
+# one — a two-part guard needs two entries or half of it is unproven.
+[[mutation]]
+name = "the log stops being NUL-terminated"
+file = "src/stayfixed/guards/commit.py"
+before = '        "-z",'
+after = '        "--reverse",'
+reddens = [
+  "tests/guards/test_commit.py::test_check_range_reports_each_offending_commit_once",
+]
+
+# `commit.verbose = true` puts the staged diff in the message file below a scissors line, and a
+# diff's lines start with `diff`, `+`, `-`, `@@` or a space. Without the scissors rule the walk
+# back over comment and blank lines stopped at the first of them, the whole file read as
+# "message", the attribution block was no longer trailing and the hook became a silent no-op —
+# one config key disabling the entire local layer.
+[[mutation]]
+name = "the verbose diff is read as part of the commit message again"
+file = "src/stayfixed/guards/commands.py"
+before = '        if line.startswith(_COMMENT_CHAR) and _SCISSORS_MARKER in line:'
+after = '        if False:'
+reddens = [
+  "tests/guards/test_commands.py::test_commit_strip_still_strips_when_commit_verbose_appends_the_diff",
+  "tests/guards/test_commands.py::test_a_scissors_line_is_found_by_its_marker_not_by_gits_english_sentence",
+]
+
+# A trailer whose value is a bare address (`Co-Authored-By: noreply@anthropic.com`, brackets left
+# off) has no display name to split at, so `address` was empty and `_VENDOR_DOMAINS` could never
+# fire — while the identical address in brackets was caught. The third way past the trailer's value
+# rule, after `mutations/`'s "a trailer with no closing bracket stops being read" and "trailing
+# punctuation after the address reads as prose again".
+[[mutation]]
+name = "a bare address is no longer read as the trailer's address"
+file = "src/stayfixed/guards/commit.py"
+before = '    if not bracket and len(name.split()) == 1:'
+after = '    if False:'
+reddens = ["tests/guards/test_commit.py::test_positive_samples_are_flagged"]
+
+# `UnicodeDecodeError` is not an `OSError`. Without its own arm a message file in a non-UTF-8
+# encoding — `i18n.commitEncoding` is a real git setting — left `commit strip` as `internal error:
+# UnicodeDecodeError` and exit 2, the code callers are told never to read as permission, for a file
+# the command simply cannot read. Same shape as the audit's dangling symlink entry, `mutations/`'s
+# "an unreadable test file aborts the scan".
+[[mutation]]
+name = "a non-UTF-8 message file is an internal error again"
+file = "src/stayfixed/guards/commands.py"
+before = '    except UnicodeDecodeError:'
+after = '    except KeyError:'
+reddens = [
+  "tests/guards/test_commands.py::test_commit_strip_reports_a_message_file_that_is_not_utf_8_as_a_failure",
+]
+
+# `guard bg-cleanup` is the CLI table's fail-closed row and `_tool_input` is where it closes.
+# Both of its refusals are replaced here with the answer a guard must never give for input it
+# could not read: `None`, which the command reports as "not a Bash call" and exit 0 — a refusal
+# that everything downstream reads as permission, which is the category CONTRIBUTING names.
+[[mutation]]
+name = "a payload that is not JSON is allowed instead of refused"
+file = "src/stayfixed/guards/commands.py"
+before = '        raise Refusal(f"{_UNREADABLE}; {exc}") from None'
+after = '        return None'
+reddens = ["tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_what_it_cannot_read"]
+
+[[mutation]]
+name = "a payload carrying no command string is allowed instead of refused"
+file = "src/stayfixed/guards/commands.py"
+before = '        raise Refusal(f"{_UNREADABLE}, and the object must carry a string `command`")'
+after = '        return None'
+reddens = ["tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_what_it_cannot_read"]
+
+# "A tree git could not report on is not a clean tree." The whole value of `test hygiene` is that
+# it answers "can this red run be trusted", and "I do not know" reported as "yes" is the one
+# wrong answer. The replacement is the shape that makes it green and silent.
+[[mutation]]
+name = "a tree git cannot report on is reported as clean"
+file = "src/stayfixed/guards/commands.py"
+before = '        raise Refusal(_NO_GIT)'
+after = '        found = found._replace(dirty=0)'
+reddens = [
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_a_tree_git_cannot_report_on",
+]
+
+# A scanner that cannot go red is not evidence. Without this raise, `test audit-entrypoints`
+# exits 0 over a suite nothing actually graded, which reads exactly like a clean audit.
+[[mutation]]
+name = "a scanner that stopped discriminating still reports an audit"
+file = "src/stayfixed/guards/commands.py"
+before = '        raise Refusal("the scanner no longer discriminates: " + "; ".join(problems))'
+after = '        problems = []'
+reddens = [
+  "tests/guards/test_commands.py::test_test_audit_entrypoints_refuses_when_the_scanner_stops_discriminating",
+]
+
+# In the block led by `mutations/`'s "setup splits git's listing of checkouts at a carriage return
+# inside a path": a line-oriented git answer is split where git ended each line, never at a `\r` or
+# a line separator inside a name.
+[[mutation]]
+name = "the dirty count counts a name holding a line separator twice"
+file = "src/stayfixed/guards/hygiene.py"
+before = "    return sum(1 for line in answer_lines(out) if line.strip())"
+after = "    return sum(1 for line in out.splitlines() if line.strip())"
+reddens = ["tests/test_git_answers.py::test_a_dirty_name_holding_a_line_separator_is_one_entry"]
+
+# The commit range is judged as UTF-8, and git prints a log in `i18n.logOutputEncoding`, which
+# the owner's global configuration sets: under latin-1 a plain `café` read as unjudgeable.
+[[mutation]]
+name = "the commit range reads the log in whatever encoding git was configured to print"
+file = "src/stayfixed/guards/commit.py"
+before = """        "--encoding=UTF-8",
+"""
+after = ""
+reddens = [
+  "tests/test_git_answers.py::test_the_commit_range_is_read_in_utf_8_whatever_git_is_told_to_print",
+]
+
+# A call given a bound no row names slips past the table the way the table's rows slipped past
+# the suite, so every `timeout=` a `git_run` call passes is read.
+[[mutation]]
+name = "the status query's bound is a literal below git's latency"
+file = "src/stayfixed/guards/hygiene.py"
+before = '    code, out = git_run(root, "status", "--porcelain", "--", timeout=STATUS_TIMEOUT_SECONDS)'
+after = '    code, out = git_run(root, "status", "--porcelain", "--", timeout=0.001)'
+reddens = ["tests/test_git_run.py::test_every_bound_a_git_run_call_passes_is_one_the_table_pins"]
+
+# A trailing `; echo` hides the exit code the harness notification reports, but only after a
+# `;`: after `&&` a failing command skips the echo and the chain carries its code. Accepting
+# any chain operator turns every ordinary `cmd && echo done` into a false hint.
+[[mutation]]
+name = "the exit-code hint fires after && as well as after ;"
+file = "src/stayfixed/guards/bgcleanup.py"
+before = '    if not breaks or pieces[breaks[-1]] != ";":'
+after = '    if not breaks:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_chains_whose_last_exit_code_is_the_real_one_are_not_warned_about",
+]
+
+# The hint is a fact about NOTIFICATIONS, which only a backgrounded call gets; unkeyed, it
+# fires on every foreground `cmd; echo done` a session types.
+[[mutation]]
+name = "the exit-code hint stops being keyed on the background flag"
+file = "src/stayfixed/guards/bgcleanup.py"
+before = '        for hint in (_restore_hint(command), _exit_echo_hint(command) if background else None)'
+after = '        for hint in (_restore_hint(command), _exit_echo_hint(command))'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_the_same_chain_in_the_foreground_is_silent",
+]
+
+# `command_words` is what lets `FOO=1 echo done` be read as an echo; `tail[0]` alone reads
+# the assignment and stays silent.
+[[mutation]]
+name = "the exit-code hint reads the echo's program from the raw first token"
+file = "src/stayfixed/guards/bgcleanup.py"
+before = '    words = bashscan.command_words(tail)'
+after = '    words = tail'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_an_env_prefixed_echo_is_still_an_echo",
+]
+
+# The last `;` of a compound statement falls after its terminator, so the masked segment is
+# `done` or `fi` alone and the hint advises making a keyword the last command of the chain.
+# A backgrounded loop ending in a progress echo is the traffic this rule sits in front of.
+[[mutation]]
+name = "the exit-code hint names a statement terminator as the masked command"
+file = "src/stayfixed/guards/bgcleanup.py"
+before = '    if program in _STATEMENT_KEYWORDS or program in _ECHO_COMMANDS:'
+after = '    if program in _ECHO_COMMANDS:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_compound_statement_terminator_is_never_named_as_the_masked_command",
+]
+
+# `cmd > out.log; echo "----"; echo "EXIT=$?"` masks `cmd`, two breaks back. Naming the second
+# echo tells the reader to read the status of an `echo` from the output it wrote.
+[[mutation]]
+name = "the exit-code hint names a second echo as the masked command"
+file = "src/stayfixed/guards/bgcleanup.py"
+before = '    if program in _STATEMENT_KEYWORDS or program in _ECHO_COMMANDS:'
+after = '    if program in _STATEMENT_KEYWORDS:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_second_echo_is_never_named_as_the_masked_command",
+]
+
+# A trailing `;` -- or the trailing newline every editor writes, which the tokenizer turns
+# into one -- leaves the last break with an empty tail, and the whole rule falls silent on the
+# commonest authoring of the shape it exists for.
+[[mutation]]
+name = "a trailing separator silences the exit-code hint again"
+file = "src/stayfixed/guards/bgcleanup.py"
+before = '    while pieces and pieces[-1] in _CHAIN_OPERATORS:'
+after = '    while False:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_trailing_separator_does_not_silence_the_hint",
+]
+
+# Quoting every piece alike renders `>>` as a literal argument to `echo`, so the text offered
+# as "what you typed" is a different command -- in the shape this rule most often sees.
+[[mutation]]
+name = "the rendered tail quotes its redirect operators into arguments"
+file = "src/stayfixed/guards/bgcleanup.py"
+before = '        token if token in bashscan.REDIRECT_OPERATORS else shlex.quote(token)'
+after = '        shlex.quote(token)'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_the_rendered_tail_keeps_its_redirect_a_redirect",
+]
+
+# `&>` and `&>>` are redirects beginning with neither `>` nor `<`, so a first-character test
+# walks past them and renders the redirect as part of the masked command's own name.
+[[mutation]]
+name = "the command head stops on a redirect's first character instead of the table"
+file = "src/stayfixed/guards/bgcleanup.py"
+before = '        if piece in bashscan.REDIRECT_OPERATORS:'
+after = '        if piece[:1] in {">", "<"}:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_an_ampersand_redirect_is_not_part_of_the_masked_command",
+]
+
+# `attribute`'s run 3. The merge-base and the base's tip are the same commit only until the base
+# advances; after that, archiving the tip puts commits that are not "before this change" into the
+# before side and the verdict silently answers a different question.
+[[mutation]]
+name = "attribute compares against the base's tip instead of the merge-base"
+file = "src/stayfixed/guards/attribute.py"
+before = "        _extract(root, merge_base, merge)"
+after = "        _extract(root, base, merge)"
+reddens = [
+  "tests/guards/test_attribute.py::test_the_three_runs_land_in_the_working_tree_head_and_the_merge_base",
+]
+
+# A run that never executed has no exit code to score: the seam answers TIMED_OUT and NOT_FOUND, and
+# both are non-zero, so scoring them reads as "fails on both" — the one wrong answer a tool whose
+# output goes into a ledger entry must not give.
+[[mutation]]
+name = "attribute scores a run that never executed"
+file = "src/stayfixed/guards/attribute.py"
+before = "    if done.code in (TIMED_OUT, NOT_FOUND):"
+after = "    if False:"
+reddens = ["tests/guards/test_attribute.py::test_a_run_that_did_not_execute_is_a_failure_never_a_verdict"]
+
+# `attribute`'s verdict table. The two arms that differ only in the merge-base's code are the pair a
+# reader acts on: one says "your change", the other says "not your change".
+[[mutation]]
+name = "attribute swaps the this-change and pre-existing verdicts"
+file = "src/stayfixed/guards/attribute.py"
+before = "    if head != 0 and base != 0:\n        return VERDICTS[0]\n    if head != 0 and base == 0:\n        return VERDICTS[1]"
+after = "    if head != 0 and base != 0:\n        return VERDICTS[1]\n    if head != 0 and base == 0:\n        return VERDICTS[0]"
+reddens = ["tests/guards/test_attribute.py::test_each_verdict_follows_from_its_exit_codes"]
+
+# A repository- or argument-derived value shaped like an option must be refused above the first
+# subprocess. `--base` reaches `git merge-base` as a positional argument, and git reads a leading
+# `-` as an option (`--upload-pack=` among them).
+[[mutation]]
+name = "attribute hands a -shaped --base straight to git"
+file = "src/stayfixed/guards/attribute.py"
+before = '    if base.startswith("-"):'
+after = "    if False:"
+reddens = [
+  "tests/guards/test_commands.py::test_test_attribute_refuses_a_base_shaped_like_an_option",
+]
+
+# `_extract`. `git archive` honours the archived tree's own `.gitattributes`, which is versioned:
+# without this comparison runs 2 and 3 execute against trees missing files the working tree has, and
+# the verdict answers a question nobody asked.
+[[mutation]]
+name = "attribute lets an export rule shrink the tree it compares"
+file = "src/stayfixed/guards/attribute.py"
+before = "    if code == 0 and missing:"
+after = "    if False:"
+reddens = [
+  "tests/guards/test_attribute.py::test_an_archive_an_export_rule_shrank_is_a_failure_and_not_a_smaller_tree",
+]
+
+# The listing and the extraction are compared as SETS OF PATHS, and the listing has to be read the
+# pedantic way or the guard fires on a healthy tree and blames a `.gitattributes` rule that is not
+# there. Two lines, two mutations, because the two halves fail differently: `split()` breaks `sub
+# dir/a b.txt` into three phantoms, and without `-z` `ls-tree` quotes a name carrying a quote or a
+# non-ASCII byte.
+[[mutation]]
+name = "attribute reads the tracked listing without -z, so git quotes the awkward names"
+file = "src/stayfixed/guards/attribute.py"
+# `timeout=120` is part of this line now — the call was moved off `gitenv`'s argument-free cap,
+# which `ls-tree -r` never fitted. Carried into the `before` so the entry still names a line.
+before = '''"-z", ref, timeout=120)'''
+after = '''ref, timeout=120)'''
+reddens = [
+  "tests/guards/test_attribute.py::test_a_spaced_path_a_quoted_one_and_a_dangling_symlink_are_not_missing_files",
+]
+
+[[mutation]]
+name = "attribute splits the tracked listing on whitespace instead of on NUL"
+file = "src/stayfixed/guards/attribute.py"
+before = '''    expected = {name for name in listing.split("\0") if name}'''
+after = '''    expected = set(listing.split())'''
+reddens = [
+  "tests/guards/test_attribute.py::test_a_spaced_path_a_quoted_one_and_a_dangling_symlink_are_not_missing_files",
+]
+
+# The second and third sources of a false missing file. Presence is asked of each expected name
+# rather than inferred from a walk: `exists()` answers for a submodule gitlink, which `git archive`
+# materialises as an empty DIRECTORY, and `is_symlink()` for a tracked dangling link. Dropping
+# either clause restores one of the two false positives, and each has its own fixture, so the two
+# mutations redden different tests.
+[[mutation]]
+name = "attribute asks is_file, so a submodule gitlink reads as a missing file"
+file = "src/stayfixed/guards/attribute.py"
+before = "not (into / name).exists()"
+after = "not (into / name).is_file()"
+reddens = [
+  "tests/guards/test_attribute.py::test_a_submodule_gitlink_is_present_and_not_a_missing_file",
+]
+
+[[mutation]]
+name = "attribute stops asking is_symlink, so a dangling symlink reads as a missing file"
+file = "src/stayfixed/guards/attribute.py"
+before = " and not (into / name).is_symlink()"
+after = ""
+reddens = [
+  "tests/guards/test_attribute.py::test_a_spaced_path_a_quoted_one_and_a_dangling_symlink_are_not_missing_files",
+]
+
+# Every external program is optional at runtime and a missing binary is a reported finding, never a
+# traceback: `gitenv.git_run` answers `(-1, "")` and `runner` answers `Completed(NOT_FOUND, ...)`.
+# This was the one launch in the module with nothing around it.
+[[mutation]]
+name = "attribute lets a missing tar escape as a traceback"
+file = "src/stayfixed/guards/attribute.py"
+before = "    except OSError as exc:"
+after = "    except ZeroDivisionError as exc:"
+reddens = [
+  "tests/guards/test_attribute.py::test_a_tar_that_cannot_be_launched_is_a_finding_and_not_a_traceback",
+]
+
+[[mutation]]
+name = "attribute reports an archive git gave no answer for as an exit code"
+file = "src/stayfixed/guards/attribute.py"
+before = """    if code == -1:
+        raise Failure(f"{NO_ANSWER}, so `git archive {ref}` extracted nothing")"""
+after = """    if False:
+        raise Failure(f"{NO_ANSWER}, so `git archive {ref}` extracted nothing")"""
+reddens = [
+  "tests/guards/test_attribute.py::test_an_archive_git_gave_no_answer_for_is_a_failure_and_not_an_exit_code",
+]
+
+# A listing git gave no answer for — it ran past its bound — is no listing, and the comparison is
+# skipped rather than blaming an export rule for a healthy tree.
+[[mutation]]
+name = "attribute reads a listing git gave no answer for as every file missing"
+file = "src/stayfixed/guards/attribute.py"
+before = "    if code == 0 and missing:"
+after = "    if code != 0 or missing:"
+reddens = [
+  "tests/guards/test_attribute.py::test_a_listing_git_gave_no_answer_for_skips_the_comparison",
+]
+
+# In the block led by `mutations/`'s "the bug ledger reports itself uninitialised and checks
+# nothing": a smoke-fixture gate row reports on what it examined, not on `exit 0`.
+[[mutation]]
+name = "the commit gate reads an empty range and reports OK"
+file = "src/stayfixed/guards/commit.py"
+before = "    commits = commits_in(root, rev_range)"
+after = "    commits = []"
+reddens = [
+  "tests/test_fixtures.py::test_the_gates_on_the_fixture_report_what_they_examined[commit check]",
+]
+
+# A commit whose `encoding` header names one git cannot convert from prints its message raw, and
+# a pull request can push one: the strict decode raised `UnicodeDecodeError`, a `ValueError`,
+# past every caller — an internal error, and past any caller that runs gates one by one.
+[[mutation]]
+name = "the commit range lets a message that is not UTF-8 escape as a traceback"
+file = "src/stayfixed/guards/commit.py"
+before = """    except UnicodeDecodeError:
+        raise Refusal("""
+after = """    except ZeroDivisionError:
+        raise Refusal("""
+reddens = [
+  "tests/guards/test_commit.py::test_a_message_git_prints_in_bytes_that_are_not_text_is_a_refusal_not_a_traceback",
+]
+
+# `git ls-tree -r` grows with the repository and ran on `gitenv`'s cap for queries that do not;
+# on timeout `git_run` answers `(-1, "")` and the export-rule comparison is skipped with no
+# note, so the verdict is computed from a truncated tree.
+[[mutation]]
+name = "the tree listing goes back on the argument-free timeout"
+file = "src/stayfixed/guards/attribute.py"
+before = '    code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref, timeout=120)'
+after = '    code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref)'
+reddens = [
+  "tests/guards/test_attribute.py::test_the_tree_listing_is_not_bounded_by_the_argument_free_cap",
+]
+
+# `contained()` took on the write's component rule, and `contained_roots` catches its refusal and
+# moves on — so `code_roots = ["src/"]` was silently dropped from every count the field feeds. The
+# fold is what keeps a read-only walk from inheriting a rule that exists for writes.
+[[mutation]]
+name = "a code root spelled with a slash is dropped again"
+file = "src/stayfixed/guards/roots.py"
+before = "                root, PurePosixPath(entry).as_posix(), resolved_root=resolved_root"
+after = "                root, entry, resolved_root=resolved_root"
+reddens = [
+  "tests/guards/test_hygiene.py::test_a_code_root_spelled_with_a_trailing_or_leading_slash_is_still_walked",
+]
+
+# In the block led by `mutations/`'s "a gate that could not judge counts as passing": every
+# configured gate is a value CI reads, and each built-in finds what its area's command finds.
+[[mutation]]
+name = "the commit gate maps no violation to a finding"
+file = "src/stayfixed/guards/commit.py"
+before = "        for violation in report.violations"
+after = "        for violation in ()"
+reddens = ["tests/assess/test_gates.py::test_the_commit_gate_finds_an_attribution_trailer_after_the_base"]
+
+# In the block led by `mutations/`'s "init's custom-gate note keeps a limit of its own": every list
+# of names nothing bounds in number takes `findings.listed`.
+[[mutation]]
+name = "commit check names every offence"
+file = "src/stayfixed/guards/commands.py"
+before = "    items = listed("
+after = "    items = \", \".join("
+reddens = [
+  "tests/guards/test_commands.py::test_commit_check_names_at_most_the_listed_limit_of_offences",
+]
+
+[[mutation]]
+name = "the attribution names every merge base"
+file = "src/stayfixed/guards/attribute.py"
+before = "f\"({listed(forks)}), each"
+after = "f\"({', '.join(forks)}), each"
+reddens = [
+  "tests/guards/test_attribute.py::test_many_merge_bases_are_counted_and_named_at_most_to_the_listed_limit",
+]
+
+# Run (3) needs one merge base. Several are each as much "before this change" as the others, and a
+# failure can pass on one and fail on another: the one git picks alone filed a failure the change
+# brought back as pre-existing. No verdict, and nothing run.
+[[mutation]]
+name = "attribute extracts the one merge base git would pick among several"
+file = "src/stayfixed/guards/attribute.py"
+before = "    if len(forks) > 1:"
+after = "    if False:"
+reddens = [
+  "tests/guards/test_attribute.py::test_several_merge_bases_leave_the_attribution_undetermined",
+]
+
+# A merge base that is not known is no tree to run (3) in.
+[[mutation]]
+name = "attribute goes on without a merge base"
+file = "src/stayfixed/guards/attribute.py"
+before = """    forks = fork_points(root, base)
+    if isinstance(forks, ForkUnknown):"""
+after = """    forks = fork_points(root, base)
+    if False:"""
+reddens = [
+  "tests/guards/test_attribute.py::test_a_shallow_clone_leaves_the_attribution_undetermined",
+  "tests/guards/test_attribute.py::test_a_shallow_check_git_does_not_answer_leaves_the_attribution_undetermined[no-answer]",
+  "tests/guards/test_attribute.py::test_a_shallow_check_git_does_not_answer_leaves_the_attribution_undetermined[refused]",
+  "tests/guards/test_attribute.py::test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code",
+  "tests/guards/test_attribute.py::test_a_merge_base_git_gave_no_answer_for_is_not_reported_as_an_exit_code",
+]
+
+# `-1` is `git_run`'s sentinel for "no answer" — not launched, or past its bound — and not an exit
+# status; rendered as one it sends a reader to fetch a ref that is not the problem.
+[[mutation]]
+name = "attribute sends a git that gave no answer to fetch the base"
+file = "src/stayfixed/guards/attribute.py"
+before = "        elif forks.answered:"
+after = "        elif True:"
+reddens = [
+  "tests/guards/test_attribute.py::test_a_merge_base_git_gave_no_answer_for_is_not_reported_as_an_exit_code",
+]
+
+# A shallow clone's remedy is the whole history, and the refusal says so.
+[[mutation]]
+name = "attribute's shallow refusal names no remedy"
+file = "src/stayfixed/guards/attribute.py"
+before = "        if forks.cause == SHALLOW:"
+after = "        if False:"
+reddens = [
+  "tests/guards/test_attribute.py::test_a_shallow_clone_leaves_the_attribution_undetermined",
+]

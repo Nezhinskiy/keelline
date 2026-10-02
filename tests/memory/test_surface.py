@@ -14,7 +14,7 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
     # An equality, because every name below has its argument, in `api.py` or beside it here, and
     # a subset lets an export arrive unnoticed — the hole `tests/guards/test_surface.py` names.
     #
-    # No `mutations.toml` entry, for the reason every other area's surface test gives: the
+    # No entry in `mutations/`, for the reason every other area's surface test gives: the
     # mutation is adding an export, which is two lines in `api.py` — the import and the
     # `__all__` entry — and not one substituted line. Measured by hand instead: re-exporting
     # `store.refusal_reason` reddens this test and this test alone, and under the old

@@ -36,6 +36,11 @@ from stayfixed.project.api import PROJECT_FILES
 from stayfixed.release.api import HASHED_FILES, RECORD
 from stayfixed.scaffold import MANIFEST_PATH
 
+# The mutation declarations, one file per group. The sdist must carry the files this checkout
+# carries, globbed rather than spelled: `GROUP_OF` in `scripts/mutation_oracle.py` is the one
+# place the groups are named, so a group added there ships with no edit here.
+DECLARATIONS = Path(__file__).resolve().parents[1] / "mutations"
+
 WHEEL_MUST = (
     "stayfixed/presets/recommended.toml",
     *(f"stayfixed/templates/overlay/{relative}" for relative in OVERLAY_FILES),
@@ -66,7 +71,7 @@ SDIST_MUST = (
     # this is a claim about the build and not a new packaging rule.
     *HASHED_FILES,
     RECORD,
-    "mutations.toml",
+    *(f"mutations/{path.name}" for path in sorted(DECLARATIONS.glob("*.toml"))),
 )
 SDIST_EXECUTABLE = ("hooks/run-hook.sh", "scripts/stayfixed")
 

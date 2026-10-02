@@ -67,7 +67,7 @@ source-include = [
   "CODE_OF_CONDUCT.md",
   "RELEASING.md",
   "changelog.d/**",
-  "mutations.toml",
+  "mutations/*.toml",
   ".claude-plugin/**",
   ".codex-plugin/**",
 ]

@@ -12,3 +12,10 @@ history.
 
 Plans dated before 2026-09-28 predate the rename and keep the former name as the record, and
 so does the plan that performs it; read `stayfixed` for it in every path, command and variable.
+
+A plan over the plugin directory's 256 KiB file limit continues in `-part-2.md`, `-part-3.md`, …
+beside it, which are the same plan: it is cut at a heading, each part ends by linking the next,
+each later part opens by naming part 1, and part 1's `Scope:` line governs them all. `stayfixed
+plan check` lints each file on its own, so a path one part cites and another declares under
+`- Create:` or `- Test:` is reported as a dead reference; across parts that finding is the
+split's, not the plan's.

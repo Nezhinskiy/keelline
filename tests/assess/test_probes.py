@@ -2,8 +2,10 @@
 could not look says so instead of reporting nothing.
 
 Every advisory case names the mutation that reddens it in its own comment; the warnings a person
-would act on (a committed secret, a query that hid one, the workflow nobody owns) are declared
-in `mutations.toml`.
+would act on are declared in `mutations/`: a committed secret ("the tracked-env probe stops
+reporting a committed .env file"), a query that hid one ("a probe reads a git query that did not
+answer as nothing found") and the workflow nobody owns ("the scope probe never asks about a
+workflow the repository has").
 """
 
 from __future__ import annotations

@@ -168,11 +168,13 @@ def test_no_area_reaches_into_another_areas_private_module() -> None:
     # in this repository's history — `memory/commands.py` importing `hooks.dispatch` and
     # `doctor/checks.py` importing `hooks.sink` — both merged green.
     #
-    # Three mutations in `mutations.toml`: one puts a violation back (doctor reading the setup
-    # area's private `machine` module), one narrows the walk, because a guard that silently
-    # stops walking reports no offences for the same reason a guard with nothing to report does,
-    # and one breaks the resolution of a relative import — the test below is the one that holds
-    # that spelling, because this walk has none to find.
+    # Three mutations in `mutations/`: "an area reaches past another area's api.py again" puts a
+    # violation back (doctor reading the setup area's private `machine` module); "the cross-area
+    # import guard walks ten files instead of the package" narrows the walk, because a guard that
+    # silently stops walking reports no offences for the same reason a guard with nothing to
+    # report does; and "the boundary rule ignores a relative import again" breaks the resolution
+    # of a relative import — the test below is the one that holds that spelling, because this
+    # walk has none to find.
     source = ROOT / "src" / "stayfixed"
     areas = _area_names(source)
     files = sorted(source.rglob("*.py"))

@@ -153,7 +153,7 @@ def test_a_mistyped_preset_names_the_flag_and_never_quotes_it(tmp_path: Path) ->
     # `stayfixed.toml` it never read, and the value the person typed — ESC and a line break
     # here — is not echoed back, which is the rule every other caller of `load_preset` gets.
     # Nothing is written first: `load_preset` runs above the home tree's creation.
-    # Oracle: `mutations.toml`, "setup's preset refusal names the configuration key again".
+    # Oracle: `mutations/`, "setup's preset refusal names the configuration key again".
     home = tmp_path / "home"
     with pytest.raises(Failure) as caught:
         setup(
@@ -219,7 +219,7 @@ def test_every_plugin_install_is_one_recorded_argv(tmp_path: Path) -> None:
     # **Order, not membership.** `… in runner.calls` is a set question, and the thing this test is
     # named for is a sequence: the reviewer swapped the two loops in `_install_plugins` so every
     # install ran before its marketplace was registered -- the exact defect the first draft shipped
-    # -- and both assertions still passed, because both calls were still made. `mutations.toml`
+    # -- and both assertions still passed, because both calls were still made. `mutations/`
     # carries the swap as "a plugin is installed before its marketplace is registered".
     assert installs, "the preset installs nothing, so the ordering below measures nothing"
     assert add in runner.calls
@@ -276,7 +276,7 @@ def test_what_a_plugin_command_prints_cannot_drive_a_terminal(tmp_path: Path, st
     # A plugin command's answer was quoted raw in the note: a line break followed by `::error::`
     # is a workflow command in a CI log, and an escape sequence drives a terminal.
     #
-    # Mutation: `mutations.toml`'s "a subprocess's answer is quoted raw".
+    # Mutation: `mutations/`'s "a subprocess's answer is quoted raw".
     runner = FakeRunner(
         answers={f"claude plugin {step}": Completed(1, "", "boom\n::error::forged\x1b[2J")}
     )
@@ -394,7 +394,7 @@ def test_an_overlay_missing_the_layout_is_refused(tmp_path: Path) -> None:
     # `marketplace.json` — which is exactly the shape a careless `--overlay /tmp/whatever` would
     # have.
     #
-    # Mutation (`mutations.toml`, "the overlay probe stops looking for the manifests at all"):
+    # Mutation (`mutations/`, "the overlay probe stops looking for the manifests at all"):
     # `overlay.identity.overlay_fault` stops iterating the manifests → an empty directory is
     # accepted as an overlay root and this reddens.
     empty = tmp_path / "not-an-overlay"
@@ -417,7 +417,7 @@ def test_an_overlay_inside_the_project_root_is_refused(tmp_path: Path) -> None:
     # *inside* the repository is exactly the shape of tree a clone can ship — so recording one there
     # is refused regardless of how convincing its layout is.
     #
-    # Mutation (`mutations.toml`, "setup stops refusing an overlay root inside the project"):
+    # Mutation (`mutations/`, "setup stops refusing an overlay root inside the project"):
     # `_outside_the_project`'s path condition becomes `if False:` → a nested overlay is recorded
     # and this reddens.
     project = tmp_path / "project"
@@ -565,7 +565,7 @@ def test_rerunning_overlay_create_says_what_init_changed_in_the_overlay_it_found
     # report said "found the overlay ... and left it alone" all the same. It names what `init`
     # changed now, and says nothing was changed only when nothing was.
     #
-    # Mutation: `mutations.toml`'s "setup says it left alone an overlay init changed".
+    # Mutation: `mutations/`'s "setup says it left alone an overlay init changed".
     home = tmp_path / "home"
     machine = tmp_path / "config.toml"
     _seed_overlay(home / "stayfixed-private")
@@ -622,10 +622,10 @@ def test_the_recorded_overlay_root_is_accepted_inside_and_refused_outside_by_att
     # not. A bare `pytest.raises(Refusal)` with no message match could not tell that guard apart
     # from any other refusal `read_binding` might raise for an unrelated reason.
     #
-    # No new mutations.toml entry: the guard both arms exercise is `binding.py`'s own
-    # store-must-match-`permitted_roots` check, already load-bearing there under "the overlay root
-    # comes from the machine file and not from the argument" — this test proves the two ends of the
-    # seam agree, not a new line to mutate.
+    # No new entry in `mutations/`: the guard both arms exercise is `binding.py`'s own
+    # store-must-match-`permitted_roots` check, already load-bearing as `mutations/`'s "attach takes
+    # the overlay root from its argument instead of the machine file" — this test proves the two
+    # ends of the seam agree, not a new line to mutate.
     existing = tmp_path / "overlay"
     existing.mkdir()
     _seed_overlay(existing)
@@ -782,7 +782,7 @@ def test_a_refused_overlay_path_is_refused_before_the_first_write(tmp_path: Path
     # already happened. A purely structural check on a caller-supplied path belongs above the first
     # write.
     #
-    # Mutation (`mutations.toml`, "setup asks whether --overlay is an overlay after it has
+    # Mutation (`mutations/`, "setup asks whether --overlay is an overlay after it has
     # already written"): the hoisted `_requested_overlay` call is replaced by one that trusts
     # the path, leaving only `_apply_overlay`'s floor → the refusal still arrives, and this
     # reddens on the two files and the argv.
@@ -1701,7 +1701,7 @@ def test_the_home_a_symlinked_settings_file_suggests_is_one_that_works(
     # reads, arriving through the remedy. So the test follows the advice rather than matching a
     # string, in both shapes of the accident.
     #
-    # Mutation (`mutations.toml`, "the symlink remedy prints a --home that writes somewhere
+    # Mutation (`mutations/`, "the symlink remedy prints a --home that writes somewhere
     # else"): `_home_that_leads_there` stops checking that the link leads to a
     # `.claude/settings.json` at all → the per-file case below gets a command, and the
     # companion test's "no --home can name it" never fires.

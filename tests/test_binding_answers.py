@@ -46,7 +46,7 @@ def _attached_then_origin_removed(tmp_path: Path) -> tuple[Path, Path, Path]:
 def test_a_checkout_with_no_origin_hears_one_cause_and_one_way_out_everywhere(
     tmp_path: Path,
 ) -> None:
-    # Mutation: `mutations.toml`'s "the binding classifier reads a missing origin as a
+    # Mutation: `mutations/`'s "the binding classifier reads a missing origin as a
     # different remote".
     root, store, machine = _attached_then_origin_removed(tmp_path)
     home = tmp_path / "home"

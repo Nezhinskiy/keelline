@@ -1,0 +1,1420 @@
+# The attach group: binding a repository to its private overlay, and unbinding it again.
+# Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
+# CONTRIBUTING.md, "Tests".
+
+# In the block led by `mutations/`'s "setup splits git's listing of checkouts at a carriage return
+# inside a path": a line-oriented git answer is split where git ended each line, never at a `\r` or
+# a line separator inside a name.
+[[mutation]]
+name = "attach splits git's worktree listing at a carriage return inside a path"
+file = "src/stayfixed/attach/write.py"
+before = "        lines = answer_lines(block)"
+after = "        lines = block.splitlines()"
+reddens = [
+  "tests/test_git_answers.py::test_a_worktree_whose_path_holds_a_carriage_return_is_listed_by_its_own_path",
+]
+
+# The overlay's binding record is UTF-8 TOML. An `origin` URL git prints in other bytes reached
+# `_record_binding`, attach's last write, and raised there after four artifacts were written.
+[[mutation]]
+name = "attach meets an origin URL that is not UTF-8 after its first write"
+file = "src/stayfixed/attach/write.py"
+before = """    if binding.remote is not None and not fsops.utf_8_name(binding.remote):
+        raise Refusal(ORIGIN_NOT_TEXT)
+"""
+after = ""
+reddens = [
+  "tests/test_git_answers.py::test_attach_refuses_an_origin_it_cannot_record_before_writing_anything",
+]
+
+# The overlay root comes from the machine file, and this is the rule whose failure hands the choice
+# of overlay to whoever wrote the command line -- which in this harness is a model that has read the
+# repository. The machine file is unselectable by a repository by construction; `--store`'s own
+# parent is not.
+[[mutation]]
+name = "attach takes the overlay root from its argument instead of the machine file"
+file = "src/stayfixed/attach/binding.py"
+# Widened past `read_binding`'s own line: `binding_for` has the same `overlay =
+# overlay_root(machine)` line, so a one-line `before` is not unique in this file — the oracle
+# refuses rather than mutating an ambiguous match, so a non-unique `before` goes uncaught until a
+# sweep broader than the entry's own filter string surfaces it.
+#
+# `read_binding` takes an optional `config` and loads only when the caller holds none, which is how
+# the first of the two lines is spelled. The mutation is the second line -- the guard -- and the
+# first is here only for uniqueness.
+before = '''    config = load(root, machine=machine) if config is None else config
+    overlay = overlay_root(machine)'''
+after = '''    config = load(root, machine=machine) if config is None else config
+    overlay = store.parents[2]'''
+reddens = [
+  "tests/attach/test_binding.py::test_the_overlay_root_comes_from_the_machine_file_and_not_from_the_argument",
+]
+
+# The trust rule in one line: committed settings that widen permissions are never merged. The
+# mutation is toward a plausible implementation rather than an obviously broken one, which is the
+# difference between an oracle and a smoke test.
+[[mutation]]
+name = "the permission diff starts reading the committed settings file"
+file = "src/stayfixed/attach/permissions.py"
+before = '    sources = (overlay_common, overlay_project)'
+after = '    sources = (overlay_common, overlay_project, root / ".claude" / "settings.json")'
+reddens = ["tests/attach/test_binding.py::test_a_committed_settings_file_can_never_contribute_a_rule"]
+
+# A refusal something downstream reads as permission is a defect this oracle must name outright, and
+# this is its entry. With it gone, a repository that says "setup requires `stayfixed attach --store
+# <path it names>`" gets a compliant agent to grant it tool permissions and no human sees the diff.
+# Declared on the predicate rather than on the branch in `write.py`, because the predicate is where
+# the rule is defined once and `check` reports the same one.
+[[mutation]]
+name = "attach widens a permission without a confirmation"
+file = "src/stayfixed/attach/permissions.py"
+before = '        return bool(self.added_allow or self.added_hooks)'
+after = '        return False'
+reddens = [
+  "tests/attach/test_write.py::test_an_unconfirmed_attach_that_would_widen_a_permission_refuses",
+  "tests/attach/test_commands.py::test_a_widening_without_yes_exits_two_and_a_confirmed_one_exits_zero",
+]
+
+# Three load-bearing guards of `attach` that had no entry. The first is the `--machine`
+# gate -- a flag is a third member of the equivalence class `config/machine.py` gates
+# `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME` on, and this is the command that turns the machine file
+# into capability: the overlay root comes from it, and from the overlay come allow rules, hook
+# entries and Codex standing rules.
+[[mutation]]
+name = "attach honours --machine from a session nobody is sitting in front of"
+file = "src/stayfixed/attach/commands.py"
+before = "        raise Refusal(_NO_MACHINE_OVERRIDE)"
+after = "        pass"
+reddens = [
+  "tests/attach/test_commands.py::test_a_non_interactive_session_may_not_name_the_machine_file",
+  "tests/attach/test_commands.py::test_the_flag_is_refused_and_never_quietly_ignored",
+  "tests/test_install_path.py::test_attach_refuses_machine_from_a_pipe_and_honours_it_from_a_terminal",
+]
+
+# The ledger holds the owner's personal allow rules and lives under `.stayfixed/local/`, a path
+# the repository has no `.gitignore` line for. Written before the region exists, it is published
+# to every collaborator -- so the region goes first, and a region that cannot be written is a
+# refusal rather than a warning.
+#
+# Two entries, because the old single one was named for the order and tested the absence: replacing
+# the call with `pass` reddens both named tests against there being no region at all, which is a
+# weaker claim and the one the name did not make. `mutations/`'s "the ignore region is written after
+# the ledger it untracks" moves the statement instead, and the tree afterwards is byte-identical
+# either way -- so only an assertion about the sequence of writes can see it.
+[[mutation]]
+name = "the ignore region is never written at all"
+file = "src/stayfixed/attach/write.py"
+before = "        _write_ignore_region(root, planned.ignore)"
+after = "        pass"
+reddens = [
+  "tests/attach/test_write.py::test_attach_writes_the_ignore_region_that_keeps_the_ledger_untracked",
+  "tests/attach/test_write.py::test_attach_refuses_when_the_ignore_region_cannot_be_written",
+]
+
+[[mutation]]
+name = "the ignore region is written after the ledger it untracks"
+file = "src/stayfixed/attach/write.py"
+before = """    if planned.ignore is not None:
+        _write_ignore_region(root, planned.ignore)
+    if planned.hidden is not None:
+        exclude.write(planned.hidden)
+    for target, text in planned.rules:
+        fsops.write_within(root, target, text)
+    rules = tuple(target for target, _ in planned.rules)
+    written = planned.settings is not None
+    if planned.settings is not None:
+        fsops.write_within(root, LOCAL_SETTINGS, planned.settings)
+    carried = planned.carried
+    _write_ledger(root, planned, carried)"""
+after = """    if planned.hidden is not None:
+        exclude.write(planned.hidden)
+    for target, text in planned.rules:
+        fsops.write_within(root, target, text)
+    rules = tuple(target for target, _ in planned.rules)
+    written = planned.settings is not None
+    if planned.settings is not None:
+        fsops.write_within(root, LOCAL_SETTINGS, planned.settings)
+    carried = planned.carried
+    _write_ledger(root, planned, carried)
+    if planned.ignore is not None:
+        _write_ignore_region(root, planned.ignore)"""
+reddens = [
+  "tests/attach/test_write.py::test_the_ignore_region_is_written_before_the_ledger_and_not_merely_written",
+  "tests/attach/test_write.py::test_attach_refuses_when_the_ignore_region_cannot_be_written",
+]
+
+# `memory.groups` is repository-authored and reaches no guard of its own (`config/paths.py`
+# leaves the containment to the module that consumes the field). The entry decides a
+# directory created inside the OVERLAY -- the one tree `attach` trusts -- so `fsops` refusing it
+# has to reach the caller as a refusal and not as silence.
+#
+# And it has to reach the caller BEFORE the first write. The containment used to be called only
+# from `_prepare_store`, which runs after the ignore region, the `.codex/rules/` copies, the
+# settings merge, the ledger and the overlay's binding record -- so a clone committing an
+# escaping entry got five artifacts written and exit 2, and `doctor` then reported the
+# repository attached and the binding *bound*, because the record had been written too. The
+# mutation takes the hoisted call away and leaves only the write-time one.
+#
+# Anchored on the call and not on the `load` above it, which is where it used to be anchored and
+# which moved to the top of `attach` when the second load of the run was removed. The guard is
+# that this check is asked, and the line that asks it is the one this entry should break.
+[[mutation]]
+name = "the memory.groups containment is asked at write time only"
+file = "src/stayfixed/attach/write.py"
+before = "    _check_groups(binding, config)"
+after = "    pass  # `_check_groups` is not asked"
+reddens = [
+  "tests/attach/test_write.py::test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created",
+]
+
+# The floor under `mutations/`'s "the memory.groups containment is asked at write time only", and it
+# is not dead. A spelling that escapes is refused before the first write; a component of the overlay
+# that is not a directory — or became a symlink between the check and the write — can only be
+# refused by the `O_NOFOLLOW` walk at the moment of writing, which is the interval that walk exists
+# for.
+[[mutation]]
+name = "the write-time containment on the overlay's store directory is swallowed"
+file = "src/stayfixed/attach/write.py"
+before = '''        except UnsafePath as exc:
+            raise Refusal(GROUP_ESCAPES) from exc'''
+after = '''        except UnsafePath:
+            pass'''
+reddens = [
+  "tests/attach/test_write.py::test_an_overlay_store_the_walk_cannot_enter_is_refused_at_write_time",
+]
+
+# --- install path: the review's eight attach/doctor findings -----------------------------
+#
+# `attach` owes four refusals before its first write, and the fourth was not where the other
+# three are: it lived in `_record_binding`, which runs after the ignore region, the Codex rule
+# files, the settings merge and the ledger. A checkout with no `origin` therefore exited 2
+# having written all four, and `doctor._attached` — which keys on the ledger existing — then
+# reported the repository attached. The mutation puts the refusal back where it was.
+[[mutation]]
+name = "the no-origin refusal moves back below attach's first write"
+file = "src/stayfixed/attach/write.py"
+before = '''    if binding.state == NO_ORIGIN:
+        raise Refusal(NO_REMOTE)
+    if binding.state == MISMATCH and not trust_remote:'''
+after = '''    if binding.state == MISMATCH and not trust_remote:'''
+reddens = [
+  "tests/attach/test_write.py::test_a_repository_with_no_origin_remote_has_nothing_to_record",
+]
+
+# `.stayfixed/local/attach.json` is a path a clone can commit — `.gitignore` does not untrack a
+# committed file — and `detach` deletes by the strings in `rules` and pops settings keys by the
+# strings in `settings_keys`. `fsops.remove_within` contains the deletion to the root, and
+# `.github/workflows/`, `.pre-commit-config.yaml` and every source file are inside it, so
+# containment is not the guard. The guard is what `attach` could have written.
+[[mutation]]
+name = "detach deletes whatever file the ledger names"
+file = "src/stayfixed/attach/write.py"
+before = '''    prefix = f"{CODEX_RULES}/"
+    if not rule.startswith(prefix):
+        return False'''
+after = '''    prefix = f"{CODEX_RULES}/"
+    if True:
+        return True'''
+reddens = [
+  "tests/attach/test_detach.py::test_a_ledger_naming_a_file_attach_could_not_have_written_removes_nothing",
+]
+
+# The measured widening, and the other half of the same guard. `_withdraw_settings` assigns
+# `raw["permissions"] = permissions` and then pops every string in `settings_keys`, so a
+# committed `settings_keys = ["permissions"]` took the owner's whole permissions block out —
+# deny rules included. A repository may not remove a deny rule by committing a JSON file.
+[[mutation]]
+name = "detach drops whatever settings key the ledger names"
+file = "src/stayfixed/attach/write.py"
+before = '    foreign += sum(1 for key in keys if key != FALLBACK_KEY)'
+after = '    foreign += 0'
+reddens = [
+  "tests/attach/test_detach.py::test_a_ledger_claiming_the_permissions_key_never_drops_the_owners_deny_rules",
+]
+
+# The worktree's settings-file fallback is state that persists, on the one channel `memory/worktree`
+# calls the one hop that leaves `memory`'s gate. A gate evaluated once at creation over such
+# state is not a gate: the key outlived the trust record that allowed it, while the ledger that
+# `detach` reads was reset to `[]` around it.
+[[mutation]]
+name = "the settings fallback outlives the gate that allowed it"
+file = "src/stayfixed/attach/write.py"
+before = '''    document = settings_document(local_document(root))
+    if document.get(FALLBACK_KEY) == wanted:'''
+after = '''    document = settings_document(local_document(root))
+    if wanted is None or document.get(FALLBACK_KEY) == wanted:'''
+reddens = [
+  "tests/attach/test_links.py::test_a_second_attach_neither_forgets_the_fallback_nor_lets_it_outlive_its_reason",
+  "tests/attach/test_links.py::test_the_fallback_goes_when_the_symlink_it_stood_in_for_can_be_made",
+]
+
+# And the record of it, which is the half `detach` reads. `settings_keys` was written from the
+# run's own memory rather than from the file, so a second attach reset it to `[]` while the key
+# was still in `.claude/settings.local.json` — and `detach` then left it there for good.
+[[mutation]]
+name = "the ledger records the fallback from the run rather than from the file"
+file = "src/stayfixed/attach/write.py"
+before = '    return _keys_in(local_document(root))'
+after = '    return ()'
+reddens = [
+  "tests/attach/test_links.py::test_a_second_attach_that_changes_nothing_still_records_the_standing_fallback",
+  "tests/attach/test_detach.py::test_the_two_values_attach_really_writes_are_still_acted_on",
+]
+
+# `worktree.link` is documented as a no-op for the main checkout, so applying the owning-checkout
+# entry point to whatever `--root` names and then skipping `main_checkout(root)` in the loop left
+# the owning checkout with no link tree at all when `--root` was a worktree: every session there
+# saw no memory, silently, and the command exited 0.
+[[mutation]]
+name = "attach applies the owning-checkout entry point to --root"
+file = "src/stayfixed/attach/write.py"
+before = '''    links = attach_main(owner, binding.store, config, machine=machine, home=home)'''
+after = '''    links = attach_main(root, binding.store, config, machine=machine, home=home)'''
+reddens = [
+  "tests/attach/test_links.py::test_attaching_from_a_linked_worktree_links_the_main_checkout_too",
+]
+
+# The mirror, on the withdrawal side.
+[[mutation]]
+name = "detach applies the owning-checkout withdrawal to --root"
+file = "src/stayfixed/attach/write.py"
+before = '''    for tree in checkouts:
+        revoked += detach_main(tree, config, machine=machine, home=home).revoked'''
+after = '''    for tree in [root]:
+        revoked += detach_main(tree, config, machine=machine, home=home).revoked'''
+reddens = [
+  "tests/attach/test_links.py::test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too",
+]
+
+# `permissions.check` reduces `already_present` to a count because that list "comes out of the
+# project's own `settings.local.json`, which a clone can commit". Everything `detach` reports
+# comes out of that file or out of the ledger beside it, and `skills/attach/SKILL.md` tells the
+# model to relay it. This branch removed a marker id bounded by a grammar from `doctor`'s output
+# on the same reasoning; an allow rule is less bounded than that, not more.
+[[mutation]]
+name = "detach prints the ledger's own strings"
+file = "src/stayfixed/attach/commands.py"
+before = '        "allow_removed": len(removed.allow_removed),'
+after = '        "allow_removed": list(removed.allow_removed),'
+reddens = [
+  "tests/attach/test_commands.py::test_nothing_the_ledger_holds_reaches_detachs_line_or_its_json",
+]
+
+# `attach`'s own rule, one door over, and introduced by the commit that wrote the rule down.
+# `ledger()` refuses a ledger naming files or settings keys `attach` could not have written, and
+# `_write_ledger` was the thing that asked for it — from the fourth write of the run. A clone
+# committing such a ledger got the ignore region, the `.codex/rules/` copies and the settings
+# merge written before the exit 2, with the committed ledger still on disk for `doctor._attached`
+# to key on. The mutation moves the read back below two of those writes.
+[[mutation]]
+name = "the ledger is read after attach has already written"
+file = "src/stayfixed/attach/write.py"
+before = '''    previous = _existing_ledger(root)
+    # Above every write, because the first of them creates `.stayfixed/local/` and the answer
+    # would then be wrong by exactly the directory this run brought into existence.
+    absent = _absent_directories(root)
+    parents = _absent_memory_parents(root, config)'''
+# The write is put above the read rather than the read moved below the writes: `previous` is also
+# read by the settings-candidate question above the first write, so moving the read would break
+# the name instead of the order.
+after = '''    _write_ignore_region(root, upsert("", IGNORE_REGION, IGNORE_BODY, Style.HASH))
+    previous = _existing_ledger(root)
+    # Above every write, because the first of them creates `.stayfixed/local/` and the answer
+    # would then be wrong by exactly the directory this run brought into existence.
+    absent = _absent_directories(root)
+    parents = _absent_memory_parents(root, config)'''
+reddens = [
+  "tests/attach/test_write.py::test_a_ledger_no_attach_could_have_written_is_refused_before_the_first_write",
+]
+
+# `detach` cannot refuse once it has begun — by the time it reaches the link tree the settings
+# and the `.codex/rules/` copies are gone, and refusing there strands a half-detached repository.
+# So everything structural it *can* know beforehand has to be asked beforehand. `main_checkout`
+# and `_worktrees` are the only things here that need `git`, they are pure reads, and they sat
+# between the settings withdrawal and the link trees: a machine whose `git` was gone got exit 1
+# with two artifacts already removed and every link still in place.
+[[mutation]]
+name = "detach asks git where the checkouts are after it has already withdrawn"
+file = "src/stayfixed/attach/write.py"
+# The block this moves runs from the anchor loop through the manifest's answer to the region read.
+# What it proves: `git` is asked before the first withdrawal, and a `git` that cannot run must not
+# strand a half-detached repository.
+before = '''    checkouts = _checkouts(root)
+    for tree in checkouts:
+        harness_anchor(tree, home)
+    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
+    # The `info/exclude` block is found above the first withdrawal for the same reason: `git`
+    # names the file and a region opened twice refuses, and both are knowable now. It is shared
+    # by every checkout while the ledger, the settings file and the `.codex/rules/` copies are
+    # each checkout's own, so it stays while another checkout still holds a ledger: taking it
+    # would show that checkout's settings file and rule copies in its `git status`.
+    kept = _another_attached(root, checkouts)
+    hidden = None if kept else exclude.withdrawn_block(root)
+    settings = _planned_settings(root, recorded)
+    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)
+    allow_removed = _withdraw_settings(root, settings)'''
+after = '''    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
+    settings = _planned_settings(root, recorded)
+    allow_removed = _withdraw_settings(root, settings)
+    checkouts = _checkouts(root)
+    for tree in checkouts:
+        harness_anchor(tree, home)
+    kept = _another_attached(root, checkouts)
+    hidden = None if kept else exclude.withdrawn_block(root)
+    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)'''
+reddens = [
+  "tests/attach/test_detach.py::test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn",
+]
+
+# `PartialLink` exists because a half-built link tree is repairable; a list missing the links
+# that were actually made defeats the type. `_link_everywhere` accumulated `created` across
+# `attach_main` and one `link` per further checkout and let the exception out untouched, so the
+# caller received the failing call's own list -- empty, while the owning checkout's tree sat on
+# disk. Restoring the bare call is that defect exactly, and the assertion reads the symlinks the
+# checkout holds rather than a list a person kept current.
+[[mutation]]
+name = "attach's PartialLink forgets the links made before the failing call"
+file = "src/stayfixed/attach/write.py"
+before = '''        try:
+            more = link(tree, store, config, home=home)
+        except PartialLink as partial:
+            raise PartialLink([*created, *partial.created], partial) from partial'''
+after = '''        more = link(tree, store, config, home=home)'''
+reddens = [
+  "tests/attach/test_links.py::test_a_partial_link_failure_carries_every_link_the_run_already_made",
+]
+
+# "An attach and a detach leave the tree byte-for-byte as it was" was false for directories, and
+# the round-trip test could not see it: `_snapshot` filters on `is_file()`, so `.stayfixed/local/`,
+# `.stayfixed/`, `.codex/rules/` and `.codex/` accumulated across every cycle with the suite green.
+# Recording what was absent above the first write is what makes the removal safe, and this is that
+# record's proof.
+[[mutation]]
+name = "detach leaves behind the directories the attach created"
+file = "src/stayfixed/attach/write.py"
+before = '    return tuple(name for name in CREATED_DIRS if not (root / name).is_dir())'
+after = '    return ()'
+reddens = [
+  "tests/attach/test_detach.py::test_detach_removes_the_directories_the_attach_created",
+]
+
+# The other direction, and the one that costs somebody a directory: recording the whole closed
+# list rather than the part that was missing makes `detach` remove an empty `.codex/` the owner
+# made themselves. "A detach must not remove a directory it did not create" is what this line is.
+[[mutation]]
+name = "attach records a directory that was already there"
+file = "src/stayfixed/attach/write.py"
+before = '    return tuple(name for name in CREATED_DIRS if not (root / name).is_dir())'
+after = '    return CREATED_DIRS'
+reddens = [
+  "tests/attach/test_detach.py::test_detach_leaves_a_directory_that_was_there_before_the_attach",
+]
+
+# `.stayfixed/local/attach.json` is a path a clone can commit, and `directories` drives `rmdir`.
+# Held to the same closed list `rules` and `settings_keys` are, so a ledger naming anything else
+# is refused with nothing removed. Dropping the count is a partial defence reported as a success.
+[[mutation]]
+name = "the ledger's directory list stops being held to what attach could have created"
+file = "src/stayfixed/attach/write.py"
+before = '    foreign += sum(1 for name in directories if name not in CREATED_DIRS)'
+after = '    foreign += 0'
+reddens = [
+  "tests/attach/test_detach.py::test_a_ledger_naming_a_directory_no_attach_creates_is_refused",
+]
+
+# `drop()` refuses a region opened twice, and it was asked after the settings withdrawal, the
+# rule files and every link tree -- a half-detached repository with the ledger still in place,
+# which `doctor` then reported attached. Read beside the ledger and `_checkouts` instead.
+[[mutation]]
+name = "detach stops reading the ignore region before its first withdrawal"
+file = "src/stayfixed/attach/write.py"
+# The read is conditional on what the manifest records. The mutation takes the read away entirely,
+# which is what leaves a region that cannot be withdrawn to be discovered after everything else is
+# gone.
+before = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)"
+after = "    ignore_remainder = None"
+reddens = [
+  "tests/attach/test_detach.py::test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything_is",
+]
+
+# A worktree deleted without `git worktree prune` stays on `git worktree list` with a `prunable`
+# line. Linked into, it raised "check that `git` runs here" after the ledger and the owner's
+# links were written; `detach` in the same state completed.
+[[mutation]]
+name = "attach links into a worktree git reports as prunable"
+file = "src/stayfixed/attach/write.py"
+before = '        if any(line == "prunable" or line.startswith("prunable ") for line in lines):'
+after = "        if False:"
+reddens = [
+  "tests/attach/test_links.py::test_a_worktree_whose_directory_is_gone_is_skipped_rather_than_blamed_on_git",
+]
+
+# `--check` promises to read the document the real run reads. Filtering a malformed
+# `permissions.allow` let it exit 0 promising one rule for a file the real run then refused.
+[[mutation]]
+name = "attach --check filters a malformed allow list the real run refuses"
+file = "src/stayfixed/attach/permissions.py"
+before = "        raise EntriesError(f\"{label}: 'permissions.allow' is not a list of strings\")"
+after = "        return ()"
+reddens = [
+  "tests/attach/test_binding.py::test_check_refuses_the_allow_list_shape_the_real_run_refuses",
+]
+
+# `project.name` is repository-authored and the attach skill relays these messages to the model.
+# Printing the path that embeds it is the same defect `permissions.check` was written to avoid.
+[[mutation]]
+name = "the --store refusal prints the path that embeds the project name"
+file = "src/stayfixed/attach/binding.py"
+before = 'f"records -- {overlay / PROJECTS}/<the name in stayfixed.toml>/{STORE_DIR} -- and "'
+after = 'f"records ({expected}), and "'
+reddens = [
+  "tests/attach/test_binding.py::test_a_project_name_reaches_neither_refusal_of_this_module",
+]
+
+# In the block led by `mutations/`'s "the harness anchor stops asking whether the walk can reach
+# it": the harness anchor is asked about before the first write, at each of its three hoists.
+[[mutation]]
+name = "attach discovers the harness anchor from inside the link step"
+file = "src/stayfixed/attach/write.py"
+before = "    harness_anchor(root, home)\n    # The ledger's own path, held to the project"
+after = "    # The ledger's own path, held to the project"
+reddens = [
+  "tests/attach/test_links.py::test_a_home_whose_claude_is_a_symlink_refuses_above_every_write",
+]
+
+[[mutation]]
+name = "detach discovers the harness anchor from inside the withdrawal"
+file = "src/stayfixed/attach/write.py"
+before = "    for tree in checkouts:\n        harness_anchor(tree, home)\n"
+after = "    for tree in checkouts:\n        pass\n"
+reddens = [
+  "tests/attach/test_detach.py::test_a_home_whose_claude_became_a_symlink_refuses_above_every_withdrawal",
+]
+
+# `unlinked_groups` lists the `memory.groups` entries that are real directories under
+# `paths.memory`, never a link, and refuses a group name that escapes it in a fixed sentence that
+# never quotes the name.
+[[mutation]]
+name = "unlinked_groups stops excluding a linked group"
+file = "src/stayfixed/attach/binding.py"
+before = "        if target.is_dir() and not target.is_symlink():"
+after = "        if target.is_dir():"
+reddens = [
+  "tests/attach/test_binding.py::test_a_group_that_is_a_real_directory_is_listed_and_a_link_is_not",
+]
+
+[[mutation]]
+name = "unlinked_groups stops refusing an escaping group name with a fixed sentence"
+file = "src/stayfixed/attach/binding.py"
+before = '''        except PathEscape as exc:
+            # `group` and `config.paths.memory` are repository-authored, so the combined path
+            # `contained` refuses is refused again, fixed text and never quoted back.
+            raise PathEscape(MEMORY_GROUP_ESCAPES) from exc'''
+after = "        except PathEscape:\n            raise"
+reddens = [
+  "tests/attach/test_binding.py::test_a_group_name_that_escapes_paths_memory_is_refused_with_the_fixed_sentence",
+]
+
+# The one count in the session-start lines that is computed from repository-authored bytes.
+# `memory.groups` is bounded by no grammar (`config/paths.py` names it as one of four such
+# fields), so a group name is instruction-shaped text a clone chose -- and `HookResult.context`
+# becomes `additionalContext`, model input with no delimiter and no trust record. The length of
+# the list prints; the list does not.
+[[mutation]]
+name = "the overlay-status line names the memory groups instead of counting them"
+file = "src/stayfixed/attach/hooks.py"
+before = "            lines.append(REAL_DIRECTORIES.format(count=len(real)))"
+after = '            lines.append(REAL_DIRECTORIES.format(count=", ".join(real)))'
+reddens = [
+  "tests/attach/test_hooks.py::test_real_directories_are_counted_and_a_group_name_never_reaches_the_context",
+]
+
+# `attach` links; it never moves a note. Linking over a group that is still a real directory
+# leaves every session reading the repository's own copy while that group's share of the
+# overlay stays empty — and by the time anyone notices, the binding record, the settings merge
+# and the ledger are written and `doctor._attached` reports the repository attached. The
+# refusal is above every write for that reason, so the mutation is measured on the snapshots.
+[[mutation]]
+name = "attach links over notes that never moved again"
+file = "src/stayfixed/attach/write.py"
+before = "        raise Refusal(REAL_DIRECTORIES.format(count=len(real)))"
+after = "        pass"
+reddens = [
+  "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
+]
+
+# An ownership rule rather than a last-writer one. `init` records the `stayfixed:ignore` region as a
+# footprint artifact with the body `attach` writes; a `detach` that dropped it would take a line out
+# of a committed file this command never wrote, and `upgrade` would read the footprint as
+# hand-edited on a repository nobody edited.
+#
+# The count-not-name half of the same refusal, and the highest-value class of leak: `memory.groups`
+# is one of the four fields `config/paths.py` says no grammar bounds, and `skills/attach/SKILL.md`
+# has the model relay this message to the user, so a group name here is instruction-shaped text a
+# clone chose arriving attributed to stayfixed. The length of the list prints; the list does not. The
+# entry on `attach/hooks.py` is the same mutation on the same constant's other caller.
+[[mutation]]
+name = "the never-moved refusal names the memory groups instead of counting them"
+file = "src/stayfixed/attach/write.py"
+before = "        raise Refusal(REAL_DIRECTORIES.format(count=len(real)))"
+after = '        raise Refusal(REAL_DIRECTORIES.format(count=", ".join(real)))'
+reddens = [
+  "tests/attach/test_write.py::test_the_refusal_counts_the_groups_and_never_names_one",
+]
+
+# The overlay half of the never-moved snapshot, which the repository-write mutation, `mutations/`'s
+# "the never-moved check is asked one write too late", cannot reach: it hoists
+# `_write_ignore_region`, which lands under the root. `_record_binding` is the write that made
+# `doctor` report a refused attach as **bound**, and it lands in the overlay -- so this is the one
+# that proves the second walk is doing work rather than passing empty.
+[[mutation]]
+name = "the binding record is written above the never-moved refusal"
+file = "src/stayfixed/attach/write.py"
+before = "    real = unlinked_groups(root, config)\n    if real:"
+after = "    _record_binding(binding)\n    real = unlinked_groups(root, config)\n    if real:"
+reddens = [
+  "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
+]
+
+# The other half of the same test, and the reason it snapshots rather than only catching the
+# refusal: "above every write" is the claim, and a check hoisted one write too low still raises.
+# Deleting the refusal reddens the `pytest.raises`; moving a write above it reddens the walks.
+[[mutation]]
+name = "the never-moved check is asked one write too late"
+file = "src/stayfixed/attach/write.py"
+before = "    real = unlinked_groups(root, config)"
+after = "    _write_ignore_region(root)\n    real = unlinked_groups(root, config)"
+reddens = [
+  "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
+]
+
+# `detach` leaves the ignore region in place when `init`'s footprint owns it.
+[[mutation]]
+name = "detach withdraws a region the footprint owns"
+file = "src/stayfixed/attach/write.py"
+before = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)"
+after = "    ignore_remainder = _ignore_region_remainder(root)"
+reddens = [
+  "tests/attach/test_detach.py::test_a_region_init_recorded_survives_a_detach",
+]
+
+# `--check`'s exit code is what the attach skill branches on before it relays anything, so a
+# count that prints while the exit stays 0 is a finding nothing acts on. Exit 1 for the same
+# reason a mismatch answers 1: the answer is an act of the owner's, not a fault in the command.
+# The same rule on the same line `--check` prints. `skills/attach/SKILL.md` relays this summary,
+# so the count is stayfixed's own and the entries are the repository's.
+[[mutation]]
+name = "check names the groups that never moved instead of counting them"
+file = "src/stayfixed/attach/permissions.py"
+before = '        summary += f"; {real} memory group(s) are real directories and would refuse the attach"'
+after = '        summary += f"; {unlinked_groups(root, config)} are real directories"'
+reddens = [
+  "tests/attach/test_commands.py::test_check_counts_the_groups_that_never_moved_and_exits_one",
+]
+
+# `check`'s docstring calls a `--check` whose two halves read different documents "exactly what
+# it exists to rule out", and the single load is what makes that true. Unguarded, deleting this
+# argument restored two loads with the whole suite still green.
+[[mutation]]
+name = "check loads the configuration twice again"
+file = "src/stayfixed/attach/permissions.py"
+before = "    binding = read_binding(root, store=store, machine=machine, config=config)"
+after = "    binding = read_binding(root, store=store, machine=machine)"
+reddens = [
+  "tests/attach/test_commands.py::test_check_reads_each_of_its_two_documents_once",
+]
+
+# `--check` exits 1 when memory groups never moved into the overlay, as it does when the binding is
+# wrong.
+[[mutation]]
+name = "check reports the groups that never moved and still exits zero"
+file = "src/stayfixed/attach/permissions.py"
+before = "    finding = binding.state in (MISMATCH, NO_ORIGIN) or real"
+after = "    finding = binding.state in (MISMATCH, NO_ORIGIN)"
+reddens = [
+  "tests/attach/test_commands.py::test_check_counts_the_groups_that_never_moved_and_exits_one",
+]
+
+# The fourth site of one family, repository bytes quoted back unbounded, whose third is
+# `mutations/`'s "a tomllib message is quoted back whole, so a hostile key reaches a refusal". The
+# file is the overlay's `projects/<name>/project.toml`, whose bytes are the machine owner's and may
+# print — except that the value stayfixed writes into it is this repository's `origin`, and a remote
+# URL may not print wherever it came from. `tomllib`'s message embeds the source for several of its
+# faults, so the whole exception is unbounded bytes in a `Failure` the attach skill relays.
+[[mutation]]
+name = "the binding record's parse failure is quoted back whole"
+file = "src/stayfixed/attach/binding.py"
+before = '        raise Failure(f"{where} is not valid TOML {toml_position(exc)}") from None'
+after = '        raise Failure(f"{where} is not valid TOML: {exc}") from exc'
+reddens = [
+  "tests/attach/test_binding.py::test_a_binding_record_that_will_not_parse_reports_only_where_the_parser_stopped",
+]
+
+# The mirror of `mutations/`'s "check loads the configuration twice again", over the half that
+# writes. `attach` called `read_binding` without a `Config` and then loaded a second one for its own
+# `memory.groups` refusals, so one run read `stayfixed.toml` and the machine file twice and the two
+# halves were free to disagree about `project.name`, `memory.groups` and `paths.memory`.
+[[mutation]]
+name = "attach loads the configuration twice again"
+file = "src/stayfixed/attach/write.py"
+before = "    binding = read_binding(root, store=store, machine=machine, config=config)"
+after = "    binding = read_binding(root, store=store, machine=machine)"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_reads_each_of_its_two_documents_once_too",
+]
+
+# `.stayfixed/manifest.json` is tracked, `attach` never reads it, and `Manifest.read` refuses an
+# unreadable one -- so a clone committing `{"format": 99}` attached cleanly and then made every
+# later `detach` exit 2, for ever, above every withdrawal. The mutation lets a symlinked
+# manifest's `PathEscape` propagate again.
+[[mutation]]
+name = "an unreadable manifest blocks the detach again"
+file = "src/stayfixed/attach/write.py"
+before = '''    try:
+        return Manifest.read(root).get("gitignore") is not None
+    except Refusal:'''
+after = '''    try:
+        return Manifest.read(root).get("gitignore") is not None
+    except Refusal as exc:
+        if isinstance(exc, PathEscape):
+            raise'''
+reddens = [
+  "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
+]
+
+# The verdict half of the finding behind `mutations/`'s "a repeated memory group is counted twice
+# again". Since `checked_components` became the one component rule, `contained` refuses `""`, `"."`,
+# a trailing slash and a doubled separator as well as a `..` -- and the first four of those never
+# left `paths.memory`, so the old sentence told four kinds of owner a thing about their own document
+# that was not true, with a remedy already done.
+[[mutation]]
+name = "the memory-group refusal describes an escape again"
+file = "src/stayfixed/attach/binding.py"
+before = '''    "a memory.groups entry does not name a subdirectory of this project's paths.memory, or "
+    "paths.memory is itself a symlink, so the entry is refused rather than counted"'''
+after = '''    "a memory.groups entry does not stay inside this project's paths.memory, so it is refused "
+    "rather than counted"'''
+reddens = [
+  "tests/attach/test_binding.py::test_a_group_that_is_not_a_subdirectory_is_refused_by_a_sentence_that_is_true",
+]
+
+# `Sync.ahead` is `None` when the count is UNKNOWN -- a branch with no upstream has every commit
+# unpushed -- and the two lines were appended by two independent `if`s with `ahead=sync.ahead or 0`
+# under the second. So a session heard "nothing backs it up" and "0 unpushed commit(s)" in one
+# breath, with the number on the sentence that was false. Left twice on the grounds that the
+# condition was specified exactly; a specification is not the authority on whether a sentence is
+# true.
+[[mutation]]
+name = "a session with no upstream is told it has 0 unpushed commits"
+file = "src/stayfixed/attach/hooks.py"
+before = '''                if sync.ahead is None:
+                    lines.append(NO_UPSTREAM.format(dirty=sync.dirty))
+                elif sync.dirty > 0 or sync.ahead > 0:
+                    lines.append(UNPUSHED.format(ahead=sync.ahead, dirty=sync.dirty))'''
+after = '''                if sync.ahead is None:
+                    lines.append(NO_UPSTREAM.format(dirty=sync.dirty))
+                if sync.dirty > 0 or (sync.ahead or 0) > 0:
+                    lines.append(UNPUSHED.format(ahead=sync.ahead or 0, dirty=sync.dirty))'''
+reddens = [
+  "tests/attach/test_hooks.py::test_unpushed_work_is_named_by_its_counts_and_only_when_nothing_else_is_wrong",
+]
+
+# The budget this handler shares with the one that links the note store. A healthy repository
+# delivers nothing, so `dispatch` banks no `once_key` marker and this handler is asked again on
+# every event the matcher covers -- and it is the healthy path that pays, because `overlay_sync`
+# sits under `if not lines:`. Four of nine seconds against an entry whose `timeout` is ten, re-paid
+# on every compaction, in a process that also runs `worktree-link`: a timeout
+# there costs the store link and not merely this nudge. With the set emptied, every invocation pays
+# again, which is the state this gate was measured against.
+[[mutation]]
+name = "a compacted session re-pays the overlay sync"
+file = "src/stayfixed/attach/hooks.py"
+before = 'CONTINUED = frozenset({"compact"})'
+after = "CONTINUED = frozenset()"
+reddens = [
+  "tests/attach/test_hooks.py::test_a_context_that_has_already_been_asked_does_not_re_pay_the_sync",
+]
+
+# The floor for this area, spelled in this module: an open handler never costs a session, and the
+# blanket backstop is what makes that true of a failure no `except` here foresaw. Every other case
+# in this module reaches a path with an explicit `except` of its own, so the backstop survived
+# deletion green until the case beside this entry existed. It is also what keeps this module's
+# safety off `Policy.OPEN` being kept for it -- the two guards are independent, and `mutations/`'s
+# "the overlay-status handler refuses a session when it fails" is the other one.
+[[mutation]]
+name = "an open session handler lets an unforeseen failure out"
+file = "src/stayfixed/attach/hooks.py"
+before = """    except Exception:
+        return HookResult()"""
+after = """    except Exception:
+        raise"""
+reddens = [
+  "tests/attach/test_hooks.py::test_a_failure_with_no_except_of_its_own_is_silence_not_an_exception",
+]
+
+# The mirror of `mutations/`'s "the background guard fails open again", over the one handler that
+# must not fail closed. `Policy.CLOSED` turns a failed overlay lookup into a deny on the one channel
+# a refusal travels -- the state the closed policy reserves for a guard that could not judge -- out
+# of a handler that reads two git remotes and a manifest and protects nothing. Asserted through the
+# real dispatcher, not by reading the constant back off the handler it was passed to.
+[[mutation]]
+name = "the overlay-status handler refuses a session when it fails"
+file = "src/stayfixed/attach/hooks.py"
+before = "            policy=Policy.OPEN,"
+after = "            policy=Policy.CLOSED,"
+reddens = [
+  "tests/attach/test_hooks.py::test_the_registration_is_what_the_dispatcher_acts_on",
+]
+
+# In the block led by `mutations/`'s "the TOML readers answer a document nested past the parser as
+# an internal error": every reader of a document somebody else wrote answers one nested past the
+# parser as one that does not parse.
+[[mutation]]
+name = "attach meets an overlay record nested past the parser as an internal error"
+file = "src/stayfixed/attach/binding.py"
+before = "    except UNPARSEABLE as exc:"
+after = "    except tomllib.TOMLDecodeError as exc:"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[binding]",
+]
+
+[[mutation]]
+name = "attach's first-attach date meets an overlay record nested past the parser as an internal error"
+file = "src/stayfixed/attach/write.py"
+before = "    except (OSError, UnicodeDecodeError, *UNPARSEABLE):"
+after = "    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_that_degrades_on_a_broken_record_degrades_on_a_deep_one[first-attach]",
+]
+
+# `memory.mode` was asked by `worktree.attach_main`, after every write `attach` makes, so a
+# `local-only` project got the ignore region, `.codex/rules/`, the settings merge, the ledger and,
+# in the overlay, `project.toml` and its group directories before exit 2. The early refusal is the
+# guard; `attach_main`'s own check is the floor under it and reddens nothing on its own.
+[[mutation]]
+name = "attach asks memory.mode only after it has written"
+file = "src/stayfixed/attach/write.py"
+before = "    refuse_unless_overlay(config)"
+after = "    pass"
+reddens = [
+  "tests/attach/test_commands.py::test_a_project_not_in_overlay_mode_is_refused_before_a_byte_is_written",
+]
+
+# `attach` hides only what git does not hide already, so a checkout that keeps its whole footprint
+# out of git through `info/exclude` sees neither ignore file change. Reading every placed path as
+# visible writes both the `.gitignore` region and the exclude block into that checkout.
+[[mutation]]
+name = "attach treats an ignored path as not ignored"
+file = "src/stayfixed/attach/exclude.py"
+before = '    hidden = {name for name in out.split("\0") if name}'
+after = "    hidden: set[str] = set()"
+reddens = [
+  "tests/attach/test_write.py::test_a_checkout_that_already_hides_everything_is_not_touched",
+]
+
+# The settings file is a candidate for the exclude block, and so a containment refusal, only on a
+# run that writes it (or after one that did): a `.claude` linked in from elsewhere with nothing to
+# merge is an ordinary layout, not a reason to refuse, and not a file to list.
+[[mutation]]
+name = "attach hides the settings file on a run that never writes it"
+file = "src/stayfixed/attach/write.py"
+before = "        *((LOCAL_SETTINGS,) if settings else ()),"
+after = "        LOCAL_SETTINGS,"
+reddens = [
+  "tests/attach/test_write.py::test_a_symlinked_claude_directory_the_run_never_writes_into_is_not_refused",
+]
+
+# The settings-file fallback is written after the links. Decided only there, its write through a
+# symlinked `.claude` failed with an `OSError` after every earlier write, and its exclude line was
+# written by a second, late plan whose symlink refusal came after the writes too.
+[[mutation]]
+name = "attach decides the settings fallback only once it has written"
+file = "src/stayfixed/attach/write.py"
+before = "    possible = _fallback_possible(root, config, machine=machine, home=home)"
+after = "    possible = False"
+reddens = [
+  "tests/attach/test_detach.py::test_a_symlinked_exclude_file_is_refused_first_when_only_the_fallback_needs_a_line",
+  "tests/attach/test_detach.py::test_the_settings_fallback_written_after_the_links_is_hidden_too",
+]
+
+# The ledger's path is the one project path `attach` writes that no exclude candidate names, so
+# nothing held it to the project by name above the first write.
+[[mutation]]
+name = "attach stops holding the ledger's path to the project"
+file = "src/stayfixed/attach/write.py"
+before = "    contained(root, LEDGER)"
+after = "    pass"
+reddens = [
+  "tests/attach/test_write.py::test_a_symlinked_stayfixed_directory_is_refused_before_anything_is_written",
+]
+
+# Where `.claude` is linked in from elsewhere the fallback is off the table: taking it either wrote
+# through the link after every earlier write or refused an ordinary layout outright.
+[[mutation]]
+name = "attach takes the fallback through a linked-in .claude"
+file = "src/stayfixed/attach/write.py"
+before = "    fallback = possible and _settings_containable(root)"
+after = "    fallback = possible"
+reddens = [
+  "tests/attach/test_detach.py::test_a_fallback_that_would_write_through_a_symlinked_claude_is_skipped_with_a_note",
+]
+
+# A first attach has no link tree for `resolve`, and answered "the fallback is possible" whenever
+# the harness had made its own memory directory -- which, beside a linked-in `.claude`, refused an
+# attach that had been going through.
+[[mutation]]
+name = "a first attach treats the unapproved gate as possibly open"
+file = "src/stayfixed/attach/write.py"
+before = "        return approval_recorded(root / config.paths.memory, machine)"
+after = "        return True"
+reddens = [
+  "tests/attach/test_detach.py::test_a_first_attach_with_a_symlinked_exclude_that_hides_everything_attaches",
+]
+
+# A repository-authored group name holding U+2028 (or a NUL, or another character `str.splitlines`
+# breaks at) was written as one exclude line. Read back by a line splitter it became several, and a
+# `!.env` among them un-hid a file the owner's own excludes hide; a NUL made git read a shorter
+# path's pattern. Refusing only `\n` and `\r` lets every one of those names through.
+[[mutation]]
+name = "the exclude line refuses only a newline"
+file = "src/stayfixed/attach/exclude.py"
+before = '    if relative.splitlines() != [relative] or "\0" in relative:'
+after = '    if "\n" in relative or "\r" in relative:'
+reddens = [
+  "tests/attach/test_write.py::test_a_name_git_would_read_differently_gets_no_exclude_line[U+2028]",
+  "tests/attach/test_write.py::test_a_name_git_would_read_differently_gets_no_exclude_line[U+0000]",
+]
+
+# The union reads back the lines an earlier block holds. Split with `str.splitlines`, one line
+# holding U+2028 came back as three and the rewritten block un-hid the owner's `.env`.
+[[mutation]]
+name = "the exclude block is re-read at every line separator"
+file = "src/stayfixed/attach/exclude.py"
+before = '    return [line.removesuffix("\r") for line in (body or "").split("\n")]'
+after = "    return (body or \"\").splitlines()"
+reddens = [
+  "tests/attach/test_write.py::test_an_earlier_blocks_line_is_kept_whole_whatever_it_holds",
+]
+
+# A committed `.gitignore` is the repository's, and a pull can take a line out of it. Counted as
+# hiding the owner's links, it kept them out of the block, and an upstream commit that dropped the
+# line showed them, and the settings file, in `git status` until the next attach. The owner's
+# question is asked over an empty work tree so that git reads no `.gitignore`; with `--git-dir`
+# alone, the checkout is the work tree again.
+[[mutation]]
+name = "the owner's exclude question reads the checkout's .gitignore"
+file = "src/stayfixed/attach/exclude.py"
+before = '        asked = (*around, f"--work-tree={empty}", "check-ignore", "--no-index", "--stdin", "-z")'
+after = '        asked = (*around, "check-ignore", "--no-index", "--stdin", "-z")'
+reddens = [
+  "tests/attach/test_write.py::test_a_committed_gitignore_does_not_stand_in_for_the_exclude_block",
+]
+
+# The owner's own excludes are what stand in for the block. Reading none of their matches as
+# hiding writes a block into a checkout that hides everything already, and refuses one whose
+# exclude file is a symlink.
+[[mutation]]
+name = "the exclude block ignores what the owner's excludes hide"
+file = "src/stayfixed/attach/exclude.py"
+before = "        unheld = set(_unmatched(root, relatives, *asked))"
+after = "        unheld = set(relatives)"
+reddens = [
+  "tests/attach/test_write.py::test_a_checkout_that_already_hides_everything_is_not_touched",
+  "tests/attach/test_write.py::test_a_checkout_whose_global_excludes_file_hides_everything_is_not_touched",
+  "tests/attach/test_write.py::test_a_path_the_owners_global_excludes_hide_gets_no_line_whatever_the_gitignore_says",
+  "tests/attach/test_detach.py::test_a_first_attach_with_a_symlinked_exclude_that_hides_everything_attaches",
+]
+
+# git shows a tracked file whatever an exclude line says, so a line for one hides nothing, and it
+# needs the exclude file written: with the owner's symlinked exclude file hiding everything and
+# the settings file tracked, an attach nothing had to write into that file was refused.
+[[mutation]]
+name = "the exclude block also lists what git shows in spite of the owner's excludes"
+file = "src/stayfixed/attach/exclude.py"
+before = "    return tuple(relative for relative in relatives if relative in unheld)"
+after = "    return tuple(r for r in relatives if r in unheld | set(unignored(root, relatives)))"
+reddens = [
+  "tests/attach/test_detach.py::test_a_tracked_settings_file_the_owners_symlinked_exclude_hides_does_not_refuse",
+]
+
+# git reads a skip-worktree `.gitignore`, which a sparse checkout leaves out of the work tree, from
+# the index when the file is not on disk, and the owner's question has no `.gitignore` on disk.
+# Asked with the index, it took the repository's line for the owner's again.
+[[mutation]]
+name = "the owner's exclude question reads the index"
+file = "src/stayfixed/attach/exclude.py"
+before = '        asked = (*around, f"--work-tree={empty}", "check-ignore", "--no-index", "--stdin", "-z")'
+after = '        asked = (*around, f"--work-tree={empty}", "check-ignore", "--stdin", "-z")'
+reddens = [
+  "tests/attach/test_write.py::test_a_gitignore_a_sparse_checkout_leaves_out_does_not_stand_in_for_the_block",
+]
+
+# git opens a relative `core.excludesFile` from the top of the work tree, which for the owner's
+# question is the empty directory: the owner's lines stood in for nothing there.
+[[mutation]]
+name = "the owner's relative excludes file is read from the empty work tree"
+file = "src/stayfixed/attach/exclude.py"
+before = '    return ("-c", f"core.excludesFile={root / setting}")'
+after = "    return ()"
+reddens = [
+  "tests/attach/test_write.py::test_a_global_excludes_file_named_by_a_relative_path_still_stands_in_for_the_block",
+]
+
+# A path an earlier block hides reads as ignored now, so a block rebuilt from one run's answer
+# alone dropped it: grant a rule between two attaches and the link tree showed in `git status`.
+[[mutation]]
+name = "the exclude block forgets what an earlier attach hid"
+file = "src/stayfixed/attach/exclude.py"
+before = "    kept = _patterns(earlier)"
+after = "    kept: list[str] = []"
+reddens = [
+  "tests/attach/test_write.py::test_the_block_keeps_what_an_earlier_attach_hid_when_the_grant_changes",
+]
+
+# The exclude block is shared by every checkout, while each ledger, settings file and set of rule
+# copies is one checkout's. Detaching the main checkout took the block while a worktree was still
+# attached, and that worktree's settings file and rule copy showed in its `git status`.
+[[mutation]]
+name = "detach takes the shared block while another checkout is attached"
+file = "src/stayfixed/attach/write.py"
+before = "    hidden = None if kept else exclude.withdrawn_block(root)"
+after = "    hidden = exclude.withdrawn_block(root)"
+reddens = [
+  "tests/attach/test_detach.py::test_detaching_one_checkout_keeps_the_block_another_attached_checkout_needs",
+]
+
+# An exclude file `attach` created for its block was left behind empty by `detach`.
+[[mutation]]
+name = "detach leaves the exclude file attach created"
+file = "src/stayfixed/attach/exclude.py"
+before = "    if EXCLUDE_CREATED in records and not remaining:"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_detach.py::test_an_exclude_file_attach_created_is_removed_by_detach",
+]
+
+# `attach` ends the owner's last line so its block starts on a line of its own; `detach` left that
+# line ending behind.
+[[mutation]]
+name = "detach keeps the line ending attach added"
+file = "src/stayfixed/attach/exclude.py"
+before = "    if EXCLUDE_ENDED in records and current.startswith(remaining):"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_detach.py::test_an_exclude_file_with_no_final_line_ending_comes_back_without_one[lf]",
+]
+
+# The exclude file is the owner's and git reads it as bytes. Read as UTF-8 text, a byte outside it
+# refused both `attach` and `detach`.
+[[mutation]]
+name = "the exclude file is read as UTF-8 text"
+file = "src/stayfixed/attach/exclude.py"
+before = '    return raw.decode("utf-8", "surrogateescape")'
+after = '    return raw.decode("utf-8")'
+reddens = [
+  "tests/attach/test_detach.py::test_an_exclude_file_that_is_not_utf8_neither_blocks_attach_nor_detach",
+]
+
+# The checkout's directory name usually comes from the clone URL, so the exclude file's path is
+# printed through `printed.quoted`; raw, a line break in it starts a line of the refusal.
+[[mutation]]
+name = "the exclude file's symlink refusal prints its path raw"
+file = "src/stayfixed/attach/exclude.py"
+before = "        raise Refusal(LINKED.format(path=quoted(str(path))))"
+after = "        raise Refusal(LINKED.format(path=path))"
+reddens = [
+  "tests/attach/test_detach.py::test_the_exclude_file_refusals_print_the_path_through_the_quoting_rule",
+]
+
+# `attach` records which directories above `paths.memory` it created; an empty `docs/` the owner
+# already had is not on the record and survives `detach`. Nothing tested that half.
+[[mutation]]
+name = "detach removes a directory above paths.memory it never made"
+file = "src/stayfixed/attach/write.py"
+before = "        if name in recorded.memory_parents and _rmdir_if_empty(root, name):"
+after = "        if _rmdir_if_empty(root, name):"
+reddens = [
+  "tests/attach/test_detach.py::test_an_empty_docs_directory_the_owner_had_survives_the_round_trip",
+]
+
+# `detach` removed `paths.memory` whenever it was empty, taking an empty directory the owner had
+# made before the attach.
+[[mutation]]
+name = "detach removes a paths.memory it never made"
+file = "src/stayfixed/attach/write.py"
+before = "            if recorded.memory_created and _rmdir_if_empty(tree, config.paths.memory):"
+after = "            if _rmdir_if_empty(tree, config.paths.memory):"
+reddens = [
+  "tests/attach/test_detach.py::test_an_empty_memory_directory_the_owner_had_survives_the_round_trip",
+]
+
+# A second attach finds `paths.memory` the first one made; a ledger rewritten from that run alone
+# forgot it, and `detach` then left the directory behind.
+[[mutation]]
+name = "a second attach forgets that the first created paths.memory"
+file = "src/stayfixed/attach/write.py"
+before = """        "memory_created": planned.memory_created
+        or (previous is not None and previous.memory_created),"""
+after = '        "memory_created": planned.memory_created,'
+reddens = [
+  "tests/attach/test_detach.py::test_detach_takes_back_the_exclude_block_the_empty_directories_and_the_harness_slug",
+]
+
+# The overlay's rule sources were read and decoded while they were copied, after `.gitignore`, the
+# exclude block and the rules before a bad one were written, and the block then hid the partial
+# copies. They are read while `attach` plans; this is the refusal that makes that read count.
+[[mutation]]
+name = "attach copies past an overlay rule that is not UTF-8"
+file = "src/stayfixed/attach/write.py"
+before = '            raise Failure(f"{source} is not UTF-8 text, so nothing was written") from None'
+after = "            continue"
+reddens = [
+  "tests/attach/test_write.py::test_an_overlay_rule_that_is_not_utf8_stops_attach_before_it_writes",
+]
+
+# The trust record was first read by the index render and the harness link, after the settings,
+# the rule copies, the ledger, the binding record and the link tree were written.
+[[mutation]]
+name = "attach reads the trust record only after it has written"
+file = "src/stayfixed/attach/write.py"
+before = "    require_readable_record(machine)"
+after = "    pass"
+reddens = [
+  "tests/attach/test_write.py::test_a_trust_record_that_does_not_parse_stops_attach_before_it_writes",
+]
+
+# A `.git/info` the user cannot write ended as `internal error: PermissionError` after `.gitignore`
+# had its region.
+[[mutation]]
+name = "attach finds out the exclude file cannot be written by writing it"
+file = "src/stayfixed/attach/exclude.py"
+before = "    if not _writable(path):"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_write.py::test_an_exclude_file_that_cannot_be_written_is_refused_by_name_before_the_first_write",
+]
+
+[[mutation]]
+name = "a failed exclude write is an internal error"
+file = "src/stayfixed/attach/exclude.py"
+before = """    except OSError as exc:
+        raise Refusal(
+            NOT_WRITTEN"""
+after = """    except ValueError as exc:
+        raise Refusal(
+            NOT_WRITTEN"""
+reddens = [
+  "tests/attach/test_write.py::test_an_exclude_file_whose_write_fails_is_a_refusal_naming_it",
+]
+
+# "region 'attach' is opened or closed twice" named the region and never the file.
+[[mutation]]
+name = "a doubled exclude block is refused without its file"
+file = "src/stayfixed/attach/exclude.py"
+before = '        raise RegionError(f"{quoted(str(path))}: {exc}") from exc'
+after = "        raise"
+reddens = [
+  "tests/attach/test_write.py::test_a_doubled_exclude_block_is_refused_naming_the_exclude_file",
+  "tests/attach/test_detach.py::test_a_doubled_exclude_block_refuses_detach_naming_the_exclude_file",
+]
+
+# A `.codex` linked in after the attach was found by the first rule removal, after the settings
+# file was withdrawn, as `internal error: UnsafePath`.
+[[mutation]]
+name = "detach finds a linked .codex by removing through it"
+file = "src/stayfixed/attach/write.py"
+before = """    for rule in recorded.rules:
+        _walked("""
+after = """    for rule in ():
+        _walked("""
+reddens = [
+  "tests/attach/test_detach.py::test_a_codex_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn",
+]
+
+# A group added since the attach that is no one name inside `paths.memory` was found by the link
+# tree's withdrawal, after the settings, the rule copies and earlier links were withdrawn, and the
+# refusal printed the repository's entry through `repr`.
+[[mutation]]
+name = "detach finds an escaping group by withdrawing the tree"
+file = "src/stayfixed/attach/write.py"
+before = """    for tree in checkouts:
+        base = contained(tree, config.paths.memory, allow_final_symlink=True)"""
+after = """    for tree in []:
+        base = contained(tree, config.paths.memory, allow_final_symlink=True)"""
+reddens = [
+  "tests/attach/test_detach.py::test_a_group_added_since_the_attach_refuses_before_anything_is_withdrawn[a//b]",
+  "tests/attach/test_detach.py::test_a_group_added_since_the_attach_refuses_before_anything_is_withdrawn[../../x]",
+]
+
+# In the block led by `mutations/`'s "the binding classifier reads a missing origin as a different
+# remote": a checkout with no `origin` hears one cause and one way out everywhere.
+[[mutation]]
+name = "the session-start line says nothing about a missing origin"
+file = "src/stayfixed/attach/hooks.py"
+before = "            lines.append(NO_ORIGIN)"
+after = "            pass"
+reddens = [
+  "tests/attach/test_hooks.py::test_a_checkout_with_no_origin_hears_the_cause_every_other_surface_says",
+]
+
+# `attach --check` for a checkout with no `origin` printed the state label alone and exited 0 or 1
+# by the mismatch rule, while the real run refuses it.
+[[mutation]]
+name = "attach --check reports a missing origin without its cause"
+file = "src/stayfixed/attach/permissions.py"
+before = '        summary = f"{NO_REMOTE}; {summary}"'
+after = "        pass"
+reddens = [
+  "tests/test_binding_answers.py::test_a_checkout_with_no_origin_hears_one_cause_and_one_way_out_everywhere",
+]
+
+# --- load-bearing guards that had no test to redden ---------------------------------------------
+
+# A doubled block in the exclude file is knowable before anything is withdrawn; found after the
+# settings withdrawal, it left the repository half-detached with the settings gone and the links
+# in place.
+[[mutation]]
+name = "detach finds the exclude block after it has withdrawn the settings"
+file = "src/stayfixed/attach/write.py"
+before = """    hidden = None if kept else exclude.withdrawn_block(root)
+    settings = _planned_settings(root, recorded)
+    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)
+    allow_removed = _withdraw_settings(root, settings)"""
+after = """    settings = _planned_settings(root, recorded)
+    _refuse_unwithdrawable(root, recorded, checkouts, config, settings)
+    allow_removed = _withdraw_settings(root, settings)
+    hidden = None if kept else exclude.withdrawn_block(root)"""
+reddens = [
+  "tests/attach/test_detach.py::test_a_doubled_exclude_block_refuses_detach_naming_the_exclude_file",
+]
+
+# A `memory.groups` entry is the repository's, and each of these is pattern syntax to git: a group
+# named `*` unescaped hides every untracked note under `paths.memory`.
+[[mutation]]
+name = "the exclude line leaves a star unescaped"
+file = "src/stayfixed/attach/exclude.py"
+before = '_SPECIAL = frozenset("\\*?[ ")'
+after = '_SPECIAL = frozenset("\\?[ ")'
+reddens = ["tests/attach/test_write.py::test_each_pattern_character_in_a_group_name_is_escaped[star]"]
+
+[[mutation]]
+name = "the exclude line leaves a question mark unescaped"
+file = "src/stayfixed/attach/exclude.py"
+before = '_SPECIAL = frozenset("\\*?[ ")'
+after = '_SPECIAL = frozenset("\\*[ ")'
+reddens = [
+  "tests/attach/test_write.py::test_each_pattern_character_in_a_group_name_is_escaped[question]",
+]
+
+[[mutation]]
+name = "the exclude line leaves a bracket unescaped"
+file = "src/stayfixed/attach/exclude.py"
+before = '_SPECIAL = frozenset("\\*?[ ")'
+after = '_SPECIAL = frozenset("\\*? ")'
+reddens = [
+  "tests/attach/test_write.py::test_each_pattern_character_in_a_group_name_is_escaped[bracket]",
+]
+
+[[mutation]]
+name = "the exclude line leaves a backslash unescaped"
+file = "src/stayfixed/attach/exclude.py"
+before = '_SPECIAL = frozenset("\\*?[ ")'
+after = '_SPECIAL = frozenset("*?[ ")'
+reddens = [
+  "tests/attach/test_write.py::test_each_pattern_character_in_a_group_name_is_escaped[backslash]",
+]
+
+# Each path the block would list is held to the project before git is asked about it; without it a
+# `.claude` linked in from elsewhere was refused only by accident, by a later write.
+[[mutation]]
+name = "the exclude block stops holding placed paths to the project"
+file = "src/stayfixed/attach/exclude.py"
+before = "        contained(root, relative, allow_final_symlink=True)"
+after = "        pass"
+reddens = [
+  "tests/attach/test_write.py::test_a_run_that_would_write_through_a_symlinked_claude_directory_still_refuses",
+]
+
+# `attach` never writes through a symlinked exclude file, so `detach` must not read a block
+# through one and replace the link with a regular file.
+[[mutation]]
+name = "detach reads the block through a symlinked exclude file"
+file = "src/stayfixed/attach/exclude.py"
+before = "    if path.is_symlink() or not path.is_file():"
+after = "    if not path.is_file():"
+reddens = [
+  "tests/attach/test_detach.py::test_detach_writes_nothing_through_an_exclude_file_that_became_a_symlink",
+]
+
+# The upgrade path: a settings file a 0.1.x attach wrote, recorded in its ledger, with no exclude
+# block; the next attach writes nothing there and must still hide it.
+[[mutation]]
+name = "attach forgets the settings file an earlier attach wrote"
+file = "src/stayfixed/attach/write.py"
+before = "    if previous is not None and (previous.allow or previous.entries or previous.settings_keys):"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_write.py::test_a_settings_file_an_earlier_attach_wrote_is_hidden_by_the_next_one",
+]
+
+# In the block led by `mutations/`'s "a hash region reads a lone carriage return as a line end": git
+# ends a line at `\n` alone.
+[[mutation]]
+name = "the exclude block reads a lone carriage return as a line end"
+file = "src/stayfixed/attach/exclude.py"
+before = '            *((EXCLUDE_ENDED_AFTER_CR,) if current.endswith("\r") else ()),'
+after = ""
+reddens = [
+  "tests/attach/test_detach.py::test_an_exclude_file_ending_in_a_lone_carriage_return_keeps_its_last_pattern",
+]
+
+[[mutation]]
+name = "detach takes back half the CRLF attach added"
+file = "src/stayfixed/attach/exclude.py"
+before = '    return "\r\n" if text.endswith("\r\n") else "\n" if text.endswith("\n") else ""'
+after = '    return "\n" if text.endswith("\n") else ""'
+reddens = [
+  "tests/attach/test_detach.py::test_an_exclude_file_with_no_final_line_ending_comes_back_without_one[crlf]",
+  "tests/attach/test_write.py::test_the_exclude_block_hides_what_git_hid_and_gives_every_file_back",
+]
+
+# The shared exclude block stays while another checkout holds a ledger, and any file at the
+# ledger's path counted: a committed ledger is in every worktree, and a file that does not parse
+# records no attach, so either kept the block for good.
+[[mutation]]
+name = "detach counts a committed ledger as another attach"
+file = "src/stayfixed/attach/write.py"
+before = "        if code == 0 and tracked:"
+after = "        if False:"
+reddens = [
+  "tests/attach/test_detach.py::test_a_ledger_no_attach_of_that_checkout_wrote_does_not_keep_the_block[committed]",
+]
+
+[[mutation]]
+name = "detach counts an unreadable ledger as another attach"
+file = "src/stayfixed/attach/write.py"
+before = "            ledger(tree)"
+after = "            pass"
+reddens = [
+  "tests/attach/test_detach.py::test_a_ledger_no_attach_of_that_checkout_wrote_does_not_keep_the_block[unreadable]",
+]
+
+# A repository made without git's templates has no `.git/info/`; the block's write created it, and
+# `detach` removed the file and left the directory behind.
+[[mutation]]
+name = "detach leaves the info directory attach created"
+file = "src/stayfixed/attach/exclude.py"
+before = "            if planned.directory_created:"
+after = "            if False:"
+reddens = [
+  "tests/attach/test_detach.py::test_an_info_directory_attach_created_is_removed_by_detach",
+]
+
+[[mutation]]
+name = "the exclude block forgets that it created the info directory"
+file = "src/stayfixed/attach/exclude.py"
+before = "            *((EXCLUDE_DIRECTORY_CREATED,) if not path.parent.is_dir() else ()),"
+after = ""
+reddens = [
+  "tests/attach/test_detach.py::test_an_info_directory_attach_created_is_removed_by_detach",
+]
+
+[[mutation]]
+name = "detach removes an info directory the owner had"
+file = "src/stayfixed/attach/exclude.py"
+before = "        return ExcludeWrite(path, None, EXCLUDE_DIRECTORY_CREATED in records)"
+after = "        return ExcludeWrite(path, None, True)"
+reddens = [
+  "tests/attach/test_detach.py::test_an_info_directory_the_owner_had_survives_detach",
+]
+
+# Every path `detach` writes or removes is walked before the first withdrawal, with the removal's
+# own walk. The earlier check asked `contained` instead, which let `paths.memory`'s last component
+# be a link and asked nothing of the ledger or the settings file, so each of those linked in after
+# the attach ended as `internal error: UnsafePath` with the settings file already withdrawn.
+[[mutation]]
+name = "detach walks to the ledger only when it removes it"
+file = "src/stayfixed/attach/write.py"
+before = """    _walked(
+        root, LEDGER, what=f"the ledger, `{LEDGER}`", where="`.stayfixed` or `.stayfixed/local`"
+    )"""
+after = ""
+reddens = [
+  "tests/attach/test_detach.py::test_a_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn[stayfixed]",
+  "tests/attach/test_detach.py::test_a_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn[stayfixed-local]",
+]
+
+[[mutation]]
+name = "detach walks to the settings file only when it rewrites it"
+file = "src/stayfixed/attach/write.py"
+before = "    if settings.text is not None:"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_detach.py::test_a_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn[claude]",
+]
+
+[[mutation]]
+name = "detach walks to a link-tree name only when it removes it"
+file = "src/stayfixed/attach/write.py"
+before = "            if target.is_symlink():"
+after = "            if False:"
+reddens = [
+  "tests/attach/test_detach.py::test_a_directory_linked_in_after_attach_refuses_before_anything_is_withdrawn[paths-memory]",
+]
+
+# A rule copy that is itself a link is unlinked by the removal, which follows no final component;
+# a check that is not the walk refused it, blaming `.codex`.
+[[mutation]]
+name = "detach refuses a rule copy that is itself a symlink"
+file = "src/stayfixed/attach/write.py"
+before = "        fsops.check_within(root, relative)"
+after = "        contained(root, relative)"
+reddens = [
+  "tests/attach/test_detach.py::test_a_rule_copy_that_is_itself_a_symlink_is_withdrawn",
+]
+
+# A settings file with nothing of stayfixed's in it was rewritten anyway, which through a `.claude`
+# linked in from elsewhere stopped a detach whose attach had cleanly written nothing there.
+[[mutation]]
+name = "detach rewrites a settings file it withdraws nothing from"
+file = "src/stayfixed/attach/write.py"
+before = "    if remaining == held:"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_detach.py::test_a_linked_claude_directory_attach_never_wrote_into_does_not_stop_detach",
+]
+
+# In the block led by `mutations/`'s "a hash region ends a line after a lone carriage return with
+# the file's own ending": git drops one `\r` before the `\n` that ends a line.
+[[mutation]]
+name = "detach leaves the newline it added after a lone carriage return"
+file = "src/stayfixed/attach/exclude.py"
+before = '        remaining = remaining.removesuffix("\n")'
+after = "        pass"
+reddens = [
+  "tests/attach/test_write.py::test_the_exclude_block_hides_what_git_hid_and_gives_every_file_back",
+  "tests/attach/test_detach.py::test_an_exclude_file_ending_in_a_lone_carriage_return_keeps_its_last_pattern",
+]
+
+# Where the rule sources are read, not only that a bad one is refused: with a write put above the
+# read, the refusal still comes and the snapshot of what it left does not hold.
+[[mutation]]
+name = "attach reads the overlay's rule sources after its first write"
+file = "src/stayfixed/attach/write.py"
+before = "    rules = _codex_rule_texts(binding)"
+after = """    fsops.write_within(root, GITIGNORE, upsert("", IGNORE_REGION, IGNORE_BODY, Style.HASH))
+    rules = _codex_rule_texts(binding)"""
+reddens = [
+  "tests/attach/test_write.py::test_an_overlay_rule_that_is_not_utf8_stops_attach_before_it_writes",
+]
+
+# "region 'ignore' is opened or closed twice" named the region and never the file it is in.
+[[mutation]]
+name = "a doubled .gitignore region is refused without its file"
+file = "src/stayfixed/attach/write.py"
+before = '        raise RegionError(f"`{GITIGNORE}`: {exc}") from exc'
+after = "        raise"
+reddens = [
+  "tests/attach/test_write.py::test_a_doubled_gitignore_region_is_refused_naming_the_file",
+  "tests/attach/test_detach.py::test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything_is",
+]
