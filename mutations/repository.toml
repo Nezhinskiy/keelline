@@ -2598,7 +2598,7 @@ reddens = ["tests/test_documents.py::test_the_readme_declares_every_program_that
 [[mutation]]
 name = "a launch the seam walk cannot read loses its declaration"
 file = "tests/test_documents.py"
-before = '    ("src/stayfixed/release/notes.py", "build"): LOCAL_ONLY,'
+before = '    ("src/stayfixed/release/notes.py", "build"): NO_ROWS,'
 after = ''
 reddens = ["tests/test_documents.py::test_every_seam_call_resolves_or_is_declared"]
 
@@ -2610,3 +2610,58 @@ file = "tests/test_documents.py"
 before = '        ("git", "grep"),'
 after = ''
 reddens = ["tests/test_documents.py::test_every_program_a_seam_call_runs_is_classified"]
+
+# A `subprocess` function the seam walk does not read (`getoutput`, `getstatusoutput`, one a later
+# Python adds) is still a launch, and a finding until declared; dropping the rule lets a shell
+# string reach a network unseen.
+[[mutation]]
+name = "the seam walk stops counting an unlisted subprocess function as a launch"
+file = "tests/test_documents.py"
+before = '    if module == "subprocess" and function not in SUBPROCESS_INERT:'
+after = '    if False:'
+reddens = [
+  "tests/test_documents.py::test_a_launch_of_any_shape_is_a_seam_call[getoutput]",
+  "tests/test_documents.py::test_a_launch_of_any_shape_is_a_seam_call[getstatusoutput]",
+]
+
+# A runner held under a name that does not end in `runner` still shows itself by the argv literal
+# it is handed.
+[[mutation]]
+name = "the seam walk knows a run only by its receiver's name"
+file = "tests/test_documents.py"
+before = '    literal = bool(call.args) and isinstance('
+after = '    literal = False and isinstance('
+reddens = ["tests/test_documents.py::test_a_launch_of_any_shape_is_a_seam_call[other-receiver]"]
+
+# `from .gitenv import git_run` names the same seam as the absolute import; skipped, every launch
+# through it goes unseen.
+[[mutation]]
+name = "the seam walk skips relative imports"
+file = "tests/test_documents.py"
+before = '    if not node.level:'
+after = '    if True:'
+reddens = [
+  "tests/test_documents.py::test_a_launch_of_any_shape_is_a_seam_call[relative]",
+  "tests/test_documents.py::test_a_launch_of_any_shape_is_a_seam_call[relative-up]",
+]
+
+# `git archive --remote=<url>` asks a remote; a local subcommand carrying such an option must not
+# pass as local.
+[[mutation]]
+name = "a remote option no longer takes a git call out of the local table"
+file = "tests/test_documents.py"
+before = 'GIT_REMOTE_OPTIONS = ("--remote", "--upload-pack", "--receive-pack", "--exec")'
+after = 'GIT_REMOTE_OPTIONS: tuple[str, ...] = ()'
+reddens = [
+  "tests/test_documents.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[archive-remote]",
+  "tests/test_documents.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[archive-remote-late]",
+]
+
+# Every file the templates write under `.github/` is something GitHub runs, so each is a README row;
+# a template workflow added without one must redden.
+[[mutation]]
+name = "the template GitHub files stop being README rows"
+file = "tests/test_documents.py"
+before = '    return shipped | {CI_WORKFLOW}'
+after = '    return {CI_WORKFLOW}'
+reddens = ["tests/test_documents.py::test_the_readme_declares_every_program_that_reaches_a_network"]

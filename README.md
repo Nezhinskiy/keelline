@@ -192,9 +192,11 @@ refs`, and the scaffold engine's `plan` phase performs no writes at all.
 stayfixed makes no network request of its own and sends no telemetry: none of its modules imports
 one of Python's network modules. The programs below can reach a network. stayfixed starts each only
 when a command its row's **Run by** names runs, runs it as you, with your own credentials, and
-installs none of them; the last row is the workflow `stayfixed init` writes, which your CI runs and
-stayfixed does not. A test walks every place stayfixed starts a process and holds this table to the
-programs it finds there, in both directions.
+installs none of them. The last three rows are files stayfixed writes that GitHub runs; stayfixed
+runs none of them. A test walks every place the Python package starts a process, and every file its
+templates write under `.github/`, and holds this table to what it finds, in both directions. The
+hook wrapper, `hooks/run-hook.sh`, is not Python and is not walked: it starts `git`, to find the
+project root and its worktrees, and `python3`, and reaches no network.
 
 | Program | Run by | Talks to | When |
 |---|---|---|---|
@@ -205,10 +207,17 @@ programs it finds there, in both directions.
 | `git push` | `stayfixed overlay publish-template --yes` | the template repository on GitHub, through the remote `gh repo clone` set up | when the rendered template differs from what the repository carries |
 | `claude plugin` | `stayfixed setup --preset NAME` | the marketplace the preset names for Claude Code (`anthropics/claude-plugins-official` in `recommended`), from which `claude` downloads the preset's plugins | when the preset's agents include `claude` and it names a marketplace for it |
 | `codex plugin` | `stayfixed setup --preset NAME` | the marketplace the preset names for Codex, from which `codex` downloads the preset's plugins; `recommended` names none, so it does not run | when the preset's agents include `codex` and it names a marketplace for it |
-| `pre-commit install` | `stayfixed overlay init`, `stayfixed setup --overlay create:<owner>/<name> --yes`, `stayfixed attach` | nothing as it installs; the hook it installs fetches the overlay's pinned secret scan, gitleaks, from GitHub when it first runs | `attach` only when the overlay carries a `.pre-commit-config.yaml` and no `pre-commit` hook yet |
+| `pre-commit install` | `stayfixed overlay init`, `stayfixed setup --overlay create:<owner>/<name> --yes`, `stayfixed attach` | nothing as it installs. On the first commit after it, pre-commit clones `https://github.com/gitleaks/gitleaks` at the commit the overlay's `.pre-commit-config.yaml` pins and builds the `gitleaks` hook, which gitleaks defines as a Go hook: the build fetches Go modules through Go's module proxy, and pre-commit may download a Go toolchain where none is installed. That follows from the hook's definition and was not measured | `attach` only when the overlay carries a `.pre-commit-config.yaml` and no `pre-commit` hook yet |
 | `sh -c` | `stayfixed test attribute --command CMD` | wherever `CMD` reaches; stayfixed does not choose | every run: `CMD` in the working tree, then in extracts of `HEAD` and of the merge base |
 | the commands `[gates.custom]` names | `stayfixed assess`, `stayfixed gate`, `stayfixed adopt promote` | wherever those commands reach; stayfixed does not choose | when `[gates.custom]` names one, unless `--builtin` is passed |
 | `.github/workflows/stayfixed.yml` | your CI, from the workflow `stayfixed init` writes in `reusable` mode | GitHub: it calls stayfixed's reusable workflow at the commit it pins, which checks out your repository and stayfixed, may download a Python, and on a pull request that moves `[ci] ref` lists stayfixed's release tags | on the events the workflow names |
+| `.github/workflows/scan.yml` | the overlay's CI on GitHub, from the file `stayfixed overlay create --local`, `stayfixed overlay upgrade` and `stayfixed overlay publish-template` write; an overlay made with `--template` gets it from the template repository | GitHub: a checkout of the overlay's whole history, and `gitleaks/gitleaks-action`, which downloads gitleaks 8.30.1, stores its report as an artifact of the run and, on a pull request, lists the pull request's commits and, when it finds a leak, its review comments through GitHub's API with the job's read-only token | on every push, pull request and manual run, unless the repository is marked a template |
+| `.github/dependabot.yml` | GitHub's Dependabot, from the file the same commands write into the overlay | GitHub: it looks up new releases of the scan workflow's two pinned actions and opens one grouped pull request in the overlay to move them | monthly, once the file is on GitHub |
+
+In a partial clone (`git clone --filter=…`), git fetches an object the clone left out from the
+remote it came from when a command needs to read it, so the `git` commands the table leaves out as
+local reads, such as `git cat-file`, `git grep`, `git log` and `git archive`, can reach that remote
+there.
 
 ## The threat model, in one paragraph
 
