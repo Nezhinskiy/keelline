@@ -196,22 +196,24 @@ installs none of them. The last three are files stayfixed writes that GitHub run
 none of them. stayfixed's skills and its agent start nothing themselves: what your coding agent
 runs on their advice — through `stayfixed test attribute --command`, a `[gates.custom]` command or
 its own shell — is a command it chose, and reaches what that command reaches. The
-`uv sync --locked && uv run pytest …` the `attribute-failure` skill suggests, for one, can reach
-the package index in each of the three trees `test attribute` runs it in.
+`uv sync --locked && uv run --locked pytest …` the `attribute-failure` skill suggests, for one,
+can reach the package index in each of the three trees `test attribute` runs it in.
 
 `tests/test_outbound.py` walks the Python package and holds the **Program** column, in both
-directions, to the programs the package launches and the files its templates write under
-`.github/`; what the walk can and cannot see is the docstring of
-[`tests/outbound/walk.py`](tests/outbound/walk.py). The **Run by**, **Talks to** and **When**
-columns are kept by hand. The hook wrapper,
+directions, to the package's launches that can reach a network and the files its templates write
+under `.github/`. The walk reads syntax, so a launch decided by data flow it does not follow —
+dynamic dispatch, aliasing, a value computed at run time, a connection the standard library makes
+on the package's behalf — is beyond it; the docstring of
+[`tests/outbound/walk.py`](tests/outbound/walk.py) says what it sees and names each such case.
+The **Run by**, **Talks to** and **When** columns are kept by hand. The hook wrapper,
 `hooks/run-hook.sh`, is not Python and is not walked: it starts `git`, to find the project root
-and its worktrees, and `python3`, and reaches no network.
+and its worktrees, `env` and `dirname`, and `python3`, and reaches no network.
 
 | Program | Run by | Talks to | When |
 |---|---|---|---|
 | `git fetch` | `stayfixed bugs new` | the project's `origin`, and the remotes of submodules the fetch brings in (note 1) | unless `--no-fetch` |
 | `git ls-remote` | `stayfixed init`, `stayfixed upgrade`, `stayfixed doctor`, `stayfixed gate` | `https://github.com/stayfixed/stayfixed`, for its release tags | note 2 |
-| `gh` | `stayfixed overlay create --template`, `stayfixed setup --overlay create:<owner>/<name> --yes`, `stayfixed overlay publish-template` | GitHub's API, as the account `gh` acts for (note 3) | note 3 |
+| `gh` | `stayfixed overlay create --template`, `stayfixed setup --overlay create:<owner>/<name> --yes`, `stayfixed overlay publish-template` | GitHub's API, as the account `gh` acts for, and the clones it makes over git (note 3) | note 3 |
 | `git clone` | `stayfixed overlay create --template`, `stayfixed setup --overlay create:<owner>/<name> --yes` | `git@github.com:<owner>/<name>.git`, the overlay just created | when the clone `gh repo create --clone` made came down empty |
 | `git push` | `stayfixed overlay publish-template --yes` | the template repository on GitHub, through the remote `gh repo clone` set up | when the rendered template differs from what the repository carries |
 | `claude plugin` | `stayfixed setup` (`--preset NAME`; `recommended` when omitted) | the marketplace the preset names for Claude Code, and its plugins' sources (note 4) | when the preset's agents include `claude` and it names a marketplace for it |
@@ -223,29 +225,30 @@ and its worktrees, and `python3`, and reaches no network.
 | `.github/workflows/scan.yml` | the overlay's CI on GitHub (note 7) | GitHub, through `gitleaks/gitleaks-action` (note 7) | on every push, pull request and manual run, unless the repository is marked a template |
 | `.github/dependabot.yml` | GitHub's Dependabot, from the file the same commands write into the overlay | GitHub: it looks up new releases of the scan workflow's two pinned actions and opens one grouped pull request in the overlay to move them | monthly, once the file is on GitHub |
 
-1. **`git fetch`** asks the project's own `origin` for identifiers filed on branches this
-   checkout has not fetched and, in a checkout with submodules, the remotes of the submodules
-   whose recorded commits the fetch brings in (git's `fetch.recurseSubmodules` is `on-demand`
-   unless configured). stayfixed passes git only `PATH`, `HOME`, `LANG`, `LC_ALL` and
-   `SYSTEMROOT` from your environment, and what it drops changes how the fetch connects. ssh finds
-   no agent through `SSH_AUTH_SOCK`, though it still uses its key files under `~/.ssh` and any
-   `IdentityFile` or `IdentityAgent` your `~/.ssh/config` names, and `GIT_SSH_COMMAND` is not
-   used. Without `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`, in either case, a fetch over HTTPS
-   goes direct unless your git configuration sets `http.proxy`. Without `XDG_CONFIG_HOME` and
-   `GIT_CONFIG_GLOBAL`, git reads your global configuration from `~/.gitconfig` and
-   `~/.config/git/config` alone: a global configuration either variable points elsewhere, and
-   the credential helpers it names, are not read, while the helpers the configuration git does
-   read names are used.
+1. **`git fetch`** asks the project's own `origin` for identifiers filed on branches this checkout
+   has not fetched and, in a checkout with submodules, the remotes of the submodules whose recorded
+   commits the fetch brings in (git's `fetch.recurseSubmodules` is `on-demand` unless configured).
+   stayfixed passes git only `PATH`, `HOME`, `LANG`, `LC_ALL` and `SYSTEMROOT` from your
+   environment, and what it drops changes how the fetch connects. ssh finds no agent through
+   `SSH_AUTH_SOCK`, though it still uses its key files under `~/.ssh` and any `IdentityFile` or
+   `IdentityAgent` your `~/.ssh/config` names, and `GIT_SSH_COMMAND` is not used. Without
+   `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`, in either case, a fetch over HTTPS goes direct unless
+   your git configuration sets `http.proxy` or the remote's `remote.<name>.proxy`. Without
+   `XDG_CONFIG_HOME` and `GIT_CONFIG_GLOBAL`, git reads your global configuration from
+   `~/.gitconfig` and `~/.config/git/config` alone: a global configuration either variable points
+   elsewhere, and the credential helpers it names, are not read, while the helpers the configuration
+   git does read names are used.
 2. **`git ls-remote`** runs in `init` and `upgrade` in `reusable` mode, to pin the CI workflow they
    write to a release's commit; in `doctor` when `[ci] ref` is recorded; and in `gate` when a
    change moves `[ci] ref` to the commit `--workflow-sha` names.
-3. **`gh`**: `overlay create` and `setup` look up the template, create the private overlay from
-   it with its clone, and ask whether it exists when that clone came down empty;
-   `publish-template` looks up the template repository, and with `--yes` creates it public, marks
-   it a template and clones it. stayfixed passes `gh` your environment, so a `GH_TOKEN` or
-   `GITHUB_TOKEN` there is the account it acts as, over the one `gh` is signed in to, and
-   `GH_HOST` can point it at a GitHub Enterprise host — while the clone `overlay create` falls back
-   to is always `git@github.com:`.
+3. **`gh`**: `overlay create` and `setup` look up the template, create the private overlay from it
+   with its clone, and ask whether it exists when that clone came down empty; `publish-template`
+   looks up the template repository, and with `--yes` creates it public, marks it a template and
+   clones it. `gh repo create --clone` and `gh repo clone` make their clones with git, over git's
+   own transport, from github.com or the host `GH_HOST` names. stayfixed passes `gh` your
+   environment, so a `GH_TOKEN` or `GITHUB_TOKEN` there is the account it acts as, over the one `gh`
+   is signed in to, and `GH_HOST` can point it at a GitHub Enterprise host — while the clone
+   `overlay create` falls back to is always `git@github.com:`.
 4. **`claude plugin`** registers the marketplace the preset names for Claude Code
    (`anthropics/claude-plugins-official` in `recommended`), reads its list of plugins, and
    downloads each of the preset's plugins from the source its entry there names, which can be
@@ -255,8 +258,10 @@ and its worktrees, and `python3`, and reaches no network.
 5. **`pre-commit install`** reaches nothing as it installs. On the first commit after it,
    pre-commit clones `https://github.com/gitleaks/gitleaks` at the commit the overlay's
    `.pre-commit-config.yaml` pins, gitleaks 8.30.1, whose hook is written in Go: pre-commit builds
-   it, fetching Go modules through Go's module proxy, and may first download a Go toolchain from
-   Go's own download service where none is installed.
+   it, fetching Go modules through Go's module proxy and checking them against Go's checksum
+   database, `sum.golang.org`, and may first download a Go toolchain from Go's own download
+   service where none is installed. Go honours `GOPROXY`, `GOSUMDB` and `GOTOOLCHAIN` from your
+   environment, which pre-commit passes on, so those can send each request elsewhere.
 6. **`stayfixed.yml`** calls stayfixed's reusable workflow at the commit it pins, which checks out
    your repository and stayfixed, may download a Python, on a pull request that moves `[ci] ref`
    lists stayfixed's release tags, and, once the configuration and built-in gates pass, runs the
@@ -266,7 +271,8 @@ and its worktrees, and `python3`, and reaches no network.
    template repository. It checks out the overlay's whole history and runs
    `gitleaks/gitleaks-action` at the commit it pins, v3.0.0. The action looks up the repository's
    owner through GitHub's API and, for an organisation, stops unless a `GITLEAKS_LICENSE` secret is
-   set; this release validates that licence with no host outside GitHub. It downloads gitleaks
+   set; in this release it checks only that the secret is present, its call to validate the
+   licence being commented out, so it contacts no licensing server. It downloads gitleaks
    8.30.1 from `https://github.com/zricethezav/gitleaks/releases/download/…`, stores its report as
    an artifact of the run and, on a pull request, lists the pull request's commits and, when it
    finds a leak, its review comments, all through GitHub's API with the job's read-only token. It
@@ -276,8 +282,10 @@ and its worktrees, and `python3`, and reaches no network.
 Two kinds of git read the table counts as local can reach a network, and they are the two that
 stayfixed's own reads meet. In a partial clone (`git clone --filter=…`), git fetches an object the
 clone left out from the remote it came from when a command needs to read it, so any read that
-needs such an object can reach that remote — `git cat-file`, `git grep`, `git archive`, and, in a
-clone that left trees out as well as files, `git ls-tree -r` and `git diff`, for example. And
+needs such an object can reach that remote. For example, in a clone that left file contents out
+(`--filter=blob:none`), `git cat-file`, `git grep`, `git archive` and `git diff`, whose rename
+detection reads the contents; and in one that left trees out as well (`--filter=tree:0`),
+`git ls-tree -r` too. And
 `git archive`, which `stayfixed test attribute` uses to extract `HEAD` and the merge base, runs
 the smudge filters the repository's `.gitattributes` name and your git configuration defines.
 stayfixed passes git your `HOME` and leaves it reading its system configuration and the
