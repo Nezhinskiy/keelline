@@ -211,7 +211,7 @@ The **Run by**, **Talks to** and **When** columns are kept by hand. The hook wra
 
 | Program | Run by | Talks to | When |
 |---|---|---|---|
-| `git fetch` | `stayfixed bugs new` | the project's `origin`, and the remotes of submodules the fetch brings in (note 1) | unless `--no-fetch` |
+| `git fetch` | `stayfixed bugs new` | the project's `origin` (note 1) | unless `--no-fetch` |
 | `git ls-remote` | `stayfixed init`, `stayfixed upgrade`, `stayfixed doctor`, `stayfixed gate` | `https://github.com/stayfixed/stayfixed`, for its release tags | note 2 |
 | `gh` | `stayfixed overlay create --template`, `stayfixed setup --overlay create:<owner>/<name> --yes`, `stayfixed overlay publish-template` | GitHub's API, as the account `gh` acts for, and the clones it makes over git (note 3) | note 3 |
 | `git clone` | `stayfixed overlay create --template`, `stayfixed setup --overlay create:<owner>/<name> --yes` | `git@github.com:<owner>/<name>.git`, the overlay just created | when the clone `gh repo create --clone` made came down empty |
@@ -226,10 +226,9 @@ The **Run by**, **Talks to** and **When** columns are kept by hand. The hook wra
 | `.github/dependabot.yml` | GitHub's Dependabot, from the file the same commands write into the overlay | GitHub: it looks up new releases of the scan workflow's two pinned actions and opens one grouped pull request in the overlay to move them | monthly, once the file is on GitHub |
 
 1. **`git fetch`** asks the project's own `origin` for identifiers filed on branches this checkout
-   has not fetched and, in a checkout with submodules, the remotes of the submodules whose recorded
-   commits the fetch brings in (git's `fetch.recurseSubmodules` is `on-demand` unless configured).
-   stayfixed passes git only `PATH`, `HOME`, `LANG`, `LC_ALL` and `SYSTEMROOT` from your
-   environment, and what it drops changes how the fetch connects. ssh finds no agent through
+   has not fetched, with `--no-recurse-submodules`, so a submodule's remote is not asked. stayfixed
+   passes git only `PATH`, `HOME`, `LANG`, `LC_ALL` and `SYSTEMROOT` from your environment, and
+   what it drops changes how the fetch connects. ssh finds no agent through
    `SSH_AUTH_SOCK`, though it still uses its key files under `~/.ssh` and any `IdentityFile` or
    `IdentityAgent` your `~/.ssh/config` names, and `GIT_SSH_COMMAND` is not used. Without
    `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`, in either case, a fetch over HTTPS goes direct unless

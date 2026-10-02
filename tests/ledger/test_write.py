@@ -521,6 +521,33 @@ def test_a_successful_fetch_leaves_no_warning(
     assert next_identifier(root, config, fetch=True).warning is None
 
 
+@needs_git
+def test_the_fetch_asks_origin_alone_and_never_a_submodules_remote(tmp_path: Path) -> None:
+    # The fetch is for refs, to see the identifiers on branches this checkout has not fetched.
+    # Under git's default `fetch.recurseSubmodules=on-demand` it also fetched from the remote of
+    # each populated submodule whose recorded commit it brought in: a destination the README had
+    # to disclose, and here one that is gone, which failed the whole fetch and warned of a
+    # collision nothing caused. Mutation (declared): the fetch recurses again -> it exits 1
+    # ("Errors during submodule fetch") and the warning is not `None`.
+    upstream, _ = project(tmp_path)
+    git(upstream, "init", "-q", "-b", "main")
+    sub = tmp_path / "sub"
+    git(tmp_path, "init", "-q", "-b", "main", str(sub))
+    git(sub, "commit", "-q", "--allow-empty", "-m", "one")
+    file_protocol = ("-c", "protocol.file.allow=always")
+    git(upstream, *file_protocol, "submodule", "add", "-q", str(sub), "sub")
+    commit_all(upstream)
+    root = tmp_path / "checkout"
+    git(tmp_path, *file_protocol, "clone", "-q", "--recurse-submodules", str(upstream), str(root))
+    git(sub, "commit", "-q", "--allow-empty", "-m", "two")
+    git(upstream / "sub", *file_protocol, "pull", "-q", "origin", "main")
+    commit_all(upstream, "move the submodule")
+    shutil.rmtree(sub)
+    allocation = next_identifier(root, load(root, machine=tmp_path / "m.toml"), fetch=True)
+    assert allocation.identifier == "BR-001"
+    assert allocation.warning is None
+
+
 def test_the_allocator_starts_at_one_before_the_ledger_directory_exists(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     (root / "docs" / "bugs").rmdir()
