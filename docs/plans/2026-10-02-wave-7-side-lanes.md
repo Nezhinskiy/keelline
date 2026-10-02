@@ -192,7 +192,7 @@ names the test or step that covers it, or "—" when the change cannot reach the
 |---|---|---|---|---|---|
 | `scripts/mutation_oracle.py` | Task 1 Step 6 (full run) | Task 1 `test_every_entry_lives_in_its_group_file` | Task 1 `test_no_group_file_reaches_the_cap` | existing sweep (`stayfixed-oracle-*`) | — |
 | payload guard (`tests/test_payload.py`, (create)) | Task 3 Step 4 | Task 3 `test_the_tree_is_inside_the_directory_limits` | Task 3 `test_a_file_at_the_limit_is_a_finding` | — | Task 3 `test_the_plugin_folder_is_the_repository_root` |
-| outbound guard (`tests/test_documents.py`) | Task 4 Step 4 | Task 4 `test_every_seam_call_resolves_or_is_declared` | — | — | — |
+| outbound guard (`tests/test_outbound.py`, (create)) | Task 4 Step 4 | Task 4 `test_every_seam_call_resolves_or_is_declared` | — | — | — |
 | `bench.py validate` | Task 9 Step 3 | Task 7 `test_load_repos_refuses_a_duplicate_id` | — | Task 7 `test_a_leftover_stage_is_swept_at_start` | Task 7 `test_load_repos_refuses_a_sha_that_is_not_forty_hex` |
 | `bench.py run` | Task 10 (staged, two calls) | Task 8 `test_every_case_template_renders_with_the_values_run_supplies` | — | Task 7 `test_a_leftover_stage_is_swept_at_start`; an exception: `test_a_failed_stage_leaves_no_staged_tree`; the ceiling hit: `test_exit_two_is_reported_as_partial` | Task 7 `test_the_plugin_is_built_from_the_resolved_commit` |
 
@@ -275,7 +275,7 @@ file's own Findings sections, which sit far apart so the appends do not touch th
 | `scripts/mutation_oracle.py` | directory-prep | reads every group file in sorted order |
 | `tests/test_payload.py` (create) | directory-prep | the plugin payload inside the directory's limits |
 | `README.md` | directory-prep | new section "What stayfixed sends where" |
-| `tests/test_documents.py` | directory-prep | the section matches the process seams |
+| `tests/test_outbound.py` (create) | directory-prep | the section matches the process seams |
 | `scripts/bench/bench.py` (create) | benchmark | `validate`, `run`, `report`, and the case and scaffold templates as strings; stdlib only |
 | `scripts/bench/repos.toml` (create) | benchmark | three public repositories, pinned by the owner, each with a bug and a plan |
 | `scripts/bench/README.md` (create) | benchmark | how to re-run, what each case measures, what it costs |
@@ -553,13 +553,15 @@ Expected: caught.
 - Modify: `mutations/repository.toml` (created by Task 1, (create))
 
 **Interfaces:**
-- Produces, in `tests/test_documents.py`: `NETWORK_MODULES = frozenset({"urllib.request",
-  "http.client", "http.server", "socket", "ssl", "ftplib", "smtplib", "poplib", "imaplib",
-  "xmlrpc.client", "xmlrpc.server"})`; `seam_calls(root: Path) -> list[SeamCall]` (file, line,
-  enclosing function, resolved argv prefix or `None`); `outbound_programs(root: Path) ->
-  set[str]` (row keys such as `gh`, `git fetch`, `claude plugin`); `PASS_THROUGH: dict[tuple[str,
-  str], str]` mapping `(file, enclosing function)` of each seam call whose argv is not a literal
-  to the README row key it can reach, or to `"local"` with the reason in a comment.
+- Produces, in `tests/test_outbound.py` (create): `NETWORK_MODULES`, the standard-library modules
+  that open a connection, each matched with its submodules; `seam_calls(root: Path) ->
+  list[SeamCall]` (file, line, enclosing function, the argv as read with `None` for an element not
+  read, or `None` when the program is not read, and whether it was read whole);
+  `outbound_programs(root: Path) -> set[str]` (row keys such as `gh`, `git fetch`, `claude
+  plugin`, and every file the templates write under `.github/`); `PASS_THROUGH: dict[tuple[str,
+  str], frozenset[str]]` mapping `(file, enclosing function)` of each launch whose argv the walk
+  does not read to the README row keys it can reach, empty for one that reaches nothing, with the
+  reason in a comment.
 
 **The walk starts from the seams, not from argv shapes,** so a new call shape fails closed:
 
