@@ -2568,6 +2568,36 @@ before = "name = \"the containment walk stops refusing '..'\""
 after = "name = \"the containment walk stops refusing a parent component\""
 reddens = ["tests/scripts/test_mutation_oracle.py::test_every_cited_entry_name_is_declared"]
 
+# The resolver is only as good as its reading of a citation: a name that wraps onto the next comment
+# line, a name that wraps after the set's own name, and the names a list carries after the first.
+[[mutation]]
+name = "the citation parser keeps a wrapped name's comment marker"
+file = "tests/declarations.py"
+before = '_WRAP = re.compile(r"\s*\n\s*(?:#\s*)?")'
+after = '_WRAP = re.compile(r"(?!)")'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_citation_is_read_across_comment_lines_and_through_a_list",
+  "tests/scripts/test_mutation_oracle.py::test_every_cited_entry_name_is_declared",
+]
+
+[[mutation]]
+name = "the citation parser loses a name that wraps after the set's name"
+file = "tests/declarations.py"
+before = '_GAP = r"[\s#]*"'
+after = '_GAP = r"\s*"'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_citation_is_read_across_comment_lines_and_through_a_list",
+]
+
+[[mutation]]
+name = "the citation parser loses the names a list carries after the first"
+file = "tests/declarations.py"
+before = "            quoted = _FURTHER.match(text, quoted.end())"
+after = "            quoted = None"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_citation_is_read_across_comment_lines_and_through_a_list",
+]
+
 # The plugin directory holds the version for a reviewer when a file other than an image or a font
 # is 256 KiB or more; a guard that admits the boundary passes the one size the directory holds.
 [[mutation]]
