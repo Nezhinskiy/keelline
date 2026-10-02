@@ -497,15 +497,20 @@ Expected: every entry, 1,153 in all, reported caught; the new entry among them.
   2026-10-02): `FILE_MAX_BYTES = 256 * 1024` and `FILES_MAX = 512` (Held); `IMAGE_SUFFIXES`
   (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`) and `FONT_SUFFIXES` (`.woff`, `.woff2`,
   `.ttf`, `.otf`), whose sum `EXEMPT_SUFFIXES` is exempt from the size rule and from the binary
-  rule, `.ico` not among them; `BINARY_PROBE_BYTES = 8000`, git's own window for a NUL byte
+  rule only when the file is what its suffix names: `SIGNATURES: dict[str, re.Pattern[bytes]]`,
+  one opening per suffix but `.svg`, which must be text instead, and a file named like one that
+  does not open with it is a finding (Held); `HELD_SUFFIXES` (`.ico`, `.pdf`, `.zip`), a finding
+  whatever the bytes (Held); `BINARY_PROBE_BYTES = 8000`, git's own window for a NUL byte
   (Held); `SYMLINK_MODE`, `GITLINK_MODE` and `LFS_POINTER` (Blocks where loaded, Warning
   elsewhere); `REGULAR_MODES`, the modes whose content is read; `SYSTEM_FILES` (`.DS_Store`,
-  `Thumbs.db`, `desktop.ini`, `__MACOSX`, at any depth; Blocks); `INVALID_CHARACTERS`,
-  `DEVICE_NAMES`, a trailing dot or space, and names differing only by capitalization
-  (Validation stops); `EXPORT_ATTRIBUTES` (`export-ignore`, `export-subst`) and
-  `REWRITING_ATTRIBUTES` (`filter`, `ident`, `working-tree-encoding`), whose sum
-  `REFUSED_ATTRIBUTES` is refused on any line of any `.gitattributes` (Validation stops);
-  `PLUGIN_MANIFEST`, the path whose presence proves the walk read this plugin.
+  `Thumbs.db`, `desktop.ini`, `__MACOSX`, held case-folded and matched in any capitalization at
+  any depth; Blocks); `INVALID_CHARACTERS`, `DEVICE_NAMES` (CON, PRN, AUX, NUL, CONIN$, CONOUT$,
+  COM1–9 and LPT1–9 with the superscripts ¹ ² ³, as Microsoft's naming page lists them), a
+  trailing dot or space, and names differing only by capitalization (Validation stops);
+  `EXPORT_ATTRIBUTES` (`export-ignore`, `export-subst`) and `REWRITING_ATTRIBUTES` (`filter`,
+  `ident`, `working-tree-encoding`, `text`, `eol`, `crlf`), whose sum `REFUSED_ATTRIBUTES` is
+  refused on any line of any `.gitattributes` (Validation stops); `PLUGIN_MANIFEST`, the path
+  whose presence proves the walk read this plugin.
 - Consumes: Tasks 1–2 (the tree is green only after both).
 - Shipped differently from the text below in places; "Findings — directory-prep" lists each.
 

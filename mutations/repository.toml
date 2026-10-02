@@ -2648,22 +2648,37 @@ reddens = ["tests/test_payload.py::test_a_git_lfs_pointer_is_a_finding"]
 [[mutation]]
 name = "a binary that is not an image or a font stops being a payload finding"
 file = "tests/test_payload.py"
-before = '        elif b"\0" in content[:BINARY_PROBE_BYTES] and not exempt:'
+before = "        elif binary and not exempt:"
 after = "        elif False:"
 reddens = [
-  "tests/test_payload.py::test_a_binary_that_is_not_an_image_or_a_font_is_a_finding[pdf]",
+  "tests/test_payload.py::test_a_binary_that_is_not_an_image_or_a_font_is_a_finding[database]",
   "tests/test_payload.py::test_a_binary_that_is_not_an_image_or_a_font_is_a_finding[executable]",
-  "tests/test_payload.py::test_a_binary_that_is_not_an_image_or_a_font_is_a_finding[zip]",
+  "tests/test_payload.py::test_a_binary_that_is_not_an_image_or_a_font_is_a_finding[wasm]",
 ]
 
-# The checklist names `.ico` among the binaries it holds, and this guard once exempted it as an
-# image.
+# The page admits "complete PNG, JPEG, GIF, and WebP images" and fonts, not their suffixes: a file
+# named like one and not opening with its format's signature is a finding, and it is not exempt.
 [[mutation]]
-name = "the payload guard exempts an .ico as an image again"
+name = "an image or font is exempted by its suffix alone"
 file = "tests/test_payload.py"
-before = 'IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg")'
-after = 'IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico")'
-reddens = ["tests/test_payload.py::test_an_ico_is_a_binary_the_directory_holds"]
+before = "        elif signature is not None and not signed:"
+after = "        elif False:"
+reddens = [
+  "tests/test_payload.py::test_a_file_that_is_not_the_image_or_font_its_suffix_names_is_a_finding[executable-as-png]",
+  "tests/test_payload.py::test_a_file_that_is_not_the_image_or_font_its_suffix_names_is_a_finding[gif-as-jpeg]",
+]
+
+# The checklist names an `.ico`, a `.pdf` and a `.zip` file as binaries it holds, whatever their
+# bytes: a text-only PDF has no NUL for the binary rule to find.
+[[mutation]]
+name = "the payload guard stops holding an .ico, a .pdf or a .zip by its kind"
+file = "tests/test_payload.py"
+before = 'HELD_SUFFIXES = (".ico", ".pdf", ".zip")'
+after = "HELD_SUFFIXES = ()"
+reddens = [
+  "tests/test_payload.py::test_a_binary_kind_the_page_names_is_a_finding_whatever_its_bytes[ico]",
+  "tests/test_payload.py::test_a_binary_kind_the_page_names_is_a_finding_whatever_its_bytes[text-only-pdf]",
+]
 
 # `.DS_Store`, `Thumbs.db`, `desktop.ini` and `__MACOSX` are macOS and Windows system files, which
 # block the listing wherever they sit, and a commit adds them below the root at least as often as at
@@ -2671,13 +2686,24 @@ reddens = ["tests/test_payload.py::test_an_ico_is_a_binary_the_directory_holds"]
 [[mutation]]
 name = "a macOS or Windows system file is a payload finding only at the root"
 file = "tests/test_payload.py"
-before = "        if SYSTEM_FILES.intersection(components):"
-after = "        if SYSTEM_FILES.intersection(components[:1]):"
+before = "        if SYSTEM_FILES.intersection(_folded(component) for component in components):"
+after = "        if SYSTEM_FILES.intersection(_folded(component) for component in components[:1]):"
 reddens = [
   "tests/test_payload.py::test_a_system_file_is_a_finding_at_any_depth[docs/.DS_Store]",
   "tests/test_payload.py::test_a_system_file_is_a_finding_at_any_depth[a/__MACOSX/b]",
   "tests/test_payload.py::test_a_system_file_is_a_finding_at_any_depth[docs/img/Thumbs.db]",
   "tests/test_payload.py::test_a_system_file_is_a_finding_at_any_depth[skills/desktop.ini]",
+]
+
+# Both systems fold case by default, so `thumbs.db` is the very file Explorer writes.
+[[mutation]]
+name = "a system file is a payload finding only in its usual capitalization"
+file = "tests/test_payload.py"
+before = "        if SYSTEM_FILES.intersection(_folded(component) for component in components):"
+after = "        if SYSTEM_FILES.intersection(component for component in components):"
+reddens = [
+  "tests/test_payload.py::test_a_system_file_is_a_finding_in_any_capitalization[thumbs.db]",
+  "tests/test_payload.py::test_a_system_file_is_a_finding_in_any_capitalization[docs/Desktop.ini]",
 ]
 
 # A name Windows or macOS cannot hold stops validation. The directory's examples are a device name,
@@ -2690,6 +2716,26 @@ after = "    return True"
 reddens = [
   "tests/test_payload.py::test_a_name_windows_or_macos_cannot_hold_is_a_finding[con.md]",
   "tests/test_payload.py::test_a_name_windows_or_macos_cannot_hold_is_a_finding[nul.tar.gz]",
+]
+
+[[mutation]]
+name = "the console's device names stop being payload findings"
+file = "tests/test_payload.py"
+before = '    {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}'
+after = '    {"CON", "PRN", "AUX", "NUL"}'
+reddens = [
+  "tests/test_payload.py::test_a_name_windows_or_macos_cannot_hold_is_a_finding[CONIN$]",
+  "tests/test_payload.py::test_a_name_windows_or_macos_cannot_hold_is_a_finding[docs/conout$.txt]",
+]
+
+[[mutation]]
+name = "the superscript COM and LPT ports stop being payload findings"
+file = "tests/test_payload.py"
+before = 'for digit in "123456789\u00b9\u00b2\u00b3"}'
+after = 'for digit in "123456789"}'
+reddens = [
+  "tests/test_payload.py::test_a_name_windows_or_macos_cannot_hold_is_a_finding[COM\\xb9]",
+  "tests/test_payload.py::test_a_name_windows_or_macos_cannot_hold_is_a_finding[lpt\\xb3.log]",
 ]
 
 [[mutation]]
@@ -2717,11 +2763,23 @@ reddens = [
 [[mutation]]
 name = "the payload guard stops reading a filter attribute"
 file = "tests/test_payload.py"
-before = 'REWRITING_ATTRIBUTES = ("filter", "ident", "working-tree-encoding")'
-after = 'REWRITING_ATTRIBUTES = ("ident", "working-tree-encoding")'
+before = 'REWRITING_ATTRIBUTES = ("filter", "ident", "working-tree-encoding", "text", "eol", "crlf")'
+after = 'REWRITING_ATTRIBUTES = ("ident", "working-tree-encoding", "text", "eol", "crlf")'
 reddens = [
   "tests/test_payload.py::test_a_gitattributes_line_rewriting_content_is_a_finding[lfs]",
   "tests/test_payload.py::test_a_gitattributes_line_rewriting_content_is_a_finding[filter-unset]",
+]
+
+# So does `text`, which converts line endings on the way out of git: the page names "other
+# content-rewriting attributes" without listing them, and this guard fails closed on them.
+[[mutation]]
+name = "the payload guard stops reading a text attribute"
+file = "tests/test_payload.py"
+before = '"working-tree-encoding", "text", "eol", "crlf")'
+after = '"working-tree-encoding", "eol", "crlf")'
+reddens = [
+  "tests/test_payload.py::test_a_gitattributes_line_rewriting_content_is_a_finding[text-auto]",
+  "tests/test_payload.py::test_a_gitattributes_line_rewriting_content_is_a_finding[line-endings]",
 ]
 
 # `export-ignore` and `export-subst` in any `.gitattributes` stop validation; a guard that never
