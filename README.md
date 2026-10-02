@@ -187,6 +187,29 @@ and refuses to leave the project root, and replaces files atomically, keeping th
 file it replaced. Nothing is written by `--check`, `bugs check`, `plan check` or `memory
 refs`, and the scaffold engine's `plan` phase performs no writes at all.
 
+## What stayfixed sends where
+
+stayfixed makes no network request of its own and sends no telemetry: none of its modules imports
+one of Python's network modules. The programs below can reach a network. stayfixed starts each only
+when a command its row's **Run by** names runs, runs it as you, with your own credentials, and
+installs none of them; the last row is the workflow `stayfixed init` writes, which your CI runs and
+stayfixed does not. A test walks every place stayfixed starts a process and holds this table to the
+programs it finds there, in both directions.
+
+| Program | Run by | Talks to | When |
+|---|---|---|---|
+| `git fetch` | `stayfixed bugs new` | the project's own `origin`, for identifiers filed on branches this checkout has not fetched | unless `--no-fetch` |
+| `git ls-remote` | `stayfixed init`, `stayfixed upgrade`, `stayfixed doctor`, `stayfixed gate` | stayfixed's public repository, `https://github.com/stayfixed/stayfixed`, for its release tags | `init` and `upgrade` in `reusable` mode, to pin the CI workflow they write to a release's commit; `doctor` when `[ci] ref` is recorded; `gate` when a change moves `[ci] ref` to the commit `--workflow-sha` names |
+| `gh` | `stayfixed overlay create --template`, `stayfixed setup --overlay create:<owner>/<name> --yes`, `stayfixed overlay publish-template` | GitHub's API, as the account `gh` is signed in to | `overlay create` and `setup` look up the template, create the private overlay from it with its clone, and ask whether it exists when that clone came down empty; `publish-template` looks up the template repository, and with `--yes` creates it public, marks it a template and clones it |
+| `git clone` | `stayfixed overlay create --template`, `stayfixed setup --overlay create:<owner>/<name> --yes` | GitHub over SSH, `git@github.com:<owner>/<name>.git`, the overlay just created | only when the clone `gh repo create --clone` made came down empty |
+| `git push` | `stayfixed overlay publish-template --yes` | the template repository on GitHub, through the remote `gh repo clone` set up | when the rendered template differs from what the repository carries |
+| `claude plugin` | `stayfixed setup --preset NAME` | the marketplace the preset names for Claude Code (`anthropics/claude-plugins-official` in `recommended`), from which `claude` downloads the preset's plugins | when the preset's agents include `claude` and it names a marketplace for it |
+| `codex plugin` | `stayfixed setup --preset NAME` | the marketplace the preset names for Codex, from which `codex` downloads the preset's plugins; `recommended` names none, so it does not run | when the preset's agents include `codex` and it names a marketplace for it |
+| `pre-commit install` | `stayfixed overlay init`, `stayfixed setup --overlay create:<owner>/<name> --yes`, `stayfixed attach` | nothing as it installs; the hook it installs fetches the overlay's pinned secret scan, gitleaks, from GitHub when it first runs | `attach` only when the overlay carries a `.pre-commit-config.yaml` and no `pre-commit` hook yet |
+| `sh -c` | `stayfixed test attribute --command CMD` | wherever `CMD` reaches; stayfixed does not choose | every run: `CMD` in the working tree, then in extracts of `HEAD` and of the merge base |
+| the commands `[gates.custom]` names | `stayfixed assess`, `stayfixed gate`, `stayfixed adopt promote` | wherever those commands reach; stayfixed does not choose | when `[gates.custom]` names one, unless `--builtin` is passed |
+| `.github/workflows/stayfixed.yml` | your CI, from the workflow `stayfixed init` writes in `reusable` mode | GitHub: it calls stayfixed's reusable workflow at the commit it pins, which checks out your repository and stayfixed, may download a Python, and on a pull request that moves `[ci] ref` lists stayfixed's release tags | on the events the workflow names |
+
 ## The threat model, in one paragraph
 
 **A repository is untrusted input.** A clone you have not read can commit a `stayfixed.toml`, a

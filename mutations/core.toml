@@ -2070,3 +2070,12 @@ after = "            lone_cr = False"
 reddens = [
   "tests/attach/test_write.py::test_the_exclude_block_hides_what_git_hid_and_gives_every_file_back",
 ]
+
+# stayfixed declares that it makes no network request of its own; that holds only while no module
+# imports one of the standard library's network modules.
+[[mutation]]
+name = "a module imports a network-capable library"
+file = "src/stayfixed/runner.py"
+before = "import subprocess"
+after = "import socket, subprocess"
+reddens = ["tests/test_documents.py::test_no_module_imports_a_network_module"]

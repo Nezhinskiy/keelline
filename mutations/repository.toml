@@ -2583,3 +2583,30 @@ reddens = [
   "tests/test_payload.py::test_a_gitattributes_line_carrying_an_export_attribute_is_a_finding[export-ignore]",
   "tests/test_payload.py::test_a_gitattributes_line_carrying_an_export_attribute_is_a_finding[export-subst]",
 ]
+
+# README.md declares every program stayfixed runs that can reach a network, which is what the
+# directory's security scan reads; a row gone is a destination no longer disclosed.
+[[mutation]]
+name = "the README drops the git fetch row"
+file = "README.md"
+before = "| `git fetch` | `stayfixed bugs new` | the project's own `origin`, for identifiers filed on branches this checkout has not fetched | unless `--no-fetch` |"
+after = ""
+reddens = ["tests/test_documents.py::test_the_readme_declares_every_program_that_reaches_a_network"]
+
+# A launch whose argv the seam walk cannot read is allowed only as a declared pass-through; one that
+# loses its declaration must be a finding, or a new such launch would be too.
+[[mutation]]
+name = "a launch the seam walk cannot read loses its declaration"
+file = "tests/test_documents.py"
+before = '    ("src/stayfixed/release/notes.py", "build"): LOCAL_ONLY,'
+after = ''
+reddens = ["tests/test_documents.py::test_every_seam_call_resolves_or_is_declared"]
+
+# Every program a seam call runs is classified as reaching a network or not; one in neither table
+# must be a finding, because "not listed as outbound" is not "local".
+[[mutation]]
+name = "a local git subcommand leaves the seam walk's classification"
+file = "tests/test_documents.py"
+before = '        ("git", "grep"),'
+after = ''
+reddens = ["tests/test_documents.py::test_every_program_a_seam_call_runs_is_classified"]

@@ -18,11 +18,14 @@ belongs.
 from __future__ import annotations
 
 import argparse
+import ast
 import inspect
 import io
 import re
 import shlex
+from collections.abc import Iterator
 from contextlib import redirect_stderr
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -680,3 +683,439 @@ def test_the_cli_reference_contents_lists_every_section_in_order() -> None:
     headings = re.findall(r"^## (.+)$", "## " + rest, re.MULTILINE)
     assert len(headings) >= 44, len(headings)
     assert listed == [(heading, _anchor(heading)) for heading in headings]
+
+
+# `README.md`'s declaration of every program stayfixed runs that can reach a network, held to the
+# places the package starts a process. The walk begins at the seams every such start goes through
+# — not at argv shapes — so a call of a new shape is a finding until someone reads it, rather than
+# a destination the table never hears about.
+SRC = ROOT / "src" / "stayfixed"
+# Every standard-library module that gives a process a connection of its own. Matched on the whole
+# dotted name, never on the root, because `urllib.parse` and `http.HTTPStatus` reach nothing.
+NETWORK_MODULES = frozenset(
+    {
+        "urllib.request",
+        "http.client",
+        "http.server",
+        "socket",
+        "ssl",
+        "ftplib",
+        "smtplib",
+        "poplib",
+        "imaplib",
+        "xmlrpc.client",
+        "xmlrpc.server",
+    }
+)
+
+
+@dataclass(frozen=True)
+class Seam:
+    """How a launch's argv arrives: `program` is what the seam itself puts first, and the rest is
+    the call's arguments from position `at` on when `spread`, or else the one list at `at`."""
+
+    program: tuple[str, ...]
+    at: int
+    spread: bool
+
+
+# `subprocess.run(argv, …)` and its siblings, and `<…runner>.run(argv, cwd)`.
+LAUNCH = Seam((), 0, spread=False)
+LAUNCHERS = frozenset({"run", "Popen", "call", "check_call", "check_output"})
+# `os.system`, `os.popen` and the `exec`, `spawn` and `posix_spawn` families. Nothing in the
+# package calls one; a call that did would be a launch whose argv the walk does not read, and so
+# a finding until `PASS_THROUGH` names it rather than a launch the walk never saw.
+OS_LAUNCHERS = ("system", "popen", "exec", "spawn", "posix_spawn")
+# A launch whose argv the walk does not read.
+UNREAD = Seam((), -1, spread=False)
+# The functions that launch a process on their caller's behalf, by `(file, function)`. A call to
+# one is a seam call, resolved at the caller. Inside one, a launch the walk cannot resolve is the
+# seam handing its caller's arguments on, and is not a call site of its own; one it can resolve is
+# classified like any other, so the exemption covers the forwarding and nothing the seam adds. A
+# new helper that forwards its own arguments to a launch is a finding until it is listed here.
+SEAMS: dict[tuple[str, str], Seam] = {
+    ("src/stayfixed/gitenv.py", "git_run"): Seam(("git",), 1, spread=True),
+    ("src/stayfixed/memory/store.py", "_git"): Seam(("git",), 1, spread=True),
+    ("src/stayfixed/assess/probes.py", "_git"): Seam(("git",), 1, spread=True),
+    ("src/stayfixed/assess/rule.py", "_read"): Seam(("git",), 1, spread=True),
+    ("src/stayfixed/attach/exclude.py", "_unmatched"): Seam(("git",), 2, spread=True),
+    ("src/stayfixed/setup/run.py", "_ask"): Seam(("git",), 1, spread=True),
+    ("src/stayfixed/overlay/publish.py", "_git"): Seam(("git",), 1, spread=False),
+    # The real `Runner`. Calls reach it as `<…runner>.run(argv, cwd)`, never by this name.
+    ("src/stayfixed/runner.py", "_SubprocessRunner.run"): LAUNCH,
+}
+# git's global options that take their value as the next argument; the subcommand follows them.
+GIT_VALUED_OPTIONS = ("-C", "-c")
+# Nothing reaches past this machine.
+LOCAL_ONLY: frozenset[str] = frozenset()
+# Each launch whose argv the walk cannot resolve, by `(file, function)`, and the README rows it can
+# reach. The comment says what it runs; a reviewer reads it, and a new such launch is a finding
+# until it has an entry.
+PASS_THROUGH: dict[tuple[str, str], frozenset[str]] = {
+    # A project's own `[gates.custom.<name>] run`, launched as configured.
+    ("src/stayfixed/assess/gates.py", "_custom.run"): frozenset({"[gates.custom]"}),
+    # `claude plugin marketplace add`, `claude plugin install`, `codex plugin marketplace add` and
+    # `codex plugin add`, each built by a lambda in `_MARKETPLACE_ADD` or `_PLUGIN_INSTALL`.
+    ("src/stayfixed/setup/run.py", "_install_plugins"): frozenset(
+        {"claude plugin", "codex plugin"}
+    ),
+    # `towncrier build --version X --yes [--draft]`, assembled before the call: it renders
+    # `changelog.d/` into `CHANGELOG.md`.
+    ("src/stayfixed/release/notes.py", "build"): LOCAL_ONLY,
+    # `git [-c core.excludesFile=…] --git-dir=… --work-tree=<empty> check-ignore --no-index
+    # --stdin -z`, assembled in `asked`: the owner's own exclude files, asked about.
+    ("src/stayfixed/attach/exclude.py", "unhidden_by_owner"): LOCAL_ONLY,
+    # `hooks/run-hook.sh open --version` under the plugin root this process derived: stayfixed's
+    # own hook wrapper, asked for its version.
+    ("src/stayfixed/doctor/checks.py", "_wrapper"): LOCAL_ONLY,
+}
+# Where each program a seam call runs can reach, by the argv prefix that decides it: the README
+# row that declares it, by the row's first code span. `sh -c` runs the command `test attribute
+# --command` names, which reaches wherever it reaches.
+NETWORK: dict[tuple[str, ...], str] = {
+    ("gh",): "gh",
+    ("git", "clone"): "git clone",
+    ("git", "fetch"): "git fetch",
+    ("git", "push"): "git push",
+    ("git", "pull"): "git pull",
+    ("git", "ls-remote"): "git ls-remote",
+    ("claude", "plugin"): "claude plugin",
+    ("codex", "plugin"): "codex plugin",
+    ("pre-commit", "install"): "pre-commit install",
+    ("sh", "-c"): "sh -c",
+}
+# The programs a seam call runs that reach nothing past this machine. A prefix in neither table is
+# a finding: it has to be read and put in one of the two.
+LOCAL = frozenset(
+    {
+        ("git", "--version"),
+        # The one valueless global option a call puts before the subcommand. Listed whole, so that
+        # the option before any other subcommand is a finding and not a pass.
+        ("git", "--literal-pathspecs", "ls-tree"),
+        ("git", "add"),
+        ("git", "archive"),
+        ("git", "cat-file"),
+        ("git", "check-ignore"),
+        ("git", "commit"),
+        ("git", "config"),
+        ("git", "diff"),
+        ("git", "grep"),
+        ("git", "init"),
+        ("git", "log"),
+        ("git", "ls-files"),
+        ("git", "ls-tree"),
+        ("git", "merge-base"),
+        ("git", "remote"),
+        ("git", "rev-list"),
+        ("git", "rev-parse"),
+        ("git", "show-ref"),
+        ("git", "status"),
+        ("git", "symbolic-ref"),
+        ("git", "worktree"),
+        ("tar", "-xf"),
+    }
+)
+# The workflow `init` writes in `reusable` mode, and the line that makes it call stayfixed's own
+# reusable workflow on GitHub: the one row no process call yields.
+CI_WORKFLOW = SRC / "templates" / "project" / "stayfixed.yml"
+CI_REUSABLE = "/.github/workflows/check.yml@"
+CI_ROW = ".github/workflows/stayfixed.yml"
+# Vacuity floors, not coverage: 88 launches and 141 modules today.
+SEAM_CALLS_FLOOR = 80
+MODULES_FLOOR = 120
+# The section, everything between its heading and the next `## ` heading, and a code span.
+_SENDS_SECTION = re.compile(
+    r"^## What stayfixed sends where\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL
+)
+_CODE_SPAN = re.compile(r"`([^`]+)`")
+
+
+@dataclass(frozen=True)
+class SeamCall:
+    """One place the package starts a process. `argv` is the literal head of what it runs, at
+    least as far as what decides the program (git's subcommand), or `None` when the walk cannot
+    read that far."""
+
+    file: str
+    line: int
+    function: str
+    argv: tuple[str, ...] | None
+
+
+def _modules(tree: ast.Module) -> set[str]:
+    """Every module `tree` imports, by dotted name: `import a.b` and `from a import b` both name
+    `a.b`, because the second can import a submodule and the syntax cannot say which."""
+    named: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            named.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            named.add(node.module)
+            named.update(f"{node.module}.{alias.name}" for alias in node.names)
+    return named
+
+
+def network_imports(root: Path) -> list[tuple[str, str]]:
+    """`(file, module)` for each network module a file under `root` imports."""
+    return [
+        (path.relative_to(ROOT).as_posix(), module)
+        for path in sorted(root.rglob("*.py"))
+        for module in sorted(_modules(ast.parse(path.read_text(encoding="utf-8"))))
+        if module in NETWORK_MODULES
+    ]
+
+
+def _strings(node: ast.expr | None) -> list[str] | None:
+    """The strings of a tuple or list made only of string literals."""
+    if not isinstance(node, (ast.Tuple, ast.List)):
+        return None
+    strings = []
+    for element in node.elts:
+        if not (isinstance(element, ast.Constant) and isinstance(element.value, str)):
+            return None
+        strings.append(element.value)
+    return strings
+
+
+def _constants(tree: ast.Module) -> dict[str, list[str]]:
+    """Module-level names bound to a tuple or list of strings, such as git arguments several calls
+    share."""
+    bound: dict[str, list[str]] = {}
+    value: ast.expr | None
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target, value = node.targets[0], node.value
+        elif isinstance(node, ast.AnnAssign):
+            target, value = node.target, node.value
+        else:
+            continue
+        if isinstance(target, ast.Name) and (strings := _strings(value)) is not None:
+            bound[target.id] = strings
+    return bound
+
+
+def _source_of(module: str) -> str | None:
+    """The package file that defines `module`, relative to the root, or `None` for any other."""
+    stem = module.replace(".", "/")
+    for candidate in (f"src/{stem}.py", f"src/{stem}/__init__.py"):
+        if (ROOT / candidate).is_file():
+            return candidate
+    return None
+
+
+def _bindings(tree: ast.Module, file: str) -> tuple[dict[str, tuple[str, str]], dict[str, str]]:
+    """What each bare name in `file` calls, as `(file, function)`, and which names are modules:
+    the file's own top-level functions, its `from … import`s and its `import … as`es. A launcher
+    imported by name binds to `("subprocess", name)` or `("os", name)`."""
+    functions = {
+        node.name: (file, node.name)
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    modules: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update({alias.asname or alias.name: alias.name for alias in node.names})
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            for alias in node.names:
+                bound, whole = alias.asname or alias.name, f"{node.module}.{alias.name}"
+                if _source_of(whole) is not None:
+                    modules[bound] = whole
+                elif (source := _source_of(node.module)) is not None:
+                    functions[bound] = (source, alias.name)
+                elif node.module in ("subprocess", "os"):
+                    functions[bound] = (node.module, alias.name)
+    return functions, modules
+
+
+def _launcher(module: str, name: str) -> Seam | None:
+    if module == "subprocess":
+        return LAUNCH if name in LAUNCHERS else None
+    if module == "os":
+        return UNREAD if name.startswith(OS_LAUNCHERS) else None
+    return SEAMS.get((module, name))
+
+
+def _last_name(node: ast.expr) -> str:
+    """A receiver's last name: `runner`, `self._runner` and `context.runner` alike."""
+    if isinstance(node, ast.Name):
+        return node.id
+    return node.attr if isinstance(node, ast.Attribute) else ""
+
+
+def _dotted(node: ast.expr) -> str | None:
+    """`a.b.c` for a receiver spelled as names and attributes, the way an import binds it."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute) and (owner := _dotted(node.value)) is not None:
+        return f"{owner}.{node.attr}"
+    return None
+
+
+def _seam_of(
+    call: ast.Call, functions: dict[str, tuple[str, str]], modules: dict[str, str]
+) -> Seam | None:
+    func = call.func
+    if isinstance(func, ast.Name):
+        return _launcher(*functions[func.id]) if func.id in functions else None
+    if not isinstance(func, ast.Attribute):
+        return None
+    module = modules.get(_dotted(func.value) or "")
+    if module is not None:
+        return _launcher(_source_of(module) or module, func.attr)
+    if func.attr == "run" and _last_name(func.value).endswith("runner"):
+        return LAUNCH
+    return None
+
+
+def _argv(call: ast.Call, seam: Seam, constants: dict[str, list[str]]) -> tuple[str, ...] | None:
+    """The literal head of the argv `call` hands `seam`, or `None` short of what decides it."""
+    if seam is UNREAD or len(call.args) <= seam.at:
+        return None
+    given = call.args[seam.at]
+    if seam.spread:
+        nodes = call.args[seam.at :]
+    else:
+        nodes = given.elts if isinstance(given, (ast.List, ast.Tuple)) else [given]
+    # Each element as its string, or `None` for one the walk cannot read: a value in an option's
+    # place, such as `-C`'s path, does not end the reading. A spread of a module constant is its
+    # strings; any other spread ends it, because its length is unknown.
+    parts: list[str | None] = list(seam.program)
+    for node in nodes:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            parts.append(node.value)
+        elif isinstance(node, ast.Starred):
+            spread = constants.get(node.value.id) if isinstance(node.value, ast.Name) else None
+            if spread is None:
+                parts.append(None)
+                break
+            parts.extend(spread)
+        else:
+            parts.append(None)
+    deciding = 1
+    if parts[:1] == ["git"]:
+        while len(parts) >= 3 and parts[1] in GIT_VALUED_OPTIONS:
+            del parts[1:3]
+        deciding = 2
+    head: list[str] = []
+    for part in parts:
+        if part is None:
+            break
+        head.append(part)
+    return tuple(head) if len(head) >= deciding else None
+
+
+def _scoped_calls(node: ast.AST, scope: tuple[str, ...] = ()) -> Iterator[tuple[ast.Call, str]]:
+    """Every call under `node`, with the dotted name of the function or class it sits in."""
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.Call):
+            yield child, ".".join(scope) or "<module>"
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            yield from _scoped_calls(child, (*scope, child.name))
+        else:
+            yield from _scoped_calls(child, scope)
+
+
+def seam_calls(root: Path) -> list[SeamCall]:
+    """Every call under `root` that starts a process, and what the walk can read of its argv."""
+    found: list[SeamCall] = []
+    for path in sorted(root.rglob("*.py")):
+        file = path.relative_to(ROOT).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        functions, modules = _bindings(tree, file)
+        constants = _constants(tree)
+        for call, function in _scoped_calls(tree):
+            if (seam := _seam_of(call, functions, modules)) is not None:
+                found.append(SeamCall(file, call.lineno, function, _argv(call, seam, constants)))
+    return found
+
+
+def _declared(call: SeamCall) -> bool:
+    return (call.file, call.function) in PASS_THROUGH or (call.file, call.function) in SEAMS
+
+
+def _row(argv: tuple[str, ...]) -> str | None:
+    return next((row for prefix, row in NETWORK.items() if argv[: len(prefix)] == prefix), None)
+
+
+def unclassified(calls: list[SeamCall]) -> list[SeamCall]:
+    """The calls that run a program in neither `NETWORK` nor `LOCAL`."""
+    return [
+        c
+        for c in calls
+        if c.argv is not None
+        and _row(c.argv) is None
+        and not any(c.argv[: len(prefix)] == prefix for prefix in LOCAL)
+    ]
+
+
+def outbound_programs(root: Path) -> set[str]:
+    """The README row keys the calls under `root` can reach, and the CI workflow's when `init`'s
+    template calls stayfixed's reusable workflow."""
+    calls = seam_calls(root)
+    rows = {row for c in calls if c.argv is not None and (row := _row(c.argv)) is not None}
+    passed = (PASS_THROUGH.get((c.file, c.function), LOCAL_ONLY) for c in calls if c.argv is None)
+    rows.update(*passed)
+    if CI_REUSABLE in CI_WORKFLOW.read_text(encoding="utf-8"):
+        rows.add(CI_ROW)
+    return rows
+
+
+def readme_outbound_rows() -> set[str]:
+    """The first code span of each row's Program cell in README's network section."""
+    match = _SENDS_SECTION.search(README.read_text(encoding="utf-8"))
+    assert match, "README.md has no ## What stayfixed sends where section"
+    keys = []
+    for line in match.group(1).splitlines():
+        if not line.startswith("| ") or line.startswith("| Program |"):
+            continue
+        cells = line.strip("|").split(" | ")
+        span = _CODE_SPAN.search(cells[0])
+        assert len(cells) == 4 and span is not None, line
+        keys.append(span.group(1))
+    # One row per key: a second row for a program would be two declarations that can disagree.
+    assert len(keys) == len(set(keys)), keys
+    return set(keys)
+
+
+def test_no_module_imports_a_network_module() -> None:
+    # `urllib.parse` and `http.HTTPStatus` reach nothing, so the match is on modules, not roots.
+    # Mutation (declared): `import subprocess` in src/stayfixed/runner.py becomes
+    # `import socket, subprocess`. Mutation: the match moves to the root -> the `urllib.parse`
+    # that src/stayfixed/docs/hygiene.py imports reads as `urllib.request`, and this reddens.
+    assert len(list(SRC.rglob("*.py"))) >= MODULES_FLOOR
+    assert network_imports(SRC) == []
+
+
+def test_both_import_forms_name_the_module_they_reach() -> None:
+    # The tree imports no network module either way, so the walk above cannot tell the two forms
+    # apart on its own. Mutation: `from a import b` stops naming `a.b` -> the second reddens.
+    assert "urllib.request" in _modules(ast.parse("import urllib.request"))
+    assert "urllib.request" in _modules(ast.parse("from urllib import request"))
+
+
+def test_every_seam_call_resolves_or_is_declared() -> None:
+    # Mutation (declared): `PASS_THROUGH` loses `release/notes.py`'s `build` -> its `towncrier`
+    # launch is unread and undeclared, and this reddens. Mutation: `SEAMS` loses `setup/run.py`'s
+    # `_ask` -> its forwarding launch is a call site of its own, and this reddens.
+    calls = seam_calls(SRC)
+    # A walk-based assertion states its walk is non-empty: a seam the walk stopped recognising
+    # would take its calls out of every check here and leave them all green. Mutation: the
+    # runner receiver must be named exactly `Runner` -> every `runner.run` drops out, and the
+    # floor reddens.
+    assert len(calls) >= SEAM_CALLS_FLOOR, len(calls)
+    assert [c for c in calls if c.argv is None and not _declared(c)] == []
+
+
+def test_every_program_a_seam_call_runs_is_classified() -> None:
+    # Mutation (declared): `("git", "grep")` leaves `LOCAL` -> `assess`'s marker probe runs a
+    # program in neither table, and this reddens. Mutation: `-C` leaves `GIT_VALUED_OPTIONS` ->
+    # `overlay publish-template`'s `git -C <clone> push` reads as a program called `-C`.
+    assert unclassified(seam_calls(SRC)) == []
+
+
+def test_the_readme_declares_every_program_that_reaches_a_network() -> None:
+    # Both directions: a call site with no row is an undisclosed destination, which the
+    # directory's security scan rejects; a row with no call site is a promise about nothing.
+    # Mutation (declared): the README drops the `git fetch` row.
+    assert outbound_programs(SRC) == readme_outbound_rows()
