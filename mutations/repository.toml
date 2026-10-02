@@ -2589,7 +2589,7 @@ reddens = [
 [[mutation]]
 name = "the README drops the git fetch row"
 file = "README.md"
-before = "| `git fetch` | `stayfixed bugs new` | the project's own `origin`, for identifiers filed on branches this checkout has not fetched | unless `--no-fetch` |"
+before = "| `git fetch` | `stayfixed bugs new` | the project's own `origin`, for identifiers filed on branches this checkout has not fetched, and, in a checkout with submodules, the remotes of the submodules whose recorded commits the fetch brings in (git's `fetch.recurseSubmodules` is `on-demand` unless configured). It uses the credentials your git configuration provides: stayfixed passes git only `PATH`, `HOME`, `LANG`, `LC_ALL` and `SYSTEMROOT` from your environment, so an `ssh-agent`, which git reaches through `SSH_AUTH_SOCK`, is not used | unless `--no-fetch` |"
 after = ""
 reddens = ["tests/test_outbound.py::test_the_readme_declares_every_program_that_reaches_a_network"]
 
