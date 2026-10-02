@@ -26,25 +26,34 @@ ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
 SRC = ROOT / "src" / "stayfixed"
 TEMPLATES = SRC / "templates"
-# Every standard-library module that gives a process a connection of its own. Matched on the whole
-# dotted name, never on the root, because `urllib.parse`, `http.HTTPStatus` and `logging` reach
-# nothing while `urllib.request`, `http.client` and `logging.handlers` do. `asyncio` is the one
-# listed whole although most of it reaches nothing: its connection calls and its subprocess calls
-# come in through one import, which a match on names cannot tell apart, and the package imports it
-# for neither. A module that wants it for a subprocess is an edit here that says so, and the
-# launches it makes are walked below like any other.
+# Every standard-library module that gives a process a connection of its own. A listed module
+# matches with everything below it (`asyncio.streams` is `asyncio`'s), and never by its root alone:
+# `urllib`, `http` and `logging` are not listed, because `urllib.parse`, `http.HTTPStatus` and a
+# plain logger reach nothing, while `urllib.request`, `http.client`, `logging.handlers` and
+# `logging.config` (whose `listen()` opens a socket) do. `asyncio` is listed whole although most of
+# it reaches nothing: its connection calls and its subprocess calls come in through one import,
+# which a match on names cannot tell apart, and the package imports it for neither. A module that
+# wants it for a subprocess is an edit here that says so, and the launches it makes are walked
+# below like any other. `smtpd`, `asyncore` and `asynchat` are gone from 3.12 and importable on the
+# 3.11 floor; `_socket` and `_ssl` are what `socket` and `ssl` are built on.
 NETWORK_MODULES = frozenset(
     {
+        "_socket",
+        "_ssl",
+        "asynchat",
         "asyncio",
+        "asyncore",
         "ftplib",
         "http.client",
         "http.server",
         "imaplib",
+        "logging.config",
         "logging.handlers",
         "multiprocessing.connection",
         "multiprocessing.managers",
         "nntplib",
         "poplib",
+        "smtpd",
         "smtplib",
         "socket",
         "socketserver",
@@ -85,15 +94,26 @@ STDLIB_LAUNCHES: dict[tuple[str, str], Seam] = {
     ("asyncio", "create_subprocess_exec"): Seam(spread=True),
     ("asyncio", "create_subprocess_shell"): UNREAD,
 }
-# A call to any other `subprocess` function is a launch too — `getoutput` and `getstatusoutput`
-# take a shell string — except these, which start nothing. So is a call to `os.system`, `os.popen`,
-# `os.startfile` and the `exec`, `spawn` and `posix_spawn` families, and to an event loop's
+# A call to any other `subprocess` name is a launch too — `getoutput` and `getstatusoutput` take a
+# shell string — except these, which start nothing. So is a call to `os.system`, `os.popen`,
+# `os.startfile` and the `exec`, `fexec`, `spawn` and `posix_spawn` families, and to an event loop's
 # `subprocess_exec` and `subprocess_shell` on whatever loop a call holds. The walk reads none of
 # their argvs, so each is a finding until `PASS_THROUGH` names it.
 SUBPROCESS_INERT = frozenset(
-    {"CalledProcessError", "CompletedProcess", "SubprocessError", "TimeoutExpired", "list2cmdline"}
+    {
+        "CalledProcessError",
+        "CompletedProcess",
+        "SubprocessError",
+        "TimeoutExpired",
+        "list2cmdline",
+        "DEVNULL",
+        "PIPE",
+        "STDOUT",
+    }
 )
-OS_LAUNCH_PREFIXES = ("system", "popen", "startfile", "exec", "spawn", "posix_spawn")
+# The modules whose names are launchers: a star import of one binds names the walk cannot follow.
+LAUNCHER_MODULES = frozenset({"os", "subprocess"} | {module for module, _ in STDLIB_LAUNCHES})
+OS_LAUNCH_PREFIXES = ("system", "popen", "startfile", "exec", "fexec", "spawn", "posix_spawn")
 LOOP_LAUNCHES = frozenset({"subprocess_exec", "subprocess_shell"})
 # The package's functions that launch a process on their caller's behalf, by `(file, function)`. A
 # call to one is a seam call, read at the caller. Inside one, a launch the walk cannot read is the
@@ -250,8 +270,12 @@ def network_imports(root: Path) -> list[tuple[str, str]]:
         (path.relative_to(ROOT).as_posix(), module)
         for path in _package_files(root)
         for module in sorted(_modules(ast.parse(path.read_text(encoding="utf-8"))))
-        if module in NETWORK_MODULES
+        if _reaches_a_network(module)
     ]
+
+
+def _reaches_a_network(module: str) -> bool:
+    return any(module == listed or module.startswith(f"{listed}.") for listed in NETWORK_MODULES)
 
 
 def _strings(node: ast.expr | None) -> list[str] | None:
@@ -266,10 +290,10 @@ def _strings(node: ast.expr | None) -> list[str] | None:
     return strings
 
 
-def _constants(tree: ast.Module) -> dict[str, list[str]]:
-    """Module-level names bound to a tuple or list of strings, such as git arguments several calls
-    share."""
-    bound: dict[str, list[str]] = {}
+def _constants(tree: ast.Module) -> dict[str, str | list[str]]:
+    """Module-level names bound to a string, or to a tuple or list of strings, such as git
+    arguments several calls share."""
+    bound: dict[str, str | list[str]] = {}
     value: ast.expr | None
     for node in tree.body:
         if isinstance(node, ast.Assign) and len(node.targets) == 1:
@@ -278,12 +302,16 @@ def _constants(tree: ast.Module) -> dict[str, list[str]]:
             target, value = node.target, node.value
         else:
             continue
-        if isinstance(target, ast.Name) and (strings := _strings(value)) is not None:
+        if not isinstance(target, ast.Name):
+            continue
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            bound[target.id] = value.value
+        elif (strings := _strings(value)) is not None:
             bound[target.id] = strings
     return bound
 
 
-def _package_file(module: str) -> str | None:
+def _module_file(module: str) -> str | None:
     """The package file that defines `module`, relative to the root, or `None` for any other."""
     stem = module.replace(".", "/")
     for candidate in (f"src/{stem}.py", f"src/{stem}/__init__.py"):
@@ -313,14 +341,22 @@ def _bindings(tree: ast.Module, file: str) -> Bindings:
     modules: dict[str, str] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            modules.update({alias.asname or alias.name: alias.name for alias in node.names})
+            for alias in node.names:
+                if alias.asname:
+                    modules[alias.asname] = alias.name
+                    continue
+                # `import os.path` binds `os` as well, and `os.system` is then a call through it.
+                parts = alias.name.split(".")
+                modules.update(
+                    {".".join(parts[:i]): ".".join(parts[:i]) for i in range(1, len(parts) + 1)}
+                )
         elif isinstance(node, ast.ImportFrom):
             module = _imported_from(node, file)
             for alias in node.names:
                 bound = alias.asname or alias.name
-                if _package_file(f"{module}.{alias.name}") is not None:
+                if _module_file(f"{module}.{alias.name}") is not None:
                     modules[bound] = f"{module}.{alias.name}"
-                elif (source := _package_file(module)) is not None:
+                elif (source := _module_file(module)) is not None:
                     functions[bound] = (source, alias.name)
                 else:
                     stdlib[bound] = (module, alias.name)
@@ -357,30 +393,40 @@ def _last_name(node: ast.expr) -> str:
     return node.attr if isinstance(node, ast.Attribute) else ""
 
 
-def _seam_of(call: ast.Call, names: Bindings) -> Seam | None:
-    """The seam `call` starts a process through, or `None` when it starts none."""
-    func = call.func
-    if isinstance(func, ast.Name):
-        if func.id in names.functions:
-            return SEAMS.get(names.functions[func.id])
-        return _stdlib_launch(*names.stdlib[func.id]) if func.id in names.stdlib else None
-    if not isinstance(func, ast.Attribute):
+def _launcher(expr: ast.expr, names: Bindings) -> Seam | None:
+    """The seam the expression `expr` names, called or not, or `None` when it names none."""
+    if isinstance(expr, ast.Name):
+        # A name bound both ways — a `def run` beside `from subprocess import run` — is taken for
+        # the launch: which binding wins depends on order, and the walk does not follow order.
+        named = names.stdlib.get(expr.id)
+        launch = _stdlib_launch(*named) if named else None
+        package = names.functions.get(expr.id)
+        return launch or (SEAMS.get(package) if package else None)
+    if not isinstance(expr, ast.Attribute):
         return None
-    if (module := names.modules.get(_dotted(func.value) or "")) is not None:
-        source = _package_file(module)
-        return SEAMS.get((source, func.attr)) if source else _stdlib_launch(module, func.attr)
-    if func.attr in LOOP_LAUNCHES:
+    if (module := names.modules.get(_dotted(expr.value) or "")) is not None:
+        source = _module_file(module)
+        return SEAMS.get((source, expr.attr)) if source else _stdlib_launch(module, expr.attr)
+    if expr.attr in LOOP_LAUNCHES:
         return UNREAD
-    # A `Runner` by its receiver's name, and any `.run` handed an argv literal by its argument:
-    # a runner held under another name still shows itself by what it is given.
-    literal = bool(call.args) and isinstance(call.args[0], (ast.List, ast.Tuple, ast.Starred))
-    if func.attr == "run" and (_last_name(func.value).endswith("runner") or literal):
+    if expr.attr == "run" and _last_name(expr.value).endswith("runner"):
         return LAUNCH
     return None
 
 
+def _seam_of(call: ast.Call, names: Bindings) -> Seam | None:
+    """The seam `call` starts a process through, or `None` when it starts none. A `Runner` shows
+    itself by its receiver's name, and any `.run` by an argv literal handed to it: a runner held
+    under another name still shows itself by what it is given."""
+    func = call.func
+    literal = bool(call.args) and isinstance(call.args[0], (ast.List, ast.Tuple, ast.Starred))
+    if isinstance(func, ast.Attribute) and func.attr == "run" and literal:
+        return LAUNCH
+    return _launcher(func, names)
+
+
 def _argv(
-    call: ast.Call, seam: Seam, constants: dict[str, list[str]]
+    call: ast.Call, seam: Seam, constants: dict[str, str | list[str]]
 ) -> tuple[tuple[str | None, ...] | None, bool]:
     """What the walk reads of the argv `call` hands `seam`, and whether it read all of it."""
     if not seam.reads or len(call.args) <= seam.at:
@@ -395,19 +441,25 @@ def _argv(
         # or else an end to the reading.
         nodes = [ast.Starred(value=given, ctx=ast.Load())]
     # A value the walk cannot read, such as `-C`'s path, is `None` and does not end the reading; a
-    # spread does, unless it is of a module constant, because its length is unknown.
+    # spread does, unless it is of a module constant, because its length is unknown. A name bound
+    # to a module constant reads as the constant.
     parts: list[str | None] = list(seam.program)
     whole = True
     for node in nodes:
+        named = constants.get(node.id) if isinstance(node, ast.Name) else None
+        spread = None
+        if isinstance(node, ast.Starred) and isinstance(node.value, ast.Name):
+            spread = constants.get(node.value.id)
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             parts.append(node.value)
-        elif isinstance(node, ast.Starred):
-            spread = constants.get(node.value.id) if isinstance(node.value, ast.Name) else None
-            if spread is None:
-                parts.append(None)
-                whole = False
-                break
+        elif isinstance(named, str):
+            parts.append(named)
+        elif isinstance(spread, list):
             parts.extend(spread)
+        elif isinstance(node, ast.Starred):
+            parts.append(None)
+            whole = False
+            break
         else:
             parts.append(None)
     deciding = 1
@@ -420,25 +472,64 @@ def _argv(
     return tuple(parts), whole
 
 
-def _scoped_calls(node: ast.AST, scope: tuple[str, ...] = ()) -> Iterator[tuple[ast.Call, str]]:
-    """Every call under `node`, with the dotted name of the function or class it sits in."""
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, ast.Call):
+def _scoped(node: ast.AST, scope: tuple[str, ...] = ()) -> Iterator[tuple[ast.AST, str]]:
+    """Every node under `node`, with the dotted name of the function or class it sits in. An
+    annotation is left out: `subprocess.Popen[bytes]` names a type and starts nothing."""
+    for field, value in ast.iter_fields(node):
+        if field in ("annotation", "returns"):
+            continue
+        for child in value if isinstance(value, list) else [value]:
+            if not isinstance(child, ast.AST):
+                continue
             yield child, ".".join(scope) or "<module>"
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            yield from _scoped_calls(child, (*scope, child.name))
-        else:
-            yield from _scoped_calls(child, scope)
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                yield from _scoped(child, (*scope, child.name))
+            else:
+                yield from _scoped(child, scope)
+
+
+def _handed_on(tree: ast.Module) -> set[int]:
+    """The nodes a reference cannot be: what a call calls, and the owner part of an attribute."""
+    return {
+        id(part)
+        for node in ast.walk(tree)
+        for part in (
+            [node.func]
+            if isinstance(node, ast.Call)
+            else [node.value]
+            if isinstance(node, ast.Attribute)
+            else []
+        )
+    }
+
+
+def _star_launches(node: ast.ImportFrom, file: str) -> bool:
+    """Whether `from <module> import *` binds launchers the walk cannot then name."""
+    module = _imported_from(node, file)
+    source = _module_file(module)
+    return any(alias.name == "*" for alias in node.names) and (
+        module in LAUNCHER_MODULES or any(seam_file == source for seam_file, _ in SEAMS)
+    )
 
 
 def _seam_calls_in(source: str, file: str) -> list[SeamCall]:
-    """Every call in `source`, read as the package file `file`, that starts a process."""
+    """Every launch in `source`, read as the package file `file`: each call that starts a process,
+    and each place a launcher is handed on unread — named without being called (`partial`, a
+    callback, an alias) or star-imported — which the walk cannot follow to its call."""
     tree = ast.parse(source)
     names, constants = _bindings(tree, file), _constants(tree)
+    handed_on = _handed_on(tree)
     found = []
-    for call, function in _scoped_calls(tree):
-        if (seam := _seam_of(call, names)) is not None:
-            found.append(SeamCall(file, call.lineno, function, *_argv(call, seam, constants)))
+    for node, function in _scoped(tree):
+        if isinstance(node, ast.Call) and (seam := _seam_of(node, names)) is not None:
+            found.append(SeamCall(file, node.lineno, function, *_argv(node, seam, constants)))
+        elif (
+            isinstance(node, (ast.Name, ast.Attribute))
+            and isinstance(node.ctx, ast.Load)
+            and id(node) not in handed_on
+            and _launcher(node, names) is not None
+        ) or (isinstance(node, ast.ImportFrom) and _star_launches(node, file)):
+            found.append(SeamCall(file, node.lineno, function, None, False))
     return found
 
 
@@ -451,6 +542,37 @@ def seam_calls(root: Path) -> list[SeamCall]:
             path.read_text(encoding="utf-8"), path.relative_to(ROOT).as_posix()
         )
     ]
+
+
+_RUNNER = re.compile(r"\bRunner\b")
+
+
+def _is_runner(annotation: ast.expr | None) -> bool:
+    return annotation is not None and _RUNNER.search(ast.unparse(annotation)) is not None
+
+
+def misnamed_runners(source: str) -> list[tuple[int, str]]:
+    """`(line, name)` for each parameter, field, variable or function in `source` that holds or
+    returns a `Runner` — annotated so, or assigned from a call to a function whose name ends in
+    `runner` — under a name that does not end in `runner`, which is how the walk knows a runner's
+    `.run` when it is not handed a literal."""
+    found: list[tuple[int, str]] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.arg):
+            held = [(node.arg, _is_runner(node.annotation))]
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            held = [(node.name, _is_runner(node.returns))]
+        elif isinstance(node, ast.AnnAssign):
+            held = [(_last_name(node.target), _is_runner(node.annotation))]
+        elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+            made = _last_name(node.value.func).endswith("runner")
+            held = [(_last_name(target), made) for target in node.targets]
+        else:
+            continue
+        found.extend(
+            (node.lineno, name) for name, holds in held if holds and not name.endswith("runner")
+        )
+    return found
 
 
 def _declared(call: SeamCall) -> bool:
@@ -466,7 +588,16 @@ def _local(argv: tuple[str | None, ...], whole: bool) -> bool:
         part is not None and part.startswith(GIT_REMOTE_OPTIONS) for part in argv
     ):
         return False
+    # An argv git was not read whole of is local only when what was not read are paths after
+    # `--`: before it, an element the walk could not read could be an option such as `--remote`.
+    if argv[0] == "git" and not whole and None in argv[: _end_of_options(argv)]:
+        return False
     return any(argv[: len(prefix)] == prefix for prefix in LOCAL) or (whole and argv in LOCAL_WHOLE)
+
+
+def _end_of_options(argv: tuple[str | None, ...]) -> int:
+    """Where `--` ends git's options in `argv`, or the end of `argv` when it does not."""
+    return argv.index("--") if "--" in argv else len(argv)
 
 
 def unclassified(calls: list[SeamCall]) -> list[SeamCall]:
@@ -537,6 +668,22 @@ def test_both_import_forms_name_the_module_they_reach() -> None:
     assert "urllib.request" in _modules(ast.parse("from urllib import request"))
 
 
+@pytest.mark.parametrize(
+    ("module", "reaches"),
+    [
+        ("asyncio.streams", True),
+        ("logging.config", True),
+        ("_socket", True),
+        ("urllib.parse", False),
+        ("logging", False),
+    ],
+)
+def test_a_listed_module_reaches_a_network_with_its_submodules(module: str, reaches: bool) -> None:
+    # Mutation (declared): the match drops submodules -> `asyncio.streams` passes as local.
+    # Mutation: the match moves to the root -> `urllib.parse` reads as `urllib.request`'s.
+    assert _reaches_a_network(module) is reaches
+
+
 # Each shape a launch can take, as a package file holding it, and what the walk must read of its
 # argv (`None`: a launch it cannot read, a finding until declared). The tree holds none of most of
 # them, so the walk over the tree alone cannot show they are seen.
@@ -566,6 +713,20 @@ LAUNCH_SHAPES: dict[str, tuple[str, str, tuple[str, ...] | None]] = {
     "pty": (TOP, "import pty\npty.spawn(['curl', 'x'])", ("curl", "x")),
     "os-exec": (TOP, "import os\nos.execvp('curl', ['curl', 'x'])", None),
     "os-system": (TOP, "from os import system\nsystem('curl x')", None),
+    "os-fexec": (TOP, "import os\nos.fexecve(fd, ['curl', 'x'], env)", None),
+    "submodule-import": (TOP, "import os.path\nos.system('curl x')", None),
+    "shadowed-by-def": (
+        TOP,
+        "from subprocess import run\ndef run(): ...\nrun(['curl', 'x'])",
+        ("curl", "x"),
+    ),
+    "alias": (TOP, "import subprocess\nlaunch = subprocess.run", None),
+    "partial": (TOP, "import functools, subprocess\nfunctools.partial(subprocess.run, x)", None),
+    "callback": (TOP, "from stayfixed.gitenv import git_run\nretry(git_run, r)", None),
+    "runner-handed-on": (TOP, "retry(self._runner.run, argv)", None),
+    "star-subprocess": (TOP, "from subprocess import *\ngetoutput('curl x')", None),
+    "star-os": (TOP, "from os import *\nsystem('curl x')", None),
+    "star-seam": (TOP, "from stayfixed.gitenv import *\ngit_run(r, 'fetch')", None),
 }
 
 
@@ -578,15 +739,24 @@ def test_a_launch_of_any_shape_is_a_seam_call(
     # cases); `_last_name` stops looking through a call (runner-call); `.run` is a launch by its
     # receiver alone (other-receiver); relative imports are skipped again (the three relative
     # cases); `_dotted` reads only a bare name (dotted-module); `asyncio`, `pty`, the event loop
-    # and `os` each leave the launch tables (their cases).
+    # and `os` each leave the launch tables (their cases); `fexec` leaves `OS_LAUNCH_PREFIXES`
+    # (os-fexec). Mutation (declared): `import a.b` binds only `a.b` again (submodule-import).
+    # Mutation (declared): a package function wins over a standard-library launcher of the same
+    # name (shadowed-by-def). Mutation (declared): a launcher named without being called is not a
+    # launch (alias, partial, callback, runner-handed-on). Mutation: a star import of a launcher's
+    # module is not a launch (the three star cases).
     assert [c.argv for c in _seam_calls_in(source, file)] == [argv]
 
 
 def test_a_run_that_is_not_handed_an_argv_is_not_a_launch() -> None:
     # `probe.run(context)`, `gate.run(root, config, base)` and `handler.run(view, config)` are the
     # package's own in-process `.run`s. Mutation: every `.run` is a launch -> all three are found.
+    # Nor is a name that only mentions a launcher's module: an annotation, a constant, an
+    # exception. Mutation: annotations are walked -> the `Popen[bytes]` annotation is found.
     source = "probe.run(context)\ngate.run(root, config, base)\nhandler.run(view, config)\n"
-    source += "import subprocess\nraise subprocess.TimeoutExpired(args, 1)"
+    source += "import subprocess\nraise subprocess.TimeoutExpired(args, 1)\n"
+    source += "def f(p: subprocess.Popen[bytes]) -> None:\n    stdin = subprocess.DEVNULL\n"
+    source += "from os import path\nimport os.path\nos.path.join(a, b)"
     assert _seam_calls_in(source, "src/stayfixed/assess/probe.py") == []
 
 
@@ -627,15 +797,46 @@ def test_every_program_a_seam_call_runs_is_classified() -> None:
         "git_run(root, 'archive', '--remote=git@example.com:x', 'HEAD')",
         "git_run(root, 'archive', '--format=tar', '-o', out, '--remote', url, 'HEAD')",
         "git_run(root, 'worktree', 'add', path)",
+        "git_run(root, 'archive', *opts)",
+        "git_run(root, 'ls-files', *opts, '--', *paths)",
     ],
-    ids=["remote-update", "remote-spread", "archive-remote", "archive-remote-late", "worktree-add"],
+    ids=[
+        "remote-update",
+        "remote-spread",
+        "archive-remote",
+        "archive-remote-late",
+        "worktree-add",
+        "spread-options",
+        "spread-before-paths",
+    ],
 )
 def test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified(source: str) -> None:
     # `LOCAL` is as narrow as each subcommand's other forms need. Mutations: `("git", "remote")`
     # back in `LOCAL` -> the two `remote` cases pass; `GIT_REMOTE_OPTIONS` emptied -> the two
-    # `archive` cases pass; `("git", "worktree")` for `("git", "worktree", "list")` -> the last.
+    # `archive` cases pass; `("git", "worktree")` for `("git", "worktree", "list")` ->
+    # worktree-add. Mutation (declared): an argv not read whole is local whatever it did not read
+    # -> the two spread cases pass, though the spread could hold `--remote`.
     calls = _seam_calls_in(f"from stayfixed.gitenv import git_run\n{source}", "src/stayfixed/x.py")
     assert unclassified(calls) == calls != []
+
+
+def test_an_argv_read_up_to_its_paths_is_still_local() -> None:
+    # The fail-closed rule above must not refuse the tree's own shape: options read whole, and
+    # what is not read only paths after `--`, as `git ls-files … -- *paths` passes them.
+    source = "from stayfixed.gitenv import git_run\ngit_run(root, 'ls-files', '-z', '--', *paths)"
+    calls = _seam_calls_in(source, "src/stayfixed/x.py")
+    assert calls and unclassified(calls) == []
+
+
+def test_every_runner_is_named_as_one() -> None:
+    # The walk knows a `Runner`'s `.run` by its receiver's name when it is not handed a literal, so
+    # that name is held here: every parameter, field, variable and function that holds or returns
+    # one ends in `runner`. Mutation: the check reads no annotation -> the probe's `launch` passes.
+    assert misnamed_runners("def f(launch: Runner) -> None: ...") == [(1, "launch")]
+    assert misnamed_runners("go = subprocess_runner()") == [(1, "go")]
+    assert [
+        (p, m) for p in _package_files(SRC) if (m := misnamed_runners(p.read_text("utf-8")))
+    ] == []
 
 
 def test_the_plugin_installs_reach_the_rows_their_entry_names() -> None:

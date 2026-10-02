@@ -2665,3 +2665,57 @@ file = "tests/test_outbound.py"
 before = '    return shipped | {CI_WORKFLOW}'
 after = '    return {CI_WORKFLOW}'
 reddens = ["tests/test_outbound.py::test_the_readme_declares_every_program_that_reaches_a_network"]
+
+# `import os.path` binds `os` too, so `os.system` after it is a call through `os`; bound as
+# `os.path` alone, that launch goes unseen.
+[[mutation]]
+name = "the seam walk binds a dotted import only under its full name"
+file = "tests/test_outbound.py"
+before = '                    {".".join(parts[:i]): ".".join(parts[:i]) for i in range(1, len(parts) + 1)}'
+after = '                    {alias.name: alias.name}'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_a_seam_call[submodule-import]"]
+
+# A name bound both to a package function and to a standard-library launcher is read as the launch;
+# read as the package function, a `def run` beside `from subprocess import run` hides the launch.
+[[mutation]]
+name = "the seam walk lets a package function shadow a standard-library launcher"
+file = "tests/test_outbound.py"
+before = '        return launch or (SEAMS.get(package) if package else None)'
+after = '        return SEAMS.get(package) if package else launch'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_a_seam_call[shadowed-by-def]"]
+
+# A launcher named without being called — an alias, a `partial`, a callback — is handed on to a call
+# the walk cannot follow, so the reference itself is the finding.
+[[mutation]]
+name = "the seam walk stops flagging a launcher handed on uncalled"
+file = "tests/test_outbound.py"
+before = '            and _launcher(node, names) is not None'
+after = '            and False'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_a_seam_call[alias]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_a_seam_call[partial]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_a_seam_call[callback]",
+]
+
+# A git argv the walk did not read whole is local only when what it did not read are paths after
+# `--`; a spread before it could hold `--remote`.
+[[mutation]]
+name = "a git argv with unread options passes as local"
+file = "tests/test_outbound.py"
+before = '    if argv[0] == "git" and not whole and None in argv[: _end_of_options(argv)]:'
+after = '    if False:'
+reddens = [
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[spread-options]",
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[spread-before-paths]",
+]
+
+# A listed network module reaches a network through its submodules too: `import asyncio.streams`
+# is `asyncio`'s.
+[[mutation]]
+name = "a network module's submodule passes as local"
+file = "tests/test_outbound.py"
+before = '    return any(module == listed or module.startswith(f"{listed}.") for listed in NETWORK_MODULES)'
+after = '    return module in NETWORK_MODULES'
+reddens = [
+  "tests/test_outbound.py::test_a_listed_module_reaches_a_network_with_its_submodules[asyncio.streams-True]",
+]
