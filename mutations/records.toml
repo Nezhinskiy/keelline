@@ -2,6 +2,8 @@
 # Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
 # CONTRIBUTING.md, "Tests".
 
+# A trust record that does not parse refuses and is never overwritten; read as empty, it would leave
+# every note untrusted and be rewritten over.
 [[mutation]]
 name = "a corrupt trust record reads as an empty one again"
 file = "src/stayfixed/memory/trust.py"
@@ -67,6 +69,8 @@ reddens = [
   "tests/memory/test_worktree.py::test_a_withdrawal_never_touches_a_real_directory_or_somebody_elses_link",
 ]
 
+# The memory index bundle is split at its section markers, so an index longer than one part fills
+# the slots after the first.
 [[mutation]]
 name = "the index bundle is one block again, so its later slots go dead"
 file = "src/stayfixed/memory/bundles.py"
@@ -167,6 +171,7 @@ reddens = [
   "tests/memory/test_store.py::test_a_git_that_exits_non_zero_for_everything_is_unavailable_not_unbound",
 ]
 
+# A note whose body did not change is written back byte for byte, never renormalised.
 [[mutation]]
 name = "an unchanged note's body is renormalised on the way out"
 file = "src/stayfixed/memory/notes.py"

@@ -2,6 +2,7 @@
 # Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
 # CONTRIBUTING.md, "Tests".
 
+# The containment walk refuses a `..` component, so a relative path cannot climb out of its root.
 [[mutation]]
 name = "the containment walk stops refusing '..'"
 file = "src/stayfixed/fsops.py"
@@ -44,6 +45,8 @@ reddens = [
   "tests/config/test_loader.py::test_one_command_reads_one_machine_file",
 ]
 
+# A keyed-entries template that names no entries is an error, never an instruction to remove the
+# user's wiring.
 [[mutation]]
 name = "a keyed-entries template with no entries silently removes them"
 file = "src/stayfixed/scaffold/engine.py"
@@ -88,6 +91,7 @@ reddens = [
   "tests/scaffold/test_engine.py::test_a_relocated_artifact_whose_old_file_was_hand_edited_is_reported",
 ]
 
+# The atomic write syncs the bytes to disk before it renames the file into place.
 [[mutation]]
 name = "the atomic write stops syncing the bytes before the rename"
 file = "src/stayfixed/fsops.py"
@@ -773,6 +777,7 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_stayfixed_toml",
 ]
 
+# A `[paths]` value outside the path grammar is refused, and never quoted back.
 [[mutation]]
 name = "the [paths] grammar check is dropped"
 file = "src/stayfixed/config/paths.py"
@@ -782,6 +787,8 @@ reddens = [
   "tests/config/test_paths.py::test_a_paths_value_outside_the_grammar_is_refused_and_never_quoted",
 ]
 
+# The release pins read off a tag listing: an annotated tag resolves to the commit it points at and
+# not to its tag object, and only a semver tag is a release, never the `v1` alias.
 [[mutation]]
 name = "an annotated tag's peeled commit no longer wins over its tag object"
 file = "src/stayfixed/release/pins.py"
@@ -1179,6 +1186,7 @@ reddens = [
   "tests/config/test_layout.py::test_an_adoption_plan_is_a_plan_whose_name_says_stayfixed",
 ]
 
+# `[stayfixed] profile` must name a profile this build ships.
 [[mutation]]
 name = "the engine accepts a profile this stayfixed does not ship"
 file = "src/stayfixed/scaffold/engine.py"
@@ -1188,6 +1196,7 @@ reddens = [
   "tests/scaffold/test_engine.py::test_a_profile_the_listing_lacks_is_refused_and_never_quoted",
 ]
 
+# A harness's files are rendered only for a harness the project lists.
 [[mutation]]
 name = "a harness's rendering is applied though the project does not list it"
 file = "src/stayfixed/harnesses.py"
@@ -1236,6 +1245,8 @@ reddens = [
   "tests/project/test_footprint_commands.py::test_a_recorded_target_outside_the_path_grammar_prints_as_its_artifact_id",
 ]
 
+# A retired file is removed only while its bytes are the ones its record states; an edited one
+# stays, is listed, and goes only with `--force`.
 [[mutation]]
 name = "a retired file is removed whatever its bytes, so a committed path and record reach a local edit"
 file = "src/stayfixed/scaffold/engine.py"
@@ -1457,6 +1468,8 @@ reddens = [
   "tests/test_undecodable.py::test_a_command_meeting_an_undecodable_file_fails_and_does_not_crash[init-machine]",
 ]
 
+# The default base is the remote-tracking ref spelled in full, so a tag named like the branch cannot
+# answer for it.
 [[mutation]]
 name = "the local default base is a short name a tag can answer for"
 file = "src/stayfixed/config/layout.py"
@@ -1464,6 +1477,8 @@ before = '    return f"refs/remotes/origin/{config.project.base_branch}"'
 after = '    return f"origin/{config.project.base_branch}"'
 reddens = ["tests/assess/test_read_base.py::test_the_default_base_is_the_remote_tracking_ref_whatever_a_tag_is_called"]
 
+# A flag with a grammar refuses a value outside it at the parser: `gate --base` a short name a tag
+# could answer for, and `init` an answer outside its set.
 [[mutation]]
 name = "a flag's grammar takes a value outside it as typed: gate --base a short name a tag answers for, init an answer"
 file = "src/stayfixed/command.py"

@@ -955,6 +955,7 @@ reddens = [
   "tests/doctor/test_checks.py::test_the_cli_resolving_by_name_is_green_and_never_prints_where",
 ]
 
+# The overlay's capability files are spelled once, and each is a file the overlay template ships.
 [[mutation]]
 name = "a capability file is named that the template does not ship"
 file = "src/stayfixed/overlay/layout.py"
@@ -1742,6 +1743,7 @@ reddens = [
   "tests/setup/test_setup.py::test_rerunning_overlay_create_says_what_init_changed_in_the_overlay_it_found",
 ]
 
+# `overlay init` fills in the template's placeholder author and keeps an author the owner wrote.
 [[mutation]]
 name = "overlay init replaces an author the owner wrote"
 file = "src/stayfixed/overlay/create.py"

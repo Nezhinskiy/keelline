@@ -103,6 +103,12 @@ reddens = [
   "tests/assess/test_gate_command.py::test_the_base_s_enforced_gates_run_before_an_advisory_gate_that_sorts_first",
 ]
 
+# The inventory's probes, each a reading of the repository it must not get wrong: a committed `.env`
+# is reported and its example is not; a git query that does not answer is not "nothing found"; and
+# the CODEOWNERS probe reads a pattern as git and GitHub do — an owner-less line owns nothing, a
+# trailing slash owns a directory only, `**` is recursive only as a whole component and matches zero
+# directories, a last `*` owns direct children only, only a well-formed owner counts, and a run of
+# wildcards is answered promptly.
 [[mutation]]
 name = "the tracked-env probe stops reporting a committed .env file"
 file = "src/stayfixed/assess/probes.py"
@@ -827,6 +833,7 @@ reddens = [
   "tests/assess/test_state.py::test_a_completion_the_editor_cannot_write_names_both_keys_as_they_will_be",
 ]
 
+# `adopt begin` refuses a plan path outside the root or one that names no file.
 [[mutation]]
 name = "adopt begin reads a plan that is not there"
 file = "src/stayfixed/assess/state.py"

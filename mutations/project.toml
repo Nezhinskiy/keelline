@@ -803,6 +803,8 @@ before = "    if ahead is None:\n        raise Refusal(UNORDERED"
 after = "    if False:\n        raise Refusal(UNORDERED"
 reddens = ["tests/project/test_upgrade.py::test_two_pre_releases_of_one_version_are_refused_as_unordered_and_never_quoted"]
 
+# With no release to pin, `upgrade` moves neither version key and says why; moving one anyway makes
+# the gate refuse the upgrade's own pull request.
 [[mutation]]
 name = "upgrade moves the version with no release to pin, and the gate refuses its own pull request"
 file = "src/stayfixed/project/upgrade.py"
@@ -851,6 +853,7 @@ before = "    if dry_run or report.refused:"
 after = "    if report.refused:"
 reddens = ["tests/project/test_upgrade.py::test_a_dry_run_writes_nothing_and_reports_everything"]
 
+# A `--force` path outside the root is refused by rule, never silently dropped.
 [[mutation]]
 name = "a --force path outside the root is dropped instead of refused"
 file = "src/stayfixed/project/commands.py"
@@ -1388,6 +1391,7 @@ reddens = [
   "tests/project/test_command.py::test_an_adopted_document_s_custom_gates_are_named_in_a_note_before_anything_runs_them",
 ]
 
+# `uninstall` removes the inventory `assess` wrote, beside the manifest.
 [[mutation]]
 name = "uninstall leaves the inventory assess wrote"
 file = "src/stayfixed/project/uninstall.py"

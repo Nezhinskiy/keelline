@@ -1777,6 +1777,7 @@ before = "    if not node.level:"
 after = "    if True:"
 reddens = ["tests/project/test_planning_seam.py::test_the_checker_sees_a_planner_imported_relatively"]
 
+# The Contents of `docs/cli.md` lists every section of the reference, in order.
 [[mutation]]
 name = "a docs/cli.md section drops out of the Contents"
 file = "docs/cli.md"

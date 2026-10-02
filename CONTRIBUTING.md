@@ -229,8 +229,8 @@ tracked file outside `docs/plans/` against the declared names, so renaming an en
 every comment that cites it.
 
 A comment in a group file speaks for the entry below it and for the entries after that which carry
-no comment of their own, and never by position for any other: an entry is named, never "the one
-above". A block split across group files is stitched by quoted name: each entry that sits in a
+no comment of their own — the file's header speaks for the file and heads no entry — and never by
+position for any other: an entry is named, never "the one above". A block split across group files is stitched by quoted name: each entry that sits in a
 different group file from the comment that speaks for it carries a one-line pointer, beginning
 "In the block led by", that cites the block's lead entry and says the comment's gist, and the
 citation test holds that pointer like any other citation.
