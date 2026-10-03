@@ -1483,8 +1483,8 @@ suppressed it in all four.
 
 | Kind | M1 symlink tree | M2 local-scope plugin | M3 user-scope plugin, bound by remote | M4 imports and `--add-dir` |
 |---|---|---|---|---|
-| instructions | works — M1 1, 2, 4; `/context` lists the linked `CLAUDE.local.md` | works — M2 1, 2; `….emitted` | works — M3 1, 2; `….emitted` | broken — absent in M4 4 and 7; `/context` lists only the import lines; D3 |
-| rules | broken — absent in M1 1 and 4; no `sf-rule.md` in `/context`; D1, D2, D4 | works — M2 1, 2 | works — M3 1, 2 | works — M4 4, 5, 7; `/context` shows it came from the added directory, not the import |
+| instructions | works — M1 1, 2, 4; `/context` lists the linked `CLAUDE.local.md` | works — M2 1, 2; `….emitted` | works — M3 1, 2; `….emitted` | works after a prompt that `-p` never shows — absent in M4 4 and 7; `/context` lists only the import lines; D3; E1 |
+| rules | works after a prompt that `-p` never shows — absent in M1 1, 4 and 5; no `sf-rule.md` in `/context`; D1, D2, D4; E1 | works — M2 1, 2 | works — M3 1, 2 | works — M4 4, 5, 7; `/context` shows it came from the added directory, not the import |
 | path-scoped rules | absent once — M1 2 (a symlinked rule, as D4) | works — M2 2; `PostToolUse.emitted` | works — M3 2; `PostToolUse.emitted` | absent once — M4 5 |
 | skills | works — `init` `sf-skill` | works — `init` `sf-overlay:sf-skill` | works — `init` `sf-overlay:sf-skill` | works — `init` `sf-skill` from the added directory |
 | agents | works — `init` and `/context` `sf-agent` | works — `sf-overlay:sf-agent` | works — `sf-overlay:sf-agent` | works — `init` and `/context` `sf-agent \| Project` |
@@ -1497,3 +1497,121 @@ emitted nothing (`proj-M3b.plugin.SessionStart`, no `.emitted`), and M3b 1 repor
 instructions, rules or memory. It still reported memory-dir, and `init` still listed
 `sf-overlay:sf-skill` and `sf-overlay:sf-agent`: the binding held back what the hook carries,
 not the plugin's skills and agents, and not what `.claude/settings.local.json` carries.
+
+**Added after the first fifteen turns** (the owner granted up to twenty more; the CLI on `PATH`
+had meanwhile become 2.1.288, see Task 13):
+
+- M1 5: P1 on 2.1.288 (`init` `"claude_code_version":"2.1.288"`) printed
+  `SFC-pjwy0ublr7\nSFC-rwclbl9weq` — instructions and memory, no rules, as on 2.1.285.
+- `proj-D5` 1: a fresh repository whose `.claude/rules/sf-scoped.md` is a regular file with
+  the same frontmatter; P2 with `--allowedTools=Read` printed `SFC-stn1wcqksp`, and the
+  transcript carried a `nested_memory` attachment. A path-scoped rule loads on a read when it
+  is a file in the repository.
+- E1, at $0: with `"hasClaudeMdExternalIncludesApproved": true` written into the project's
+  entry of `cfg-M1/.claude.json`, `/context` in `proj-M1` added `Project |
+  overlay/.claude/rules/sf-rule.md`; the same in `cfg-M4` added `Local | overlay/instructions.md`
+  and `Local | overlay/rules.md`. Both files were restored afterwards. A linked rule and an
+  import both resolve to a file outside the working directory, and Claude Code loads such a
+  file only once that project's approval is recorded; `-p` shows no dialog and skips the file.
+  The linked `CLAUDE.local.md` and the linked memory directory loaded without it.
+
+Two more turns, `total_cost_usd` 0.0354; seventeen paid headless turns in all.
+
+### Task 13 — interactive terminal, desktop Code tab, Cowork
+
+**What changed on the machine.** The first interactive session (`isession.sh M1`, configuration
+`cfg-interactive`, 2.1.285) ran Claude Code's native auto-updater: `cfg-interactive/
+.last-update-result.json` recorded `"version_from":"2.1.285","version_to":"2.1.288"`, and the
+user-wide `claude` launcher moved to 2.1.288. The owner kept 2.1.288 and chose to measure the
+terminal on it; later sessions started that binary directly with `DISABLE_AUTOUPDATER=1`. The
+fresh configuration's onboarding asked for a sign-in although `CLAUDE_CODE_OAUTH_TOKEN` was set;
+the owner signed in, and the credential was stored as its own keychain item beside the
+owner's, not over it.
+
+**Terminal** (2.1.288, `--model haiku`, `cfg-interactive`, eight turns: P1 and P2 per
+project). The dialogs were read again after clearing the project's flags in
+`cfg-interactive/.claude.json`:
+
+- Every project: `Accessing workspace: <project> / Quick safety check: Is this a project you
+  created or one you trust? … / No, exit | Yes, I trust this folder`; answered yes.
+- `proj-M1`, next: `Allow external CLAUDE.md file imports? / This project's CLAUDE.md or
+  .claude/rules imports files outside the current working directory. Never allow this for
+  third-party repositories. / External imports: …overlay/.claude/rules/sf-rule.md / No, disable
+  external imports | Yes, allow external imports`; answered yes. The linked `CLAUDE.local.md`
+  and the linked memory directory were not listed.
+- `proj-M4`, next: the same dialog listing `…overlay/instructions.md` and `…overlay/rules.md`;
+  answered yes.
+- `proj-M2`, `proj-M3`: no dialog after the trust dialog; nothing asked about the plugin or its
+  hooks.
+
+| Project | P1 printed | P2 printed | `instructions` attachment (besides the confound) | Listings | Markers |
+|---|---|---|---|---|---|
+| M1 | rules, instructions, memory | the same three | `Project: overlay/.claude/rules/sf-rule.md`, `Local: proj-M1/CLAUDE.local.md`, `AutoMem: cfg-interactive/projects/<slug>/memory/MEMORY.md` | `sf-skill`, `sf-agent` | `settings.SessionStart`, `settings.PostToolUse` |
+| M4 | instructions, rules | the same two | `Local: proj-M4/CLAUDE.local.md`, `Local: overlay/instructions.md`, `Local: overlay/rules.md`, `Project: overlay/.claude/rules/sf-rule.md` | `sf-skill`, `sf-agent` | none |
+| M2 | instructions, rules, memory, memory-dir | the four, scoped | `AutoMem: overlay/memory-dir/MEMORY.md` | `sf-overlay:sf-skill`, `sf-overlay:sf-agent` | `plugin.SessionStart`, `….emitted`, `plugin.PostToolUse`, `….emitted` |
+| M3 | instructions, rules, memory, memory-dir | the four, scoped | `AutoMem: overlay/memory-dir/MEMORY.md` | `sf-overlay:sf-skill`, `sf-overlay:sf-agent` | the same four |
+
+The linked `sf-rule.md` appeared in the attachment under its target's path. No terminal session
+reported the scoped canary for M1 or M4, and neither transcript contains it.
+
+**Desktop Code tab** (the owner's configuration; transcripts recorded `"version":"2.1.284"` and
+`"entrypoint":"claude-desktop"`; Local, the worktree box unchecked, Haiku 4.5; one P1 per
+project). Before each session the owner's configuration gained the directory marketplace, a
+local-scope install of the plugin for `proj-M2`, and for `proj-M1` a link from its
+project-memory directory to `overlay/memory/`.
+
+- `proj-M1`: `Trust this workspace? / Claude Code may read, write, or execute files in this
+  folder. Only proceed if you trust this workspace. / <proj-M1> / Read our security guide for
+  more information. / Execution allowed by: .claude/settings.local.json / Cancel | Trust
+  workspace`; trusted. No import dialog appeared, and the project's entry in the owner's
+  `.claude.json` afterwards read `"hasClaudeMdExternalIncludesApproved": false,
+  "hasClaudeMdExternalIncludesWarningShown": false`. P1 printed `SFC-pjwy0ublr7\nSFC-rwclbl9weq`
+  (instructions, memory). The attachment listed `Local: proj-M1/CLAUDE.local.md` and `AutoMem:
+  <the owner's projects directory>/<slug>/memory/MEMORY.md`, not `sf-rule.md`; listings had
+  `sf-skill`, `sf-agent`; marker `proj-M1.settings.SessionStart`.
+- `proj-M2`: the same dialog without the "Execution allowed by" line; trusted. P1 printed
+  `SFC-pjwy0ublr7`, `SFC-tl60sh5z18`, `SFC-rwclbl9weq`, `SFC-6fg43bebuk`, `SFC-egbv4271l4`
+  (instructions, rules, memory, agents-md, memory-dir). The attachment listed `Project:
+  proj-M2/AGENTS.md` and `AutoMem: overlay/memory-dir/MEMORY.md`; listings had
+  `sf-overlay:sf-skill`, `sf-overlay:sf-agent`; markers `proj-M2.plugin.SessionStart`,
+  `….emitted`. Here the owner's `$HOME/.claude/CLAUDE.md` loaded as `User`, not through the
+  parent walk, and `AGENTS.md` loaded; in `proj-M1`, which has a `CLAUDE.local.md`, it did not.
+
+**Cowork** (the owner's configuration, Haiku 4.5 Extended, one P1 per project).
+
+- Dialogs, both projects: `Allow Claude to change files in "<project>"? / Claude can edit,
+  delete, and share these files with connected tools. / Cancel | Always allow | Allow`, then
+  `Allow this Cowork session to access this folder? / <project> / Claude will be able to read
+  and modify files here, and run commands that access this folder, for the current session, or
+  for all future Cowork sessions on this device if you check the box below. Because this task
+  runs in the cloud, files Claude uses leave your device and are processed on Anthropic's
+  servers. / Don't ask again for this folder on this device / Cancel | Allow`; Allow, box
+  unchecked.
+- P1 printed `NONE` in both. No marker appeared, no transcript appeared in the owner's
+  projects directory, and the app's `remote-session-spaces.json` gained one entry per session
+  whose `folders` held the project's path.
+
+**Cleanup** (the owner's yes, item by item): `claude plugin uninstall sf-overlay@sf-spike
+--scope local` printed `✔ Successfully uninstalled plugin: sf-overlay (scope: local)` and
+left `plugins/cache/sf-spike/sf-overlay/0.0.1/` behind with `.orphaned_at` and `.in_use` in
+it, removed by hand; `claude plugin marketplace remove sf-spike` printed `✔ Successfully
+removed marketplace: sf-spike`, after which the owner's `settings.json` equalled its copy taken
+before the install. The two project directories and the two `.claude.json` project entries were
+removed; the owner removed the four app sessions.
+
+**The columns.** "—" is a kind no prompt of that surface exercised.
+
+| Kind | Terminal M1 | Terminal M2 | Terminal M3 | Terminal M4 | Desktop M1 | Desktop M2 | Cowork M1 | Cowork M2 |
+|---|---|---|---|---|---|---|---|---|
+| instructions | works | works | works | works after a prompt — "Allow external CLAUDE.md file imports?" | works | works | absent once | absent once |
+| rules | works after a prompt — the same dialog | works | works | works (from the added directory) | broken — no dialog offered; the attachment omits it | works | absent once | absent once |
+| path-scoped rules | absent once | works | works | absent once | — | — | — | — |
+| skills | works | works | works | works | works | works | — | — |
+| agents | works | works | works | works | works | works | — | — |
+| hooks | works | works | works | cannot carry | works | works | absent once — no marker | absent once — no marker |
+| settings | — | — | — | — | — | — | — | — |
+| memory | works | works | works | cannot carry | works | works | absent once | absent once |
+
+Terminal and desktop turns cost a few cents each (`lastCost` 0.0464 for M2 and 0.0337 for M3 in
+`cfg-interactive/.claude.json`); the Cowork turns ran on the owner's plan, outside any
+per-turn figure.
