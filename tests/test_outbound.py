@@ -44,6 +44,7 @@ from tests.outbound.walk import (
     Override,
     Unread,
     Walk,
+    _module_file,
     imported_modules,
     imports,
     package_files,
@@ -266,6 +267,18 @@ def test_no_module_imports_a_network_or_native_module() -> None:
     assert forbidden_imports(SRC) == []
 
 
+def test_a_module_is_the_file_the_tree_lists_under_its_exact_name() -> None:
+    # On a disk that folds case, as macOS's does by default, asking the disk found
+    # `scaffold/manifest.py` for `stayfixed.scaffold.Manifest`, so the class `Manifest` that
+    # `overlay/create.py` imports from `stayfixed.scaffold` was read as a module there and as a name
+    # on Linux: the walk read one tree two ways. No declared entry: the oracle's CI job runs on a
+    # case-sensitive disk, where asking the disk again answers the same and the mutation survives.
+    # By hand on macOS: `_module_file` asks `(ROOT / candidate).is_file()` again -> the first
+    # assertion reddens.
+    assert _module_file("stayfixed.scaffold.Manifest") is None
+    assert _module_file("stayfixed.scaffold.manifest") == "src/stayfixed/scaffold/manifest.py"
+
+
 def test_both_import_forms_name_the_module_they_reach() -> None:
     # The tree imports no forbidden module either way, so the walk above cannot tell the two
     # forms apart on its own. Mutation: `import a.b` names only `a` -> the first reddens.
@@ -411,6 +424,12 @@ LAUNCH_SHAPES: dict[str, tuple[str, str, tuple[str | None, ...]]] = {
         (None,),
     ),
     "getattr-computed": (TOP, "import subprocess\ngetattr(subprocess, name)", (None,)),
+    "package-module-alias": (
+        TOP,
+        "from stayfixed import gitenv\nm = gitenv\nm.git_run(r, 'push')",
+        (None,),
+    ),
+    "package-module-handed-on": (TOP, "from . import gitenv\nretry(gitenv, r)", (None,)),
     "runner-handed-on": (TOP, "retry(self._runner.launch, argv)", (None,)),
     "star-subprocess": (TOP, "from subprocess import *\ngetoutput('curl x')", (None,)),
     "star-os": (TOP, "from os import *\nsystem('curl x')", (None,)),

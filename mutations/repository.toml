@@ -3035,13 +3035,26 @@ reddens = [
 [[mutation]]
 name = "the outbound walk stops flagging a launcher module named without an attribute"
 file = "tests/outbound/walk.py"
-before = '            module = id(node) not in owners and _module_of(source.names, node) in LAUNCHER_MODULES'
+before = '            module = id(node) not in owners and _holds_launchers(source.names, node)'
 after = '            module = False'
 reddens = [
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[module-alias]",
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[module-handed-on]",
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[module-in-a-class]",
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[getattr-computed]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[package-module-alias]",
+]
+
+# A package module can define or re-export a launcher, as `gitenv` defines `git_run`, so one named
+# without an attribute after it hands that launcher on like a launcher module does.
+[[mutation]]
+name = "a package module named without an attribute passes the outbound walk"
+file = "tests/outbound/walk.py"
+before = '    return module in LAUNCHER_MODULES or _module_file(module) is not None'
+after = '    return module in LAUNCHER_MODULES'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[package-module-alias]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[package-module-handed-on]",
 ]
 
 # `getattr(subprocess, "run")` names `subprocess.run` as surely as the attribute does; the module it

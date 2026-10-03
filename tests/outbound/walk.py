@@ -6,12 +6,12 @@ and this docstring is the one description of what it sees and what it cannot.
 **What it finds.** A *launch* is a call that starts a process, a launcher named without being
 called — handed to `functools.partial`, passed as a callback, bound to another name, used as a
 base class — a star import of a launcher module or of a package module, which can re-export
-one, or a launcher module named without an attribute after it (`m = subprocess`, `f(os)`), which
-hands on every launcher it holds. `getattr` and `hasattr` given a literal name read the attribute
-it names, so `getattr(os, "O_NOFOLLOW", 0)` uses `os` rather than handing it on, and
-`getattr(subprocess, "run")` names the launcher. The standard library's launchers are
-`subprocess`, the `os` process functions (reached through `os`, `posix` or `nt`), `pty.spawn`,
-`asyncio`'s subprocess calls and an event loop's.
+one, or either kind of module named without an attribute after it (`m = subprocess`, `f(os)`,
+`m = gitenv`), which hands on every launcher it holds. `getattr` and `hasattr` given a literal
+name read the attribute it names, so `getattr(os, "O_NOFOLLOW", 0)` uses `os` rather than
+handing it on, and `getattr(subprocess, "run")` names the launcher. The standard library's
+launchers are `subprocess`, the `os` process functions (reached through `os`, `posix` or `nt`),
+`pty.spawn`, `asyncio`'s subprocess calls and an event loop's.
 The package's own start from the roots `tests/outbound/policy.py` names and grow by derivation:
 a module-level function — one defined at the top of its module, or under a module-level `if`,
 `try` or `with` — that hands its own argv on to a launcher in exactly one call, as the argv's
@@ -22,7 +22,8 @@ findings until declared. A `Runner`'s `.launch` is a launcher by its attribute a
 holds the runner — a parameter, an attribute, a subscript, a call's result: no other method in
 the package is named `launch`, and one that came to be would be read as a launch too, a finding
 to read rather than a launch missed. A name is followed through every import, relative, dotted
-or a re-export, to the module that defines it.
+or a re-export, to the module that defines it, a package module being one of the files the tree
+lists under that exact name, whether or not the disk folds case.
 
 **What it reads.** Each launch's argv, element by element: a string literal, or a module
 constant holding a string or a list of strings, is read; anything else is `Unread`, carrying its
@@ -40,11 +41,10 @@ the annotation is evaluated.
 receiver is decided by data flow it does not follow is beyond it. Each of these is probed to
 return nothing:
 
-- dynamic dispatch: `importlib.import_module`, `__import__`, `sys.modules`, a `getattr` on a
-  package module with a name it computes, and code run from data by `exec`, `eval` or `pickle`;
-- aliasing: a package module named without an attribute after it (`m = gitenv`), through which
-  its launchers are called unseen; a launcher named as `Annotated` metadata, which code reading
-  the annotation could call;
+- dynamic dispatch: `importlib.import_module`, `__import__`, `sys.modules`, and code run from
+  data by `exec`, `eval` or `pickle`;
+- aliasing: a launcher named as `Annotated` metadata, which code reading the annotation could
+  call;
 - values computed at run time: an argv element held in a variable is `Unread`, and the walk
   does not follow where its value came from, so `sh -c` handed a script the package builds from
   strings (`" ".join(["curl", url])`) is taken for the user's command, the `sh -c` row's;
@@ -334,13 +334,33 @@ def _constants(tree: ast.Module) -> dict[str, str | list[str]]:
     return bound
 
 
+@cache
+def _source_files() -> frozenset[str]:
+    """Every `.py` file under `src/`, relative to the root, spelled as the directory lists it."""
+    return frozenset(relative(path) for path in package_files(ROOT / "src"))
+
+
 def _module_file(module: str) -> str | None:
-    """The package file that defines `module`, relative to the root, or `None` for any other."""
+    """The package file that defines `module`, relative to the root, or `None` for any other.
+
+    Looked up among the names the tree lists rather than asked of the disk: a disk that folds case,
+    as macOS's does by default, finds `scaffold/manifest.py` for `stayfixed.scaffold.Manifest`, and
+    the class `Manifest` imported from `stayfixed.scaffold` read as that module there and as a
+    name everywhere else."""
     stem = module.replace(".", "/")
     for candidate in (f"src/{stem}.py", f"src/{stem}/__init__.py"):
-        if (ROOT / candidate).is_file():
+        if candidate in _source_files():
             return candidate
     return None
+
+
+def _holds_launchers(names: Bindings, node: ast.expr) -> bool:
+    """Whether `node` names a module that can hold a launcher: a launcher module, or a package
+    module, which can define or re-export one."""
+    module = _module_of(names, node)
+    if module is None:
+        return False
+    return module in LAUNCHER_MODULES or _module_file(module) is not None
 
 
 def _imported_from(node: ast.ImportFrom, file: str) -> str:
@@ -798,7 +818,7 @@ def _walk(
             if not isinstance(node.ctx, ast.Load) or in_annotation:
                 continue
             handed = id(node) not in not_handed_on and _launcher(node, source.names, launchers)
-            module = id(node) not in owners and _module_of(source.names, node) in LAUNCHER_MODULES
+            module = id(node) not in owners and _holds_launchers(source.names, node)
             if handed or module:
                 unread = (Unread(ast.unparse(node)),)
                 launches.append(Launch(source.file, node.lineno, scope, unread))
