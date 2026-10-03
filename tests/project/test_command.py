@@ -16,7 +16,6 @@ import inspect
 import io
 import json
 from contextlib import redirect_stdout
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -37,24 +36,14 @@ from stayfixed.project.init import (
 from stayfixed.project.templates import _ci
 from stayfixed.project.uninstall import KEPT_CONFIG
 from stayfixed.release.api import Resolution
-from stayfixed.runner import Completed
 from stayfixed.scaffold import Manifest
 from tests.cli import cli
 from tests.gitfixture import git, needs_git
 from tests.project.repos import DOCUMENT, repository
+from tests.runners import LsRemote
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 TAG = f"v{__version__}"  # the release tag the running version would carry
-
-
-@dataclass
-class _Listing:
-    """A `Runner` that answers `ls-remote` from a string and reaches no network."""
-
-    stdout: str
-
-    def launch(self, argv: list[str], cwd: Path) -> Completed:
-        return Completed(0, self.stdout, "")
 
 
 JSON_KEYS = {
@@ -198,7 +187,7 @@ def test_a_hostile_gate_branch_is_reported_as_a_skipped_workflow_and_not_as_a_pi
     monkeypatch.setattr(
         runner_module,
         "subprocess_runner",
-        lambda: _Listing(f"{sha}\trefs/tags/{TAG}\n"),
+        lambda: LsRemote(stdout=f"{sha}\trefs/tags/{TAG}\n"),
     )
     code, printed = _run(root, tmp_path, "--yes")
     assert code == 0, printed
@@ -226,7 +215,9 @@ def test_an_adopted_ref_is_reported_as_the_repositorys_own_and_not_as_a_release(
     )
     sha = "c" * 40
     monkeypatch.setattr(
-        runner_module, "subprocess_runner", lambda: _Listing(f"{sha}\trefs/tags/{TAG}\n")
+        runner_module,
+        "subprocess_runner",
+        lambda: LsRemote(stdout=f"{sha}\trefs/tags/{TAG}\n"),
     )
     # The dry run first, because it writes nothing and leaves the repository fresh for the real
     # one below: `--json` is where a caller reads which ref the workflow will carry.

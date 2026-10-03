@@ -43,8 +43,9 @@ from stayfixed.scaffold import (
     Verb,
     digest,
 )
-from tests.gitfixture import LsRemote, needs_git, run_git
+from tests.gitfixture import needs_git, run_git
 from tests.project.repos import BEFORE, initialised, tree
+from tests.runners import LsRemote
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 LOCAL_ROADMAP = f'''[stayfixed]
@@ -639,7 +640,7 @@ def test_a_workflow_the_mode_no_longer_renders_still_goes(tmp_path: Path) -> Non
     # beside a deleted manifest, and counted as an artifact this stayfixed does not produce.
     # Mutation (oracle): "uninstall keeps a workflow the mode merely does not render, and leaves
     # it unlisted" -> `.github/` stays and the assertion reddens.
-    listing = LsRemote(stdout=f"{'a' * 40}\trefs/tags/v{stayfixed.__version__}\n", code=0)
+    listing = LsRemote(stdout=f"{'a' * 40}\trefs/tags/v{stayfixed.__version__}\n")
     root = initialised(tmp_path, runner=listing, ci=True)
     config = root / CONFIG_FILE
     config.write_text(

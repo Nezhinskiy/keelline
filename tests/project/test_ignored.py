@@ -18,7 +18,7 @@ from stayfixed.project.init import init
 from stayfixed.project.uninstall import uninstall
 from stayfixed.project.upgrade import upgrade
 from stayfixed.scaffold import Manifest, digest
-from tests.gitfixture import LsRemote, git, needs_git, run_git
+from tests.gitfixture import git, needs_git, run_git
 from tests.project.repos import (
     DOCUMENT,
     MOVED_OFF_DOCS,
@@ -27,6 +27,7 @@ from tests.project.repos import (
     repository,
     tree,
 )
+from tests.runners import LsRemote
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 ENV_TEXT = "SECRET=1\n"

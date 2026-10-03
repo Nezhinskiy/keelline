@@ -28,8 +28,9 @@ from stayfixed.config.schema import BUILTIN_GATES
 from stayfixed.project.templates import CI_WORKFLOW, CONFIG_ARTIFACT
 from stayfixed.scaffold import Manifest, digest
 from tests.cli import cli
-from tests.gitfixture import LsRemote, git, needs_git, run_git
+from tests.gitfixture import git, needs_git, run_git
 from tests.project.repos import repository
+from tests.runners import LsRemote
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = needs_git
@@ -50,7 +51,7 @@ def released(monkeypatch: pytest.MonkeyPatch) -> LsRemote:
     """The runner every command builds, answering one release tag at the running version."""
     from stayfixed import runner as runner_module
 
-    listing = LsRemote(stdout=f"{SHA}\trefs/tags/v{stayfixed.__version__}\n", code=0)
+    listing = LsRemote(stdout=f"{SHA}\trefs/tags/v{stayfixed.__version__}\n")
     monkeypatch.setattr(runner_module, "subprocess_runner", lambda **_: listing)
     return listing
 

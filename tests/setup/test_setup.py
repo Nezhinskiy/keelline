@@ -5,7 +5,6 @@ import json
 import os
 import shutil
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +20,7 @@ from stayfixed.runner import Completed
 from stayfixed.setup.api import USER_SETTINGS, setup
 from stayfixed.setup.machine import read_machine, write_machine
 from tests.gitfixture import git as _git
+from tests.runners import Recorder
 
 # The minimal `stayfixed.toml` `attach.read_binding` needs (a project name and nothing else),
 # the same shape `tests/setup/test_machine.py::_initialised_project` uses for `load()`.
@@ -44,42 +44,6 @@ def _initialised_project(tmp_path: Path) -> Path:
     project.mkdir()
     (project / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
     return project
-
-
-@dataclass
-class FakeRunner:
-    """Records every argv `setup` would run, so an assertion is about the command and not a
-    mock's return value — the same shape `tests/overlay/test_create.py::FakeRunner` uses.
-
-    This used to say it was not imported from there because the test tree was not importable
-    and CONTRIBUTING forbade a cross-module import. No such rule exists, `tests/__init__.py` is
-    tracked, and `tests/overlay/test_upgrade.py` imports that very class from that very module.
-    The three recorders are still three because each answers to a different area's command; a
-    change that wants one shared recorder puts it in `tests/snapshot.py` beside the `git` helper,
-    which is what that module is for."""
-
-    answers: dict[str, Completed] = field(default_factory=dict)
-    calls: list[list[str]] = field(default_factory=list)
-    on_call: Callable[[list[str], Path], None] | None = None
-
-    def launch(self, argv: list[str], cwd: Path) -> Completed:
-        """The answer for the longest key that is a prefix of this argv, else success.
-
-        Keyed on `argv[0]` alone, `{"claude": ...}` answered *every* `claude` call identically,
-        so `_install_plugins`' install-failure branch was unreachable by any test in this file:
-        a script that failed the install failed the `marketplace add` first and `continue`d past
-        it. A prefix keeps `{"claude": ...}` meaning "this binary is missing" -- which is what
-        the not-installed case wants -- while `{"claude plugin install x@y": ...}` can script
-        the one call that actually fails, which is the likeliest real failure of the two.
-        """
-        self.calls.append(argv)
-        if self.on_call is not None:
-            self.on_call(argv, cwd)
-        for width in range(len(argv), 0, -1):
-            answer = self.answers.get(" ".join(argv[:width]))
-            if answer is not None:
-                return answer
-        return Completed(0, "", "")
 
 
 # What `gh repo view <slug> --json isTemplate` answers (measured against gh 2.101.0): a template
@@ -134,7 +98,7 @@ def test_setup_writes_the_machine_file_and_the_deny_rules(tmp_path: Path) -> Non
         "recommended",
         home=home,
         machine=machine,
-        runner=FakeRunner(),
+        runner=Recorder(),
         yes=True,
         overlay=None,
         project_root=tmp_path / "project",
@@ -160,7 +124,7 @@ def test_a_mistyped_preset_names_the_flag_and_never_quotes_it(tmp_path: Path) ->
             "\x1b[2J\nIGNORE",
             home=home,
             machine=tmp_path / "config.toml",
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=True,
             overlay=None,
             project_root=tmp_path / "project",
@@ -184,7 +148,7 @@ def test_an_existing_user_settings_file_keeps_the_owners_own_rules(tmp_path: Pat
         "recommended",
         home=home,
         machine=tmp_path / "config.toml",
-        runner=FakeRunner(),
+        runner=Recorder(),
         yes=True,
         overlay=None,
         project_root=tmp_path / "project",
@@ -199,7 +163,7 @@ def test_every_plugin_install_is_one_recorded_argv(tmp_path: Path) -> None:
     # marketplace must be registered *before* anything is installed from it (a fresh machine cannot
     # install a plugin from a marketplace it never added), and the install call itself must carry
     # none of the unmeasured `--scope`/`-y` flags the first draft guessed.
-    runner = FakeRunner()
+    runner = Recorder()
     setup(
         "recommended",
         home=tmp_path / "home",
@@ -248,7 +212,7 @@ def test_a_selector_the_marketplace_does_not_carry_is_a_note_naming_the_argv(
     claude = preset["plugins"]["claude"]
     selector = preset["plugins"]["install"][0]
     full = f"{selector}@{claude['marketplace']}"
-    runner = FakeRunner(
+    runner = Recorder(
         answers={
             f"claude plugin install {full}": Completed(1, "", f"no plugin named {selector} here")
         }
@@ -277,7 +241,7 @@ def test_what_a_plugin_command_prints_cannot_drive_a_terminal(tmp_path: Path, st
     # is a workflow command in a CI log, and an escape sequence drives a terminal.
     #
     # Mutation: `mutations/`'s "a subprocess's answer is quoted raw".
-    runner = FakeRunner(
+    runner = Recorder(
         answers={f"claude plugin {step}": Completed(1, "", "boom\n::error::forged\x1b[2J")}
     )
     report = setup(
@@ -305,7 +269,7 @@ def test_codex_gets_a_note_naming_the_unverified_plugins_rather_than_silence(
         "recommended",
         home=tmp_path / "home",
         machine=tmp_path / "config.toml",
-        runner=FakeRunner(),
+        runner=Recorder(),
         yes=True,
         overlay=None,
         project_root=tmp_path / "project",
@@ -323,11 +287,11 @@ def test_a_harness_that_is_not_installed_is_a_note_not_a_failure(tmp_path: Path)
     # binary would surface (`Runner` turns it into `Completed(127, ...)`).
     #
     # No mutation: this is `Runner`'s own fail-soft convention (a non-zero result is a note,
-    # per `stayfixed.runner.Runner`'s own docstring), exercised here through the `FakeRunner`
+    # per `stayfixed.runner.Runner`'s own docstring), exercised here through the `Recorder`'s
     # script rather than guarding one line of this module's own whose removal would look like
     # a plausible bug — the "non-zero becomes a note" shape is `_install_plugins`' whole
     # structure, not a single guardable line.
-    runner = FakeRunner(answers={"claude": Completed(127, "", "claude: command not found")})
+    runner = Recorder(answers={"claude": Completed(127, "", "claude: command not found")})
     report = setup(
         "recommended",
         home=tmp_path / "home",
@@ -349,7 +313,7 @@ def test_the_overlay_offer_is_never_taken_without_being_asked(tmp_path: Path) ->
     # Mutation: `setup`'s `if overlay is not None:` changed to `if True:` → reddens (the call
     # then reaches `_apply_overlay(None, ...)`, which is exactly the "taken without being
     # asked" shape this test exists to catch — `overlay=None` runs anyway).
-    runner = FakeRunner()
+    runner = Recorder()
     report = setup(
         "recommended",
         home=tmp_path / "home",
@@ -373,7 +337,7 @@ def test_pointing_at_an_existing_overlay_records_its_root_and_creates_nothing(
     existing.mkdir()
     _seed_overlay(existing)
     machine = tmp_path / "config.toml"
-    runner = FakeRunner()
+    runner = Recorder()
     report = setup(
         "recommended",
         home=tmp_path / "home",
@@ -404,7 +368,7 @@ def test_an_overlay_missing_the_layout_is_refused(tmp_path: Path) -> None:
             "recommended",
             home=tmp_path / "home",
             machine=tmp_path / "config.toml",
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=True,
             overlay=str(empty),
             project_root=tmp_path / "project",
@@ -430,7 +394,7 @@ def test_an_overlay_inside_the_project_root_is_refused(tmp_path: Path) -> None:
             "recommended",
             home=tmp_path / "home",
             machine=tmp_path / "config.toml",
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=True,
             overlay=str(nested),
             project_root=project,
@@ -457,7 +421,7 @@ def test_overlay_create_asks_github_and_records_the_new_root(
     monkeypatch.chdir(tmp_path)
     home = tmp_path / "home"
     machine = tmp_path / "config.toml"
-    runner = FakeRunner(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
     report = setup(
         "recommended",
         home=home,
@@ -491,7 +455,7 @@ def test_overlay_create_generates_from_the_template_overlay_create_would_choose(
     # a second copy of it here would be the place they drift. Mutation: the `setup` call passes a
     # template of its own → one of the two cases reddens.
     home = tmp_path / "home"
-    runner = FakeRunner(answers={_OCTOS_PROBE: probe}, on_call=_populate_overlay)
+    runner = Recorder(answers={_OCTOS_PROBE: probe}, on_call=_populate_overlay)
     setup(
         "recommended",
         home=home,
@@ -511,7 +475,7 @@ def test_overlay_create_that_cannot_ask_gh_whose_template_creates_nothing(
     # A probe that failed for a reason other than "not found" never becomes a repository on the
     # publisher's template: `gh repo create` is the one irreversible act `setup` performs.
     home = tmp_path / "home"
-    runner = FakeRunner(
+    runner = Recorder(
         answers={_OCTOS_PROBE: Completed(1, "", "HTTP 401: Bad credentials")},
         on_call=_populate_overlay,
     )
@@ -539,7 +503,7 @@ def test_rerunning_overlay_create_over_an_existing_overlay_creates_nothing_and_n
     machine = tmp_path / "config.toml"
     destination = home / "stayfixed-private"
     _seed_overlay(destination)
-    runner = FakeRunner(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
     report = setup(
         "recommended",
         home=home,
@@ -571,7 +535,7 @@ def test_rerunning_overlay_create_says_what_init_changed_in_the_overlay_it_found
     _seed_overlay(home / "stayfixed-private")
 
     def overlay_note() -> str:
-        runner = FakeRunner(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+        runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
         report = setup(
             "recommended",
             home=home,
@@ -598,7 +562,7 @@ def test_creating_an_overlay_without_yes_is_refused(tmp_path: Path) -> None:
     #
     # Mutation: `_apply_overlay`'s `if not yes:` line changed to `if False:` → reddens (the
     # repository would then be created without `--yes`).
-    runner = FakeRunner(on_call=_populate_overlay)
+    runner = Recorder(on_call=_populate_overlay)
     with pytest.raises(Refusal, match="explicit confirmation"):
         setup(
             "recommended",
@@ -634,7 +598,7 @@ def test_the_recorded_overlay_root_is_accepted_inside_and_refused_outside_by_att
         "recommended",
         home=tmp_path / "home",
         machine=machine,
-        runner=FakeRunner(),
+        runner=Recorder(),
         yes=True,
         overlay=str(existing),
         project_root=tmp_path / "project",
@@ -659,7 +623,7 @@ def test_a_second_run_is_idempotent(tmp_path: Path) -> None:
     # read-back) run twice, not a separate line of its own.
     home = tmp_path / "home"
     machine = tmp_path / "config.toml"
-    runner = FakeRunner()
+    runner = Recorder()
     first = setup(
         "recommended",
         home=home,
@@ -694,7 +658,7 @@ def test_a_second_run_does_not_reset_a_personal_value_the_owner_set(tmp_path: Pa
     # back to the preset's own "").
     home = tmp_path / "home"
     machine = tmp_path / "config.toml"
-    runner = FakeRunner()
+    runner = Recorder()
     setup(
         "recommended",
         home=home,
@@ -731,7 +695,7 @@ def test_a_malformed_overlay_spec_is_refused(tmp_path: Path) -> None:
             "recommended",
             home=tmp_path / "home",
             machine=tmp_path / "config.toml",
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=True,
             overlay="create:no-slash-here",
             project_root=tmp_path / "project",
@@ -750,7 +714,7 @@ def test_a_missing_stayfixed_on_path_is_a_note(
         "recommended",
         home=tmp_path / "home",
         machine=tmp_path / "config.toml",
-        runner=FakeRunner(),
+        runner=Recorder(),
         yes=True,
         overlay=None,
         project_root=tmp_path / "project",
@@ -788,7 +752,7 @@ def test_a_refused_overlay_path_is_refused_before_the_first_write(tmp_path: Path
     # reddens on the two files and the argv.
     home = tmp_path / "home"
     machine = tmp_path / "config.toml"
-    runner = FakeRunner()
+    runner = Recorder()
     with pytest.raises(Refusal, match="is not a directory"):
         setup(
             "recommended",
@@ -822,7 +786,7 @@ def test_an_overlay_root_a_utf_8_file_cannot_record_is_refused_before_the_first_
     # drop the check -> the other refusals answer, or the write crashes, and this reddens.
     home = Path(os.fsdecode(os.fsencode(tmp_path) + b"/home-caf\xe9"))
     machine = tmp_path / "config.toml"
-    runner = FakeRunner()
+    runner = Recorder()
     with pytest.raises(Refusal, match="not UTF-8"):
         setup(
             "recommended",
@@ -845,7 +809,7 @@ def test_the_same_fixture_without_the_typo_writes_both_files(tmp_path: Path) -> 
     existing = tmp_path / "overlay"
     existing.mkdir()
     _seed_overlay(existing)
-    runner = FakeRunner()
+    runner = Recorder()
     setup(
         "recommended",
         home=home,
@@ -874,7 +838,7 @@ def test_a_created_overlay_is_refused_before_the_repository_exists(tmp_path: Pat
     home = tmp_path / "home"
     home.mkdir()
     machine = tmp_path / "config.toml"
-    runner = FakeRunner(on_call=_populate_overlay)
+    runner = Recorder(on_call=_populate_overlay)
     with pytest.raises(Refusal, match="is inside"):
         setup(
             "recommended",
@@ -911,7 +875,7 @@ def test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay(tmp_p
             "recommended",
             home=tmp_path / "home",
             machine=tmp_path / "config.toml",
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=True,
             overlay=str(impostor),
             project_root=tmp_path / "project",
@@ -938,7 +902,7 @@ def test_an_overlay_that_holds_the_project_root_is_refused(tmp_path: Path) -> No
             "recommended",
             home=tmp_path / "home",
             machine=tmp_path / "config.toml",
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=True,
             overlay=str(clone),
             project_root=worktree,
@@ -970,7 +934,7 @@ def test_a_sibling_checkout_of_the_project_is_never_the_trust_anchor(tmp_path: P
             "recommended",
             home=tmp_path / "home",
             machine=tmp_path / "config.toml",
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=True,
             overlay=str(clone),
             project_root=worktree,
@@ -1025,7 +989,7 @@ def test_a_sibling_checkout_git_names_in_bytes_that_are_not_utf_8_is_still_refus
             "recommended",
             home=tmp_path / "home",
             machine=tmp_path / "config.toml",
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=True,
             overlay=str(clone),
             project_root=worktree,
@@ -1048,7 +1012,7 @@ def test_an_overlay_outside_every_checkout_is_still_recorded(tmp_path: Path) -> 
         "recommended",
         home=tmp_path / "home",
         machine=machine,
-        runner=FakeRunner(),
+        runner=Recorder(),
         yes=True,
         overlay=str(overlay),
         project_root=project,
@@ -1110,7 +1074,7 @@ def _record(tmp_path: Path, overlay: Path, project_root: Path) -> None:
         "recommended",
         home=tmp_path / "home",
         machine=tmp_path / "config.toml",
-        runner=FakeRunner(),
+        runner=Recorder(),
         yes=True,
         overlay=str(overlay),
         project_root=project_root,
@@ -1426,7 +1390,7 @@ def test_git_giving_no_answer_where_no_checkout_is_still_records_the_overlay(
         "recommended",
         home=tmp_path / "home",
         machine=machine,
-        runner=FakeRunner(),
+        runner=Recorder(),
         yes=True,
         overlay=str(overlay),
         project_root=project,
@@ -1541,7 +1505,7 @@ def test_an_overlay_beside_a_project_with_worktrees_is_still_recorded(
             "recommended",
             home=tmp_path / "home",
             machine=machine,
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=True,
             overlay=str(overlay),
             project_root=root,
@@ -1572,7 +1536,7 @@ def test_a_symlinked_claude_directory_is_a_refusal_that_names_the_link(tmp_path:
             "recommended",
             home=home,
             machine=machine,
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=True,
             overlay=None,
             project_root=tmp_path / "project",
@@ -1604,7 +1568,7 @@ def test_a_claude_directory_that_becomes_a_symlink_after_the_check_is_still_refu
             "recommended",
             home=home,
             machine=tmp_path / "config.toml",
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=True,
             overlay=None,
             project_root=tmp_path / "project",
@@ -1629,7 +1593,7 @@ def test_the_plugin_config_mirror_follows_the_machine_file(tmp_path: Path) -> No
             "recommended",
             home=home,
             machine=machine,
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=True,
             overlay=None,
             project_root=tmp_path / "project",
@@ -1639,7 +1603,7 @@ def test_the_plugin_config_mirror_follows_the_machine_file(tmp_path: Path) -> No
         "recommended",
         home=home,
         machine=machine,
-        runner=FakeRunner(),
+        runner=Recorder(),
         yes=True,
         overlay=None,
         project_root=tmp_path / "project",
@@ -1676,7 +1640,7 @@ def test_a_created_tree_that_is_not_an_overlay_says_the_repository_now_exists(
             "recommended",
             home=home,
             machine=tmp_path / "config.toml",
-            runner=FakeRunner(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_wrong_tree),
+            runner=Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_wrong_tree),
             yes=True,
             overlay="create:octo/stayfixed-private",
             project_root=tmp_path / "project",
@@ -1720,7 +1684,7 @@ def test_the_home_a_symlinked_settings_file_suggests_is_one_that_works(
             "recommended",
             home=home,
             machine=tmp_path / "config.toml",
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=True,
             overlay=None,
             project_root=tmp_path / "project",
@@ -1731,7 +1695,7 @@ def test_the_home_a_symlinked_settings_file_suggests_is_one_that_works(
         "recommended",
         home=Path(advised),
         machine=tmp_path / "second.toml",
-        runner=FakeRunner(),
+        runner=Recorder(),
         yes=True,
         overlay=None,
         project_root=tmp_path / "project",
@@ -1761,7 +1725,7 @@ def test_a_home_layout_no_home_can_express_says_so_rather_than_printing_a_comman
             "recommended",
             home=home,
             machine=tmp_path / "config.toml",
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=True,
             overlay=None,
             project_root=tmp_path / "project",
@@ -1794,7 +1758,7 @@ def test_a_per_file_settings_link_is_written_through_settings_and_not_under_home
         "recommended",
         home=home,
         machine=tmp_path / "machine.toml",
-        runner=FakeRunner(),
+        runner=Recorder(),
         yes=False,
         overlay=None,
         project_root=tmp_path / "project",
@@ -1832,7 +1796,7 @@ def test_a_settings_path_whose_directory_is_not_there_is_refused_before_anything
             "recommended",
             home=home,
             machine=machine,
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=False,
             overlay=None,
             project_root=tmp_path / "project",
@@ -1869,7 +1833,7 @@ def test_a_settings_path_whose_directory_is_not_there_is_a_refusal_and_not_an_in
             "recommended",
             home=home,
             machine=tmp_path / "machine.toml",
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=False,
             overlay=None,
             project_root=tmp_path / "project",
@@ -1901,7 +1865,7 @@ def test_a_settings_path_inside_a_symlinked_directory_is_a_refusal_and_not_an_in
             "recommended",
             home=home,
             machine=tmp_path / "machine.toml",
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=False,
             overlay=None,
             project_root=tmp_path / "project",
@@ -1945,7 +1909,7 @@ def test_a_settings_path_that_is_itself_a_symlink_is_refused_and_the_link_surviv
             "recommended",
             home=home,
             machine=machine,
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=False,
             overlay=None,
             project_root=tmp_path / "project",
@@ -1983,7 +1947,7 @@ def test_a_settings_path_that_is_an_existing_directory_is_refused_before_anythin
             "recommended",
             home=home,
             machine=machine,
-            runner=FakeRunner(),
+            runner=Recorder(),
             yes=False,
             overlay=None,
             project_root=tmp_path / "project",

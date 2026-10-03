@@ -33,7 +33,15 @@ needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not i
 
 @dataclass
 class _Coded:
-    """A runner that answers by the directory it is run in: the tree decides the exit code."""
+    """A runner that answers by the directory it is run in: the tree decides the exit code.
+
+    Not `tests.runners.Recorder`, because it answers a different question. That one answers by
+    the argv, and every run here launches the same argv: what tells the three runs apart is the
+    tree each one is launched in (the working tree, HEAD's extraction, the merge base's), so the
+    exit code is keyed on `cwd.name`. And it snapshots that tree at the moment of the call,
+    because `attribute` removes its scratch extractions before it returns and the snapshot is
+    the only evidence of what each run actually ran over.
+    """
 
     codes: dict[str, int]
     calls: list[tuple[list[str], Path]] = field(default_factory=list)

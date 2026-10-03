@@ -72,8 +72,9 @@ from stayfixed.project.uninstall import NOTHING, UninstallReport, uninstall
 from stayfixed.project.upgrade import UpgradeReport, upgrade
 from stayfixed.scaffold import digest
 from stayfixed.scaffold.local import LOCAL_ARTIFACTS, LocalDigests
-from tests.gitfixture import LsRemote, git, needs_git
+from tests.gitfixture import git, needs_git
 from tests.project.repos import DOCUMENT, MOVED_OFF_DOCS, forge_record, repository
+from tests.runners import LsRemote
 
 Command = Literal["init", "upgrade", "uninstall", "assess", "adopt-begin", "adopt-promote"]
 Report = InitReport | UpgradeReport | UninstallReport

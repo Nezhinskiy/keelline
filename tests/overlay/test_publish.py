@@ -22,6 +22,13 @@ class _GitHub:
     `git clone` has to leave a directory behind, or the publisher has nothing to write into;
     the stub creates it with one stale file, which the publisher must remove. `exists` says
     whether `gh repo view` answers.
+
+    Not `tests.runners.Recorder`, because it answers a different question. That one replays a
+    script of answers; this one models a repository on GitHub — whether it exists, whether it is
+    a template, its visibility — and derives `gh repo view`'s JSON from that state, materialises
+    the clone the publisher then writes into, and snapshots the render at clone time. The cases
+    below vary GitHub's state, or override one call in a subclass, and a script would have to
+    restate the whole model in every one of them.
     """
 
     exists: bool = True

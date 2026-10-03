@@ -11,11 +11,11 @@ from stayfixed.errors import Failure, Refusal
 from stayfixed.overlay.api import create, init_instance
 from stayfixed.overlay.upgrade import upgrade
 from stayfixed.scaffold import MANIFEST_PATH, Verb, digest
-from tests.overlay.test_create import FakeRunner
+from tests.runners import Recorder
 
 
 def _an_overlay(tmp_path: Path) -> Path:
-    return create("octo", "ov", source="local", root=tmp_path, runner=FakeRunner()).root
+    return create("octo", "ov", source="local", root=tmp_path, runner=Recorder()).root
 
 
 def _restamp(root: Path, artifact_id: str) -> None:
@@ -122,7 +122,7 @@ def test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release(tmp_path:
     # ledger"): the `with_record(replace(...))` line stops updating the digest → both manifests
     # read as hand-edited and this reddens.
     root = _an_overlay(tmp_path)
-    init_instance(root, "OctoCat", runner=FakeRunner())
+    init_instance(root, "OctoCat", runner=Recorder())
     verbs = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
     for manifest in (".claude-plugin/plugin.json", ".claude-plugin/marketplace.json"):
         assert verbs[manifest] is not Verb.SKIP_MODIFIED
@@ -165,7 +165,7 @@ def test_init_does_not_vouch_for_a_manifest_the_owner_edited(tmp_path: Path) -> 
     plugin.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
     before = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
     assert before[".claude-plugin/plugin.json"] is Verb.SKIP_MODIFIED
-    init_instance(root, "acme", runner=FakeRunner())
+    init_instance(root, "acme", runner=Recorder())
     after = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
     assert after[".claude-plugin/plugin.json"] is Verb.SKIP_MODIFIED
     upgrade(root, dry_run=False)
@@ -186,7 +186,7 @@ def test_init_reads_every_manifest_before_it_rewrites_any(tmp_path: Path) -> Non
     (root / ".codex-plugin" / "plugin.json").write_text("{not json", encoding="utf-8")
     before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
     with pytest.raises(Failure, match="not valid JSON"):
-        init_instance(root, "acme", runner=FakeRunner())
+        init_instance(root, "acme", runner=Recorder())
     assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
 
 
@@ -297,7 +297,7 @@ def test_init_removes_the_memory_readme_a_release_shipped(tmp_path: Path, ledger
     # Mutation: `mutations/`'s "overlay init leaves the memory README a release shipped".
     root = _an_overlay(tmp_path)
     path = _with_the_shipped_memory_readme(root, ledger=ledger, text=SHIPPED_MEMORY_README)
-    done = init_instance(root, "octo", runner=FakeRunner())
+    done = init_instance(root, "octo", runner=Recorder())
     assert not path.exists()
     assert any(MEMORY_README in note for note in done.notes)
     if ledger:
@@ -328,7 +328,7 @@ def test_init_leaves_the_memory_directory_its_readme_under_the_new_name(
     del document["artifacts"]["common/memory/_README.md"]
     manifest.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
     path = _with_the_shipped_memory_readme(root, ledger=ledger, text=SHIPPED_MEMORY_README)
-    done = init_instance(root, "octo", runner=FakeRunner())
+    done = init_instance(root, "octo", runner=Recorder())
     assert not path.exists()
     assert successor.read_text(encoding="utf-8") == shipped
     assert any("common/memory/_README.md" in note for note in done.notes)
@@ -354,7 +354,7 @@ def test_a_memory_readme_init_cannot_remove_keeps_the_manifests_it_renamed_recor
     memory.chmod(0o555)
     try:
         with pytest.raises(Refusal, match="cannot be removed"):
-            init_instance(root, "acme", runner=FakeRunner())
+            init_instance(root, "acme", runner=Recorder())
     finally:
         memory.chmod(0o755)
     assert path.is_file()
@@ -377,6 +377,6 @@ def test_init_keeps_an_edited_memory_readme_and_says_what_to_do(tmp_path: Path) 
     root = _an_overlay(tmp_path)
     edited = SHIPPED_MEMORY_README + "\nMy own line.\n"
     path = _with_the_shipped_memory_readme(root, ledger=False, text=edited)
-    done = init_instance(root, "octo", runner=FakeRunner())
+    done = init_instance(root, "octo", runner=Recorder())
     assert path.read_text(encoding="utf-8") == edited
     assert any(MEMORY_README in note and "_README.md" in note for note in done.notes)

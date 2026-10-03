@@ -12,7 +12,8 @@ from stayfixed.errors import Failure, Refusal
 from stayfixed.presets import load_preset
 from stayfixed.project.init import init
 from stayfixed.scaffold import Kind, Template, apply, plan
-from tests.gitfixture import LsRemote, git, needs_git
+from tests.gitfixture import git, needs_git
+from tests.runners import LsRemote
 
 VALID_HEAD = """
 [stayfixed]
