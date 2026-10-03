@@ -1368,6 +1368,113 @@ Written by Tasks 6, 9 and 10.
 
 Written by Tasks 11–16.
 
+### Summary (Task 16)
+
+`W` works, `P` works after a prompt, `B` broken, `A` absent once, `C` cannot carry, `—` no prompt
+of that surface exercised the kind. Claude Code headless ran 2.1.285 (`M1 5` on 2.1.288), the
+terminal 2.1.288, the desktop Code tab its bundled 2.1.284; Codex was `codex-cli 0.160.0`. Each
+cell's evidence is in the task section named in the header row.
+
+| Kind | Headless M1 | M2 | M3 | M4 | Terminal M1 | M2 | M3 | M4 | Desktop M1 | M2 | Cowork M1 | M2 | Codex C1 | C2 | C3 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| | Task 12 | | | | Task 13 | | | | Task 13 | | Task 13 | | Task 14 | | |
+| instructions | W | W | W | P | W | W | W | P | W | W | A | A | W | B | W |
+| rules | P | W | W | W | P | W | W | W | B | W | A | A | C | B | C |
+| path-scoped rules | A | W | W | A | A | W | W | A | — | — | — | — | A | B | C |
+| skills | W | W | W | W | W | W | W | W | W | W | — | — | W | W | W |
+| agents | W | W | W | W | W | W | W | W | W | W | — | — | — | C | — |
+| hooks | W | W | W | C | W | W | W | C | W | W | A | A | P | B | A |
+| settings | W | W | W | C | — | — | — | — | — | — | — | — | P | C | W |
+| memory | W | W | W | C | W | W | W | C | W | W | A | A | C | B | C |
+
+The prompts behind `P`: on Claude Code, "Allow external CLAUDE.md file imports?", which the
+terminal showed and which neither `-p` nor the desktop Code tab offered (headless E1, desktop
+M1); on Codex, project trust (`trust_level = "trusted"`) for settings and hook trust for hooks
+(C1 3 ran them only under `--dangerously-bypass-hook-trust`).
+
+**Instructions.** M2 and M3 carried them through the plugin's `SessionStart` context on every
+local Claude Code surface without a prompt, and so did M1's linked `CLAUDE.local.md`. M4's
+imports needed the external-import approval. On Codex a file at a path Codex reads carried them
+untrusted (C1's linked `AGENTS.override.md`, C3's `CODEX_HOME/AGENTS.md`); the plugin did not.
+Nothing reached Cowork.
+
+**Rules.** M2 and M3 carried them everywhere local without a prompt, and M4 through the added
+directory's `.claude/rules/`. A linked file in `.claude/rules/` counted as an external include:
+the terminal asked, `-p` and the desktop Code tab skipped it silently. Codex has no rules file;
+only a hook could have carried them, and the plugin's did not run.
+
+**Path-scoped rules.** Only the `PostToolUse` hook on `Read` (M2, M3) carried them, on headless
+and terminal. A linked scoped rule never arrived, even after the import approval (terminal M1);
+a regular file did (`proj-D5`). Codex reads instruction files only from the Git root down to the
+working directory, so a file below it never arrived (C1 2).
+
+**Skills.** Every mechanism carried them on every local surface, Codex included, which follows
+linked skill folders untrusted. Cowork's were not observed.
+
+**Agents.** Every Claude Code mechanism carried them. No Codex rendering or turn showed a custom
+agent, and a Codex plugin has no place for one.
+
+**Hooks.** M1's linked `settings.local.json` and the plugin's `hooks.json` ran without a hook
+prompt on every local Claude Code surface; the desktop trust dialog named the settings file
+("Execution allowed by: .claude/settings.local.json") when it held hooks. An added directory's
+settings file did not run (M4). Codex skipped untrusted project and user hooks without a word,
+and did not run the plugin's hooks at all. No hook ran for Cowork.
+
+**Settings.** The deny rule held under M1 to M3 headless and was not exercised elsewhere. On
+Codex the user `config.toml` applied without a prompt (C3), a linked project one only once the
+project was trusted (C1).
+
+**Memory.** M1's linked project-memory directory and M2's and M3's hook context and
+`autoMemoryDirectory` carried it on every local Claude Code surface; M4 and Codex had no route,
+and Codex's plugin route did not run. Nothing reached Cowork.
+
+### What this settles
+
+Observations core-cut (the extension point) and harness-sources (the delivery mode) consume.
+Each names the cells it rests on.
+
+1. **On every local Claude Code surface measured, a local-scope private plugin plus a real,
+   untracked `.claude/settings.local.json` (M2) carried each kind that surface exercised,
+   without a prompt** — Summary, headless/terminal/desktop M2 columns. No kind needed the link
+   tree where M2 carried it: M1 matched M2 on instructions, skills, agents, hooks, settings and
+   memory, needed a prompt or failed for rules (headless/terminal/desktop M1, E1), and never
+   carried path-scoped rules (headless/terminal M1, D4, `proj-D5`).
+2. **A link inside `.claude/rules/` is an external include**: the link's target lies outside the
+   working directory, and Claude Code loads it only once the project's
+   `hasClaudeMdExternalIncludesApproved` is recorded; `-p` and the desktop Code tab never asked
+   (E1; desktop M1's `.claude.json` read `false`/`false`). A linked `CLAUDE.local.md`, a linked
+   skill, agent or settings file and a linked memory directory loaded without it (headless M1,
+   D1–D4).
+3. **The path-scoped kind travelled only through a `PostToolUse` hook on `Read`, or as a
+   regular file in the checkout** (headless/terminal M2, M3; `proj-D5`); no link and no added
+   directory carried it (M1, M4).
+4. **A user-scope plugin bound by `origin` held back only what its hook emits**: with a foreign
+   `origin` its skills, agents and the settings file's kinds still arrived (M3b). A local-scope
+   install still wrote its marketplace into the user `settings.json`
+   (`extraKnownMarketplaces`) and the plugin into the user plugin records (Task 11; Task 13
+   cleanup).
+5. **Plugin hooks needed no hook approval on Claude Code** (terminal M2, M3: no dialog after
+   trust), and removal was not complete on its own: `claude plugin uninstall` left the cache
+   directory marked `.orphaned_at` (Task 13 cleanup).
+6. **A `CLAUDE.local.md` displaced the project's `AGENTS.md`**: the desktop loaded `AGENTS.md`
+   for M2 and not for M1 (desktop M1, M2). Under `$HOME`, an ancestor `.claude/CLAUDE.md`
+   displaced it for every mechanism (Task 12 confound).
+7. **Codex 0.160.0 ran no plugin hook, trusted or not** (C2 2, C2 3; `plugin_hooks removed
+   false`), so Claude Code's plugin-context route has no Codex counterpart. On Codex,
+   instructions and settings travelled only as files at the paths Codex reads — linked into
+   the checkout (C1) or placed in the Codex home (C3) — and skills also through a plugin (C2).
+   Project config and every hook needed trust, and untrusted hooks were skipped silently (C1 1,
+   C1 3).
+8. **On Codex, `AGENTS.override.md` replaced the project's `AGENTS.md` in that directory; the
+   Codex home's `AGENTS.md` added to it** (C1 and C3 renderings).
+9. **No untracked or user-level mechanism reached a remote session.** Cowork received nothing
+   from M1 or M2, not even the committed `AGENTS.md`, and ran no hook on the device (Cowork M1,
+   M2). Claude Code cloud sessions read only committed files, and neither user settings,
+   `settings.local.json` nor any plugin reaches them (Task 15, documented).
+10. **Versions differ per surface and move under a session**: one interactive start in a scratch
+    configuration moved the user-wide CLI from 2.1.285 to 2.1.288, while the desktop Code tab ran
+    its bundled 2.1.284 (Task 13).
+
 ### Task 11 — scratch library and fixtures
 
 Measured on 2026-10-03 at `dev` = `05727f1`. Paths are relative to
@@ -1747,3 +1854,14 @@ from developers.openai.com/codex/cloud/environments; the page calls itself legac
   the agent phase.
 - "If your repo includes `AGENTS.md`, the agent uses it"; the page names no route for user
   `config.toml`, skills, plugins, hooks or memories.
+
+### Task 16 — closing
+
+The scrub over this file: `grep -n "$HOME"` and `grep -n "$(whoami)"` printed nothing;
+`grep -n "sk-ant-"` printed only line 1186, the scrub instruction itself; none of the five string
+values of the scratch Codex `auth.json` and not the Claude Code token occurs in the file.
+`uv run pytest tests/test_neutral.py tests/test_payload.py -q` printed `577 passed`. With the
+owner's yes: `codex logout` printed `Successfully logged out` and the scratch `auth.json` was
+gone; `claude auth logout` under `cfg-interactive` printed `Successfully logged out from your
+Anthropic account.` and its keychain item was gone; `$SPIKE/npm` was removed. The rest of
+`$SPIKE` holds no credential and stays until this record merges.
