@@ -1710,3 +1710,40 @@ and left no cache directory.
 | hooks | works after a prompt — hook trust; ran only under the bypass flag | broken — not even under the bypass flag | absent once — no marker, bypass not spent |
 | settings | works after a prompt — project trust | cannot carry | works |
 | memory | cannot carry | broken — the hook route did not run | cannot carry |
+
+### Task 15 — cloud sessions, from the documentation
+
+Nothing here was measured; every line is **documented**, read 2026-10-03, and no page carried a
+date. (Cowork, measured in Task 13, said of itself "this task runs in the cloud".)
+
+**Claude Code cloud sessions** (code.claude.com/docs/en/claude-code-on-the-web,
+/docs/en/cloud-environments, /docs/en/settings):
+
+- The session runs "on a fresh clone of your repository, not on your machine"; `claude --cloud`
+  "clones your current directory's GitHub remote at your current branch, not your local
+  checkout". When it uploads a bundle instead, "Untracked files are not included".
+- Reaches the session, as part of the clone: the repository's `CLAUDE.md`, `.claude/rules/`,
+  `.claude/skills/`, `.claude/agents/`, `.claude/commands/`, and, in a session with one
+  repository, `.claude/settings.json` hooks and permission rules and `.mcp.json`.
+- Does not reach it: `~/.claude/settings.json` and `.claude/settings.local.json` ("Both stay on
+  your machine, and the local file isn't in the clone"); the user `~/.claude/CLAUDE.md`; user
+  skills, agents and commands; plugins enabled only in user settings; and plugins and
+  marketplaces a repository declares under `enabledPlugins` / `extraKnownMarketplaces` ("A cloud
+  session doesn't install the plugins a repository turns on").
+- The environment supplies network access, environment variables (readable by anyone who uses
+  the environment) and a setup script that "runs when a new cloud session starts, before Claude
+  Code launches", cached as a filesystem snapshot when it finishes in about five minutes;
+  `SessionStart` hooks run there with a 600-second default timeout. "Cloud sessions
+  automatically load skills you enable on claude.ai."
+- Auto memory is not named on either page.
+
+**Codex cloud tasks** (learn.chatgpt.com/docs/environments/cloud-environment, reached by a 308
+from developers.openai.com/codex/cloud/environments; the page calls itself legacy):
+
+- "Codex creates a container and checks out your repo at the selected branch or commit SHA"; a
+  setup script runs at creation and an optional maintenance script on a cached resume.
+- Environment variables last the whole task; secrets "are only available to setup scripts" and
+  "are removed before the agent phase starts". Internet is on during setup and off by default in
+  the agent phase.
+- "If your repo includes `AGENTS.md`, the agent uses it"; the page names no route for user
+  `config.toml`, skills, plugins, hooks or memories.
