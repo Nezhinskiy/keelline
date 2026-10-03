@@ -19,8 +19,9 @@ import stayfixed
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.project.commands import CI_LEFT, CI_PINNED
 from stayfixed.scaffold import Kind, Location, Manifest, Record, digest
-from tests.gitfixture import LsRemote, git, needs_git
+from tests.gitfixture import git, needs_git
 from tests.project.repos import forge_record, initialised, tree
+from tests.runners import LsRemote
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 FORGED = "docs/\x1b[31mforged.md"
@@ -133,9 +134,7 @@ def test_the_ci_line_never_says_a_workflow_it_left_pins_the_ref(
 
     sha = "a" * 40
     listing = f"{sha}\trefs/tags/v{stayfixed.__version__}\n"
-    monkeypatch.setattr(
-        runner_module, "subprocess_runner", lambda: LsRemote(code=0, stdout=listing)
-    )
+    monkeypatch.setattr(runner_module, "subprocess_runner", lambda: LsRemote(stdout=listing))
     root = tmp_path / "widget"
     root.mkdir()
     git(root, "init", "-q", "-b", "main")

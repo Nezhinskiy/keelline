@@ -21,8 +21,9 @@ from stayfixed.project.uninstall import uninstall
 from stayfixed.project.upgrade import upgrade
 from stayfixed.release.api import Pin
 from stayfixed.scaffold import MANIFEST_PATH, Manifest, Style, Verb, extract
-from tests.gitfixture import LsRemote, git, needs_git
+from tests.gitfixture import git, needs_git
 from tests.project.repos import repository
+from tests.runners import LsRemote
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 SHA = "b" * 40
@@ -288,7 +289,7 @@ def test_an_adopted_ref_is_what_the_workflow_pins_and_the_document_is_not_rewrit
         f'[ci]\nmode = "reusable"\nref = "{ADOPTED}"\n',
         encoding="utf-8",
     )
-    report = _init(root, tmp_path, runner=LsRemote(stdout=LISTING, code=0))
+    report = _init(root, tmp_path, runner=LsRemote(stdout=LISTING))
     workflow = (root / ".github" / "workflows" / "stayfixed.yml").read_text(encoding="utf-8")
     assert f"check.yml@{ADOPTED}" in workflow and SHA not in workflow
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == ADOPTED
@@ -310,7 +311,7 @@ def test_an_adopted_document_with_no_ref_gets_no_workflow_at_all(tmp_path: Path)
     (root / CONFIG_FILE).write_text(
         '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n', encoding="utf-8"
     )
-    runner = LsRemote(stdout=LISTING, code=0)
+    runner = LsRemote(stdout=LISTING)
     report = _init(root, tmp_path, runner=runner)
     assert runner.calls == [] and report.resolution.pin is None
     assert report.ref == "" and not (root / ".github").exists()
@@ -364,7 +365,7 @@ def test_an_unreachable_remote_is_answered_with_a_command_that_can_act(tmp_path:
     of its own".
     """
     offline = LsRemote(stdout="", code=128)
-    online = LsRemote(stdout=LISTING, code=0)
+    online = LsRemote(stdout=LISTING)
     dry_root = _repo(tmp_path / "dry")
     dry = _init(dry_root, tmp_path, runner=offline, dry_run=True)
     assert dry.skipped["ci-workflow"] == NOT_ASKED
@@ -385,7 +386,7 @@ def test_the_pin_is_written_and_the_workflow_rendered_when_a_release_matches(
     tmp_path: Path,
 ) -> None:
     root = _repo(tmp_path)
-    runner = LsRemote(stdout=LISTING, code=0)
+    runner = LsRemote(stdout=LISTING)
     report = _init(root, tmp_path, runner=runner)
     assert report.resolution.pin == Pin(TAG, SHA)
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == SHA
@@ -409,7 +410,7 @@ def test_a_gate_branch_outside_the_grammar_leaves_a_pin_with_no_workflow(tmp_pat
         f'[ci]\nref = "{ADOPTED}"\ngate_branch = "main\'; rm -rf"\n',
         encoding="utf-8",
     )
-    report = _init(root, tmp_path, runner=LsRemote(stdout=LISTING, code=0))
+    report = _init(root, tmp_path, runner=LsRemote(stdout=LISTING))
     assert report.resolution.pin == Pin(TAG, SHA)
     assert report.skipped["ci-workflow"].startswith("[ci] gate_branch is not a plain branch name")
     assert report.ref == "" and not (root / ".github").exists()
@@ -438,7 +439,7 @@ def test_a_configuration_that_will_not_parse_never_quotes_its_own_keys(tmp_path:
 @needs_git
 def test_no_ci_writes_mode_none_and_asks_no_remote(tmp_path: Path) -> None:
     root = _repo(tmp_path)
-    runner = LsRemote(stdout=LISTING, code=0)
+    runner = LsRemote(stdout=LISTING)
     _init(root, tmp_path, runner=runner, ci=False)
     assert load(root, machine=tmp_path / "absent.toml").ci.mode == "none"
     assert runner.calls == []

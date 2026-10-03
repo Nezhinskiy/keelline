@@ -18,8 +18,9 @@ from stayfixed.project.init import Given, InitReport, init
 from stayfixed.project.templates import LOCAL_ELIGIBLE
 from stayfixed.scaffold import Verb
 from stayfixed.scaffold.local import LOCAL_ARTIFACTS
-from tests.gitfixture import LsRemote, git, needs_git
+from tests.gitfixture import git, needs_git
 from tests.project.repos import repository
+from tests.runners import LsRemote
 
 SHA = "c" * 40
 # A released tag at the running version, so a pin resolves and the caller is rendered.
@@ -136,7 +137,7 @@ def test_a_fresh_repository_gates_the_branch_it_chose(tmp_path: Path, how: str) 
     if how == "detected":
         git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop")
     branch = "main" if how == "main" else "develop"
-    report = _init(root, tmp_path, given, runner=LsRemote(stdout=LISTING, code=0), ci=True)
+    report = _init(root, tmp_path, given, runner=LsRemote(stdout=LISTING), ci=True)
     assert report.ref == SHA
     config = load(root, machine=tmp_path / "absent.toml")
     chosen = (config.project.base_branch, config.project.release_branch, config.ci.gate_branch)
@@ -171,7 +172,7 @@ def test_an_adopted_document_s_workflow_gates_the_branch_its_file_names(
         f'[ci]\nref = "{ADOPTED}"\n{ci_table}'
     )
     (root / CONFIG_FILE).write_text(hand_written, encoding="utf-8")
-    report = _init(root, tmp_path, Given(), runner=LsRemote(stdout=LISTING, code=0), ci=True)
+    report = _init(root, tmp_path, Given(), runner=LsRemote(stdout=LISTING), ci=True)
     assert report.adopted and report.ref == ADOPTED
     assert (root / CONFIG_FILE).read_text(encoding="utf-8") == hand_written
     assert load(root, machine=tmp_path / "absent.toml").ci.gate_branch == gated

@@ -53,7 +53,6 @@ from typing import Any
 import pytest
 
 from stayfixed import gitenv
-from tests.runners import Recorder
 
 # The one spelling of the skip, published here because five modules had written it out.
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -64,27 +63,6 @@ needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not i
 # `stayfixed.gitenv.GIT_ENV_KEEP` states for production, with `TMPDIR` added because these
 # fixtures are built under one.
 ENV_KEEP = ("PATH", "LANG", "LC_ALL", "SYSTEMROOT", "TMPDIR")
-
-
-@dataclass(kw_only=True)
-class LsRemote(Recorder):
-    """`tests.runners.Recorder` answering `git ls-remote` from a string, with no network.
-
-    Here rather than in one module because two already share it, and they shared it by importing
-    a *private* name across test modules — `tests/project/test_gates.py` took `_Git` from
-    `tests/project/test_init.py`, which made `test_init` load-bearing for `test_gates` in a way
-    neither file stated. This module is where the suite publishes what more than one module needs
-    (see its own first paragraph on the twenty-three drifted copies of the `git` helper), and this
-    stub belongs to the same subject: what a fixture repository's `git` is allowed to be asked.
-
-    The recorder itself is `tests.runners.Recorder`; this names its one default that differs,
-    the `2` that `git ls-remote --exit-code` exits with when no ref matched. So `LsRemote()` is
-    "no tags, and record what you were asked", which is what a project fixture wants, and
-    `LsRemote(stdout=listing, code=0)` is a listing: what `tests/release/test_pins.py` asserts the
-    parse over, and what the project command tests pin a release with.
-    """
-
-    code: int = 2
 
 
 def env(home: Path, **extra: str) -> dict[str, str]:

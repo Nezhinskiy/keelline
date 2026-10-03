@@ -27,8 +27,9 @@ from stayfixed.project.upgrade import (
 )
 from stayfixed.scaffold import Manifest, Record, Verb, digest, engine
 from stayfixed.scaffold.manifest import Kind, Location
-from tests.gitfixture import LsRemote, needs_git
+from tests.gitfixture import needs_git
 from tests.project.repos import initialised
+from tests.runners import LsRemote
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 OLD = "a" * 40
@@ -40,7 +41,7 @@ OFFLINE = LsRemote(code=128)
 
 
 def _listing(version: str, sha: str) -> LsRemote:
-    return LsRemote(stdout=f"{sha}\trefs/tags/v{version}\n", code=0)
+    return LsRemote(stdout=f"{sha}\trefs/tags/v{version}\n")
 
 
 def _pinned(tmp_path: Path) -> Path:

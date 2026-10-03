@@ -27,8 +27,9 @@ from stayfixed.project.templates import CONFIG_ARTIFACT
 from stayfixed.project.upgrade import upgrade
 from stayfixed.scaffold import Manifest, ManifestError, digest
 from tests.cli import cli, custom_gate
-from tests.gitfixture import LsRemote, git, needs_git
+from tests.gitfixture import git, needs_git
 from tests.project.repos import repository
+from tests.runners import LsRemote
 
 pytestmark = needs_git
 

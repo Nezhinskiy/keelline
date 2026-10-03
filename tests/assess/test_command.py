@@ -16,9 +16,10 @@ from stayfixed.project.api import ASSESSMENT
 from stayfixed.project.init import init
 from tests.assess.smoke import BASE, smoke_repo
 from tests.cli import cli, custom_gate
-from tests.gitfixture import LsRemote, git, needs_git
+from tests.gitfixture import git, needs_git
 from tests.project.repos import DOCUMENT as BASE_DOCUMENT
 from tests.project.repos import repository
+from tests.runners import LsRemote
 
 CUSTOM_GATE = '\n[gates.custom.tests]\nrun = ["git", "--version"]\n'
 
