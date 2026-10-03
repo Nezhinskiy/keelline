@@ -1615,3 +1615,98 @@ removed; the owner removed the four app sessions.
 Terminal and desktop turns cost a few cents each (`lastCost` 0.0464 for M2 and 0.0337 for M3 in
 `cfg-interactive/.claude.json`); the Cowork turns ran on the owner's plan, outside any
 per-turn figure.
+
+### Task 14 — Codex
+
+**Documentation read 2026-10-03** (no page carried a date). The `developers.openai.com/codex/…`
+guide URLs answered `308 Permanent Redirect` to `learn.chatgpt.com/docs/…`:
+
+- `learn.chatgpt.com/docs/agent-configuration/agents-md`: a global `AGENTS.override.md` or
+  `AGENTS.md` under the Codex home, then, from the Git root down to the working directory, in
+  each directory `AGENTS.override.md`, else `AGENTS.md`, else `project_doc_fallback_filenames`;
+  combined size capped by `project_doc_max_bytes` (32 KiB by default).
+- `learn.chatgpt.com/docs/build-skills`: skills from `.agents/skills` in the working directory
+  and its parents up to the repository root, `$HOME/.agents/skills`, `/etc/codex/skills`, and
+  the bundled set; "Codex supports symlinked skill folders and follows the symlink target".
+- `learn.chatgpt.com/docs/hooks`: `hooks.json` or `[hooks]` in `config.toml` beside each config
+  layer (`~/.codex/`, `<repo>/.codex/`); `SessionStart`, `PostToolUse` and others; output may
+  carry `additionalContext`; a non-managed hook runs only after its exact definition is
+  reviewed and trusted, and project hooks only when the `.codex/` layer is trusted.
+- `learn.chatgpt.com/docs/plugins` and `developers.openai.com/plugins/build/plugins`: a plugin
+  holds skills, MCP servers and hooks (`hooks/hooks.json`), no agents; a local marketplace is a
+  directory with `.agents/plugins/marketplace.json` whose entry has `"source": {"source":
+  "local", "path": "./plugins/<name>"}`; `codex plugin marketplace add <path>`; a repository
+  enables a plugin in `.codex/config.toml` only when trusted.
+- Custom agents (a search summary of `developers.openai.com/codex/subagents`, not fetched):
+  `.codex/agents/*.toml` per project, `~/.codex/agents/*.toml` per user.
+
+**Mechanisms as built.** C1, symlinks at the paths Codex reads: `AGENTS.override.md` →
+`overlay/instructions.md`, `scoped/AGENTS.override.md` → `overlay/.claude/rules/sf-scoped.md`,
+`.agents/skills/sf-skill` → the skill, `.codex/agents/sf-agent.toml`, `.codex/hooks.json`
+(markers) and `.codex/config.toml` (`developer_instructions = "Settings token:
+SFC-9c2n5jdkxi"`, a new canary labelled settings), all in `.git/info/exclude`. C2, a private
+plugin from the local marketplace `$SPIKE/codex-market`: the skill and the same two hook
+scripts as M2, bound to the fixture `origin`. C3, the user layer of the scratch `CODEX_HOME`:
+`AGENTS.md` and `agents/sf-agent.toml` and `hooks.json` linked into it, the settings line at the
+top of its `config.toml`, and the skill linked into `$HOME/.agents/skills` under a scratch
+`HOME`. Rules have no Codex file of their own (`.rules` files are command policy) and memory
+has no file path (the `memories` feature is `stable false` and its store is
+`memories_1.sqlite`), so neither had a route.
+
+**Install and sign-in.** `npm view @openai/codex version` printed `0.160.0`; `npm install
+--ignore-scripts @openai/codex@0.160.0` into `$SPIKE/npm` recorded `"integrity":
+"sha512-kEtVGzjRAYAMOwJxN39bGcna7LT3IDQgq64NNJ/dDTfu4OzZaocJcyNb5/gGJ/IVF/Vj7oK7E2m3nmTan7lpjg=="`;
+`codex --version` printed `codex-cli 0.160.0`. Every call ran under `env -i` with
+`HOME="$SPIKE/codex-userhome"`, `CODEX_HOME="$SPIKE/codex-home"` and
+`-c 'cli_auth_credentials_store="file"'`; the owner signed in with ChatGPT (`codex login
+status` printed `Logged in using ChatGPT`) and the credential went to the scratch `auth.json`.
+`codex features list` printed `hooks stable true`, `plugins stable true` and `plugin_hooks
+removed false`.
+
+**What the model would see, at $0.** `codex debug prompt-input "<P1>"` renders the prompt
+without a model call:
+
+- C1, untrusted: instructions `SFC-pjwy0ublr7`, skill root `proj-C1/.agents/skills` listing
+  `sf-skill`; no settings canary, no AGENTS.md canary.
+- C1, after `[projects."<proj-C1>"] trust_level = "trusted"` was added to the scratch
+  `config.toml`: the same plus `Settings token: SFC-9c2n5jdkxi`.
+- C2: agents-md `SFC-6fg43bebuk` and `sf-overlay:sf-skill`.
+- C3: instructions, agents-md and settings, and skill root `codex-userhome/.agents/skills`
+  listing `sf-skill`.
+
+No rendering named `sf-agent`.
+
+**Turns.** `cx.sh exec --json -s read-only -c 'model_reasoning_effort="low"' -- "<prompt>"`
+in the project; eight turns, the default model `gpt-6.1-sol`, input 14,327–29,725 and output
+52–136 tokens a turn.
+
+| Turn | Prompt | Canaries | Markers |
+|---|---|---|---|
+| C1 1 | P1 | settings, instructions | none |
+| C1 2 | P2 (ran `cat scoped/target.txt`) | settings, instructions | none |
+| C1 3 | P2, `--dangerously-bypass-hook-trust` | settings, instructions | `proj-C1.codex-layer.SessionStart`, `proj-C1.codex-layer.PostToolUse` |
+| C2 1 | P1 | agents-md | none |
+| C2 2 | P2 | agents-md | none |
+| C2 3 | P2, `--dangerously-bypass-hook-trust` | agents-md | none |
+| C3 1 | P1 | agents-md, settings, instructions | none |
+| C3 2 | P2 | agents-md, settings, instructions | none |
+
+Without the bypass flag no hook ran and nothing said so; with it the stream carried two
+`error` items, ``"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without
+review for this invocation."``, and C1's linked hooks ran. C2's plugin hooks ran in neither,
+though the installed copy held `hooks/hooks.json` and both scripts. `codex plugin remove
+sf-overlay@sf-spike` printed ``Removed plugin `sf-overlay` from marketplace `sf-spike`.``
+and left no cache directory.
+
+**The Codex column.**
+
+| Kind | C1 symlinks | C2 plugin, local marketplace | C3 user layer |
+|---|---|---|---|
+| instructions | works — untrusted too; the override took the place of the project's `AGENTS.md` | broken — the hook route did not run | works — alongside the project's `AGENTS.md` |
+| rules | cannot carry | broken — the hook route did not run | cannot carry |
+| path-scoped rules | absent once — C1 2; files below the working directory are not read | broken — the hook route did not run | cannot carry |
+| skills | works — untrusted too | works — `sf-overlay:sf-skill` | works |
+| agents | — | cannot carry | — |
+| hooks | works after a prompt — hook trust; ran only under the bypass flag | broken — not even under the bypass flag | absent once — no marker, bypass not spent |
+| settings | works after a prompt — project trust | cannot carry | works |
+| memory | cannot carry | broken — the hook route did not run | cannot carry |
