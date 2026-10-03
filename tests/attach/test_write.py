@@ -12,7 +12,6 @@ import json
 import os
 import shutil
 from collections.abc import Mapping
-from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -29,7 +28,6 @@ from stayfixed.attach.write import (
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import PROJECT_RECORD
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX
-from stayfixed.runner import Completed
 from stayfixed.scaffold import Style, drop, extract, owned_ids
 
 # The fixture the binding tests already build, reused rather than copied: one spelling of the
@@ -37,6 +35,7 @@ from stayfixed.scaffold import Style, drop, extract, owned_ids
 from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
 from tests.gitfixture import git as _git
 from tests.gitfixture import run_git
+from tests.runners import Recorder
 
 # The walk-based snapshot guard, owned at the top level rather than duplicated here and in
 # tests/test_install_path.py: it used to exist twice, verbatim including its docstring, and the
@@ -49,19 +48,6 @@ LEDGER = ".stayfixed/local/attach.json"
 SETTINGS = ".claude/settings.local.json"
 RULE = "Bash(uv run pytest:*)"
 ENTRY = {"type": "command", "command": "echo hello"}
-
-
-@dataclass
-class FakeRunner:
-    """Records argv and answers 0, so no test here reaches a real `pre-commit`."""
-
-    calls: list[list[str]] = field(default_factory=list)
-    answer: Completed = field(default_factory=lambda: Completed(0, "", ""))
-
-    def launch(self, argv: list[str], cwd: Path) -> Completed:
-        del cwd
-        self.calls.append(argv)
-        return self.answer
 
 
 def _overlay_repository(overlay: Path, *, hooks_path: Path | None = None) -> Path:
@@ -148,7 +134,7 @@ def test_a_mismatched_remote_refuses_and_writes_nothing(tmp_path: Path) -> None:
             machine=machine,
             confirmed=True,
             trust_remote=False,
-            runner=FakeRunner(),
+            runner=Recorder(),
             home=tmp_path / "home",
         )
     assert_snapshot_unchanged(root, before)
@@ -179,7 +165,7 @@ def test_the_same_repository_under_another_url_form_is_refused_in_words_true_of_
             machine=machine,
             confirmed=True,
             trust_remote=False,
-            runner=FakeRunner(),
+            runner=Recorder(),
             home=tmp_path / "home",
         )
     said = str(refused.value)
@@ -193,7 +179,7 @@ def test_the_same_repository_under_another_url_form_is_refused_in_words_true_of_
         machine=machine,
         confirmed=True,
         trust_remote=True,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     assert attached.binding_recorded
@@ -214,7 +200,7 @@ def test_an_unconfirmed_attach_that_would_widen_a_permission_refuses(tmp_path: P
             machine=machine,
             confirmed=False,
             trust_remote=False,
-            runner=FakeRunner(),
+            runner=Recorder(),
             home=tmp_path / "home",
         )
     assert not (root / SETTINGS).exists()
@@ -231,7 +217,7 @@ def test_an_attach_that_widens_nothing_needs_no_confirmation(tmp_path: Path) -> 
         machine=machine,
         confirmed=False,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     assert attached.binding_recorded
@@ -256,7 +242,7 @@ def test_confirmed_merges_the_rules_and_records_each_entry_under_its_own_id(
         machine=machine,
         confirmed=True,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     document = (root / SETTINGS).read_text(encoding="utf-8")
@@ -284,7 +270,7 @@ def test_an_entry_the_overlay_stopped_granting_is_taken_back_out(tmp_path: Path)
         machine=machine,
         confirmed=True,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=home,
     )
     installed = owned_ids((root / SETTINGS).read_text(encoding="utf-8"))
@@ -299,7 +285,7 @@ def test_an_entry_the_overlay_stopped_granting_is_taken_back_out(tmp_path: Path)
         machine=machine,
         confirmed=True,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=home,
     )
     assert attached.settings_written
@@ -321,7 +307,7 @@ def test_a_second_attach_that_changes_nothing_leaves_the_settings_file_alone(
         machine=machine,
         confirmed=False,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     assert not attached.settings_written
@@ -362,7 +348,7 @@ def test_a_group_mixing_a_marked_entry_with_a_foreign_one_is_split_not_replaced(
         machine=machine,
         confirmed=True,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     document = (root / SETTINGS).read_text(encoding="utf-8")
@@ -388,7 +374,7 @@ def test_a_first_attach_records_the_remote_and_the_date(tmp_path: Path) -> None:
         machine=machine,
         confirmed=False,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     record = tomllib.loads((store.parent / "project.toml").read_text(encoding="utf-8"))
@@ -403,7 +389,7 @@ def test_a_record_that_already_binds_this_repository_is_left_alone(tmp_path: Pat
     import tomllib
 
     root, store, machine = _attachable(tmp_path)
-    runner = FakeRunner()
+    runner = Recorder()
     attach(
         root,
         store=store,
@@ -441,7 +427,7 @@ def test_the_merged_rules_are_recorded_where_they_can_be_removed_again(tmp_path:
         machine=machine,
         confirmed=True,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     recorded = ledger(root)
@@ -464,7 +450,7 @@ def test_attach_writes_the_ignore_region_that_keeps_the_ledger_untracked(tmp_pat
         machine=machine,
         confirmed=False,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     body = extract((root / ".gitignore").read_text(encoding="utf-8"), "ignore", Style.HASH)
@@ -504,7 +490,7 @@ def test_the_ignore_region_is_written_before_the_ledger_and_not_merely_written(
         machine=machine,
         confirmed=False,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     assert ".gitignore" in written and LEDGER in written, written
@@ -522,7 +508,7 @@ def test_attach_leaves_every_other_line_of_an_existing_gitignore_alone(tmp_path:
         machine=machine,
         confirmed=False,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     assert "node_modules/\n" in (root / ".gitignore").read_text(encoding="utf-8")
@@ -540,7 +526,7 @@ def test_attach_refuses_when_the_ignore_region_cannot_be_written(tmp_path: Path)
             machine=machine,
             confirmed=False,
             trust_remote=False,
-            runner=FakeRunner(),
+            runner=Recorder(),
             home=tmp_path / "home",
         )
     assert not (root / LEDGER).exists()
@@ -585,7 +571,7 @@ def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
             machine=machine,
             confirmed=True,
             trust_remote=True,
-            runner=FakeRunner(),
+            runner=Recorder(),
             home=tmp_path / "home",
         )
     # Non-vacuous: this refusal and not one of the five `attach` can raise before it, nor the
@@ -622,7 +608,7 @@ def test_the_memory_group_refusal_is_reached_on_a_run_that_would_have_written(
         machine=machine,
         confirmed=True,
         trust_remote=True,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     after = snapshot(root)
@@ -639,7 +625,7 @@ def test_a_second_attach_adds_nothing_twice(tmp_path: Path) -> None:
     # every rule per attach is the shape this catches.
     hooks = {"SessionStart": [{"hooks": [ENTRY]}]}
     root, store, machine = _attachable(tmp_path, allow=(RULE,), hooks=hooks)
-    runner = FakeRunner()
+    runner = Recorder()
     attach(
         root,
         store=store,
@@ -669,7 +655,7 @@ def test_a_second_attach_still_claims_what_the_first_one_added(tmp_path: Path) -
     # rule is already present, so the *diff* is empty — and a ledger written from the diff
     # alone would forget it, leaving `detach` nothing to remove.
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
-    runner = FakeRunner()
+    runner = Recorder()
     attach(
         root,
         store=store,
@@ -701,7 +687,7 @@ def test_codex_rules_land_under_the_directory_codex_reads(tmp_path: Path) -> Non
         machine=machine,
         confirmed=False,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     landed = root / ".codex" / "rules" / "common.rules"
@@ -724,7 +710,7 @@ def test_a_rule_the_overlay_never_granted_is_left_alone(tmp_path: Path) -> None:
         machine=machine,
         confirmed=True,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     allow = json.loads((root / SETTINGS).read_text(encoding="utf-8"))["permissions"]["allow"]
@@ -742,7 +728,7 @@ def test_the_secret_scan_is_installed_on_the_machine_that_never_ran_overlay_init
     root, store, machine = _attachable(tmp_path)
     _overlay_repository(store.parents[2])
     (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
-    runner = FakeRunner()
+    runner = Recorder()
     attached = attach(
         root,
         store=store,
@@ -772,7 +758,7 @@ def test_trust_remote_rebinds_and_keeps_the_original_first_attach_date(tmp_path:
         machine=machine,
         confirmed=False,
         trust_remote=True,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     assert attached.binding_recorded
@@ -807,7 +793,7 @@ def test_a_repository_with_no_origin_remote_has_nothing_to_record(tmp_path: Path
             machine=machine,
             confirmed=False,
             trust_remote=True,
-            runner=FakeRunner(),
+            runner=Recorder(),
             home=tmp_path / "home",
         )
     assert_snapshot_unchanged(root, before)
@@ -830,7 +816,7 @@ def test_the_no_origin_refusal_is_reached_with_a_diff_that_would_have_written(
         machine=machine,
         confirmed=True,
         trust_remote=True,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     assert attached.settings_written
@@ -854,7 +840,7 @@ def test_a_settings_file_the_merge_cannot_read_is_refused_and_never_filtered(
             machine=machine,
             confirmed=True,
             trust_remote=False,
-            runner=FakeRunner(),
+            runner=Recorder(),
             home=tmp_path / "home",
         )
 
@@ -874,7 +860,7 @@ def test_an_overlay_hooks_file_with_an_unreadable_shape_is_refused(tmp_path: Pat
             machine=machine,
             confirmed=True,
             trust_remote=False,
-            runner=FakeRunner(),
+            runner=Recorder(),
             home=tmp_path / "home",
         )
 
@@ -890,7 +876,7 @@ def test_a_ledger_that_is_not_json_is_a_failure_and_not_an_empty_one(tmp_path: P
         machine=machine,
         confirmed=False,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     (root / LEDGER).write_text("{", encoding="utf-8")
@@ -904,7 +890,7 @@ def test_a_pre_commit_that_is_already_installed_is_not_run_again(tmp_path: Path)
     hooks = _overlay_repository(overlay)
     (overlay / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
     (hooks / "pre-commit").write_text("#!/bin/sh\n", encoding="utf-8")
-    runner = FakeRunner()
+    runner = Recorder()
     attached = attach(
         root,
         store=store,
@@ -931,7 +917,7 @@ def test_a_hook_outside_dot_git_still_counts_as_installed(tmp_path: Path) -> Non
     hooks = _overlay_repository(overlay, hooks_path=tmp_path / "dotfiles" / "hooks")
     (overlay / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
     (hooks / "pre-commit").write_text("#!/bin/sh\n", encoding="utf-8")
-    runner = FakeRunner()
+    runner = Recorder()
     attached = attach(
         root,
         store=store,
@@ -956,7 +942,7 @@ def test_an_overlay_git_cannot_answer_about_is_a_note_and_never_a_traceback(
     # a hook in.
     root, store, machine = _attachable(tmp_path)
     (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
-    runner = FakeRunner()
+    runner = Recorder()
     attached = attach(
         root,
         store=store,
@@ -976,7 +962,7 @@ def test_a_pre_commit_that_cannot_run_is_a_note_and_never_a_traceback(tmp_path: 
     root, store, machine = _attachable(tmp_path)
     _overlay_repository(store.parents[2])
     (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
-    runner = FakeRunner(answer=Completed(127, "", "pre-commit could not be run"))
+    runner = Recorder(code=127, stderr="pre-commit could not be run")
     attached = attach(
         root,
         store=store,
@@ -1038,7 +1024,7 @@ def test_a_ledger_no_attach_could_have_written_is_refused_before_the_first_write
             machine=machine,
             confirmed=True,
             trust_remote=True,
-            runner=FakeRunner(),
+            runner=Recorder(),
             home=tmp_path / "home",
         )
     assert_snapshot_unchanged(root, before)
@@ -1061,7 +1047,7 @@ def test_the_refused_ledger_is_reached_on_a_run_that_would_have_written_three_fi
         machine=machine,
         confirmed=True,
         trust_remote=True,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     after = snapshot(root)
@@ -1097,7 +1083,7 @@ def test_an_overlay_store_the_walk_cannot_enter_is_refused_at_write_time(tmp_pat
             machine=machine,
             confirmed=True,
             trust_remote=True,
-            runner=FakeRunner(),
+            runner=Recorder(),
             home=tmp_path / "home",
         )
     assert "memory.groups" in str(refusal.value)
@@ -1137,7 +1123,7 @@ def test_a_group_that_never_moved_refuses_the_attach_above_every_write(tmp_path:
             machine=machine,
             confirmed=True,
             trust_remote=False,
-            runner=FakeRunner(),
+            runner=Recorder(),
             home=tmp_path / "home",
         )
     assert str(refusal.value) == REAL_DIRECTORIES.format(count=1)
@@ -1152,7 +1138,7 @@ def test_a_group_that_never_moved_refuses_the_attach_above_every_write(tmp_path:
         machine=machine,
         confirmed=True,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=tmp_path / "home",
     )
     assert (root / DEFAULT_MEMORY / "project-stable").is_symlink()
@@ -1175,7 +1161,7 @@ def test_the_refusal_counts_the_groups_and_never_names_one(tmp_path: Path) -> No
             machine=machine,
             confirmed=True,
             trust_remote=False,
-            runner=FakeRunner(),
+            runner=Recorder(),
             home=tmp_path / "home",
         )
     message = str(refusal.value)
@@ -1238,7 +1224,7 @@ def _attach_confirmed(root: Path, store: Path, machine: Path, home: Path) -> Non
         machine=machine,
         confirmed=True,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=home,
     )
 
@@ -1623,7 +1609,7 @@ def test_a_first_attach_beside_the_harnesss_own_memory_and_a_linked_claude_attac
         machine=machine,
         confirmed=True,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=home,
     )
     assert attached.notes == (HARNESS_WAITS,)
@@ -1772,7 +1758,7 @@ def _attach_it(root: Path, store: Path, machine: Path, home: Path) -> Attached:
         machine=machine,
         confirmed=True,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=home,
     )
 
@@ -1996,7 +1982,7 @@ def test_what_pre_commit_prints_cannot_drive_a_terminal(tmp_path: Path) -> None:
     root, store, machine = _attachable(tmp_path)
     _overlay_repository(store.parents[2])
     (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
-    runner = FakeRunner(answer=Completed(1, "", "boom\n::error::forged\x1b[2J"))
+    runner = Recorder(code=1, stderr="boom\n::error::forged\x1b[2J")
     attached = attach(
         root,
         store=store,

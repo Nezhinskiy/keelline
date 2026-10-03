@@ -1463,7 +1463,7 @@ reddens = [
 # finding.
 [[mutation]]
 name = "a test module claims again that the test tree cannot share a helper"
-file = "tests/setup/test_setup.py"
+file = "tests/test_documents.py"
 before = "because the test tree was not importable"
 after = "because `tests/` is not a package and"
 reddens = [

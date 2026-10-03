@@ -10,7 +10,6 @@ from __future__ import annotations
 import io
 import json
 from contextlib import redirect_stdout
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +18,8 @@ import pytest
 import stayfixed
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.project.commands import CI_LEFT, CI_PINNED
-from stayfixed.runner import Completed
 from stayfixed.scaffold import Kind, Location, Manifest, Record, digest
-from tests.gitfixture import git, needs_git
+from tests.gitfixture import LsRemote, git, needs_git
 from tests.project.repos import forge_record, initialised, tree
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
@@ -41,16 +39,6 @@ def _run(root: Path, tmp_path: Path, *argv: str) -> tuple[int, dict[str, Any]]:
         code = run([*argv, *flags], parser=parser)
     data: dict[str, Any] = json.loads(out.getvalue())
     return code, data
-
-
-@dataclass
-class _Listing:
-    """A `Runner` that answers `ls-remote` from a string and reaches no network."""
-
-    stdout: str
-
-    def launch(self, argv: list[str], cwd: Path) -> Completed:
-        return Completed(0, self.stdout, "")
 
 
 @needs_git
@@ -145,7 +133,9 @@ def test_the_ci_line_never_says_a_workflow_it_left_pins_the_ref(
 
     sha = "a" * 40
     listing = f"{sha}\trefs/tags/v{stayfixed.__version__}\n"
-    monkeypatch.setattr(runner_module, "subprocess_runner", lambda: _Listing(listing))
+    monkeypatch.setattr(
+        runner_module, "subprocess_runner", lambda: LsRemote(code=0, stdout=listing)
+    )
     root = tmp_path / "widget"
     root.mkdir()
     git(root, "init", "-q", "-b", "main")

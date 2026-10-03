@@ -20,7 +20,6 @@ import pty
 import shutil
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -48,9 +47,9 @@ from stayfixed.memory.store import overlay_root
 from stayfixed.memory.trust import record
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY, PLUGIN_MANIFEST
 from stayfixed.release.api import HASHED_FILES
-from stayfixed.runner import Completed
 from tests.gitfixture import git as _git
 from tests.overlay.test_requires import overlay_with
+from tests.runners import Recorder
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -87,30 +86,13 @@ groups = ["developer"]
 """
 
 
-@dataclass
-class _Stub:
-    """A `Runner` that records argv and answers, so no test reaches a real binary."""
-
-    code: int = 0
-    stdout: str = ""
-    calls: list[list[str]] = field(default_factory=list)
-
-    def launch(self, argv: list[str], cwd: Path) -> Completed:
-        self.calls.append(argv)
-        return Completed(self.code, self.stdout, "")
-
-
-def _stub(code: int = 0) -> _Stub:
-    return _Stub(code=code)
-
-
 def _checks(
     tmp_path: Path,
     root: Path,
     *,
     home: Path | None = None,
     machine: Path | None = None,
-    runner: _Stub | None = None,
+    runner: Recorder | None = None,
     env: dict[str, str] | None = None,
 ) -> list[Check]:
     """`run_checks` with this file's hermetic defaults, so no case can be added without them.
@@ -135,7 +117,7 @@ def _checks(
         root,
         home=tmp_path / "home" if home is None else home,
         machine=tmp_path / "no-machine.toml" if machine is None else machine,
-        runner=_stub() if runner is None else runner,
+        runner=Recorder() if runner is None else runner,
         env=_env(tmp_path) if env is None else env,
     )
 
@@ -1386,7 +1368,12 @@ def test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_
     #
     # Mutation: `mutations/`'s "doctor renders an unreadable file as a broken check".
     context = checks.Context(
-        tmp_path, None, None, _stub(), {}, load(_initialised(tmp_path), machine=_machine(tmp_path))
+        tmp_path,
+        None,
+        None,
+        Recorder(),
+        {},
+        load(_initialised(tmp_path), machine=_machine(tmp_path)),
     )
 
     def cannot_read(_: checks.Context) -> checks.Row:
@@ -1409,7 +1396,9 @@ def test_a_settings_file_that_is_not_utf8_is_one_the_walk_is_blind_to(tmp_path: 
     root = _initialised(tmp_path)
     (root / ".claude").mkdir()
     (root / ".claude" / "settings.local.json").write_bytes(b"\xff\xfe{}")
-    context = checks.Context(root, None, None, _stub(), {}, load(root, machine=_machine(tmp_path)))
+    context = checks.Context(
+        root, None, None, Recorder(), {}, load(root, machine=_machine(tmp_path))
+    )
     row = checks._hook_entries(context)
     assert "could not be read as hook entries" in row.detail
 
@@ -1428,7 +1417,12 @@ def test_the_two_plugin_root_skips_both_carry_a_remedy(tmp_path: Path) -> None:
     #
     # Mutation: `mutations/`'s "the plugin-root skips go back to an empty remedy".
     context = checks.Context(
-        tmp_path, None, None, _stub(), {}, load(_initialised(tmp_path), machine=_machine(tmp_path))
+        tmp_path,
+        None,
+        None,
+        Recorder(),
+        {},
+        load(_initialised(tmp_path), machine=_machine(tmp_path)),
     )
     assert context.plugin_root is None and context.own_root is None
     for check in (checks._files(context), checks._wrapper(context)):
@@ -2136,7 +2130,7 @@ def _configured(
 
 def test_a_released_commit_is_ok_and_an_unreleased_one_is_red(tmp_path: Path) -> None:
     # Mutation (oracle): `if not is_a_release` -> `if is_a_release` -> both arms swap.
-    stub = _stub()
+    stub = Recorder()
     stub.stdout = LISTING
     # The workflow is written here and not left out: a repository with no workflow file has its
     # own row below, and this case is about what the public repository's tags say.
@@ -2150,7 +2144,7 @@ def test_a_released_commit_is_ok_and_an_unreleased_one_is_red(tmp_path: Path) ->
 def test_a_value_that_is_neither_a_sha_nor_the_alias_is_red_without_a_subprocess(
     tmp_path: Path,
 ) -> None:
-    stub = _stub()
+    stub = Recorder()
     row = _by_name(_checks(tmp_path, _configured(tmp_path, "ext::sh -c id"), runner=stub), "ci-ref")
     assert row.status == RED and "40-character" in row.detail and stub.calls == []
     # And the value is not quoted back on the way out: it is repository-authored, and this is
@@ -2159,12 +2153,12 @@ def test_a_value_that_is_neither_a_sha_nor_the_alias_is_red_without_a_subprocess
 
 
 def test_the_alias_is_a_warning_that_names_it_mutable(tmp_path: Path) -> None:
-    stub = _stub()
+    stub = Recorder()
     stub.stdout = LISTING
     root = _configured(tmp_path / "alias", "v1", workflow_ref="v1")
     row = _by_name(_checks(tmp_path, root, runner=stub), "ci-ref")
     assert row.status == WARN and "mutable" in row.detail
-    stub = _stub(code=GIT_FAILED)
+    stub = Recorder(code=GIT_FAILED)
     root = _configured(tmp_path / "unaskable", RELEASED, workflow_ref=RELEASED)
     unaskable = _checks(tmp_path, root, runner=stub)
     assert _by_name(unaskable, "ci-ref").status == WARN
@@ -2189,7 +2183,7 @@ def test_the_alias_arm_answers_a_listing_without_it_and_a_git_that_failed(tmp_pa
     """
     # Every released tag and no `v1` among them: the alias this repository pinned names nothing,
     # so no gate is running the commit it thinks it is.
-    stub = _stub()
+    stub = Recorder()
     stub.stdout = f"{RELEASED}\trefs/tags/v0.1.0\n"
     root = _configured(tmp_path / "missing", "v1", workflow_ref="v1")
     missing = _checks(tmp_path, root, runner=stub)
@@ -2199,7 +2193,7 @@ def test_the_alias_arm_answers_a_listing_without_it_and_a_git_that_failed(tmp_pa
     # `git` itself having failed is a fact about this machine and not about `[ci] ref`, so this
     # arm warns exactly as the sha arm beside it does — the split `_guarded` makes everywhere.
     absent = _configured(tmp_path / "unaskable", "v1", workflow_ref="v1")
-    unaskable = _checks(tmp_path, absent, runner=_stub(code=GIT_FAILED))
+    unaskable = _checks(tmp_path, absent, runner=Recorder(code=GIT_FAILED))
     assert _by_name(unaskable, "ci-ref").status == WARN
     assert "could not be checked" in _by_name(unaskable, "ci-ref").detail
 
@@ -2227,7 +2221,7 @@ def test_a_workflow_that_is_not_a_regular_file_is_not_the_refs_own_verdict(tmp_p
     the arm warns, and `warn` reaches neither the exit code nor anything downstream that reads a
     verdict as permission. The guard itself has an oracle entry, reddening the case below.
     """
-    stub = _stub()
+    stub = Recorder()
     stub.stdout = LISTING
     root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
     workflow = root / WORKFLOW
@@ -2255,7 +2249,7 @@ def test_a_workflow_that_cannot_be_opened_is_not_the_refs_own_verdict(tmp_path: 
     run as root or on a filesystem that ignores the mode can read it anyway, and the case says so
     by asking `os.access` instead of believing the `chmod`.
     """
-    stub = _stub()
+    stub = Recorder()
     stub.stdout = LISTING
     root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
     workflow = root / WORKFLOW
@@ -2294,7 +2288,7 @@ def test_a_workflow_that_is_not_a_file_does_not_hang_the_row(tmp_path: Path) -> 
     `is_file()` guard is removed -> the row reads the fed workflow, answers `ok`, and the status
     assertion reddens.
     """
-    stub = _stub()
+    stub = Recorder()
     stub.stdout = LISTING
     root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
     workflow = root / WORKFLOW
@@ -2349,7 +2343,7 @@ def test_a_workflow_over_the_cap_is_not_the_refs_own_verdict(tmp_path: Path) -> 
     Mutation (oracle entry "doctor reads the rendered workflow with no bound of its own"): the cap
     comparison is deleted -> this case fails on the status.
     """
-    stub = _stub()
+    stub = Recorder()
     stub.stdout = LISTING
     root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
     workflow = root / WORKFLOW
@@ -2379,7 +2373,7 @@ def test_a_workflow_carrying_a_byte_that_is_not_utf8_is_still_compared(tmp_path:
     the stray byte cannot forge a sha — `_USES` bounds what is compared and nothing read is
     printed.
     """
-    stub = _stub()
+    stub = Recorder()
     stub.stdout = LISTING
     root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
     workflow = root / WORKFLOW
@@ -2391,7 +2385,7 @@ def test_a_workflow_carrying_a_byte_that_is_not_utf8_is_still_compared(tmp_path:
 def test_a_workflow_that_pins_something_else_is_red(tmp_path: Path) -> None:
     # The pin GitHub acts on is the file. Mutation (comment): skip the workflow comparison ->
     # this reddens.
-    stub = _stub()
+    stub = Recorder()
     stub.stdout = LISTING
     row = _by_name(
         _checks(tmp_path, _configured(tmp_path, RELEASED, workflow_ref="main"), runner=stub),
@@ -2431,7 +2425,7 @@ def test_a_recorded_ref_with_no_workflow_file_at_all_is_never_green(tmp_path: Pa
     Mutation (oracle): `if context.config.ci.mode == "reusable":` -> `if False:` -> the first
     case goes back to `ok` and reddens.
     """
-    stub = _stub()
+    stub = Recorder()
     stub.stdout = LISTING
     row = _by_name(_checks(tmp_path, _configured(tmp_path, RELEASED), runner=stub), "ci-ref")
     assert row.status == WARN, row
@@ -2453,7 +2447,7 @@ def test_a_workflow_that_pins_nothing_this_build_recognises_is_never_silence(
     # Advisory rather than an oracle entry: the arm warns, and `warn` reaches neither the exit
     # code nor anything downstream that reads a verdict as permission. Mutation (comment): return
     # `row` instead of the warning -> this reddens on the status.
-    stub = _stub()
+    stub = Recorder()
     stub.stdout = LISTING
     root = _configured(tmp_path, RELEASED, workflow_ref="main")
     (root / ".github" / "workflows" / "stayfixed.yml").write_text(

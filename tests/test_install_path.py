@@ -32,7 +32,7 @@ import re
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -42,10 +42,10 @@ from stayfixed.attach.hooks import NOT_ATTACHED, REAL_DIRECTORIES
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.doctor.api import OK, RED, SKIP, run_checks
 from stayfixed.memory.api import DELIMITER, PROJECTS, harness_memory_path, markers
-from stayfixed.runner import Completed
 from tests.floor import developer_free_environ
 from tests.gitfixture import git
 from tests.overlay.test_upgrade import SHIPPED_MEMORY_README
+from tests.runners import Recorder
 from tests.snapshot import (
     assert_snapshot_changed,
     assert_snapshot_unchanged,
@@ -82,23 +82,6 @@ name = "{project}"
 mode = "{mode}"
 groups = ["developer", "project-stable"]
 """
-
-
-@dataclass
-class _Harness:
-    """A `Runner` that records argv and reaches no binary.
-
-    The one test in this module that still calls `run_checks` in this process needs a runner to
-    hand it, and `ci-ref` — the only row that would use one — skips on this fixture. Everything
-    else here reaches the CLI's own `subprocess_runner()` through the launcher, and the fakes
-    `_fake_binaries` writes are what answer it.
-    """
-
-    calls: list[list[str]] = field(default_factory=list)
-
-    def launch(self, argv: list[str], cwd: Path) -> Completed:
-        self.calls.append(argv)
-        return Completed(0, "", "")
 
 
 def _project(tmp_path: Path, *, mode: str, initialised: bool = False) -> Path:
@@ -160,7 +143,7 @@ def _fake_binaries(bin_dir: Path) -> None:
 
     `pre-commit install` writes the hook `doctor` later asks about, so the fake writes it too —
     a stub that answered 0 and wrote nothing would make two steps disagree for no reason a
-    reader could see (the `_Harness` runner this replaces said the same). `gh` must never be
+    reader could see (the in-process runner these fakes replaced said the same). `gh` must never be
     reached on the `--local` path, so its fake exits 1 and the test asserts the log never names
     it. `claude` and `codex` are here because `setup` installs the preset's plugins through
     `subprocess_runner()`, which resolves them on `PATH`: without these the walkthrough would run
@@ -698,11 +681,15 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
         return real(argv, *args, **kwargs)
 
     monkeypatch.setattr(subprocess, "Popen", spy)
+    # The one call in this module that runs `run_checks` in this process, so it needs a runner to
+    # hand it; `ci-ref`, the only row that would use one, skips on this fixture. Everything else
+    # here reaches the CLI's own `subprocess_runner()` through the launcher, and the fakes
+    # `_fake_binaries` writes are what answer it.
     checks = run_checks(
         walk.root,
         home=walk.home,
         machine=walk.machine,
-        runner=_Harness(),
+        runner=Recorder(),
         env=_doctor_env(walk),
     )
     monkeypatch.undo()

@@ -30,11 +30,12 @@ from stayfixed.memory.store import origin_remote
 from stayfixed.overlay.sync import overlay_sync
 from stayfixed.project.detect import NOT_DERIVABLE, detect
 from stayfixed.setup.run import _repository
-from tests.attach.test_write import RULE, FakeRunner, _attachable
+from tests.attach.test_write import RULE, _attachable
 from tests.cli import cli
 from tests.gitfixture import git, needs_git, plant_path
 from tests.guards.test_hygiene import config, repo
 from tests.project.repos import repository
+from tests.runners import Recorder
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 # An `origin` URL whose last byte is latin-1, and the `str` the filesystem's codec spells it as.
@@ -195,7 +196,7 @@ def test_attach_refuses_an_origin_it_cannot_record_before_writing_anything(tmp_p
             machine=machine,
             confirmed=True,
             trust_remote=True,
-            runner=FakeRunner(),
+            runner=Recorder(),
             home=tmp_path / "home",
         )
     assert "caf" not in str(refused.value)

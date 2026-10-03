@@ -13,28 +13,8 @@ from pathlib import Path
 import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
-from stayfixed.runner import Completed
 from stayfixed.setup.api import SetupReport
-
-
-class _NullRunner:
-    """Answers every call with success and runs nothing — the one runner this file's own
-    CLI-level test may use, since installing the preset's plugins is otherwise unconditional
-    and a test here must never reach a real `claude` or `codex`.
-
-    `calls` is asserted non-empty by its one caller below: the only thing standing between this test
-    and four real plugin/marketplace calls against the developer's own machine is the monkeypatch
-    two lines down, and an empty `calls` list is exactly what a silently-broken patch would look
-    like — the real `subprocess_runner()` would have run instead of this one, and nothing here would
-    notice without this assertion.
-    """
-
-    def __init__(self) -> None:
-        self.calls: list[list[str]] = []
-
-    def launch(self, argv: list[str], cwd: Path) -> Completed:
-        self.calls.append(argv)
-        return Completed(0, "", "")
+from tests.runners import Recorder
 
 
 def invoke(argv: list[str]) -> int:
@@ -52,8 +32,10 @@ def test_the_preset_flow_runs_through_the_cli_with_a_stubbed_runner(
     # Patched at `stayfixed.setup.commands` itself, not at `overlay.api`: that module-level import
     # is what `run_setup` calls directly, so a test that wants to keep this command away from a real
     # `claude`/`codex` monkeypatches a name this module owns rather than reaching two hops into a
-    # dependency's own attribute.
-    stub = _NullRunner()
+    # dependency's own attribute. The recorder answers every call with success, because installing
+    # the preset's plugins is unconditional and a test here must never reach a real `claude` or
+    # `codex`.
+    stub = Recorder()
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
     home = tmp_path / "home"
     machine = tmp_path / "config.toml"
@@ -103,7 +85,7 @@ def test_the_machine_default_is_the_file_every_reader_reads(
     # An interactive shell is what makes the sniff answer yes; the reader's answer must not
     # depend on it.
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    stub = _NullRunner()
+    stub = Recorder()
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
     assert invoke(["setup", "--preset", "recommended", "--yes", "--home", str(home)]) == 0
     assert (home / ".config" / "stayfixed" / "config.toml").is_file()

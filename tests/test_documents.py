@@ -118,10 +118,10 @@ def test_no_module_claims_the_test_tree_cannot_share_a_helper() -> None:
     Three modules said, in as many words, that a helper was copied rather than imported
     because the test tree was not importable as a package and CONTRIBUTING forbade a
     cross-module import. Both halves are false: `tests/__init__.py` is tracked, `CONTRIBUTING.md`
-    carries no such rule,
-    and `tests/overlay/test_upgrade.py` imports the very class one of those comments said it
-    could not. What it cost, measured at the time: the hardened-`git` helper defined in 26
-    modules, six of them already drifted, while `tests/snapshot.py` published it.
+    carries no such rule, and `tests/overlay/test_upgrade.py` imported the very class one of those
+    comments said it could not (both now import `tests.runners.Recorder`). What it cost, measured
+    at the time: the hardened-`git` helper defined in 26 modules, six of them already drifted,
+    while `tests/snapshot.py` published it.
 
     In a tree whose whole discipline is that a comment is evidence, a false comment that
     *authorises* a practice is worse than the practice. So the claim is a finding, and the

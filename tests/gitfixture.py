@@ -46,14 +46,14 @@ import os
 import shutil
 import subprocess
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from stayfixed import gitenv
-from stayfixed.runner import Completed
+from tests.runners import Recorder
 
 # The one spelling of the skip, published here because five modules had written it out.
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -66,9 +66,9 @@ needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not i
 ENV_KEEP = ("PATH", "LANG", "LC_ALL", "SYSTEMROOT", "TMPDIR")
 
 
-@dataclass
-class LsRemote:
-    """A `stayfixed.runner.Runner` answering `git ls-remote` from a string, with no network.
+@dataclass(kw_only=True)
+class LsRemote(Recorder):
+    """`tests.runners.Recorder` answering `git ls-remote` from a string, with no network.
 
     Here rather than in one module because two already share it, and they shared it by importing
     a *private* name across test modules — `tests/project/test_gates.py` took `_Git` from
@@ -77,19 +77,14 @@ class LsRemote:
     (see its own first paragraph on the twenty-three drifted copies of the `git` helper), and this
     stub belongs to the same subject: what a fixture repository's `git` is allowed to be asked.
 
-    It is not the only stub of its shape in the suite. `tests/release/test_pins.py` and
-    `tests/doctor/test_checks.py` each keep their own, because each answers a different question
-    with it — a tag listing to assert the parse, and a whole `doctor` context. This one is "no
-    tags, and record what you were asked", which is what a project fixture wants.
+    The recorder itself is `tests.runners.Recorder`; this names its one default that differs,
+    the `2` that `git ls-remote --exit-code` exits with when no ref matched. So `LsRemote()` is
+    "no tags, and record what you were asked", which is what a project fixture wants, and
+    `LsRemote(stdout=listing, code=0)` is a listing: what `tests/release/test_pins.py` asserts the
+    parse over, and what the project command tests pin a release with.
     """
 
-    stdout: str = ""
     code: int = 2
-    calls: list[list[str]] = field(default_factory=list)
-
-    def launch(self, argv: list[str], cwd: Path) -> Completed:
-        self.calls.append(argv)
-        return Completed(self.code, self.stdout, "")
 
 
 def env(home: Path, **extra: str) -> dict[str, str]:

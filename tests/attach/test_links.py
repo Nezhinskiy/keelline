@@ -19,8 +19,8 @@ from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
 from stayfixed.memory.api import PartialLink, harness_memory_path
 from tests.attach.test_binding import CONFIG, DEFAULT_MEMORY, _machine
-from tests.attach.test_write import FakeRunner
 from tests.gitfixture import git as _git
+from tests.runners import Recorder
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -69,7 +69,7 @@ def _attach(
         machine=machine,
         confirmed=confirmed,
         trust_remote=False,
-        runner=FakeRunner(),
+        runner=Recorder(),
         home=home,
     )
 
