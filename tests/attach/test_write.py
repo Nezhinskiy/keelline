@@ -58,7 +58,7 @@ class FakeRunner:
     calls: list[list[str]] = field(default_factory=list)
     answer: Completed = field(default_factory=lambda: Completed(0, "", ""))
 
-    def run(self, argv: list[str], cwd: Path) -> Completed:
+    def launch(self, argv: list[str], cwd: Path) -> Completed:
         del cwd
         self.calls.append(argv)
         return self.answer

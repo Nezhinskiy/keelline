@@ -231,10 +231,10 @@ def _initialise_repository(
         f"{account}/{name} on GitHub"
     )
     step = "git init"
-    done = runner.run(["git", "init"], target)
+    done = runner.launch(["git", "init"], target)
     if done.code == 0:
         step = "git symbolic-ref HEAD refs/heads/main"
-        done = runner.run(["git", "symbolic-ref", "HEAD", "refs/heads/main"], target)
+        done = runner.launch(["git", "symbolic-ref", "HEAD", "refs/heads/main"], target)
     if done.code != 0:
         return (
             rendered,
@@ -290,7 +290,7 @@ def _template_for(owner: str, *, root: Path, runner: Runner) -> str:
     """
     mine = f"{owner}/{TEMPLATE_REPOSITORY}"
     theirs = PUBLISHED_TEMPLATE
-    probe = runner.run(["gh", "repo", "view", mine, "--json", "isTemplate"], root)
+    probe = runner.launch(["gh", "repo", "view", mine, "--json", "isTemplate"], root)
     if probe.code == 0:
         answer = _is_template(probe.stdout)
         if answer is not None:
@@ -335,7 +335,7 @@ def _from_template(
         return Created(target, "template", (f"{target} already exists and was left alone",))
     template = _template_for(owner, root=root, runner=runner)
     slug = f"{owner}/{name}"
-    created = runner.run(
+    created = runner.launch(
         [
             "gh",
             "repo",
@@ -375,14 +375,14 @@ def _from_template(
     # `gh` reported success and nothing arrived. Which of the two failures it was decides whether
     # waiting can help, so ask before retrying: `gh repo view` printing the name back is the
     # evidence the repository exists and the clone raced its generation.
-    view = runner.run(["gh", "repo", "view", slug, "--json", "name", "--jq", ".name"], root)
+    view = runner.launch(["gh", "repo", "view", slug, "--json", "name", "--jq", ".name"], root)
     raced = view.code == 0 and bool(view.stdout.strip())
     if raced:
         wait(RETRY_WAIT_SECONDS)
     # The clone is retried either way, and that is deliberate: `gh repo view` answering nothing
     # is not proof of absence — a rate limit or an expired token answers the same — and one fast
     # failure is cheaper than refusing to try.
-    cloned = runner.run(["git", "clone", "--", f"git@github.com:{slug}.git", name], root)
+    cloned = runner.launch(["git", "clone", "--", f"git@github.com:{slug}.git", name], root)
     if _populated(target):
         return Created(
             target,
@@ -635,7 +635,7 @@ def _install_secret_scan(root: Path, runner: Runner) -> str:
     the push workflow the template ships, which is what makes `--no-verify` not the last word.
     A missing `pre-commit` is a reported finding, never a traceback.
     """
-    done: Completed = runner.run(["pre-commit", "install"], root)
+    done: Completed = runner.launch(["pre-commit", "install"], root)
     if done.code == 0:
         return "installed the commit-time secret scan with `pre-commit install`"
     return (

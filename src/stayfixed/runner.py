@@ -2,7 +2,7 @@
 
 Everything the areas that launch a program (`overlay`, `attach`, `doctor`, `setup`, and the
 release commands) do that leaves this process — asking GitHub for a repository, cloning
-one, installing a commit hook — goes through `Runner.run`, so a test asserts *the argv it would
+one, installing a commit hook — goes through `Runner.launch`, so a test asserts *the argv it would
 have run* against a stub instead of shelling out to `gh`, `git` or `pre-commit`. Mocking
 `subprocess.run` would hide the argv, which is the only part of these calls that can be wrong in
 a way a user notices: a missing `--private` publishes somebody's private overlay.
@@ -94,7 +94,7 @@ class Completed:
 
 
 class Runner(Protocol):
-    def run(self, argv: list[str], cwd: Path) -> Completed: ...
+    def launch(self, argv: list[str], cwd: Path) -> Completed: ...
 
 
 @dataclass(frozen=True)
@@ -112,7 +112,7 @@ class _SubprocessRunner:
 
     timeout: float | None = None
 
-    def run(self, argv: list[str], cwd: Path) -> Completed:
+    def launch(self, argv: list[str], cwd: Path) -> Completed:
         bound = NETWORK_TIMEOUT_SECONDS if self.timeout is None else self.timeout
         env = {key: value for key, value in os.environ.items() if key not in _ENV_DROP}
         env.update(_ENV_FORCE)

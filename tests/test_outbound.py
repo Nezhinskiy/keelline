@@ -44,9 +44,9 @@ from tests.outbound.walk import (
     Override,
     Unread,
     Walk,
+    _module_file,
     imported_modules,
     imports,
-    misnamed_runners,
     package_files,
 )
 
@@ -125,11 +125,28 @@ def _row(command: Argv) -> str | None:
     return None
 
 
+def _runs_a_program(part: str, subcommand: str) -> bool:
+    """Whether `part`, before the options end of `git <subcommand>`, is one of the subcommand's
+    `GIT_PROGRAM_OPTIONS` as git parses it: a long one by a prefix of its name, and a short one
+    anywhere in a cluster of short options."""
+    name = part.partition("=")[0]
+    for option in GIT_PROGRAM_OPTIONS.get(subcommand, ()):
+        if option.startswith("--"):
+            if len(name) > len("--") and option.startswith(name):
+                return True
+        elif part[:1] == "-" and part[1:2] != "-" and option[1:] in part[1:]:
+            return True
+    return False
+
+
 def _local(command: Argv, options: Argv) -> bool:
     if command[0] == "git":
         subcommand = command[1] if len(command) > 1 and isinstance(command[1], str) else ""
-        reaching = GIT_REMOTE_OPTIONS + GIT_PROGRAM_OPTIONS.get(subcommand, ())
-        if any(isinstance(part, str) and part.startswith(reaching) for part in options):
+        if any(
+            isinstance(part, str)
+            and (part.startswith(GIT_REMOTE_OPTIONS) or _runs_a_program(part, subcommand))
+            for part in options
+        ):
             return False
     return any(command[: len(prefix)] == prefix for prefix in LOCAL) or command in LOCAL_WHOLE
 
@@ -250,6 +267,18 @@ def test_no_module_imports_a_network_or_native_module() -> None:
     assert forbidden_imports(SRC) == []
 
 
+def test_a_module_is_the_file_the_tree_lists_under_its_exact_name() -> None:
+    # On a disk that folds case, as macOS's does by default, asking the disk found
+    # `scaffold/manifest.py` for `stayfixed.scaffold.Manifest`, so the class `Manifest` that
+    # `overlay/create.py` imports from `stayfixed.scaffold` was read as a module there and as a name
+    # on Linux: the walk read one tree two ways. No declared entry: the oracle's CI job runs on a
+    # case-sensitive disk, where asking the disk again answers the same and the mutation survives.
+    # By hand on macOS: `_module_file` asks `(ROOT / candidate).is_file()` again -> the first
+    # assertion reddens.
+    assert _module_file("stayfixed.scaffold.Manifest") is None
+    assert _module_file("stayfixed.scaffold.manifest") == "src/stayfixed/scaffold/manifest.py"
+
+
 def test_both_import_forms_name_the_module_they_reach() -> None:
     # The tree imports no forbidden module either way, so the walk above cannot tell the two
     # forms apart on its own. Mutation: `import a.b` names only `a` -> the first reddens.
@@ -286,11 +315,11 @@ LAUNCH_SHAPES: dict[str, tuple[str, str, tuple[str | None, ...]]] = {
     "getstatusoutput": (TOP, "import subprocess as sp\nsp.getstatusoutput('curl x')", (None,)),
     "imported-by-name": (TOP, "from subprocess import getoutput\ngetoutput('curl x')", (None,)),
     "keyword-args": (TOP, "import subprocess\nsubprocess.run(args=['curl', 'x'])", ("curl", "x")),
-    "runner-call": (TOP, "subprocess_runner().run(argv, root)", (None,)),
-    "runner-call-literal": (TOP, "subprocess_runner().run(['curl', 'x'], r)", ("curl", "x")),
-    "runner-constructor": (TOP, "_SubprocessRunner(timeout=5).run(argv, root)", (None,)),
-    "other-receiver": (TOP, "launch.run(['curl', 'x'], root)", ("curl", "x")),
-    "other-receiver-keyword": (TOP, "launch.run(argv=['curl', 'x'], cwd=r)", ("curl", "x")),
+    "runner": (TOP, "runner.launch(argv, root)", (None,)),
+    "runner-call": (TOP, "subprocess_runner().launch(['curl', 'x'], r)", ("curl", "x")),
+    "runner-misnamed": (TOP, "go.launch(argv, root)", (None,)),
+    "runner-subscripted": (TOP, "RUNNERS['x'].launch(argv, root)", (None,)),
+    "runner-keyword": (TOP, "self.go.launch(argv=['curl', 'x'], cwd=r)", ("curl", "x")),
     "relative": (TOP, "from .gitenv import git_run\ngit_run(r, 'fetch')", ("git", "fetch")),
     "relative-up": (NESTED, "from ..gitenv import git_run as g\ng(r, 'fetch')", ("git", "fetch")),
     "relative-module": (TOP, "from . import gitenv\ngitenv.git_run(r, 'fetch')", ("git", "fetch")),
@@ -317,7 +346,7 @@ LAUNCH_SHAPES: dict[str, tuple[str, str, tuple[str | None, ...]]] = {
     ),
     "derived-list": (
         TOP,
-        "def gh(runner, argv, cwd):\n    return runner.run(['gh', *argv], cwd)\ngh(r, ['api'], c)",
+        "def gh(go, argv, cwd):\n    return go.launch(['gh', *argv], cwd)\ngh(r, ['api'], c)",
         ("gh", "api"),
     ),
     "derived-under-try": (
@@ -386,7 +415,22 @@ LAUNCH_SHAPES: dict[str, tuple[str, str, tuple[str | None, ...]]] = {
         (None,),
     ),
     "callback": (TOP, f"{GIT_RUN}retry(git_run, r)", (None,)),
-    "runner-handed-on": (TOP, "retry(self._runner.run, argv)", (None,)),
+    "module-alias": (TOP, "import subprocess\nm = subprocess\nm.run(['curl', 'x'])", (None,)),
+    "module-handed-on": (TOP, "import os\nretry(os, r)", (None,)),
+    "module-in-a-class": (TOP, "import subprocess\nclass C:\n    sp = subprocess", (None,)),
+    "getattr-literal": (
+        TOP,
+        "import subprocess\ngetattr(subprocess, 'run')(['curl', 'x'])",
+        (None,),
+    ),
+    "getattr-computed": (TOP, "import subprocess\ngetattr(subprocess, name)", (None,)),
+    "package-module-alias": (
+        TOP,
+        "from stayfixed import gitenv\nm = gitenv\nm.git_run(r, 'push')",
+        (None,),
+    ),
+    "package-module-handed-on": (TOP, "from . import gitenv\nretry(gitenv, r)", (None,)),
+    "runner-handed-on": (TOP, "retry(self._runner.launch, argv)", (None,)),
     "star-subprocess": (TOP, "from subprocess import *\ngetoutput('curl x')", (None,)),
     "star-os": (TOP, "from os import *\nsystem('curl x')", (None,)),
     "star-posix": (TOP, "from posix import *\nsystem('curl x')", (None,)),
@@ -410,8 +454,8 @@ def test_a_launch_of_any_shape_is_found(
 ) -> None:
     # One case per shape, so that each is proved seen on its own. The entries in `mutations/`
     # that name this test redden the cases they list. By hand, each reddening its cases:
-    # `getoutput` joins `SUBPROCESS_INERT` (getoutput, imported-by-name); `last_name` stops
-    # looking through a call (runner-call); `_dotted` reads only a bare name (dotted-module);
+    # `getoutput` joins `SUBPROCESS_INERT` (getoutput, imported-by-name); `_dotted` reads only a
+    # bare name (dotted-module);
     # `asyncio`, `pty`, the event loop and `os` each leave the launcher tables (their cases);
     # `fexec` leaves `OS_LAUNCH_PREFIXES` (os-fexec); `_derive` derives nothing (the derived
     # cases); `LAUNCHER_MODULES` loses `subprocess` and `os` (star-subprocess, star-os).
@@ -456,16 +500,21 @@ def test_a_function_that_hands_its_argv_on_twice_is_no_launcher(
 
 def test_what_only_names_a_launcher_is_not_a_launch() -> None:
     # `probe.run(context)`, `gate.run(root, config, base)` and `handler.run(view, config)` are the
-    # package's own in-process `.run`s. Mutation: every `.run` is a launch -> all three are found.
+    # package's own in-process `.run`s, and a runner launches through `.launch`, so a `.run` handed
+    # a list is not a runner's either. Mutation: every `.run` is a launch -> all four are found.
     # Nor is a name that only mentions a launcher's module: an annotation, a constant, an
     # exception. Mutation: the reference check runs inside annotations -> `Popen[bytes]` is found.
     # Nor a class `isinstance` or `issubclass` compares. Mutation: `CLASS_CHECKS` is emptied ->
-    # the last two lines' `Popen`s are found.
+    # the last two lines' `Popen`s are found. Nor a launcher module `getattr` or `hasattr` reads a
+    # literal attribute of that is no launcher, or `hasattr` only asks about. The entry in
+    # `mutations/` that names this test reads such a module as handed on again.
     source = "probe.run(context)\ngate.run(root, config, base)\nhandler.run(view, config)\n"
+    source += "step.run([view], config)\n"
     source += "import subprocess\nraise subprocess.TimeoutExpired(args, 1)\n"
     source += "def f(p: subprocess.Popen[bytes]) -> None:\n    stdin = subprocess.DEVNULL\n"
     source += "from os import path\nimport os.path\nos.path.join(a, b)\n"
-    source += "isinstance(p, subprocess.Popen)\nissubclass(t, (int, subprocess.Popen))"
+    source += "isinstance(p, subprocess.Popen)\nissubclass(t, (int, subprocess.Popen))\n"
+    source += "getattr(os, 'O_NOFOLLOW', 0)\nhasattr(os, 'waitid')\nhasattr(subprocess, 'run')"
     assert WALK.launches_in(source, "src/stayfixed/assess/probe.py") == []
 
 
@@ -494,8 +543,8 @@ def test_the_declarations_name_exactly_what_the_classification_rests_on() -> Non
 @pytest.mark.parametrize(
     "extra",
     [
-        "    runner.run(list(EXTRA), root)\n",
-        "    argv = ['curl', 'x']\n    runner.run(argv, root)\n",
+        "    runner.launch(list(EXTRA), root)\n",
+        "    argv = ['curl', 'x']\n    runner.launch(argv, root)\n",
     ],
     ids=["another-expression", "the-same-expression-rebound"],
 )
@@ -506,7 +555,7 @@ def test_a_declaration_covers_only_the_launch_it_names(extra: str) -> None:
     # function alone again, and stop holding a declared element to one binding.
     notes = "src/stayfixed/release/notes.py"
     source = (ROOT / notes).read_text(encoding="utf-8")
-    done = "    done = runner.run(argv, root)\n"
+    done = "    done = runner.launch(argv, root)\n"
     launches = WALK.launches_in(source.replace(done, done + extra), notes)
     assert [launch.line for launch in unclassified(launches)] != []
 
@@ -551,6 +600,9 @@ def test_every_table_entry_names_a_live_launch() -> None:
         "git_run(root, 'worktree', 'add', '../elsewhere')",
         "git_run(root, 'config', 'core.sshCommand', 'curl x')",
         "git_run(root, 'grep', '-Ocurl', 'x')",
+        "git_run(root, 'grep', '--open-files-in=echo', 'x')",
+        "git_run(root, 'grep', '--textc', 'x')",
+        "git_run(root, 'grep', '-lOecho', 'x')",
         "git_run(root, 'cat-file', '--filters', 'HEAD:x')",
         "git_run(root, 'diff', '--ext-diff', 'HEAD')",
         "git_run(root, 'archive', *opts)",
@@ -568,6 +620,9 @@ def test_every_table_entry_names_a_live_launch() -> None:
         "worktree-add",
         "config-write",
         "grep-pager",
+        "grep-pager-abbreviated",
+        "grep-textconv-abbreviated",
+        "grep-pager-bundled",
         "cat-file-filters",
         "diff-external",
         "spread-options",
@@ -585,6 +640,8 @@ def test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified(sour
     # `("git", "remote")` back in `LOCAL` -> remote-update passes; `("git", "worktree")` for
     # `("git", "worktree", "list")` -> worktree-add; `("git", "config")` for its read form ->
     # config-write; `_command` skips any option before the subcommand -> global-option-not-listed.
+    # git takes `--open-files-in` and `--textc` for the options they begin and reads `-lOecho` as
+    # `-l -Oecho`, each running `echo` on the matches, measured with git 2.54.
     launches = WALK.launches_in(f"{GIT_RUN}{source}", "src/stayfixed/x.py")
     assert unclassified(launches) == launches != []
 
@@ -595,8 +652,14 @@ def test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified(sour
         "git_run(root, 'diff', '-Oorder', '--name-only', 'HEAD')",
         "git_run(root, 'ls-files', '-z', '--', *paths)",
         "git_run(root, 'ls-files', '-z', '--end-of-options', *paths)",
+        "git_run(root, 'grep', '-Il', '--or', '-e', 'x')",
     ],
-    ids=["an-option-another-subcommand-runs-with", "--", "--end-of-options"],
+    ids=[
+        "an-option-another-subcommand-runs-with",
+        "--",
+        "--end-of-options",
+        "an-option-that-only-begins-alike",
+    ],
 )
 def test_an_argv_read_up_to_its_options_end_is_still_local(source: str) -> None:
     # The rules above must not refuse the tree's own shapes: options read whole, and what is not
@@ -604,7 +667,8 @@ def test_an_argv_read_up_to_its_options_end_is_still_local(source: str) -> None:
     # an option that runs a program under one subcommand is ordinary under another. By hand:
     # `--` leaves `END_OF_OPTIONS` -> the `--` case's `*paths` counts as an unread option, and
     # that case reddens; the same for `--end-of-options`; `-O` is listed for every subcommand ->
-    # the `git diff -O<orderfile>` case reddens.
+    # the `git diff -O<orderfile>` case reddens; a long option matches whatever shares its first
+    # three characters -> `--or`, which git never takes for `--open-files-in-pager`, reddens.
     launches = WALK.launches_in(f"{GIT_RUN}{source}", "src/stayfixed/x.py")
     assert launches and unclassified(launches) == []
 
@@ -620,7 +684,7 @@ def test_sh_c_is_its_row_only_for_the_users_command(
     # The `sh -c` row says stayfixed does not choose the command, which is true only of an
     # unread one, the value `test attribute --command` was given. The entry in `mutations/` that
     # names this test gives every `sh -c` the row again.
-    launches = WALK.launches_in(f"runner.run(['sh', '-c', {script}], ROOT)", TOP)
+    launches = WALK.launches_in(f"runner.launch(['sh', '-c', {script}], ROOT)", TOP)
     assert [classify(launch)[0] for launch in launches] == [row]
 
 
@@ -679,49 +743,6 @@ def test_a_change_to_the_environment_every_launch_inherits_is_found(source: str)
 def test_no_module_changes_the_environment_every_launch_inherits() -> None:
     # Mutation: src/stayfixed/cli.py sets `os.environ["X"] = "1"` -> this reddens.
     assert WALK.environment_writes(SRC) == []
-
-
-@pytest.mark.parametrize(
-    ("source", "misnamed"),
-    [
-        ("def f(launch: Runner) -> None: ...", [(1, "launch")]),
-        ("go = subprocess_runner()", [(1, "go")]),
-        ("go = _SubprocessRunner()", [(1, "go")]),
-        ("(go := subprocess_runner())", [(1, "go")]),
-        ("go, x = subprocess_runner(), 1", [(1, "go")]),
-        ("R2 = Runner\ndef f(x: R2) -> None: ...", [(2, "x")]),
-        ("from stayfixed.runner import Runner as R2\ndef f(x: R2) -> None: ...", [(2, "x")]),
-        ("f = lambda r, a: r.run(a, ROOT)", [(1, "r")]),
-        ("def f(a_Runner: Runner, probe: Probe) -> None:\n    probe.run(context)", []),
-    ],
-    ids=[
-        "annotated",
-        "factory",
-        "constructor",
-        "walrus",
-        "tuple",
-        "alias",
-        "imported-alias",
-        "lambda",
-        "any-case-and-not-a-runner",
-    ],
-)
-def test_a_runner_held_under_another_name_is_found(
-    source: str, misnamed: list[tuple[int, str]]
-) -> None:
-    # The walk knows a `Runner`'s `.run` by its receiver's name when it is not handed an argv
-    # list, so every name that holds one must end in `runner`, in any case. The entries in
-    # `mutations/` that name this test redden the cases they list. By hand: the check reads no
-    # annotation -> annotated.
-    assert misnamed_runners(source) == misnamed
-
-
-def test_every_runner_is_named_as_one() -> None:
-    # The tree held to the rule the cases above prove. Mutation: `_gh`'s `runner: Runner`
-    # parameter in src/stayfixed/overlay/publish.py is renamed `launch` -> this reddens.
-    assert [
-        (p, m) for p in package_files(SRC) if (m := misnamed_runners(p.read_text("utf-8")))
-    ] == []
 
 
 def test_the_plugin_installs_reach_the_rows_their_entries_name() -> None:

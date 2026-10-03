@@ -244,14 +244,14 @@ def _install_plugins(
         # `codex` themselves ("already on disk"), read here through the same non-zero-is-a-note
         # path as everything else — a missing binary is `Completed(127, ...)` from `Runner`
         # itself (its own docstring: "a missing binary is a finding, never a traceback").
-        added = runner.run(add_argv_of(source), home)
+        added = runner.launch(add_argv_of(source), home)
         if added.code != 0:
             detail = answered(added)
             notes.append(f"{agent}: could not register marketplace {source} ({detail})")
             continue
         for selector in selectors:
             argv = install_argv_of(f"{selector}@{marketplace}")
-            done = runner.run(argv, home)
+            done = runner.launch(argv, home)
             if done.code == 0:
                 if selector not in installed:
                     installed.append(selector)

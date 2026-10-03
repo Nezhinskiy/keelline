@@ -2815,7 +2815,7 @@ reddens = [
 [[mutation]]
 name = "the README drops the git fetch row"
 file = "README.md"
-before = "| `git fetch` | `stayfixed bugs new` | the project's `origin`, and the remotes of submodules the fetch brings in (note 1) | unless `--no-fetch` |"
+before = "| `git fetch` | `stayfixed bugs new` | the project's `origin` (note 1) | unless `--no-fetch` |"
 after = ''
 reddens = ["tests/test_outbound.py::test_the_readme_declares_every_program_that_reaches_a_network"]
 
@@ -2941,19 +2941,25 @@ reddens = [
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[star-posix]",
 ]
 
-# A runner held under a name that does not end in `runner` still shows itself by the argv list it
-# is handed.
+# A runner launches through `.launch`, and the walk knows that call by the method's name alone,
+# whatever holds the runner: a parameter, an attribute, a subscript or a call's result. Known by
+# nothing, every runner launch goes unseen, and with it every `gh`, `git clone` and `sh -c` row.
 [[mutation]]
-name = "the outbound walk knows a run only by its receiver's name"
+name = "the outbound walk stops knowing a runner's launch by its method's name"
 file = "tests/outbound/walk.py"
-before = '    listed = isinstance(given, (ast.List, ast.Tuple, ast.Starred))'
-after = '    listed = False'
+before = '    if expr.attr == RUNNER_METHOD:'
+after = '    if False:'
 reddens = [
-  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[other-receiver]",
-  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[other-receiver-keyword]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-call]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-misnamed]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-subscripted]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-keyword]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-handed-on]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[derived-list]",
 ]
 
-# `subprocess.run(args=[…])` and `runner.run(argv=[…])` hand the argv by keyword, and read only by
+# `subprocess.run(args=[…])` and `runner.launch(argv=[…])` hand the argv by keyword, and read only by
 # position the launch goes unread.
 [[mutation]]
 name = "the outbound walk reads no argv handed by keyword"
@@ -2962,7 +2968,7 @@ before = '    return next((k.value for k in call.keywords if k.arg and k.arg == 
 after = '    return None'
 reddens = [
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[keyword-args]",
-  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[other-receiver-keyword]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-keyword]",
 ]
 
 # `from .gitenv import git_run` names the same launcher as the absolute import; skipped, every
@@ -3013,14 +3019,63 @@ reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[shadowed
 [[mutation]]
 name = "the outbound walk stops flagging a launcher handed on uncalled"
 file = "tests/outbound/walk.py"
-before = '                and _launcher(node, source.names, launchers) is not None'
-after = '                and False'
+before = '            handed = id(node) not in not_handed_on and _launcher(node, source.names, launchers)'
+after = '            handed = False'
 reddens = [
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[alias]",
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[partial]",
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[dunder-call]",
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[callback]",
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-handed-on]",
+]
+
+# A launcher module named without an attribute after it — bound to another name, passed as an
+# argument, held by a class, or read by a `getattr` that computes its name — hands on every launcher
+# it holds, so the reference itself is the finding, as it is for a launcher function.
+[[mutation]]
+name = "the outbound walk stops flagging a launcher module named without an attribute"
+file = "tests/outbound/walk.py"
+before = '            module = id(node) not in owners and _holds_launchers(source.names, node)'
+after = '            module = False'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[module-alias]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[module-handed-on]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[module-in-a-class]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[getattr-computed]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[package-module-alias]",
+]
+
+# A package module can define or re-export a launcher, as `gitenv` defines `git_run`, so one named
+# without an attribute after it hands that launcher on like a launcher module does.
+[[mutation]]
+name = "a package module named without an attribute passes the outbound walk"
+file = "tests/outbound/walk.py"
+before = '    return module in LAUNCHER_MODULES or _module_file(module) is not None'
+after = '    return module in LAUNCHER_MODULES'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[package-module-alias]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[package-module-handed-on]",
+]
+
+# `getattr(subprocess, "run")` names `subprocess.run` as surely as the attribute does; the module it
+# reads is not handed on, so the launcher it names is the finding.
+[[mutation]]
+name = "the outbound walk stops reading getattr's literal name as the launcher it names"
+file = "tests/outbound/walk.py"
+before = '            if read is not None and _launcher(read, source.names, launchers) is not None:'
+after = '            if False:'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[getattr-literal]"]
+
+# `getattr(os, "O_NOFOLLOW", 0)` and `hasattr(os, "waitid")` use `os` for one attribute that is no
+# launcher; read as handing the module on, they are findings the tree's own `fsops` makes.
+[[mutation]]
+name = "a module getattr or hasattr reads by a literal name is taken for handed on"
+file = "tests/outbound/walk.py"
+before = '            ids.add(id(read.value))'
+after = '            pass'
+reddens = [
+  "tests/test_outbound.py::test_what_only_names_a_launcher_is_not_a_launch",
+  "tests/test_outbound.py::test_every_launch_is_classified",
 ]
 
 # A call inside an annotation runs when the annotation is evaluated, and a launcher handed to it is
@@ -3127,55 +3182,6 @@ reddens = [
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[constant-shadowed]",
 ]
 
-# `_SubprocessRunner(timeout=5).run(argv, root)` is a runner's `.run`, and a parameter `a_Runner`
-# holds one; matched case-sensitively, the first goes unseen and the second is refused.
-[[mutation]]
-name = "the runner suffix is matched case-sensitively"
-file = "tests/outbound/walk.py"
-before = '_RUNNER_NAME = re.compile(r"runner\Z", re.IGNORECASE)'
-after = '_RUNNER_NAME = re.compile(r"runner\Z")'
-reddens = [
-  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-constructor]",
-  "tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[constructor]",
-]
-
-# A parameter annotated with an alias of `Runner` holds a runner as surely as one annotated
-# `Runner`.
-[[mutation]]
-name = "the runner check does not follow an alias of Runner"
-file = "tests/outbound/walk.py"
-before = '        if found == aliases:'
-after = '        if True:'
-reddens = [
-  "tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[alias]",
-  "tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[imported-alias]",
-]
-
-# A runner bound by `:=` is held under that name as surely as one bound by `=`.
-[[mutation]]
-name = "the runner check reads no assignment expression"
-file = "tests/outbound/walk.py"
-before = '        elif isinstance(node, (ast.Assign, ast.NamedExpr)):'
-after = '        elif isinstance(node, ast.Assign):'
-reddens = ["tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[walrus]"]
-
-# `go, x = subprocess_runner(), 1` binds the runner to `go`.
-[[mutation]]
-name = "the runner check does not unpack a tuple assignment"
-file = "tests/outbound/walk.py"
-before = '    if isinstance(target, (ast.Tuple, ast.List)):'
-after = '    if False:'
-reddens = ["tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[tuple]"]
-
-# A lambda's parameter that its body calls `.run` on holds a runner, and a lambda's parameter has no
-# annotation to say so.
-[[mutation]]
-name = "the runner check skips a lambda"
-file = "tests/outbound/walk.py"
-before = '        elif isinstance(node, ast.Lambda):'
-after = '        elif False:'
-reddens = ["tests/test_outbound.py::test_a_runner_held_under_another_name_is_found[lambda]"]
-
 # The `sh -c` row says stayfixed does not choose the command, which holds only for the user's own,
 # unread one; a script the package spells out itself must be a finding.
 [[mutation]]
@@ -3230,12 +3236,36 @@ reddens = [
 [[mutation]]
 name = "a program-running option no longer takes a git call out of the local table"
 file = "tests/test_outbound.py"
-before = '        reaching = GIT_REMOTE_OPTIONS + GIT_PROGRAM_OPTIONS.get(subcommand, ())'
-after = '        reaching = GIT_REMOTE_OPTIONS'
+before = '            and (part.startswith(GIT_REMOTE_OPTIONS) or _runs_a_program(part, subcommand))'
+after = '            and part.startswith(GIT_REMOTE_OPTIONS)'
 reddens = [
   "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[grep-pager]",
   "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[cat-file-filters]",
   "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[diff-external]",
+]
+
+# git takes a prefix of a long option for the one option it begins, so `git grep
+# --open-files-in=echo` and `git grep --textc` run a program as the full names do; matched by the
+# full name alone, both pass as local.
+[[mutation]]
+name = "an abbreviated program-running git option passes as local"
+file = "tests/test_outbound.py"
+before = '            if len(name) > len("--") and option.startswith(name):'
+after = '            if name == option:'
+reddens = [
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[grep-pager-abbreviated]",
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[grep-textconv-abbreviated]",
+]
+
+# git reads `-lOecho` as `-l -Oecho`, so a short program-running option bundled after other flags
+# runs its program as surely as one standing first; matched only at the start, it passes as local.
+[[mutation]]
+name = "a program-running git option bundled after other short flags passes as local"
+file = "tests/test_outbound.py"
+before = '        elif part[:1] == "-" and part[1:2] != "-" and option[1:] in part[1:]:'
+after = '        elif part.startswith(option):'
+reddens = [
+  "tests/test_outbound.py::test_a_local_subcommand_in_a_form_that_reaches_a_remote_is_unclassified[grep-pager-bundled]",
 ]
 
 # A declaration vouches for one value; after its name is bound again the same text names another.

@@ -21,7 +21,7 @@ from stayfixed.ledger.entries import LedgerError, load_entries
 from stayfixed.ledger.index import render_index
 from stayfixed.ledger.scan import FIXTURE_MARKER
 from stayfixed.ledger.write import file_entry, next_identifier, renumber
-from tests.gitfixture import git, plant_path
+from tests.gitfixture import git, plant_path, run_git
 
 CONFIG = """
 [stayfixed]
@@ -519,6 +519,41 @@ def test_a_successful_fetch_leaves_no_warning(
 
     monkeypatch.setattr(module, "git_run", lambda *a, **k: (0, ""))
     assert next_identifier(root, config, fetch=True).warning is None
+
+
+@needs_git
+@pytest.mark.parametrize("gone", [False, True], ids=["reachable", "gone"])
+def test_the_fetch_asks_origin_alone_and_never_a_submodules_remote(
+    tmp_path: Path, gone: bool
+) -> None:
+    # The fetch is for refs, to see the identifiers on branches this checkout has not fetched.
+    # Under git's default `fetch.recurseSubmodules=on-demand` it also fetched from the remote of
+    # each populated submodule whose recorded commit it brought in: a destination the README had
+    # to disclose. Reachable, that remote's new commit arrives in the checkout's submodule, which
+    # is the destination asked, observed directly; gone, it failed the whole fetch and warned of a
+    # collision nothing caused. Mutation (declared): the fetch recurses again -> the reachable
+    # case finds the commit fetched, and the gone case's fetch exits 1 ("Errors during submodule
+    # fetch") with a warning.
+    upstream, _ = project(tmp_path)
+    git(upstream, "init", "-q", "-b", "main")
+    sub = tmp_path / "sub"
+    git(tmp_path, "init", "-q", "-b", "main", str(sub))
+    git(sub, "commit", "-q", "--allow-empty", "-m", "one")
+    file_protocol = ("-c", "protocol.file.allow=always")
+    git(upstream, *file_protocol, "submodule", "add", "-q", str(sub), "sub")
+    commit_all(upstream)
+    root = tmp_path / "checkout"
+    git(tmp_path, *file_protocol, "clone", "-q", "--recurse-submodules", str(upstream), str(root))
+    git(sub, "commit", "-q", "--allow-empty", "-m", "two")
+    two = git(sub, "rev-parse", "HEAD").strip()
+    git(upstream / "sub", *file_protocol, "pull", "-q", "origin", "main")
+    commit_all(upstream, "move the submodule")
+    if gone:
+        shutil.rmtree(sub)
+    allocation = next_identifier(root, load(root, machine=tmp_path / "m.toml"), fetch=True)
+    assert allocation.identifier == "BR-001"
+    assert allocation.warning is None
+    assert run_git(root / "sub", "cat-file", "-e", two).returncode != 0
 
 
 def test_the_allocator_starts_at_one_before_the_ledger_directory_exists(tmp_path: Path) -> None:

@@ -62,7 +62,7 @@ class FakeRunner:
     calls: list[list[str]] = field(default_factory=list)
     on_call: Callable[[list[str], Path], None] | None = None
 
-    def run(self, argv: list[str], cwd: Path) -> Completed:
+    def launch(self, argv: list[str], cwd: Path) -> Completed:
         """The answer for the longest key that is a prefix of this argv, else success.
 
         Keyed on `argv[0]` alone, `{"claude": ...}` answered *every* `claude` call identically,

@@ -610,14 +610,14 @@ reddens = [
 [[mutation]]
 name = "a plugin is installed before its marketplace is registered"
 file = "src/stayfixed/setup/run.py"
-before = """        added = runner.run(add_argv_of(source), home)
+before = """        added = runner.launch(add_argv_of(source), home)
         if added.code != 0:
             detail = answered(added)
             notes.append(f"{agent}: could not register marketplace {source} ({detail})")
             continue
         for selector in selectors:
             argv = install_argv_of(f"{selector}@{marketplace}")
-            done = runner.run(argv, home)
+            done = runner.launch(argv, home)
             if done.code == 0:
                 if selector not in installed:
                     installed.append(selector)
@@ -626,14 +626,14 @@ before = """        added = runner.run(add_argv_of(source), home)
                 notes.append(f"{agent}: `{' '.join(argv)}` did not succeed ({detail})")"""
 after = """        for selector in selectors:
             argv = install_argv_of(f"{selector}@{marketplace}")
-            done = runner.run(argv, home)
+            done = runner.launch(argv, home)
             if done.code == 0:
                 if selector not in installed:
                     installed.append(selector)
             else:
                 detail = answered(done)
                 notes.append(f"{agent}: `{' '.join(argv)}` did not succeed ({detail})")
-        added = runner.run(add_argv_of(source), home)
+        added = runner.launch(add_argv_of(source), home)
         if added.code != 0:
             detail = answered(added)
             notes.append(f"{agent}: could not register marketplace {source} ({detail})")
@@ -780,7 +780,7 @@ reddens = [
 [[mutation]]
 name = "overlay create --local leaves no git repository"
 file = "src/stayfixed/overlay/create.py"
-before = '''    done = runner.run(["git", "init"], target)'''
+before = '''    done = runner.launch(["git", "init"], target)'''
 after = '''    done = Completed(0, "", "")'''
 reddens = [
   "tests/overlay/test_create.py::test_a_local_overlay_is_a_git_repository_on_main_with_no_remote",
@@ -1010,8 +1010,8 @@ reddens = [
 [[mutation]]
 name = "the overlay's secret scan is asked for its version instead of installed"
 file = "src/stayfixed/overlay/create.py"
-before = '    done: Completed = runner.run(["pre-commit", "install"], root)'
-after = '    done: Completed = runner.run(["pre-commit", "--version"], root)'
+before = '    done: Completed = runner.launch(["pre-commit", "install"], root)'
+after = '    done: Completed = runner.launch(["pre-commit", "--version"], root)'
 reddens = [
   "tests/test_install_path.py::test_setup_then_overlay_then_attach_then_a_session_sees_memory",
 ]
@@ -1760,8 +1760,8 @@ reddens = [
 [[mutation]]
 name = "overlay create --local asks git init for its branch"
 file = "src/stayfixed/overlay/create.py"
-before = '    done = runner.run(["git", "init"], target)'
-after = '    done = runner.run(["git", "init", "-b", "main"], target)'
+before = '    done = runner.launch(["git", "init"], target)'
+after = '    done = runner.launch(["git", "init", "-b", "main"], target)'
 reddens = [
   "tests/overlay/test_create.py::test_a_git_older_than_2_28_still_leaves_a_repository_on_main",
   "tests/overlay/test_create.py::test_a_local_overlay_is_a_git_repository_on_main_with_no_remote",

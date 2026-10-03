@@ -39,7 +39,7 @@ class _Coded:
     calls: list[tuple[list[str], Path]] = field(default_factory=list)
     trees: dict[str, dict[str, str]] = field(default_factory=dict)
 
-    def run(self, argv: list[str], cwd: Path) -> Completed:
+    def launch(self, argv: list[str], cwd: Path) -> Completed:
         self.calls.append((argv, cwd))
         self.trees[cwd.name] = {
             str(p.relative_to(cwd)): p.read_text(encoding="utf-8")

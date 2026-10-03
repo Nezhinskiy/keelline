@@ -32,7 +32,7 @@ class _NullRunner:
     def __init__(self) -> None:
         self.calls: list[list[str]] = []
 
-    def run(self, argv: list[str], cwd: Path) -> Completed:
+    def launch(self, argv: list[str], cwd: Path) -> Completed:
         self.calls.append(argv)
         return Completed(0, "", "")
 

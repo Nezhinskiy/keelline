@@ -659,9 +659,10 @@ naming `bugs check`) each leave the tree exactly as it was. A skipped fetch is r
 result line, not hidden.
 
 **Writes** the entry file (creating `<paths.bugs>` for the first entry) and `<paths.bug_index>`;
-and, unless `--no-fetch`, whatever the `git fetch --quiet origin` it runs before allocating
-writes into the repository — the remote-tracking refs, `FETCH_HEAD` and the fetched objects —
-even when a rejection that follows the allocation leaves the working tree as it was.
+and, unless `--no-fetch`, whatever the `git fetch --quiet --no-recurse-submodules origin` it runs
+before allocating writes into the repository — the remote-tracking refs, `FETCH_HEAD` and the
+fetched objects — even when a rejection that follows the allocation leaves the working tree as it
+was.
 
 ## `stayfixed bugs index [--check]`
 

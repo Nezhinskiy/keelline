@@ -190,14 +190,14 @@ def attribute(root: Path, *, command: str, base: str, runner: Runner) -> Attribu
     if base.startswith("-"):
         raise Refusal("--base must name a ref, not an option")
     merge_base = _merge_base(root, base)
-    ambient = _executed("working tree", runner.run(["sh", "-c", command], root))
+    ambient = _executed("working tree", runner.launch(["sh", "-c", command], root))
     with tempfile.TemporaryDirectory(prefix="stayfixed-attribute-") as scratch:
         head = Path(scratch) / "head"
         merge = Path(scratch) / "base"
         _extract(root, "HEAD", head)
         _extract(root, merge_base, merge)
-        head_clean = _executed("head", runner.run(["sh", "-c", command], head))
-        base_clean = _executed("base", runner.run(["sh", "-c", command], merge))
+        head_clean = _executed("head", runner.launch(["sh", "-c", command], head))
+        base_clean = _executed("base", runner.launch(["sh", "-c", command], merge))
     return Attribution(
         ambient, head_clean, base_clean, base, merge_base, _verdict(ambient, head_clean, base_clean)
     )

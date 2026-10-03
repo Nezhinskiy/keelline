@@ -53,7 +53,7 @@ class _Listing:
 
     stdout: str
 
-    def run(self, argv: list[str], cwd: Path) -> Completed:
+    def launch(self, argv: list[str], cwd: Path) -> Completed:
         return Completed(0, self.stdout, "")
 
 

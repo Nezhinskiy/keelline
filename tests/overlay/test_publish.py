@@ -34,7 +34,7 @@ class _GitHub:
     # removal is observable at all — see the test that says so.
     rendered_tree: set[str] = field(default_factory=set)
 
-    def run(self, argv: list[str], cwd: Path) -> Completed:
+    def launch(self, argv: list[str], cwd: Path) -> Completed:
         self.calls.append((argv, cwd))
         if argv[:3] == ["gh", "repo", "view"]:
             if not self.exists:
@@ -175,10 +175,10 @@ def test_an_existing_repository_not_yet_a_template_is_marked_and_not_recreated(
 
 def test_a_gh_that_cannot_run_is_a_failure_naming_it(tmp_path: Path) -> None:
     class _NoGh(_GitHub):
-        def run(self, argv: list[str], cwd: Path) -> Completed:
+        def launch(self, argv: list[str], cwd: Path) -> Completed:
             if argv[0] == "gh":
                 return Completed(NOT_FOUND, "", "gh could not be run")
-            return super().run(argv, cwd)
+            return super().launch(argv, cwd)
 
     with pytest.raises(Failure, match="gh repo view"):
         publish_template("owner", yes=True, runner=_NoGh())
@@ -194,11 +194,11 @@ def test_a_gh_that_cannot_answer_is_never_read_as_a_repository_that_is_absent() 
     # Mutation (declared): the not-found test is dropped and every non-zero answer is absence
     # again -> the "would create" note comes back.
     class _LoggedOut(_GitHub):
-        def run(self, argv: list[str], cwd: Path) -> Completed:
+        def launch(self, argv: list[str], cwd: Path) -> Completed:
             if argv[:3] == ["gh", "repo", "view"]:
                 self.calls.append((argv, cwd))
                 return Completed(1, "", "gh: To use GitHub CLI in a GitHub Actions workflow…")
-            return super().run(argv, cwd)
+            return super().launch(argv, cwd)
 
     stub = _LoggedOut()
     with pytest.raises(Failure, match="is not known") as raised:
@@ -230,11 +230,11 @@ def test_a_git_that_cannot_run_is_a_failure_and_not_a_report_that_nothing_change
     # `index.lock` another process left, and from a `core.hooksPath` hook failing `git add`.
     # Mutation (declared): `_git` stops raising on the two sentinels -> the note comes back.
     class _NoGit(_GitHub):
-        def run(self, argv: list[str], cwd: Path) -> Completed:
+        def launch(self, argv: list[str], cwd: Path) -> Completed:
             if argv[0] == "git":
                 self.calls.append((argv, cwd))
                 return Completed(NOT_FOUND, "", "git could not be run: [Errno 2]")
-            return super().run(argv, cwd)
+            return super().launch(argv, cwd)
 
     stub = _NoGit()
     with pytest.raises(Failure, match="needs git on PATH") as raised:
@@ -253,11 +253,11 @@ def test_a_git_status_that_fails_is_never_read_as_an_unchanged_template() -> Non
     # emptiness-versus-exit-code reading and not the launch guard above.
     # Mutation (declared): `status.code` stops being read -> "nothing to push" comes back.
     class _BrokenStatus(_GitHub):
-        def run(self, argv: list[str], cwd: Path) -> Completed:
+        def launch(self, argv: list[str], cwd: Path) -> Completed:
             if argv[:2] == ["git", "-C"] and "status" in argv:
                 self.calls.append((argv, cwd))
                 return Completed(128, "", "fatal: not a git repository")
-            return super().run(argv, cwd)
+            return super().launch(argv, cwd)
 
     stub = _BrokenStatus()
     with pytest.raises(Failure, match="is not known") as raised:
@@ -283,11 +283,11 @@ def test_a_template_that_is_already_current_is_not_committed_or_pushed(tmp_path:
     # nothing means the published tree is already this stayfixed's, and an empty commit pushed
     # over it would be a release note for a release that changed nothing.
     class _Unchanged(_GitHub):
-        def run(self, argv: list[str], cwd: Path) -> Completed:
+        def launch(self, argv: list[str], cwd: Path) -> Completed:
             if argv[:2] == ["git", "-C"] and "status" in argv:
                 self.calls.append((argv, cwd))
                 return Completed(0, "", "")
-            return super().run(argv, cwd)
+            return super().launch(argv, cwd)
 
     stub = _Unchanged()
     result = publish_template("owner", yes=True, runner=stub)
@@ -302,8 +302,8 @@ def test_a_push_that_is_declined_is_a_failure_naming_the_repository(tmp_path: Pa
     # states have different remedies. A push refused by a ruleset or a lost credential must not
     # read as a publish that worked.
     class _RefusedPush(_GitHub):
-        def run(self, argv: list[str], cwd: Path) -> Completed:
-            recorded = super().run(argv, cwd)
+        def launch(self, argv: list[str], cwd: Path) -> Completed:
+            recorded = super().launch(argv, cwd)
             if argv[:2] == ["git", "-C"] and "push" in argv:
                 return Completed(1, "", "remote: refused by a ruleset")
             return recorded
@@ -339,11 +339,11 @@ def test_what_gh_prints_cannot_drive_a_terminal() -> None:
     #
     # Mutation: `mutations/`'s "a subprocess's answer is quoted raw".
     class _Hostile(_GitHub):
-        def run(self, argv: list[str], cwd: Path) -> Completed:
+        def launch(self, argv: list[str], cwd: Path) -> Completed:
             if argv[:3] == ["gh", "repo", "view"]:
                 self.calls.append((argv, cwd))
                 return Completed(1, "", "HTTP 500\n::error::forged\x1b[2J")
-            return super().run(argv, cwd)
+            return super().launch(argv, cwd)
 
     with pytest.raises(Failure) as raised:
         publish_template("owner", yes=False, runner=_Hostile())
