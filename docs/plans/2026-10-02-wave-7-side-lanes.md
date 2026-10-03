@@ -1367,3 +1367,133 @@ Written by Tasks 6, 9 and 10.
 ## Findings — delivery-spike
 
 Written by Tasks 11–16.
+
+### Task 11 — scratch library and fixtures
+
+Measured on 2026-10-03 at `dev` = `05727f1`. Paths are relative to
+`$SPIKE` = `$HOME/.cache/stayfixed-spikes/delivery`.
+
+- **Version.** `claude --version` printed `2.1.285 (Claude Code)`, and every `init` event of
+  Task 12 carried `"claude_code_version":"2.1.285"`. The Premise names 2.1.283; no 2.1.283
+  binary was installed on the machine (the CLI versions present were 2.1.284 and 2.1.285), and
+  the owner chose to measure on 2.1.285.
+- **A fresh configuration is not signed in.** `CLAUDE_CONFIG_DIR="$SPIKE/cfg-auth" claude auth
+  status` printed `"loggedIn": false` and `"authMethod": "none"`.
+- **Isolation.** Each mechanism had its own configuration directory, `cfg-M1` to `cfg-M4`; the
+  M3 hold-back project `proj-M3b` shared `cfg-M3`. Every `claude` call ran under `env -i` with
+  only `HOME`, `PATH`, `LANG`, `TERM`, `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_TOKEN` (read
+  from an owner-held file into that one process; its value never printed) and, for M4,
+  `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`. Turn records sit in
+  `turns/<MECH>/turn-N.{cmd,jsonl,err,markers}`, outside the checkouts, so no canary-bearing
+  file lay in a tree a later turn ran in.
+- **Canaries** (`canaries.tsv`): instructions `SFC-pjwy0ublr7` (`overlay/instructions.md`),
+  rules `SFC-tl60sh5z18` (`overlay/.claude/rules/sf-rule.md` and its copy `overlay/rules.md`),
+  scoped `SFC-stn1wcqksp` (`overlay/.claude/rules/sf-scoped.md`, `paths: ["scoped/**"]`),
+  memory `SFC-rwclbl9weq` (`overlay/memory/MEMORY.md`), memory-dir `SFC-egbv4271l4`
+  (`overlay/memory-dir/MEMORY.md`, the `autoMemoryDirectory` target of M2 and M3, a second
+  canary so each memory route reads separately), unused `SFC-ltumkf04ax` (`overlay/unused.md`),
+  agents-md `SFC-6fg43bebuk` (each project's committed `AGENTS.md`), denied `SFC-ae0mlyjt4q`
+  (each project's committed `denied.txt`). M1's link targets live under `overlay/.claude/`, so
+  M4's `--add-dir "$SPIKE/overlay"` offered the same rules, skill, agent and settings file.
+- **The projects.** `git status --porcelain --ignored` printed `!! .claude/` and
+  `!! CLAUDE.local.md` for `proj-M1`, `!! .claude/` for `proj-M2`, `proj-M3` and `proj-M3b`, and
+  `!! CLAUDE.local.md` for `proj-M4`; nothing else. `.git/info/exclude` listed `CLAUDE.local.md`,
+  `.claude/rules/sf-rule.md`, `.claude/rules/sf-scoped.md`, `.claude/skills/sf-skill`,
+  `.claude/agents/sf-agent.md` and `.claude/settings.local.json` (M1),
+  `.claude/settings.local.json` (M2, M3, M3b) and `CLAUDE.local.md` (M4). `origin` was
+  `https://example.invalid/sf-fixture.git` everywhere except `proj-M3b`
+  (`https://example.invalid/sf-other.git`).
+- **Where the plugin installs wrote.** `claude plugin marketplace add "$SPIKE/overlay-plugin"`
+  printed `✔ Successfully added marketplace: sf-spike (declared in user settings)` for M2 and M3;
+  `claude plugin install sf-overlay@sf-spike --scope local` printed `✔ Successfully installed
+  plugin: sf-overlay@sf-spike (scope: local)`, and `--scope user` printed the same with
+  `(scope: user)`. The local install added `"enabledPlugins": {"sf-overlay@sf-spike": true}` to
+  the project's `.claude/settings.local.json`; the user install put the same key in
+  `cfg-M3/settings.json`. Both configurations' `settings.json` gained
+  `extraKnownMarketplaces.sf-spike` with `"source": "directory"`, so the local-scope plugin
+  still left its marketplace at user scope. The owner's own plugin files kept their
+  modification times across both installs.
+
+### Task 12 — Claude Code headless
+
+Every turn: `claude -p --model haiku --output-format stream-json --verbose
+[--allowedTools=Read] [--add-dir "$SPIKE/overlay"] -- "<prompt>"` in the project directory.
+15 paid turns, `total_cost_usd` summing to 0.2093. The first three M4 calls lacked the `--`:
+the variadic `--add-dir` took the prompt as a second directory, each exited 1 with `Error:
+Input must be provided either through stdin or as a prompt argument when using --print` and
+wrote an empty stream (kept as `turns/M4/argvfail-{1,2,3}.*`, no model call); the owner approved
+the retry with `--`, so M4's turns are numbered 4 to 7.
+
+| Turn | Prompt | Result text | Canaries by kind | Markers | Tool result |
+|---|---|---|---|---|---|
+| M1 1 | P1 | `SFC-pjwy0ublr7\nSFC-rwclbl9weq` | instructions, memory | `proj-M1.settings.SessionStart` | — |
+| M1 2 | P2 | same two | instructions, memory | `…settings.PostToolUse`, `…settings.SessionStart` | the target's text |
+| M1 3 | P3 | `DENIED` | — | `…settings.SessionStart` | error: `File is in a directory that is denied by your permission settings.` |
+| M1 4 | P1 re-ask | same two | instructions, memory | `…settings.SessionStart` | — |
+| M2 1 | P1 | four tokens | instructions, rules, memory, memory-dir | `proj-M2.plugin.SessionStart`, `….emitted` | — |
+| M2 2 | P2 | five tokens | the four, scoped | SessionStart and PostToolUse, each with `.emitted` | the target's text |
+| M2 3 | P3 | `DENIED` | — | SessionStart, `.emitted` | the same denial |
+| M3 1 | P1 | four tokens | instructions, rules, memory, memory-dir | `proj-M3.plugin.SessionStart`, `….emitted` | — |
+| M3 2 | P2 | five tokens | the four, scoped | SessionStart and PostToolUse, each with `.emitted` | the target's text |
+| M3 3 | P3 | `DENIED` | — | SessionStart, `.emitted` | the same denial |
+| M3b 1 | P1 | `SFC-egbv4271l4` | memory-dir | `proj-M3b.plugin.SessionStart` (no `.emitted`) | — |
+| M4 4 | P1 | `SFC-tl60sh5z18` | rules | none | — |
+| M4 5 | P2 | `SFC-tl60sh5z18` | rules | none | the target's text |
+| M4 6 | P3 | `SFC-ae0mlyjt4q` | denied | none | `1\tSFC-ae0mlyjt4q` |
+| M4 7 | P1 re-ask | `SFC-tl60sh5z18` | rules | none | — |
+
+No turn reported the unused canary or a token outside `canaries.tsv`. The `init` events listed
+`sf-skill` and `sf-agent` (M1, M4), and `sf-overlay:sf-skill` and `sf-overlay:sf-agent` with
+plugin `sf-overlay@sf-spike` (M2, M3, M3b). `memory_paths.auto` was
+`cfg-M1/projects/<slug of proj-M1>/memory/` (the link, M1), `overlay/memory-dir/` (M2, M3,
+M3b) and `cfg-M4/projects/<slug of proj-M4>/memory/` (M4, nothing there).
+
+**What the harness loaded, at $0.** `claude -p --output-format stream-json --verbose --
+"/context"` in each project, under its configuration and with no token, printed a context
+report with `total_cost_usd` 0. Its Memory Files table listed, besides the two files of the
+confound below: `Local | proj-M1/CLAUDE.local.md` and `AutoMem | cfg-M1/projects/<slug of
+proj-M1>/memory/MEMORY.md` (M1); `AutoMem | overlay/memory-dir/MEMORY.md` (M2, M3, M3b);
+`Local | proj-M4/CLAUDE.local.md` (46 tokens, the two import lines) and `Project |
+overlay/.claude/rules/sf-rule.md` (M4, with `--add-dir` and the variable). No row named
+`sf-rule.md` in M1, and no row named `instructions.md` or `rules.md` in M4. Custom Agents
+listed `sf-agent | Project` (M1, M4) and `sf-overlay:sf-agent | Plugin` (M2, M3, M3b); the
+M2 and M3 reports had a `Messages | 71` row, M3b's none.
+
+**Discriminators, at $0** (`/context` in a fresh repository under `$SPIKE`, unsigned
+configuration):
+
+- D1: `.claude/rules/sf-rule.md` as a regular file — listed as `Project | disc-a/.claude/rules/sf-rule.md`.
+- D2: `.claude/rules` as a symlink to `overlay/.claude/rules` — no rule listed.
+- D3: `CLAUDE.local.md` importing `@inside.md` (a file in the repository) and
+  `@$SPIKE/overlay/instructions.md` — listed `Local | disc-c/CLAUDE.local.md` and
+  `Local | disc-c/inside.md`; the overlay file was not listed.
+- D4: `.claude/rules/sf-rule.md` as a file symlink, as in M1 — no rule listed.
+
+**Confound: the scratch root sits under `$HOME`.** Every `/context` report listed `Project |
+$HOME/.claude/CLAUDE.md` and one `Project | $HOME/.claude/rules/<file>.md`: the owner's user
+instructions reached each scratch session through the parent-directory walk from the project,
+not through `CLAUDE_CONFIG_DIR`. Neither file contains `SFC-` (`grep -c` printed 0 for both),
+so no canary came from them. No report listed a project's `AGENTS.md`, and no turn reported its
+canary. A repository holding only that `AGENTS.md`, placed outside `$HOME` under a fresh
+configuration, listed `Project | <that repository>/AGENTS.md`. Whether a mechanism disables the
+`AGENTS.md` fallback was therefore not measured under `$SPIKE`: an ancestor `CLAUDE.md`
+suppressed it in all four.
+
+**The headless column.** Turns are `<MECH> <N>`; `/context` and D1–D4 are above.
+
+| Kind | M1 symlink tree | M2 local-scope plugin | M3 user-scope plugin, bound by remote | M4 imports and `--add-dir` |
+|---|---|---|---|---|
+| instructions | works — M1 1, 2, 4; `/context` lists the linked `CLAUDE.local.md` | works — M2 1, 2; `….emitted` | works — M3 1, 2; `….emitted` | broken — absent in M4 4 and 7; `/context` lists only the import lines; D3 |
+| rules | broken — absent in M1 1 and 4; no `sf-rule.md` in `/context`; D1, D2, D4 | works — M2 1, 2 | works — M3 1, 2 | works — M4 4, 5, 7; `/context` shows it came from the added directory, not the import |
+| path-scoped rules | absent once — M1 2 (a symlinked rule, as D4) | works — M2 2; `PostToolUse.emitted` | works — M3 2; `PostToolUse.emitted` | absent once — M4 5 |
+| skills | works — `init` `sf-skill` | works — `init` `sf-overlay:sf-skill` | works — `init` `sf-overlay:sf-skill` | works — `init` `sf-skill` from the added directory |
+| agents | works — `init` and `/context` `sf-agent` | works — `sf-overlay:sf-agent` | works — `sf-overlay:sf-agent` | works — `init` and `/context` `sf-agent \| Project` |
+| hooks | works — `settings.SessionStart` (M1 1–4), `settings.PostToolUse` (M1 2) | works — `plugin.SessionStart`, `plugin.PostToolUse` | works — the same | cannot carry — no marker in M4 4–7; the added directory's `.claude/settings.local.json` did not run its hooks |
+| settings | works — M1 3 `DENIED`, the tool result an error | works — M2 3 | works — M3 3 | cannot carry — M4 6 printed the denied canary; the added directory's deny rule did not apply |
+| memory | works — M1 1, 2, 4; `memory_paths.auto` is the link | works — memory (hook) and memory-dir (`autoMemoryDirectory`), M2 1, 2 | works — the same, M3 1, 2 | cannot carry — no route; `memory_paths.auto` is `cfg-M4`'s own empty directory |
+
+**The remote binding (M3b).** With `origin` differing, the plugin's `SessionStart` hook ran and
+emitted nothing (`proj-M3b.plugin.SessionStart`, no `.emitted`), and M3b 1 reported none of
+instructions, rules or memory. It still reported memory-dir, and `init` still listed
+`sf-overlay:sf-skill` and `sf-overlay:sf-agent`: the binding held back what the hook carries,
+not the plugin's skills and agents, and not what `.claude/settings.local.json` carries.
