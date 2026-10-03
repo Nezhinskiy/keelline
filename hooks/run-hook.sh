@@ -48,6 +48,11 @@
 # `CLAUDE_PROJECT_DIR` is unset, a clone shipping a `git` had that binary executed on every hook
 # invocation, before any guard, with its stdout becoming the anchor. So `git` is now picked from
 # absolute paths, and a candidate is refused if it lies under *either* anchor.
+#
+# **The `/bin/sh` shebang is load-bearing on macOS.** `/bin/sh` is SIP-protected, so `DYLD_*`
+# variables are stripped from its environment and never reach the interpreter below. Measured
+# with an ad-hoc-signed copy of `/bin/bash` running this file: `DYLD_INSERT_LIBRARIES` reached
+# both the probe and the launcher, `-I` notwithstanding. Keep the shebang a protected shell.
 set -u
 
 refuse() { echo "stayfixed: $1; refusing" >&2; exit 2; }
@@ -271,20 +276,11 @@ in_project() {
 # afterwards would already have run. This is the same order the launcher check follows, and the
 # reason the original defect was reachable with three lines of `sh`.
 #
-# **Choosing the interpreter is half of the question; the other half is what it imports before
-# our first line.** An `env` block that cannot pick the program can still set `PYTHONPATH`, and
-# CPython's `site` imports a `sitecustomize` from it at startup — measured on this file before
-# the change: `PYTHONPATH=<dir with sitecustomize.py> sh hooks/run-hook.sh open --version`
-# printed the version and the planted module ran twice, once for the probe's `-c` and once for
-# the launcher. `PYTHONHOME` and `PYTHONUSERBASE` (a `usercustomize` or a `.pth` in the user
-# site) are the same door. So every execution of a candidate here is `-I`, isolated mode: no
-# `PYTHON*` variable is read, there is no user site, and neither the script's directory nor the
-# cwd is put on `sys.path`. The probe takes it too, because the probe is an execution, for the
-# reason above. `-I` is in every CPython since 3.4, so an interpreter below the floor still
-# reaches the version check rather than an option error, and the launcher already puts its own
-# `src` on `sys.path` and reads nothing else from it. The environment itself still reaches
-# stayfixed — `-I` hides it from the interpreter's startup, not from `os.environ` — because the
-# destinations it names are questions stayfixed answers for itself.
+# Every execution of a candidate is `-I`, the probe included, because the probe is an execution
+# for the reason above: otherwise a `PYTHONPATH` or user site the environment names is imported
+# before our first line. `-I` exists in every CPython since 3.4, so a below-floor interpreter still
+# reaches the version check rather than an option error. The contract, and the loader variables
+# `-I` cannot reach: `docs/cli.md`, "The chosen interpreter starts isolated".
 candidates='/Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3 python3'
 if [ -t 0 ] && [ -n "${STAYFIXED_PYTHON_CANDIDATES:-}" ]; then candidates="$STAYFIXED_PYTHON_CANDIDATES"; fi
 p=
@@ -330,7 +326,7 @@ fi
 # keys on finding a token (measured with `chmod 000`).
 [ -f "$launcher" ] && [ -r "$launcher" ] || fail "SF_NO_LAUNCHER launcher missing or unreadable at ${launcher}"
 
-# `-I` for the reason the probe takes it: nothing the environment names is imported first.
+# `-I` for the reason the probe takes it.
 "$p" -I "$launcher" "$@"
 rc=$?
 case "$rc" in

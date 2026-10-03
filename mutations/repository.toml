@@ -708,12 +708,8 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_an_interpreter_in_the_git_root_is_refused_although_the_environment_names_another_root",
 ]
 
-# The interpreter is chosen by a fixed list, and what it imports before the launcher's first line
-# was still the environment's to choose: a committed `env` block setting `PYTHONPATH` or
-# `PYTHONUSERBASE` had `site` import a planted `sitecustomize` or `usercustomize` on every hook,
-# before any stayfixed guard. `-I` on both executions of a candidate, and each one is load-bearing
-# on its own: the version probe runs the candidate too, so dropping it there runs the planted
-# module before the launcher is even reached.
+# `-I` on each execution of a candidate: either one dropped runs a module the environment planted
+# (`docs/cli.md`, "The chosen interpreter starts isolated").
 [[mutation]]
 name = "the launcher runs with the environment's PYTHONPATH and user site again"
 file = "hooks/run-hook.sh"

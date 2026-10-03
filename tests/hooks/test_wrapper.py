@@ -8,6 +8,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -797,35 +798,47 @@ def test_no_git_at_any_absolute_path_is_a_token_rather_than_a_silent_run(
     assert result.stdout == ""
 
 
-def _planted_module(tmp_path: Path, name: str) -> tuple[Path, Path]:
-    """A directory holding `<name>.py` that records each run of it, and the record it writes.
+class Planting(NamedTuple):
+    """A module the environment plants, as one case of the test below sees it."""
+
+    interpreter: str
+    env: dict[str, str]
+    record: Path
+
+
+def _planted_module(directory: Path, name: str, record: Path) -> None:
+    """Write `<directory>/<name>.py`, which appends its `sys.argv` to `record` on each run.
 
     `sitecustomize` and `usercustomize` are the two names CPython's `site` imports at startup
     from whatever `sys.path` holds by then, before the program's first line.
     """
-    planted = tmp_path / f"planted-{name}"
-    planted.mkdir(parents=True)
-    ran = tmp_path / f"{name}-ran"
-    (planted / f"{name}.py").write_text(
-        f"import sys\nwith open({str(ran)!r}, 'a') as f:\n    f.write(repr(sys.argv) + '\\n')\n",
+    directory.mkdir(parents=True)
+    (directory / f"{name}.py").write_text(
+        f"import sys\nwith open({str(record)!r}, 'a') as f:\n    f.write(repr(sys.argv) + '\\n')\n",
         encoding="utf-8",
     )
-    return planted, ran
 
 
 def _base_interpreter() -> str:
     """The interpreter the suite's venv was made from, which has a user site where the venv has
     none: a venv disables the user site, so a case about it run under `sys.executable` would be
-    green with the guard deleted."""
+    green with the guard deleted.
+
+    `sys._base_executable` is private to CPython, and nothing public names the interpreter a venv
+    was made from: `sys.base_prefix` is a directory, and which binary under it the venv copied or
+    linked is not recorded anywhere else. Outside a venv it is `sys.executable`, as is the fallback.
+    """
     return getattr(sys, "_base_executable", None) or sys.executable
 
 
-def _python_path_case(tmp_path: Path) -> tuple[str, dict[str, str], Path]:
-    planted, ran = _planted_module(tmp_path, "sitecustomize")
-    return sys.executable, {"PYTHONPATH": str(planted)}, ran
+def _python_path_case(tmp_path: Path) -> Planting:
+    planted = tmp_path / "planted-sitecustomize"
+    record = tmp_path / "sitecustomize-ran"
+    _planted_module(planted, "sitecustomize", record)
+    return Planting(sys.executable, {"PYTHONPATH": str(planted)}, record)
 
 
-def _user_site_case(tmp_path: Path) -> tuple[str, dict[str, str], Path]:
+def _user_site_case(tmp_path: Path) -> Planting:
     interpreter = _base_interpreter()
     base = tmp_path / "userbase"
     # Asked of the interpreter itself, because the layout differs by build: a macOS framework
@@ -837,24 +850,23 @@ def _user_site_case(tmp_path: Path) -> tuple[str, dict[str, str], Path]:
         check=True,
         env=dict(os.environ, PYTHONUSERBASE=str(base)),
     ).stdout.strip()
-    planted, ran = _planted_module(Path(site_dir).parent, "usercustomize")
-    planted.rename(site_dir)
-    return interpreter, {"PYTHONUSERBASE": str(base)}, ran
+    record = tmp_path / "usercustomize-ran"
+    _planted_module(Path(site_dir), "usercustomize", record)
+    return Planting(interpreter, {"PYTHONUSERBASE": str(base)}, record)
 
 
 @pytest.mark.parametrize(
     "case", [_python_path_case, _user_site_case], ids=["pythonpath", "user-site"]
 )
 def test_a_module_the_environment_plants_never_runs(
-    tmp_path: Path, case: Callable[[Path], tuple[str, dict[str, str], Path]]
+    tmp_path: Path, case: Callable[[Path], Planting]
 ) -> None:
-    # Choosing the interpreter is half of what the environment could decide; the other half is
-    # what that interpreter imports before the launcher's first line. A committed `env` block
-    # that cannot pick the program could still set `PYTHONPATH` or `PYTHONUSERBASE`, and `site`
-    # then imports a `sitecustomize` or `usercustomize` from it. Measured on the wrapper before
-    # `-I`: `PYTHONPATH=<dir with sitecustomize.py> sh hooks/run-hook.sh open --version` printed
-    # the version and the planted module ran twice, for the version probe's `-c` and for the
-    # launcher. Reddens on either `-I` removed, which is two entries in `mutations/`.
+    # Measured on the wrapper before `-I`: `PYTHONPATH=<dir with sitecustomize.py> sh
+    # hooks/run-hook.sh open --version` printed the version and the planted module ran twice, for
+    # the version probe's `-c` and for the launcher. Reddens on either `-I` removed, which is two
+    # entries in `mutations/`. The contract is `docs/cli.md`'s, "The chosen interpreter starts
+    # isolated". `PYTHONHOME` has no case of its own: planting one means shipping a whole standard
+    # library tree, and `-I` ignores it by the same `-E` that ignores `PYTHONPATH`.
     #
     # The shipped wrapper and the shipped launcher, run in place, and not `_plugin_root`'s fake:
     # the other half of this case is that the real launcher still finds its own `src` under
@@ -862,22 +874,25 @@ def test_a_module_the_environment_plants_never_runs(
     # variable — so `--version` answering is the launcher's own insertion working. Run from
     # `tmp_path`, outside every repository, so neither anchor names this checkout and the
     # suite's own interpreter is not refused as an in-tree one.
-    interpreter, planting, ran = case(tmp_path)
+    planting = case(tmp_path)
     # Non-vacuous: the planting does run in an interpreter started without `-I`, so a green
     # assertion below is the wrapper's doing and not a planting the interpreter ignores.
     subprocess.run(
-        [interpreter, "-c", "pass"], check=True, env=dict(os.environ, **planting), cwd=tmp_path
+        [planting.interpreter, "-c", "pass"],
+        check=True,
+        env=dict(os.environ, **planting.env),
+        cwd=tmp_path,
     )
-    assert ran.read_text(encoding="utf-8") == "['-c']\n"
-    ran.unlink()
+    assert planting.record.read_text(encoding="utf-8") == "['-c']\n"
+    planting.record.unlink()
     result = _run(
         "closed",
         "--version",
         plugin_root=ROOT,
-        candidates=interpreter,
+        candidates=planting.interpreter,
         cwd=tmp_path,
-        extra=planting,
+        extra=planting.env,
     )
-    assert not ran.exists(), ran.read_text(encoding="utf-8")
+    assert not planting.record.exists(), planting.record.read_text(encoding="utf-8")
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == f"stayfixed {__version__}"

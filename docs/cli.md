@@ -414,15 +414,18 @@ disagreement rule has no answer where `git` returns nothing — every project th
 repository — and its only fallback there is to trust the remaining variable on its own, which is
 the same hole under a longer name.
 
-**The chosen interpreter starts isolated.** Picking the program is half of what the environment
-could decide; the other half is what that program imports before stayfixed's first line. An `env`
-block that cannot choose the interpreter could still set `PYTHONPATH`, `PYTHONHOME` or
-`PYTHONUSERBASE`, and Python's startup then imports a `sitecustomize` or `usercustomize` of the
-repository's choosing. So the wrapper runs every candidate — the version probe as well as the
-launcher, because the probe is an execution too — with `-I`: no `PYTHON*` variable is read, there
-is no user site, and neither the working directory nor the script's own directory is on
-`sys.path`. The launcher puts the plugin's own `src` there itself. stayfixed still sees the whole
-environment; `-I` changes how the interpreter starts, not what `os.environ` holds.
+**The chosen interpreter starts isolated.** The environment reaches three things here: which
+program runs, what that program imports before stayfixed's first line, and what the dynamic loader
+injects into it. The candidate list and the containment above close the first. `-I` closes the
+second: the wrapper runs every candidate with it — the version probe as well as the launcher —
+so no `PYTHON*` variable is read (`PYTHONPATH`, `PYTHONHOME`, `PYTHONUSERBASE`), there is no
+user site, and neither the working directory nor the script's own directory is on `sys.path`.
+The launcher puts the plugin's own `src` there itself, and stayfixed still sees the whole
+environment: `-I` changes how the interpreter starts, not what `os.environ` holds. The third is
+out of any wrapper's reach — `LD_PRELOAD` on Linux acts on the wrapper's own shell before its first
+line — and [SECURITY.md](../SECURITY.md) says so. On macOS the wrapper's `/bin/sh` is
+SIP-protected and drops `DYLD_*` before anything below it starts, which is why its shebang must
+stay a protected shell.
 
 A machine whose interpreter really is inside the checkout — a vendored toolchain, or an in-tree
 virtual environment that is the only `python3` on `PATH` — gets `SF_NO_PY` rather than a silent
