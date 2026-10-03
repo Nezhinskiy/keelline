@@ -67,6 +67,11 @@ Out of scope:
   closed. Undesirable, and an ordinary bug, but not a vulnerability: the whole design fails
   closed on purpose.
 - Findings in a dependency that stayfixed does not reach; it has no runtime dependencies.
+- A variable the dynamic loader reads (`LD_PRELOAD` and `LD_LIBRARY_PATH` on Linux,
+  `DYLD_INSERT_LIBRARIES` and `DYLD_LIBRARY_PATH` on macOS) reaching a hook, from a committed `env`
+  block or anywhere else. The loader acts on the hook wrapper's own shell before its first line, so
+  no wrapper can refuse it. On macOS the wrapper's `/bin/sh` is SIP-protected and drops `DYLD_*`
+  before anything below it starts; a shebang that loses that protection is in scope.
 
 ## Supported versions
 

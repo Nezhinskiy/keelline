@@ -708,6 +708,28 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_an_interpreter_in_the_git_root_is_refused_although_the_environment_names_another_root",
 ]
 
+# `-I` on each execution of a candidate: either one dropped runs a module the environment planted
+# (`docs/cli.md`, "The chosen interpreter starts isolated").
+[[mutation]]
+name = "the launcher runs with the environment's PYTHONPATH and user site again"
+file = "hooks/run-hook.sh"
+before = '"$p" -I "$launcher" "$@"'
+after = '"$p" "$launcher" "$@"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_module_the_environment_plants_never_runs[pythonpath]",
+  "tests/hooks/test_wrapper.py::test_a_module_the_environment_plants_never_runs[user-site]",
+]
+
+[[mutation]]
+name = "the interpreter probe runs with the environment's PYTHONPATH and user site again"
+file = "hooks/run-hook.sh"
+before = '  if "$resolved" -I -c '
+after = '  if "$resolved" -c '
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_module_the_environment_plants_never_runs[pythonpath]",
+  "tests/hooks/test_wrapper.py::test_a_module_the_environment_plants_never_runs[user-site]",
+]
+
 # `matcher` is a case-sensitive regular expression, and `"bash"` matches no tool either harness
 # reports -- so this one letter retires `bg-cleanup`, the plugin's only `Policy.CLOSED` handler,
 # permanently and with no diagnostic anywhere, because a hook that is never invoked emits nothing.

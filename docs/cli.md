@@ -372,7 +372,7 @@ wrapper, and `stayfixed doctor`'s `wrapper` row reports on the same basis.
 **Which values may choose what.** The wrapper asks one question of everything it reads: is this
 a *destination*, or does it choose a program, or the provenance of what runs? `CLAUDE_PROJECT_DIR`
 is a destination and is honoured. `STAYFIXED_PYTHON_CANDIDATES` is not — the probe asks a
-candidate only to exit `0` for a trivial `-c`, so an unguarded list picks the interpreter that
+candidate only to exit `0` for a trivial `-I -c`, so an unguarded list picks the interpreter that
 runs on every tool call — and it is therefore gated where `stayfixed`'s machine configuration
 gates `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME`: honoured from an interactive terminal, ignored
 everywhere else. A hook's stdin is the harness's JSON payload on a pipe and `stayfixed doctor`
@@ -413,6 +413,19 @@ a binary the clone does not choose. It is a union and not a check that the two a
 disagreement rule has no answer where `git` returns nothing — every project that is not a git
 repository — and its only fallback there is to trust the remaining variable on its own, which is
 the same hole under a longer name.
+
+**The chosen interpreter starts isolated.** The environment reaches three things here: which
+program runs, what that program imports before stayfixed's first line, and what the dynamic loader
+injects into it. The candidate list and the containment above close the first. `-I` closes the
+second: the wrapper runs every candidate with it — the version probe as well as the launcher —
+so no `PYTHON*` variable is read (`PYTHONPATH`, `PYTHONHOME`, `PYTHONUSERBASE`), there is no
+user site, and neither the working directory nor the script's own directory is on `sys.path`.
+The launcher puts the plugin's own `src` there itself, and stayfixed still sees the whole
+environment: `-I` changes how the interpreter starts, not what `os.environ` holds. The third is
+out of any wrapper's reach — `LD_PRELOAD` on Linux acts on the wrapper's own shell before its first
+line — and [SECURITY.md](../SECURITY.md) says so. On macOS the wrapper's `/bin/sh` is
+SIP-protected and drops `DYLD_*` before anything below it starts, which is why its shebang must
+stay a protected shell.
 
 A machine whose interpreter really is inside the checkout — a vendored toolchain, or an in-tree
 virtual environment that is the only `python3` on `PATH` — gets `SF_NO_PY` rather than a silent
