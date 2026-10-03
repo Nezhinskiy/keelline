@@ -15,7 +15,7 @@ from stayfixed.release.notes import build
 from stayfixed.runner import NOT_FOUND
 from tests.runners import Recorder
 
-# What towncrier prints for a draft, and what a stub that is not told otherwise answers.
+# What the stubbed towncrier prints for a draft, and what `build` returns for one.
 NOTES = "## 1.2.3\n\n- a note\n"
 
 
