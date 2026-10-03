@@ -71,6 +71,8 @@ from functools import cache, cached_property
 from pathlib import Path
 from typing import TypeAlias
 
+from stayfixed.runner import Runner
+
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src" / "stayfixed"
 
@@ -127,8 +129,8 @@ class Override:
 
 SUBPROCESS = Launcher(keyword="args")
 RUNNER = Launcher(keyword="argv")
-# The method a `Runner` launches through, `stayfixed.runner.Runner.launch`, known by its name alone.
-RUNNER_METHOD = "launch"
+# The method a `Runner` launches through, known by its name alone.
+RUNNER_METHOD = Runner.launch.__name__
 SHELL = Launcher(reads=False)
 # Every standard-library function that starts a process and takes an argv the walk can read, by
 # `(module, function)`.

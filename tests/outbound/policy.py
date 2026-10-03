@@ -10,7 +10,7 @@ unread, which is a finding too.
 
 from __future__ import annotations
 
-from tests.outbound.walk import RUNNER, Launcher
+from tests.outbound.walk import RUNNER, RUNNER_METHOD, Launcher
 
 # Every standard-library module that gives a process a connection of its own. A listed module
 # matches with everything below it (`asyncio.streams` is `asyncio`'s), and never by its root alone:
@@ -63,12 +63,12 @@ NATIVE_MODULES = frozenset({"_ctypes", "_posixsubprocess", "_winapi", "ctypes"})
 # them and from the standard library's. Neither of these two can be derived. `git_run` puts
 # `-C <root>` between `git` and its caller's arguments, and the walk does not read `str(root)`;
 # declared, it is taken for what it is, `git` run in the directory `root` names. The real
-# `Runner`'s `.launch` is a method, which the walk does not bind by name: calls reach it as
-# `<receiver>.launch(argv, cwd)`, which the walk knows as a `Runner`'s by the method's name, and its
-# own launch is the argv each of those hands it.
+# `Runner`'s `.launch` is a method, which no import binds: the walk knows each call to it,
+# `<receiver>.launch(argv, cwd)`, by the attribute alone, and its own launch is the argv each of
+# those hands it.
 ROOT_LAUNCHERS: dict[tuple[str, str], Launcher] = {
     ("src/stayfixed/gitenv.py", "git_run"): Launcher(("git",), at=1, spread=True),
-    ("src/stayfixed/runner.py", "_SubprocessRunner.launch"): RUNNER,
+    ("src/stayfixed/runner.py", f"_SubprocessRunner.{RUNNER_METHOD}"): RUNNER,
 }
 
 # Where each program a launch runs can reach, by the argv prefix that decides it, git's global
@@ -138,9 +138,11 @@ GIT_GLOBAL_OPTIONS = {"-C": True, "-c": True, "--literal-pathspecs": False}
 GIT_CONFIG_KEYS = frozenset({"core.quotePath", "safe.bareRepository"})
 # Options with which a git command that otherwise reads the local repository asks a remote instead
 # (`git archive --remote=<url>`). Wherever one appears before the options end, the launch is not
-# local. Matched by the start of the whole name: `git archive` refuses `--remote` and `--exec`
-# abbreviated (`--rem=<url>` exits 128, "Unexpected option --remote"), and the other two are
-# options of subcommands that reach a remote whatever they are given.
+# local. Matched by the start of the whole name, since `git archive` takes neither of its two
+# abbreviated: `--rem=<url>` exits 128 ("Unexpected option --remote"), and beside `--remote` an
+# abbreviated `--exec` is handed to the remote side, which refuses it. `--exec` names a program only
+# beside `--remote`, which is matched already, so for `archive` it is redundant and costs nothing.
+# The other two are options of subcommands that reach a remote whatever they are given.
 GIT_REMOTE_OPTIONS = ("--remote", "--upload-pack", "--receive-pack", "--exec")
 # Options with which a local git subcommand runs a program: `grep -O` opens the matches in one,
 # `--textconv` runs a configured conversion and `--ext-diff` an external diff, either of which can
@@ -241,7 +243,7 @@ SCRUBBED_ENVIRONMENT = ("src/stayfixed/gitenv.py", "scrubbed_env")
 # program the argv names, and an `env=` can carry `GIT_CONFIG_COUNT` and its keys and values,
 # configuration as strong as `git -c`; either is a finding until it is declared here.
 OVERRIDES: dict[tuple[str, str, str], str] = {
-    ("src/stayfixed/runner.py", "_SubprocessRunner.launch", "env=env"): (
+    ("src/stayfixed/runner.py", f"_SubprocessRunner.{RUNNER_METHOD}", "env=env"): (
         "the owner's own environment, less the variables that point git at another repository: "
         "the `gh`, `git`, `pre-commit` and plugin launches it runs are the owner's own, signed "
         "in as the owner"

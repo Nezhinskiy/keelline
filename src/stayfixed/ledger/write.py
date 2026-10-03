@@ -109,7 +109,7 @@ class Renumbered:
 
 def _fetch(root: Path) -> str | None:
     """Best-effort, bounded; a skipped fetch says so rather than let a collision pass."""
-    # Refs are all the allocator reads, so no submodule: under git's default
+    # Refs are all the allocator reads, so it fetches no submodule: under git's default
     # `fetch.recurseSubmodules=on-demand` the fetch would also ask the remote of each populated
     # submodule whose recorded commit it brings in, a destination of its own whose failure fails
     # the whole fetch.

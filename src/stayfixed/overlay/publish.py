@@ -89,7 +89,7 @@ def _gh(runner: Runner, argv: list[str], cwd: Path) -> Completed:
 def _git(runner: Runner, argv: list[str], cwd: Path) -> Completed:
     """`_gh`'s twin for the `git` half, and it exists because the `git` half had no guard.
 
-    The four `git` calls in this module went through `runner.launch` directly, and two of them —
+    The four `git` calls in this module went through the runner directly, and two of them —
     `add -A` and `status --porcelain` — had their exit codes read by nothing. A `git` that is
     absent, hung, blocked by an `index.lock` another process left, or failed by a
     `core.hooksPath` pre-commit hook returns an empty `stdout`, so `changed` came out empty and

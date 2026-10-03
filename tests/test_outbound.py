@@ -128,9 +128,9 @@ def _runs_a_program(part: str, subcommand: str) -> bool:
     """Whether `part`, before the options end of `git <subcommand>`, is one of the subcommand's
     `GIT_PROGRAM_OPTIONS` as git parses it: a long one by a prefix of its name, and a short one
     anywhere in a cluster of short options."""
+    name = part.partition("=")[0]
     for option in GIT_PROGRAM_OPTIONS.get(subcommand, ()):
         if option.startswith("--"):
-            name = part.partition("=")[0]
             if len(name) > len("--") and option.startswith(name):
                 return True
         elif part[:1] == "-" and part[1:2] != "-" and option[1:] in part[1:]:
