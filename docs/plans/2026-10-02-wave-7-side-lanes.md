@@ -1367,3 +1367,526 @@ Written by Tasks 6, 9 and 10.
 ## Findings — delivery-spike
 
 Written by Tasks 11–16.
+
+### Summary (Task 16)
+
+`W` works, `P` works after a prompt, `B` broken, `A` absent once, `C` cannot carry, `—` not
+observed: no prompt of that surface exercised the kind, or the surface shows no record of it
+(Codex custom agents, Cowork's skills and agents). Claude Code headless ran 2.1.285 (`M1 5` and
+`proj-D5` on 2.1.288), the terminal 2.1.288, the desktop Code tab its bundled 2.1.284; Codex was
+`codex-cli 0.160.0`. Each cell's evidence is in the task section named in the header row.
+
+| Kind | Headless M1 | M2 | M3 | M4 | Terminal M1 | M2 | M3 | M4 | Desktop M1 | M2 | Cowork M1 | M2 | Codex C1 | C2 | C3 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| | Task 12 | | | | Task 13 | | | | Task 13 | | Task 13 | | Task 14 | | |
+| instructions | W | W | W | B | W | W | W | P | W | W | A | A | W | B | W |
+| rules | B | W | W | W | P | W | W | W | B | W | A | A | C | B | C |
+| path-scoped rules | A | W | W | A | A | W | W | A | — | — | — | — | B | B | C |
+| skills | W | W | W | W | W | W | W | W | W | W | — | — | W | W | W |
+| agents | W | W | W | W | W | W | W | W | W | W | — | — | — | C | — |
+| hooks | W | W | W | C | W | W | W | C | W | W | A | A | P | B | A |
+| settings | W | W | W | C | — | — | — | — | — | — | — | — | P | C | W |
+| memory | W | W | W | C | W | W | W | C | W | W | A | A | C | B | C |
+
+The prompt behind Claude Code's `P` is "Allow external CLAUDE.md file imports?", which the
+terminal showed. Neither `-p` nor the desktop Code tab offered it, so the same files were broken
+there: headless M1 rules and M4 instructions were absent on an ask and a re-ask, and E1 showed
+them loading once the approval was recorded by hand; the desktop's `.claude.json` recorded the
+warning as never shown. Codex's `P` names a documented prompt that `codex exec` never showed:
+project trust for settings (here `trust_level = "trusted"` written into the scratch
+`config.toml`) and hook review for hooks (here the `--dangerously-bypass-hook-trust` flag, C1 3).
+M4's `C` for hooks and settings: the added directory held the same `.claude/settings.local.json`
+as M1's target, and it was not read as a settings source (no marker in M4 4–7; M4 6 printed the
+denied canary).
+
+**Instructions.** M2 and M3 carried them through the plugin's `SessionStart` context on every
+local Claude Code surface without a prompt, and so did M1's linked `CLAUDE.local.md`. M4's
+imports needed the external-import approval, which only the terminal offered. On Codex a file at
+a path Codex reads carried them (C1's linked `AGENTS.override.md`, also in the untrusted
+rendering; C3's `CODEX_HOME/AGENTS.md`); the plugin did not. Cowork reported none.
+
+**Rules.** M2 and M3 carried them everywhere local without a prompt, and M4 through the added
+directory's `.claude/rules/`. A linked file in `.claude/rules/` counted as an external include:
+the terminal asked, `-p` and the desktop Code tab skipped it without a word. Codex has no rules
+file; only a hook could have carried them, and the plugin's did not run.
+
+**Path-scoped rules.** Only the `PostToolUse` hook on `Read` (M2, M3) carried them, on headless
+and terminal. A linked scoped rule never arrived, even after the import approval (terminal M1);
+a regular file did (`proj-D5`). Codex reads instruction files only from the Git root down to the
+working directory, and the file below it was absent on both P2 turns (C1 2, C1 3).
+
+**Skills.** Every mechanism carried them on every local surface, Codex included, which follows
+linked skill folders, in the untrusted rendering too. Cowork's were not observed.
+
+**Agents.** Every Claude Code mechanism carried them. No Codex rendering or turn showed a custom
+agent, and a Codex plugin has no place for one.
+
+**Hooks.** M1's linked `settings.local.json` and the plugin's `hooks.json` ran without a hook
+prompt on every local Claude Code surface; the desktop trust dialog named the settings file
+("Execution allowed by: .claude/settings.local.json") when it held hooks. An added directory's
+settings file did not run (M4). Codex skipped unreviewed project and user hooks without a word,
+ran the linked project hooks under the bypass flag, and did not run the plugin's hooks even
+then. No marker appeared on the device for Cowork.
+
+**Settings.** The deny rule held under M1 to M3 headless and was not exercised elsewhere. On
+Codex the user `config.toml` applied without a prompt (C3), a linked project one only once the
+project was trusted (C1 renderings).
+
+**Memory.** M1's linked project-memory directory and M2's and M3's hook context and
+`autoMemoryDirectory` carried it on every local Claude Code surface; M4 and Codex had no route,
+and Codex's plugin route did not run. Cowork reported none.
+
+### What this settles
+
+Observations core-cut (the extension point) and harness-sources (the delivery mode) consume.
+Each names the cells it rests on.
+
+1. **On every local Claude Code surface measured, a local-scope private plugin plus a real,
+   untracked `.claude/settings.local.json` (M2) carried each kind that surface exercised,
+   without a prompt** — Summary, headless/terminal/desktop M2 columns. No kind needed the link
+   tree where M2 carried it: M1 matched M2 on instructions, skills, agents, hooks, settings and
+   memory, was broken for rules where no approval dialog was offered and needed one where it was
+   (headless/desktop M1 `B`, terminal M1 `P`, E1), and never carried path-scoped rules
+   (headless/terminal M1, D4, `proj-D5`).
+2. **A link inside `.claude/rules/` was treated as an external include**: its target lay outside
+   the working directory, and Claude Code loaded it only once the project's
+   `hasClaudeMdExternalIncludesApproved` was recorded; `-p` and the desktop Code tab never asked
+   (E1; desktop M1's `.claude.json` read `false`/`false`). A linked `CLAUDE.local.md`, a linked
+   skill, agent or settings file and a linked memory directory loaded without it (headless M1
+   turns and `/context`; terminal and desktop M1).
+3. **The path-scoped kind travelled only through a `PostToolUse` hook on `Read`, or as a
+   regular file in the checkout** (headless/terminal M2, M3; `proj-D5`); no link and no added
+   directory carried it (M1, M4).
+4. **A user-scope plugin bound by `origin` held back only what its hook emits**: with a foreign
+   `origin` its skills and agents were still listed and the `autoMemoryDirectory` canary still
+   arrived (M3b, P1 only). A local-scope install recorded the plugin in the configuration's
+   `plugins/installed_plugins.json` with `"scope": "local"` and the project's path, while the
+   marketplace it came from was declared in the user `settings.json` by `claude plugin
+   marketplace add` (Task 11).
+5. **Plugin hooks needed no hook approval on Claude Code** (terminal M2, M3: no dialog after
+   trust), and removal was not complete on its own: `claude plugin uninstall` left the cache
+   directory marked `.orphaned_at` (Task 13 cleanup).
+6. **The desktop loaded the project's `AGENTS.md` for M2 and not for M1**, whose checkout adds
+   `CLAUDE.local.md` and the linked `.claude/` files; in both, the owner's `CLAUDE.md` loaded as
+   `User`, so the ancestor confound was absent (desktop M1, M2). Under `$HOME` with a scratch
+   configuration, an ancestor `.claude/CLAUDE.md` loaded as `Project` and `AGENTS.md` loaded for
+   no mechanism (Task 12 confound).
+7. **Codex 0.160.0 ran no plugin hook, with or without the bypass flag** (C2 2, C2 3; `plugin_hooks
+   removed false`), so Claude Code's plugin-context route had no Codex counterpart. On Codex,
+   instructions and settings travelled only as files at the paths Codex reads — linked into the
+   checkout (C1) or placed in the Codex home (C3) — and skills also through a plugin (C2). A
+   linked project config applied only once the project was trusted (C1 renderings); the linked
+   project hooks ran only under the bypass flag, and without it were skipped without a message
+   (C1 1, C1 3). User hooks were not run under the flag (C3); the documentation says they too
+   need review.
+8. **On Codex, `AGENTS.override.md` replaced the project's `AGENTS.md` in that directory; the
+   Codex home's `AGENTS.md` added to it** (C1 and C3 renderings).
+9. **Cowork reported no canary from M1 or M2 in one P1 each, not even the committed
+   `AGENTS.md`, and no marker appeared on the device** (Cowork M1, M2); M3 and M4 were not tried
+   there. For Claude Code cloud sessions the documentation says user settings,
+   `.claude/settings.local.json` and plugins do not reach them, while committed files, the
+   environment's setup script and variables, and skills enabled on claude.ai do (Task 15,
+   documented).
+10. **Versions differed per surface and moved under a session**: one interactive start in a
+    scratch configuration moved the user-wide CLI from 2.1.285 to 2.1.288, while the desktop
+    Code tab ran its bundled 2.1.284 (Task 13).
+
+### Task 11 — scratch library and fixtures
+
+Measured on 2026-10-03 at `dev` = `05727f1`. Paths are relative to
+`$SPIKE` = `$HOME/.cache/stayfixed-spikes/delivery`.
+
+- **Version.** `claude --version` printed `2.1.285 (Claude Code)`, and every `init` event of
+  Task 12 carried `"claude_code_version":"2.1.285"`. The Premise names 2.1.283; no 2.1.283
+  binary was installed on the machine (the CLI versions present were 2.1.284 and 2.1.285), and
+  the owner chose to measure on 2.1.285.
+- **A fresh configuration is not signed in.** `CLAUDE_CONFIG_DIR="$SPIKE/cfg-auth" claude auth
+  status` printed `"loggedIn": false` and `"authMethod": "none"`.
+- **Isolation.** Each mechanism had its own configuration directory, `cfg-M1` to `cfg-M4`; the
+  M3 hold-back project `proj-M3b` shared `cfg-M3`. Every `claude` call ran under `env -i` with
+  only `HOME`, `PATH`, `LANG`, `TERM`, `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_TOKEN` (read
+  from an owner-held file into that one process; its value never printed) and, for M4,
+  `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`. Turn records sit in
+  `turns/<MECH>/turn-N.{cmd,jsonl,err,markers}`, outside the checkouts, so no canary-bearing
+  file lay in a tree a later turn ran in.
+- **Canaries** (`canaries.tsv`): instructions `SFC-pjwy0ublr7` (`overlay/instructions.md`),
+  rules `SFC-tl60sh5z18` (`overlay/.claude/rules/sf-rule.md` and its copy `overlay/rules.md`),
+  scoped `SFC-stn1wcqksp` (`overlay/.claude/rules/sf-scoped.md`, `paths: ["scoped/**"]`),
+  memory `SFC-rwclbl9weq` (`overlay/memory/MEMORY.md`), memory-dir `SFC-egbv4271l4`
+  (`overlay/memory-dir/MEMORY.md`, the `autoMemoryDirectory` target of M2 and M3, a second
+  canary so each memory route reads separately), unused `SFC-ltumkf04ax` (`overlay/unused.md`),
+  agents-md `SFC-6fg43bebuk` (each project's committed `AGENTS.md`), denied `SFC-ae0mlyjt4q`
+  (each project's committed `denied.txt`). M1's link targets live under `overlay/.claude/`, so
+  M4's `--add-dir "$SPIKE/overlay"` offered the same rules, skill, agent and settings file.
+- **The projects.** `git status --porcelain --ignored` printed `!! .claude/` and
+  `!! CLAUDE.local.md` for `proj-M1`, `!! .claude/` for `proj-M2`, `proj-M3` and `proj-M3b`, and
+  `!! CLAUDE.local.md` for `proj-M4`; nothing else. `.git/info/exclude` listed `CLAUDE.local.md`,
+  `.claude/rules/sf-rule.md`, `.claude/rules/sf-scoped.md`, `.claude/skills/sf-skill`,
+  `.claude/agents/sf-agent.md` and `.claude/settings.local.json` (M1),
+  `.claude/settings.local.json` (M2, M3, M3b) and `CLAUDE.local.md` (M4). `origin` was
+  `https://example.invalid/sf-fixture.git` everywhere except `proj-M3b`
+  (`https://example.invalid/sf-other.git`).
+- **Where the plugin installs wrote.** `claude plugin marketplace add "$SPIKE/overlay-plugin"`
+  printed `✔ Successfully added marketplace: sf-spike (declared in user settings)` for M2 and M3;
+  `claude plugin install sf-overlay@sf-spike --scope local` printed `✔ Successfully installed
+  plugin: sf-overlay@sf-spike (scope: local)`, and `--scope user` printed the same with
+  `(scope: user)`. The local install added `"enabledPlugins": {"sf-overlay@sf-spike": true}` to
+  the project's `.claude/settings.local.json`; the user install put the same key in
+  `cfg-M3/settings.json`. Each configuration's `plugins/installed_plugins.json` recorded the
+  plugin: `"scope": "local"` with `"projectPath"` set to `proj-M2` in `cfg-M2`, `"scope":
+  "user"` in `cfg-M3`. `claude plugin marketplace add` declared the marketplace in each
+  configuration's user `settings.json` as `extraKnownMarketplaces.sf-spike` with `"source":
+  "directory"`, whatever scope the plugin was installed at afterwards. The owner's own plugin
+  files kept their modification times across both installs.
+
+### Task 12 — Claude Code headless
+
+Every turn: `claude -p --model haiku --output-format stream-json --verbose
+[--allowedTools=Read] [--add-dir "$SPIKE/overlay"] -- "<prompt>"` in the project directory.
+15 paid turns, `total_cost_usd` summing to 0.2093. The first three M4 calls lacked the `--`:
+the variadic `--add-dir` took the prompt as a second directory, each exited 1 with `Error:
+Input must be provided either through stdin or as a prompt argument when using --print` and
+wrote an empty stream (kept as `turns/M4/argvfail-{1,2,3}.*`, no model call); the owner approved
+the retry with `--`, so M4's turns are numbered 4 to 7.
+
+| Turn | Prompt | Result text | Canaries by kind | Markers | Tool result |
+|---|---|---|---|---|---|
+| M1 1 | P1 | `SFC-pjwy0ublr7\nSFC-rwclbl9weq` | instructions, memory | `proj-M1.settings.SessionStart` | — |
+| M1 2 | P2 | same two | instructions, memory | `…settings.PostToolUse`, `…settings.SessionStart` | the target's text |
+| M1 3 | P3 | `DENIED` | — | `…settings.SessionStart` | error: `File is in a directory that is denied by your permission settings.` |
+| M1 4 | P1 re-ask | same two | instructions, memory | `…settings.SessionStart` | — |
+| M2 1 | P1 | four tokens | instructions, rules, memory, memory-dir | `proj-M2.plugin.SessionStart`, `….emitted` | — |
+| M2 2 | P2 | five tokens | the four, scoped | SessionStart and PostToolUse, each with `.emitted` | the target's text |
+| M2 3 | P3 | `DENIED` | — | SessionStart, `.emitted` | the same denial |
+| M3 1 | P1 | four tokens | instructions, rules, memory, memory-dir | `proj-M3.plugin.SessionStart`, `….emitted` | — |
+| M3 2 | P2 | five tokens | the four, scoped | SessionStart and PostToolUse, each with `.emitted` | the target's text |
+| M3 3 | P3 | `DENIED` | — | SessionStart, `.emitted` | the same denial |
+| M3b 1 | P1 | `SFC-egbv4271l4` | memory-dir | `proj-M3b.plugin.SessionStart` (no `.emitted`) | — |
+| M4 4 | P1 | `SFC-tl60sh5z18` | rules | none | — |
+| M4 5 | P2 | `SFC-tl60sh5z18` | rules | none | the target's text |
+| M4 6 | P3 | `SFC-ae0mlyjt4q` | denied | none | `1\tSFC-ae0mlyjt4q` |
+| M4 7 | P1 re-ask | `SFC-tl60sh5z18` | rules | none | — |
+
+No turn reported the unused canary or a token outside `canaries.tsv`. The `init` events listed
+`sf-skill` and `sf-agent` (M1, M4), and `sf-overlay:sf-skill` and `sf-overlay:sf-agent` with
+plugin `sf-overlay@sf-spike` (M2, M3, M3b). `memory_paths.auto` was
+`cfg-M1/projects/<slug of proj-M1>/memory/` (the link, M1), `overlay/memory-dir/` (M2, M3,
+M3b) and `cfg-M4/projects/<slug of proj-M4>/memory/` (M4, nothing there).
+
+**What the harness loaded, at $0.** `claude -p --output-format stream-json --verbose --
+"/context"` in each project, under its configuration and with no token, printed a context
+report with `total_cost_usd` 0. Its Memory Files table listed, besides the two files of the
+confound below: `Local | proj-M1/CLAUDE.local.md` and `AutoMem | cfg-M1/projects/<slug of
+proj-M1>/memory/MEMORY.md` (M1); `AutoMem | overlay/memory-dir/MEMORY.md` (M2, M3, M3b);
+`Local | proj-M4/CLAUDE.local.md` (46 tokens, the two import lines) and `Project |
+overlay/.claude/rules/sf-rule.md` (M4, with `--add-dir` and the variable). No row named
+`sf-rule.md` in M1, and no row named `instructions.md` or `rules.md` in M4. Custom Agents
+listed `sf-agent | Project` (M1, M4) and `sf-overlay:sf-agent | Plugin` (M2, M3, M3b); the
+M2 and M3 reports had a `Messages | 71` row, M3b's none.
+
+**Discriminators, at $0** (`/context` in a fresh repository under `$SPIKE`, unsigned
+configuration):
+
+- D1: `.claude/rules/sf-rule.md` as a regular file — listed as `Project | disc-a/.claude/rules/sf-rule.md`.
+- D2: `.claude/rules` as a symlink to `overlay/.claude/rules` — no rule listed.
+- D3: `CLAUDE.local.md` importing `@inside.md` (a file in the repository) and
+  `@$SPIKE/overlay/instructions.md` — listed `Local | disc-c/CLAUDE.local.md` and
+  `Local | disc-c/inside.md`; the overlay file was not listed.
+- D4: `.claude/rules/sf-rule.md` as a file symlink, as in M1 — no rule listed.
+
+**Confound: the scratch root sits under `$HOME`.** Every `/context` report listed `Project |
+$HOME/.claude/CLAUDE.md` and one `Project | $HOME/.claude/rules/<file>.md`: the owner's user
+instructions reached each scratch session through the parent-directory walk from the project,
+not through `CLAUDE_CONFIG_DIR`. Neither file contains `SFC-` (`grep -c` printed 0 for both),
+so no canary came from them. No report listed a project's `AGENTS.md`, and no turn reported its
+canary. A repository holding only that `AGENTS.md`, placed outside `$HOME` under a fresh
+configuration, listed `Project | <that repository>/AGENTS.md`. Whether a mechanism disables the
+`AGENTS.md` fallback was therefore not measured under `$SPIKE`: an ancestor `CLAUDE.md`
+suppressed it in all four.
+
+**The headless column.** Turns are `<MECH> <N>`; `/context` and D1–D4 are above.
+
+| Kind | M1 symlink tree | M2 local-scope plugin | M3 user-scope plugin, bound by remote | M4 imports and `--add-dir` |
+|---|---|---|---|---|
+| instructions | works — M1 1, 2, 4; `/context` lists the linked `CLAUDE.local.md` | works — M2 1, 2; `….emitted` | works — M3 1, 2; `….emitted` | broken — `-p` shows no import dialog; absent in M4 4 and 7; `/context` lists only the import lines; D3; E1 |
+| rules | broken — `-p` shows no import dialog; absent in M1 1, 4 and 5; no `sf-rule.md` in `/context`; D1, D2, D4; E1 | works — M2 1, 2 | works — M3 1, 2 | works — M4 4, 5, 7; `/context` shows it came from the added directory, not the import |
+| path-scoped rules | absent once — M1 2 (a symlinked rule, as D4) | works — M2 2; `PostToolUse.emitted` | works — M3 2; `PostToolUse.emitted` | absent once — M4 5 |
+| skills | works — `init` `sf-skill` | works — `init` `sf-overlay:sf-skill` | works — `init` `sf-overlay:sf-skill` | works — `init` `sf-skill` from the added directory |
+| agents | works — `init` and `/context` `sf-agent` | works — `sf-overlay:sf-agent` | works — `sf-overlay:sf-agent` | works — `init` and `/context` `sf-agent \| Project` |
+| hooks | works — `settings.SessionStart` (M1 1–4), `settings.PostToolUse` (M1 2) | works — `plugin.SessionStart`, `plugin.PostToolUse` | works — the same | cannot carry — no marker in M4 4–7; the added directory's `.claude/settings.local.json` was not read as a settings source |
+| settings | works — M1 3 `DENIED`, the tool result an error | works — M2 3 | works — M3 3 | cannot carry — M4 6 printed the denied canary; the added directory's settings file was not read as a settings source |
+| memory | works — M1 1, 2, 4; `memory_paths.auto` is the link | works — memory (hook) and memory-dir (`autoMemoryDirectory`), M2 1, 2 | works — the same, M3 1, 2 | cannot carry — no route; `memory_paths.auto` is `cfg-M4`'s own empty directory |
+
+**The remote binding (M3b).** With `origin` differing, the plugin's `SessionStart` hook ran and
+emitted nothing (`proj-M3b.plugin.SessionStart`, no `.emitted`), and M3b 1 reported none of
+instructions, rules or memory. It still reported memory-dir, and `init` still listed
+`sf-overlay:sf-skill` and `sf-overlay:sf-agent`: the binding held back what the hook carries,
+not the plugin's skills and agents, and not what `.claude/settings.local.json` carries.
+
+**Added after the first fifteen turns** (the owner granted up to twenty more; the CLI on `PATH`
+had meanwhile become 2.1.288, see Task 13):
+
+- M1 5: P1 on 2.1.288 (`init` `"claude_code_version":"2.1.288"`) printed
+  `SFC-pjwy0ublr7\nSFC-rwclbl9weq` — instructions and memory, no rules, as on 2.1.285.
+- `proj-D5` 1: a fresh repository whose `.claude/rules/sf-scoped.md` is a regular file with
+  the same frontmatter; P2 with `--allowedTools=Read` printed `SFC-stn1wcqksp`, and the
+  transcript carried a `nested_memory` attachment. A path-scoped rule loads on a read when it
+  is a file in the repository.
+- E1, at $0: with `"hasClaudeMdExternalIncludesApproved": true` written into the project's
+  entry of `cfg-M1/.claude.json`, `/context` in `proj-M1` added `Project |
+  overlay/.claude/rules/sf-rule.md`; the same in `cfg-M4` added `Local | overlay/instructions.md`
+  and `Local | overlay/rules.md`. Both files were restored afterwards. A linked rule and an
+  import both resolve to a file outside the working directory, and Claude Code loads such a
+  file only once that project's approval is recorded; `-p` shows no dialog and skips the file.
+  The linked `CLAUDE.local.md` and the linked memory directory loaded without it.
+
+Two more turns, `total_cost_usd` 0.0354; seventeen paid headless turns in all.
+
+### Task 13 — interactive terminal, desktop Code tab, Cowork
+
+**What changed on the machine.** The first interactive session (`isession.sh M1`, configuration
+`cfg-interactive`, 2.1.285) ran Claude Code's native auto-updater: `cfg-interactive/
+.last-update-result.json` recorded `"version_from":"2.1.285","version_to":"2.1.288"`, and the
+user-wide `claude` launcher moved to 2.1.288. The owner kept 2.1.288 and chose to measure the
+terminal on it; later sessions started that binary directly with `DISABLE_AUTOUPDATER=1`. The
+fresh configuration's onboarding asked for a sign-in although `CLAUDE_CODE_OAUTH_TOKEN` was set;
+the owner signed in, and the credential was stored as its own keychain item beside the
+owner's, not over it.
+
+**Terminal** (2.1.288, `--model haiku`, `cfg-interactive`, eight turns: P1 and P2 per
+project). The dialogs were read again after clearing the project's flags in
+`cfg-interactive/.claude.json`:
+
+- Every project: `Accessing workspace: <project> / Quick safety check: Is this a project you
+  created or one you trust? … / No, exit | Yes, I trust this folder`; answered yes.
+- `proj-M1`, next: `Allow external CLAUDE.md file imports? / This project's CLAUDE.md or
+  .claude/rules imports files outside the current working directory. Never allow this for
+  third-party repositories. / External imports: …overlay/.claude/rules/sf-rule.md / No, disable
+  external imports | Yes, allow external imports`; answered yes. The linked `CLAUDE.local.md`
+  and the linked memory directory were not listed.
+- `proj-M4`, next: the same dialog listing `…overlay/instructions.md` and `…overlay/rules.md`;
+  answered yes.
+- `proj-M2`, `proj-M3`: no dialog after the trust dialog; nothing asked about the plugin or its
+  hooks.
+
+| Project | P1 printed | P2 printed | `instructions` attachment (besides the confound) | Listings | Markers |
+|---|---|---|---|---|---|
+| M1 | rules, instructions, memory | the same three | `Project: overlay/.claude/rules/sf-rule.md`, `Local: proj-M1/CLAUDE.local.md`, `AutoMem: cfg-interactive/projects/<slug>/memory/MEMORY.md` | `sf-skill`, `sf-agent` | `settings.SessionStart` (the dialog relaunch rewrote the marker file afterwards) |
+| M4 | instructions, rules | the same two | `Local: proj-M4/CLAUDE.local.md`, `Local: overlay/instructions.md`, `Local: overlay/rules.md`, `Project: overlay/.claude/rules/sf-rule.md` | `sf-skill`, `sf-agent` | none |
+| M2 | instructions, rules, memory, memory-dir | the four, scoped | `AutoMem: overlay/memory-dir/MEMORY.md` | `sf-overlay:sf-skill`, `sf-overlay:sf-agent` | `plugin.SessionStart`, `….emitted`, `plugin.PostToolUse`, `….emitted` |
+| M3 | instructions, rules, memory, memory-dir | the four, scoped | `AutoMem: overlay/memory-dir/MEMORY.md` | `sf-overlay:sf-skill`, `sf-overlay:sf-agent` | the same four |
+
+The linked `sf-rule.md` appeared in the attachment under its target's path. No terminal session
+reported the scoped canary for M1 or M4, and neither transcript contains it.
+
+**Desktop Code tab** (the owner's configuration; transcripts recorded `"version":"2.1.284"` and
+`"entrypoint":"claude-desktop"`; Local, the worktree box unchecked, Haiku 4.5; one P1 per
+project). Before each session the owner's configuration gained the directory marketplace, a
+local-scope install of the plugin for `proj-M2`, and for `proj-M1` a link from its
+project-memory directory to `overlay/memory/`.
+
+- `proj-M1`: `Trust this workspace? / Claude Code may read, write, or execute files in this
+  folder. Only proceed if you trust this workspace. / <proj-M1> / Read our security guide for
+  more information. / Execution allowed by: .claude/settings.local.json / Cancel | Trust
+  workspace`; trusted. No import dialog appeared, and the project's entry in the owner's
+  `.claude.json` afterwards read `"hasClaudeMdExternalIncludesApproved": false,
+  "hasClaudeMdExternalIncludesWarningShown": false`. P1 printed `SFC-pjwy0ublr7\nSFC-rwclbl9weq`
+  (instructions, memory). Besides `User: $HOME/.claude/CLAUDE.md` and one `User` rule file, the
+  attachment listed `Local: proj-M1/CLAUDE.local.md` and `AutoMem:
+  <the owner's projects directory>/<slug>/memory/MEMORY.md`, not `sf-rule.md`; listings had
+  `sf-skill`, `sf-agent`; marker `proj-M1.settings.SessionStart`.
+- `proj-M2`: the same dialog without the "Execution allowed by" line; trusted. P1 printed
+  `SFC-pjwy0ublr7`, `SFC-tl60sh5z18`, `SFC-rwclbl9weq`, `SFC-6fg43bebuk`, `SFC-egbv4271l4`
+  (instructions, rules, memory, agents-md, memory-dir). The attachment listed `Project:
+  proj-M2/AGENTS.md` and `AutoMem: overlay/memory-dir/MEMORY.md`; listings had
+  `sf-overlay:sf-skill`, `sf-overlay:sf-agent`; markers `proj-M2.plugin.SessionStart`,
+  `….emitted`. Here the owner's `$HOME/.claude/CLAUDE.md` loaded as `User`, not through the
+  parent walk, and `AGENTS.md` loaded; in `proj-M1` it did not. The skill and agent names of
+  both desktop sessions were read from their transcripts before the cleanup removed them; the
+  copy kept under `$SPIKE/turns/desktop-evidence/` holds the attachment types and file lists.
+
+**Cowork** (the owner's configuration, Haiku 4.5 Extended, one P1 per project).
+
+- Dialogs, both projects: `Allow Claude to change files in "<project>"? / Claude can edit,
+  delete, and share these files with connected tools. / Cancel | Always allow | Allow`, then
+  `Allow this Cowork session to access this folder? / <project> / Claude will be able to read
+  and modify files here, and run commands that access this folder, for the current session, or
+  for all future Cowork sessions on this device if you check the box below. Because this task
+  runs in the cloud, files Claude uses leave your device and are processed on Anthropic's
+  servers. / Don't ask again for this folder on this device / Cancel | Allow`; Allow, box
+  unchecked.
+- P1 printed `NONE` in both. No marker appeared, no transcript appeared in the owner's
+  projects directory, and the app's `remote-session-spaces.json` gained one entry per session
+  whose `folders` held the project's path.
+
+**Cleanup** (the owner's yes, item by item): `claude plugin uninstall sf-overlay@sf-spike
+--scope local` printed `✔ Successfully uninstalled plugin: sf-overlay (scope: local)` and
+left `plugins/cache/sf-spike/sf-overlay/0.0.1/` behind with `.orphaned_at` and `.in_use` in
+it, removed by hand; `claude plugin marketplace remove sf-spike` printed `✔ Successfully
+removed marketplace: sf-spike`, after which the owner's `settings.json` equalled its copy taken
+before the install. The two project directories and the two `.claude.json` project entries were
+removed; the owner removed the four app sessions.
+
+**The columns.** "—" is a kind no prompt of that surface exercised.
+
+| Kind | Terminal M1 | Terminal M2 | Terminal M3 | Terminal M4 | Desktop M1 | Desktop M2 | Cowork M1 | Cowork M2 |
+|---|---|---|---|---|---|---|---|---|
+| instructions | works | works | works | works after a prompt — "Allow external CLAUDE.md file imports?" | works | works | absent once | absent once |
+| rules | works after a prompt — the same dialog | works | works | works (from the added directory) | broken — no dialog offered; the attachment omits it | works | absent once | absent once |
+| path-scoped rules | absent once | works | works | absent once | — | — | — | — |
+| skills | works | works | works | works | works | works | — | — |
+| agents | works | works | works | works | works | works | — | — |
+| hooks | works | works | works | cannot carry | works | works | absent once — no marker | absent once — no marker |
+| settings | — | — | — | — | — | — | — | — |
+| memory | works | works | works | cannot carry | works | works | absent once | absent once |
+
+A two-turn terminal session cost a few cents (`lastCost` 0.0464 for M2 and 0.0337 for M3 in
+`cfg-interactive/.claude.json`); the Cowork turns ran on the owner's plan, outside any
+per-turn figure.
+
+### Task 14 — Codex
+
+**Documentation read 2026-10-03** (no page carried a date). The `developers.openai.com/codex/…`
+guide URLs answered `308 Permanent Redirect` to `learn.chatgpt.com/docs/…`:
+
+- `learn.chatgpt.com/docs/agent-configuration/agents-md`: a global `AGENTS.override.md` or
+  `AGENTS.md` under the Codex home, then, from the Git root down to the working directory, in
+  each directory `AGENTS.override.md`, else `AGENTS.md`, else `project_doc_fallback_filenames`;
+  combined size capped by `project_doc_max_bytes` (32 KiB by default).
+- `learn.chatgpt.com/docs/build-skills`: skills from `.agents/skills` in the working directory
+  and its parents up to the repository root, `$HOME/.agents/skills`, `/etc/codex/skills`, and
+  the bundled set; "Codex supports symlinked skill folders and follows the symlink target".
+- `learn.chatgpt.com/docs/hooks`: `hooks.json` or `[hooks]` in `config.toml` beside each config
+  layer (`~/.codex/`, `<repo>/.codex/`); `SessionStart`, `PostToolUse` and others; output may
+  carry `additionalContext`; a non-managed hook runs only after its exact definition is
+  reviewed and trusted, and project hooks only when the `.codex/` layer is trusted.
+- `learn.chatgpt.com/docs/plugins` and `developers.openai.com/plugins/build/plugins`: a plugin
+  holds skills, MCP servers and hooks (`hooks/hooks.json`), no agents; a local marketplace is a
+  directory with `.agents/plugins/marketplace.json` whose entry has `"source": {"source":
+  "local", "path": "./plugins/<name>"}`; `codex plugin marketplace add <path>`; a repository
+  enables a plugin in `.codex/config.toml` only when trusted.
+- Custom agents (a search summary of `developers.openai.com/codex/subagents`, not fetched):
+  `.codex/agents/*.toml` per project, `~/.codex/agents/*.toml` per user.
+
+**Mechanisms as built.** C1, symlinks at the paths Codex reads: `AGENTS.override.md` →
+`overlay/instructions.md`, `scoped/AGENTS.override.md` → `overlay/.claude/rules/sf-scoped.md`,
+`.agents/skills/sf-skill` → the skill, `.codex/agents/sf-agent.toml`, `.codex/hooks.json`
+(markers) and `.codex/config.toml` (`developer_instructions = "Settings token:
+SFC-9c2n5jdkxi"`, a new canary labelled settings), all in `.git/info/exclude`. C2, a private
+plugin from the local marketplace `$SPIKE/codex-market`: the skill and the same two hook
+scripts as M2, bound to the fixture `origin`. C3, the user layer of the scratch `CODEX_HOME`:
+`AGENTS.md` and `agents/sf-agent.toml` and `hooks.json` linked into it, the settings line at the
+top of its `config.toml`, and the skill linked into `$HOME/.agents/skills` under a scratch
+`HOME`. Rules have no Codex file of their own (`.rules` files are command policy) and memory
+has no file path (the `memories` feature is `stable false` and its store is
+`memories_1.sqlite`), so neither had a route.
+
+**Install and sign-in.** `npm view @openai/codex version` printed `0.160.0`; `npm install
+--ignore-scripts @openai/codex@0.160.0` into `$SPIKE/npm` recorded `"integrity":
+"sha512-kEtVGzjRAYAMOwJxN39bGcna7LT3IDQgq64NNJ/dDTfu4OzZaocJcyNb5/gGJ/IVF/Vj7oK7E2m3nmTan7lpjg=="`;
+`codex --version` printed `codex-cli 0.160.0`. Every call ran under `env -i` with
+`HOME="$SPIKE/codex-userhome"`, `CODEX_HOME="$SPIKE/codex-home"` and
+`-c 'cli_auth_credentials_store="file"'`; the owner signed in with ChatGPT (`codex login
+status` printed `Logged in using ChatGPT`) and the credential went to the scratch `auth.json`.
+`codex features list` printed `hooks stable true`, `plugins stable true` and `plugin_hooks
+removed false`.
+
+**What the model would see, at $0.** `codex debug prompt-input "<P1>"` renders the prompt
+without a model call:
+
+- C1, untrusted: instructions `SFC-pjwy0ublr7`, skill root `proj-C1/.agents/skills` listing
+  `sf-skill`; no settings canary, no AGENTS.md canary.
+- C1, after `[projects."<proj-C1>"] trust_level = "trusted"` was added to the scratch
+  `config.toml`: the same plus `Settings token: SFC-9c2n5jdkxi`.
+- C2: agents-md `SFC-6fg43bebuk` and `sf-overlay:sf-skill`.
+- C3: instructions, agents-md and settings, and skill root `codex-userhome/.agents/skills`
+  listing `sf-skill`.
+
+No rendering named `sf-agent`.
+
+**Turns.** `cx.sh exec --json -s read-only -c 'model_reasoning_effort="low"' -- "<prompt>"`
+in the project; eight turns, the default model `gpt-6.1-sol`, input 14,327–29,725 and output
+52–136 tokens a turn.
+
+| Turn | Prompt | Canaries | Markers |
+|---|---|---|---|
+| C1 1 | P1 | settings, instructions | none |
+| C1 2 | P2 (ran `cat scoped/target.txt`) | settings, instructions | none |
+| C1 3 | P2, `--dangerously-bypass-hook-trust` | settings, instructions | `proj-C1.codex-layer.SessionStart`, `proj-C1.codex-layer.PostToolUse` |
+| C2 1 | P1 | agents-md | none |
+| C2 2 | P2 | agents-md | none |
+| C2 3 | P2, `--dangerously-bypass-hook-trust` | agents-md | none |
+| C3 1 | P1 | agents-md, settings, instructions | none |
+| C3 2 | P2 | agents-md, settings, instructions | none |
+
+Without the bypass flag no hook ran and nothing said so; with it the stream carried two
+`error` items, ``"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without
+review for this invocation."``, and C1's linked hooks ran. C2's plugin hooks ran in neither,
+though the installed copy held `hooks/hooks.json` and both scripts. `codex plugin remove
+sf-overlay@sf-spike` printed ``Removed plugin `sf-overlay` from marketplace `sf-spike`.``
+and left only an empty `plugins/cache/sf-spike/` directory.
+
+**The Codex column.**
+
+| Kind | C1 symlinks | C2 plugin, local marketplace | C3 user layer |
+|---|---|---|---|
+| instructions | works — every C1 turn ran trusted; the untrusted rendering had it too; the override took the place of the project's `AGENTS.md` | broken — the hook route did not run | works — alongside the project's `AGENTS.md` |
+| rules | cannot carry | broken — the hook route did not run | cannot carry |
+| path-scoped rules | broken — absent in C1 2 and C1 3; files below the working directory are not read | broken — the hook route did not run | cannot carry |
+| skills | works — untrusted too | works — `sf-overlay:sf-skill` | works |
+| agents | — | cannot carry | — |
+| hooks | works after a prompt — hook review (documented; `codex exec` showed none); ran only under the bypass flag | broken — not even under the bypass flag | absent once — no marker, bypass not spent |
+| settings | works after a prompt — project trust (documented; here written into the scratch `config.toml`; `codex exec` showed none) | cannot carry | works |
+| memory | cannot carry | broken — the hook route did not run | cannot carry |
+
+C2's hook-routed cells read broken rather than cannot carry because the documentation lists
+`hooks/hooks.json` as part of a Codex plugin and the installed copy held it; `codex features list`
+printing `plugin_hooks removed false` does not say whether the route was dropped or folded in.
+
+### Task 15 — cloud sessions, from the documentation
+
+Nothing here was measured; every line is **documented**, read 2026-10-03, and no page carried a
+date. (Cowork, measured in Task 13, said of itself "this task runs in the cloud".)
+
+**Claude Code cloud sessions** (code.claude.com/docs/en/claude-code-on-the-web,
+/docs/en/cloud-environments, /docs/en/settings):
+
+- The session runs "on a fresh clone of your repository, not on your machine"; `claude --cloud`
+  "clones your current directory's GitHub remote at your current branch, not your local
+  checkout". When it uploads a bundle instead, "Untracked files are not included".
+- Reaches the session, as part of the clone: the repository's `CLAUDE.md`, `.claude/rules/`,
+  `.claude/skills/`, `.claude/agents/`, `.claude/commands/`, and, in a session with one
+  repository, `.claude/settings.json` hooks and permission rules and `.mcp.json`.
+- Does not reach it: `~/.claude/settings.json` and `.claude/settings.local.json` ("Both stay on
+  your machine, and the local file isn't in the clone"); the user `~/.claude/CLAUDE.md`; user
+  skills, agents and commands; plugins enabled only in user settings; and plugins and
+  marketplaces a repository declares under `enabledPlugins` / `extraKnownMarketplaces` ("A cloud
+  session doesn't install the plugins a repository turns on").
+- The environment supplies network access, environment variables (readable by anyone who uses
+  the environment) and a setup script that "runs when a new cloud session starts, before Claude
+  Code launches", cached as a filesystem snapshot when it finishes in about five minutes;
+  `SessionStart` hooks run there with a 600-second default timeout. "Cloud sessions
+  automatically load skills you enable on claude.ai."
+- Auto memory is not named on either page.
+
+**Codex cloud tasks** (learn.chatgpt.com/docs/environments/cloud-environment, reached by a 308
+from developers.openai.com/codex/cloud/environments; the page calls itself legacy):
+
+- "Codex creates a container and checks out your repo at the selected branch or commit SHA"; a
+  setup script runs at creation and an optional maintenance script on a cached resume.
+- Environment variables last the whole task; secrets "are only available to setup scripts" and
+  "are removed before the agent phase starts". Internet is on during setup and off by default in
+  the agent phase.
+- "If your repo includes `AGENTS.md`, the agent uses it"; the page names no route for user
+  `config.toml`, skills, plugins, hooks or memories.
+
+### Task 16 — closing
+
+The scrub over this file: `grep -n "$HOME"` and `grep -n "$(whoami)"` printed nothing;
+`grep -n "sk-ant-"` printed only the scrub instruction and this sentence; none of the five string
+values of the scratch Codex `auth.json` and not the Claude Code token occurs in the file.
+`uv run pytest tests/test_neutral.py tests/test_payload.py -q` printed `577 passed`. With the
+owner's yes: `codex logout` printed `Successfully logged out` and the scratch `auth.json` was
+gone; `claude auth logout` under `cfg-interactive` printed `Successfully logged out from your
+Anthropic account.` and its keychain item was gone; `$SPIKE/npm` was removed. The rest of
+`$SPIKE` holds no credential and stays until this record merges.
