@@ -402,6 +402,15 @@ LAUNCH_SHAPES: dict[str, tuple[str, str, tuple[str | None, ...]]] = {
         (None,),
     ),
     "callback": (TOP, f"{GIT_RUN}retry(git_run, r)", (None,)),
+    "module-alias": (TOP, "import subprocess\nm = subprocess\nm.run(['curl', 'x'])", (None,)),
+    "module-handed-on": (TOP, "import os\nretry(os, r)", (None,)),
+    "module-in-a-class": (TOP, "import subprocess\nclass C:\n    sp = subprocess", (None,)),
+    "getattr-literal": (
+        TOP,
+        "import subprocess\ngetattr(subprocess, 'run')(['curl', 'x'])",
+        (None,),
+    ),
+    "getattr-computed": (TOP, "import subprocess\ngetattr(subprocess, name)", (None,)),
     "runner-handed-on": (TOP, "retry(self._runner.launch, argv)", (None,)),
     "star-subprocess": (TOP, "from subprocess import *\ngetoutput('curl x')", (None,)),
     "star-os": (TOP, "from os import *\nsystem('curl x')", (None,)),
@@ -477,13 +486,16 @@ def test_what_only_names_a_launcher_is_not_a_launch() -> None:
     # Nor is a name that only mentions a launcher's module: an annotation, a constant, an
     # exception. Mutation: the reference check runs inside annotations -> `Popen[bytes]` is found.
     # Nor a class `isinstance` or `issubclass` compares. Mutation: `CLASS_CHECKS` is emptied ->
-    # the last two lines' `Popen`s are found.
+    # the last two lines' `Popen`s are found. Nor a launcher module `getattr` or `hasattr` reads a
+    # literal attribute of that is no launcher, or `hasattr` only asks about. The entry in
+    # `mutations/` that names this test reads such a module as handed on again.
     source = "probe.run(context)\ngate.run(root, config, base)\nhandler.run(view, config)\n"
     source += "step.run([view], config)\n"
     source += "import subprocess\nraise subprocess.TimeoutExpired(args, 1)\n"
     source += "def f(p: subprocess.Popen[bytes]) -> None:\n    stdin = subprocess.DEVNULL\n"
     source += "from os import path\nimport os.path\nos.path.join(a, b)\n"
-    source += "isinstance(p, subprocess.Popen)\nissubclass(t, (int, subprocess.Popen))"
+    source += "isinstance(p, subprocess.Popen)\nissubclass(t, (int, subprocess.Popen))\n"
+    source += "getattr(os, 'O_NOFOLLOW', 0)\nhasattr(os, 'waitid')\nhasattr(subprocess, 'run')"
     assert WALK.launches_in(source, "src/stayfixed/assess/probe.py") == []
 
 

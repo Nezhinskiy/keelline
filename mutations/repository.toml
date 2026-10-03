@@ -3019,14 +3019,50 @@ reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[shadowed
 [[mutation]]
 name = "the outbound walk stops flagging a launcher handed on uncalled"
 file = "tests/outbound/walk.py"
-before = '                and _launcher(node, source.names, launchers) is not None'
-after = '                and False'
+before = '            handed = id(node) not in not_handed_on and _launcher(node, source.names, launchers)'
+after = '            handed = False'
 reddens = [
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[alias]",
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[partial]",
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[dunder-call]",
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[callback]",
   "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[runner-handed-on]",
+]
+
+# A launcher module named without an attribute after it — bound to another name, passed as an
+# argument, held by a class, or read by a `getattr` that computes its name — hands on every launcher
+# it holds, so the reference itself is the finding, as it is for a launcher function.
+[[mutation]]
+name = "the outbound walk stops flagging a launcher module named without an attribute"
+file = "tests/outbound/walk.py"
+before = '            module = id(node) not in owners and _module_of(source.names, node) in LAUNCHER_MODULES'
+after = '            module = False'
+reddens = [
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[module-alias]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[module-handed-on]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[module-in-a-class]",
+  "tests/test_outbound.py::test_a_launch_of_any_shape_is_found[getattr-computed]",
+]
+
+# `getattr(subprocess, "run")` names `subprocess.run` as surely as the attribute does; the module it
+# reads is not handed on, so the launcher it names is the finding.
+[[mutation]]
+name = "the outbound walk stops reading getattr's literal name as the launcher it names"
+file = "tests/outbound/walk.py"
+before = '            if read is not None and _launcher(read, source.names, launchers) is not None:'
+after = '            if False:'
+reddens = ["tests/test_outbound.py::test_a_launch_of_any_shape_is_found[getattr-literal]"]
+
+# `getattr(os, "O_NOFOLLOW", 0)` and `hasattr(os, "waitid")` use `os` for one attribute that is no
+# launcher; read as handing the module on, they are findings the tree's own `fsops` makes.
+[[mutation]]
+name = "a module getattr or hasattr reads by a literal name is taken for handed on"
+file = "tests/outbound/walk.py"
+before = '            ids.add(id(read.value))'
+after = '            pass'
+reddens = [
+  "tests/test_outbound.py::test_what_only_names_a_launcher_is_not_a_launch",
+  "tests/test_outbound.py::test_every_launch_is_classified",
 ]
 
 # A call inside an annotation runs when the annotation is evaluated, and a launcher handed to it is

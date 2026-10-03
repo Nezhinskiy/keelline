@@ -5,9 +5,13 @@ and this docstring is the one description of what it sees and what it cannot.
 
 **What it finds.** A *launch* is a call that starts a process, a launcher named without being
 called — handed to `functools.partial`, passed as a callback, bound to another name, used as a
-base class — or a star import of a launcher module or of a package module, which can re-export
-one. The standard library's launchers are `subprocess`, the `os` process functions (reached
-through `os`, `posix` or `nt`), `pty.spawn`, `asyncio`'s subprocess calls and an event loop's.
+base class — a star import of a launcher module or of a package module, which can re-export
+one, or a launcher module named without an attribute after it (`m = subprocess`, `f(os)`), which
+hands on every launcher it holds. `getattr` and `hasattr` given a literal name read the attribute
+it names, so `getattr(os, "O_NOFOLLOW", 0)` uses `os` rather than handing it on, and
+`getattr(subprocess, "run")` names the launcher. The standard library's launchers are
+`subprocess`, the `os` process functions (reached through `os`, `posix` or `nt`), `pty.spawn`,
+`asyncio`'s subprocess calls and an event loop's.
 The package's own start from the roots `tests/outbound/policy.py` names and grow by derivation:
 a module-level function — one defined at the top of its module, or under a module-level `if`,
 `try` or `with` — that hands its own argv on to a launcher in exactly one call, as the argv's
@@ -36,11 +40,11 @@ the annotation is evaluated.
 receiver is decided by data flow it does not follow is beyond it. Each of these is probed to
 return nothing:
 
-- dynamic dispatch: `getattr(subprocess, "run")`, `importlib.import_module`, `__import__`,
-  `sys.modules`, and code run from data by `exec`, `eval` or `pickle`;
-- aliasing: a launcher module bound by assignment (`m = subprocess`), whose calls the walk does
-  not see; a launcher named as `Annotated` metadata, which code reading the annotation could
-  call;
+- dynamic dispatch: `importlib.import_module`, `__import__`, `sys.modules`, a `getattr` on a
+  package module with a name it computes, and code run from data by `exec`, `eval` or `pickle`;
+- aliasing: a package module named without an attribute after it (`m = gitenv`), through which
+  its launchers are called unseen; a launcher named as `Annotated` metadata, which code reading
+  the annotation could call;
 - values computed at run time: an argv element held in a variable is `Unread`, and the walk
   does not follow where its value came from, so `sh -c` handed a script the package builds from
   strings (`" ".join(["curl", url])`) is taken for the user's command, the `sh -c` row's;
@@ -164,6 +168,9 @@ OS_MODULES = frozenset({"os", "posix", "nt"})
 LAUNCHER_MODULES = OS_MODULES | {module for module, _ in STDLIB_LAUNCHERS}
 # The calls that only compare a class, by the name they are called through.
 CLASS_CHECKS = frozenset({"isinstance", "issubclass"})
+# The calls that read an attribute by a name a string gives, by the name they are called through:
+# `getattr(os, "O_NOFOLLOW", 0)` is `os.O_NOFOLLOW`, and `hasattr` only asks whether one exists.
+ATTRIBUTE_READS = frozenset({"getattr", "hasattr"})
 # The keywords of a launch that replace what it inherits or what it runs; a `**` spread is read as
 # an override too, since it can hand either.
 OVERRIDING = frozenset({"env", "executable"})
@@ -700,6 +707,31 @@ def _derive(
         blocked |= twice
 
 
+def _attribute_read(
+    call: ast.Call, reads: frozenset[str] = ATTRIBUTE_READS
+) -> ast.Attribute | None:
+    """The attribute `call` reads when it is one of `reads` given a literal name, as the
+    `owner.name` it reads; `None` for any other call."""
+    if not (isinstance(call.func, ast.Name) and call.func.id in reads):
+        return None
+    named = call.args[1] if call.args[1:] else None
+    if not (isinstance(named, ast.Constant) and isinstance(named.value, str)):
+        return None
+    return ast.Attribute(value=call.args[0], attr=named.value, ctx=ast.Load())
+
+
+def _owners(tree: ast.Module) -> set[int]:
+    """The nodes a module named there is used through rather than handed on: the owner of an
+    attribute, and the first argument of an attribute read by a literal name."""
+    ids: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute):
+            ids.add(id(node.value))
+        elif isinstance(node, ast.Call) and (read := _attribute_read(node)) is not None:
+            ids.add(id(read.value))
+    return ids
+
+
 def _not_handed_on(tree: ast.Module) -> set[int]:
     """The nodes a launcher named there is not handed on from: what a call calls, which the
     call itself is read for, and a class `isinstance` or `issubclass` only compares."""
@@ -728,14 +760,21 @@ def _walk(
 ) -> tuple[list[Launch], list[Override]]:
     """Every launch in `source` and every override a launch call makes. A launch is each call
     that starts a process, except a launcher's one handing on of its argv, which is read at its
-    callers; and each place a launcher is handed on unread — named without being called, or
-    star-imported — which the walk cannot follow. Overrides are read on every launch call, the
-    handing on included, since what it inherits every caller inherits."""
+    callers; and each place a launcher is handed on unread — named without being called, read by
+    `getattr`, star-imported, or reachable through a launcher module named without an attribute
+    after it — which the walk cannot follow. Overrides are read on every launch call, the handing
+    on included, since what it inherits every caller inherits."""
     not_handed_on = _not_handed_on(source.tree)
+    owners = _owners(source.tree)
     launches: list[Launch] = []
     overrides: list[Override] = []
     for node, scope, functions, in_annotation in _scoped(source.tree):
         if isinstance(node, ast.Call):
+            # `getattr` hands on what it reads; `hasattr` only asks.
+            read = _attribute_read(node, frozenset({"getattr"}))
+            if read is not None and _launcher(read, source.names, launchers) is not None:
+                unread = (Unread(ast.unparse(node)),)
+                launches.append(Launch(source.file, node.lineno, scope, unread))
             if (launcher := _launcher(node.func, source.names, launchers)) is None:
                 continue
             overrides.extend(
@@ -754,12 +793,11 @@ def _walk(
             argv = _argv(node, launcher, source.constants, outermost)
             launches.append(Launch(source.file, node.lineno, scope, argv))
         elif isinstance(node, (ast.Name, ast.Attribute)):
-            if (
-                isinstance(node.ctx, ast.Load)
-                and not in_annotation
-                and id(node) not in not_handed_on
-                and _launcher(node, source.names, launchers) is not None
-            ):
+            if not isinstance(node.ctx, ast.Load) or in_annotation:
+                continue
+            handed = id(node) not in not_handed_on and _launcher(node, source.names, launchers)
+            module = id(node) not in owners and _module_of(source.names, node) in LAUNCHER_MODULES
+            if handed or module:
                 unread = (Unread(ast.unparse(node)),)
                 launches.append(Launch(source.file, node.lineno, scope, unread))
         elif isinstance(node, ast.ImportFrom) and _star_launches(node, source.file):
