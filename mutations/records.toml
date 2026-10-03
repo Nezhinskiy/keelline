@@ -1615,13 +1615,15 @@ reddens = [
 ]
 
 # `bugs new` fetches for refs alone. Recursing into submodules, as git's default `on-demand` does,
-# asks each populated submodule's remote too: a destination the README does not disclose, and one
-# whose failure fails the fetch and warns of a collision nothing caused.
+# asks each populated submodule's remote too: a destination the README does not disclose, whose
+# commit then lands in the submodule, and one whose failure fails the fetch and warns of a
+# collision nothing caused.
 [[mutation]]
 name = "the bugs new fetch recurses into submodules again"
 file = "src/stayfixed/ledger/write.py"
 before = '        "--no-recurse-submodules",'
 after = '        "--recurse-submodules=on-demand",'
 reddens = [
-  "tests/ledger/test_write.py::test_the_fetch_asks_origin_alone_and_never_a_submodules_remote",
+  "tests/ledger/test_write.py::test_the_fetch_asks_origin_alone_and_never_a_submodules_remote[reachable]",
+  "tests/ledger/test_write.py::test_the_fetch_asks_origin_alone_and_never_a_submodules_remote[gone]",
 ]
