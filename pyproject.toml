@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "keelline"
+version = "0.0.1"
+description = "Renamed to stayfixed. This name is kept as a pointer to the new project."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [{ name = "Nezhinskiy" }]
+classifiers = [
+    "Development Status :: 7 - Inactive",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+]
+
+[project.urls]
+Successor = "https://github.com/stayfixed/stayfixed"
+Source = "https://github.com/Nezhinskiy/keelline"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/keelline"]
